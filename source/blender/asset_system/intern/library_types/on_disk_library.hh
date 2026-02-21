@@ -1,0 +1,29 @@
+/* SPDX-FileCopyrightText: 2023 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup asset_system
+ */
+
+#pragma once
+
+#include "AS_asset_library.hh"
+
+namespace blender::asset_system {
+
+class OnDiskAssetLibrary : public AssetLibrary {
+ public:
+  OnDiskAssetLibrary(
+      eAssetLibraryType library_type,
+      StringRef name = "",
+      StringRef root_path = "",
+      std::optional<AssetCatalogService::read_only_tag> catalogs_read_only_tag = std::nullopt);
+
+  std::optional<AssetLibraryReference> library_reference() const override;
+  void refresh_catalogs() override;
+
+  virtual bool is_enabled() const;
+};
+
+}  // namespace blender::asset_system
