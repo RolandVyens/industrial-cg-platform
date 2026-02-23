@@ -1,0 +1,61 @@
+/* SPDX-FileCopyrightText: 2024 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/** \file
+ * \ingroup asset_system
+ */
+
+#include "BLI_fileops.h"
+#include "BLI_listbase.h"
+#include "BLI_path_utils.hh"
+
+#include "DNA_userdef_types.h"
+
+#include "preferences_on_disk_library.hh"
+
+namespace blender::asset_system {
+
+PreferencesOnDiskAssetLibrary::PreferencesOnDiskAssetLibrary(StringRef name, StringRef root_path)
+    : OnDiskAssetLibrary(ASSET_LIBRARY_CUSTOM, name, root_path)
+{
+}
+
+std::optional<AssetLibraryReference> PreferencesOnDiskAssetLibrary::library_reference() const
+{
+
+  for (const auto [i, asset_library] : U.asset_libraries.enumerate()) {
+    if (asset_library.flag & ASSET_LIBRARY_USE_REMOTE_URL) {
+      continue;
+    }
+    if (!BLI_is_dir(asset_library.dirpath)) {
+      continue;
+    }
+
+    if (BLI_path_cmp_normalized(asset_library.dirpath, this->root_path().c_str()) == 0) {
+      AssetLibraryReference library_ref{};
+      library_ref.type = ASSET_LIBRARY_CUSTOM;
+      library_ref.custom_library_index = i;
+      return library_ref;
+    }
+  }
+
+  return {};
+}
+
+bool PreferencesOnDiskAssetLibrary::is_enabled() const
+{
+  for (const bUserAssetLibrary &asset_library : U.asset_libraries) {
+    if (!BLI_is_dir(asset_library.dirpath)) {
+      continue;
+    }
+
+    if (BLI_path_cmp_normalized(asset_library.dirpath, this->root_path().c_str()) == 0) {
+      return (asset_library.flag & ASSET_LIBRARY_DISABLED) == 0;
+    }
+  }
+
+  return false;
+}
+
+}  // namespace blender::asset_system
