@@ -1,0 +1,60 @@
+00:06.860  cycles           | Rendered 2 samples in 1.20932 seconds (0.604662 seconds per sample), occupancy: 1
+00:06.875  render           | Fra: 1 | Remaining: 00:17.77 | Mem: 345M | Sample 4/32
+00:06.875  cycles           | Adaptive sampling: automatic min samples = 64
+00:09.250  cycles           | Rendered 4 samples in 2.38709 seconds (0.596772 seconds per sample), occupancy: 1
+00:09.266  render           | Fra: 1 | Remaining: 00:14.81 | Mem: 345M | Sample 8/32
+00:09.266  cycles           | Adaptive sampling: automatic min samples = 64
+00:14.032  cycles           | Rendered 8 samples in 4.75753 seconds (0.594692 seconds per sample), occupancy: 1
+00:14.047  render           | Fra: 1 | Remaining: 00:09.70 | Mem: 345M | Sample 16/32
+00:14.047  cycles           | Adaptive sampling: automatic min samples = 64
+00:23.625  cycles           | Rendered 16 samples in 9.58145 seconds (0.598841 seconds per sample), occupancy: 1
+00:23.672  render           | Fra: 1 | Mem: 345M | Sample 32/32
+00:23.672  cycles           | Adaptive sampling: automatic min samples = 64
+00:23.672  cycles           | Rendering in main loop is done in 19.3483 seconds.
+00:23.672  cycles           | Full path tracing report:
+                            | 
+                            | Path tracing on: AMD Ryzen 9 7950X 16-Core Processor (CPU) (32 threads) [CPU]
+                            | 
+                            | Render Scheduler Summary
+                            | 
+                            | Mode: Headless
+                            | Resolution: 1920x1080
+                            | 
+                            | Adaptive sampling:
+                            |   Use: True
+                            |   Step: 16
+                            |   Min Samples: 64
+                            |   Threshold: 0.050000
+                            | 
+                            | Denoiser:
+                            |   Use: False
+                            | 
+                            | Time (in seconds):
+                            |                                        Wall              Average
+                            |           Path Tracing            19.213795             0.600431
+                            |        Adaptive Filter             0.000000             0.000000
+                            |         Display Update             0.000002             0.000002
+                            | 
+                            |   Total: 19.213798
+                            | 
+                            | Rendered 32 samples in 19.348175 seconds
+                            | 
+00:23.672  render           | Fra: 1 | Mem: 345M | Finished
+00:23.672  cycles           | Total render time: 19.6164
+00:23.672  cycles           | Render time (without synchronization): 19.3484
+00:23.922  render           | Saved: 'D:\blender_projects\rendered\test\trash_output\0001.png'
+00:23.922  render           | Time: 00:19.91 (Saving: 00:00.22)
+unregister
+??  blenderkit: Unregistering BlenderKit add-on [13:17:58.903, __init__.py:2659]
+??  blenderkit: No temporarily enabled addons to clean up [13:17:58.904, download.py:391]
+Warning keymap '3D View Tool: Select Box' not found in 'Blender'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender addon'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender addon'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender addon'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender'!
+Warning keymap '3D View Tool: Select Box' not found in 'Blender addon'!
+
+Blender quit
+ElapsedSeconds=24.2984129

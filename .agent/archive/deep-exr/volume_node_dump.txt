@@ -1,0 +1,120 @@
+Material: Material
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 1.0
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.001
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.800000011920929
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.002
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.6000000238418579
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.003
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.4000000059604645
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.004
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.20000000298023224
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.005
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.10000000149011612
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.006
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.05000000074505806
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
+Material: Material.007
+  Color: (0.5, 0.5, 0.5, 1.0)
+  Color Attribute: 
+  Density: 0.009999999776482582
+  Density Attribute: density
+  Anisotropy: 0.0
+  Absorption Color: (0.0, 0.0, 0.0, 1.0)
+  Emission Strength: 0.0
+  Emission Color: (1.0, 1.0, 1.0, 1.0)
+  Blackbody Intensity: 0.0
+  Blackbody Tint: (1.0, 1.0, 1.0, 1.0)
+  Temperature: 1000.0
+  Temperature Attribute: temperature
+  Weight: 0.0
+
