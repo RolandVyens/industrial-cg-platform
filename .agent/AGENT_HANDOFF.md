@@ -1,8 +1,8 @@
 # VFX Rendering Branch - Agent Handoff
 
-> **Branch:** `task/deep-exr-memory`
+> **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-02-24
+> **Last Updated:** 2026-03-05
 
 ---
 
@@ -13,7 +13,7 @@
 - **Validation:** Rendered `D:\blender_projects\deep-branch-test.blend` on 2026-02-22; deep compositor outputs saved and tile rendering confirmed.
   Compositor deep EXRs now large (e.g., `test_compoutput_deep0001.exr` ~584 MB).
 - **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged.
-- **Working branch:** `task/deep-exr-memory`
+- **Working branch:** `vfx-rendering-branch-github`
 - **Next up:** Feature 4 (per-lightgroup lobe AOVs) when ready; dedicated LPE plan added to `VFX_RENDERING_PLAN.md`.
 - **Docs:** MoonRay LPE/AOV code report added at `.agent/MOONRAY_LPE_REPORT.md` (Cycles LPE reference).
 - **Docs:** Added Phase 1/Phase 2 LPE-ready strategy notes to Feature 4 in `VFX_RENDERING_PLAN.md`.
@@ -29,6 +29,10 @@
 - **Docs:** Root README trimmed to features + roadmap (EN/CN). Removed `README_VFX.md` and `README_VFX.zh-CN.md`.
 - **Release package:** Installed Release to `E:\blender_modify\release\blender-vfx-5.2-2026-02-22` (no PDBs) and zipped to `E:\blender_modify\release\blender-vfx-5.2-2026-02-22.zip` on 2026-02-22; includes multi-arch CUDA kernels (`sm_75`, `sm_86`, `sm_89`).
 - **Release published:** GitHub release created on 2026-02-22 with tag/title `blender-vfx-5.2-2026-02-22` and asset `blender-vfx-5.2-2026-02-22.zip`.
+- **Release package:** Installed Release to `E:\blender_modify\release\blender-vfx-5.2-2026-03-04` and zipped to `E:\blender_modify\release\blender-vfx-5.2-2026-03-04.zip` on 2026-03-04.
+- **Release published:** GitHub release updated on 2026-03-04 with tag/title `blender-vfx-5.2-2026-03-04` and asset `blender-vfx-5.2-2026-03-04.zip`.
+- **Release checksum:** `SHA256 9CD99213DD1E1FA459A4981E6F20BFAE5BC569C3252AD416A95017270E5920F3`.
+- **Release scope docs:** `AGENT.md` + `GITHUB_MANAGEMENT.md` now explicitly document where compiled Blender and test project live locally, and why they are not included in GitHub release assets.
 - **History:** Doc commits on feature/shadow-color squashed; vfx-rendering-branch history rewritten on 2026-02-22. Force-pushed to git.blender.org and GitHub snapshot.
 - **GitHub management:** Workflow documented in `.agent/GITHUB_MANAGEMENT.md` (snapshot mirroring + release via UI/gh).
 

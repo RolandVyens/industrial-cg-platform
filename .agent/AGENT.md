@@ -2,8 +2,8 @@
 
 > **Workspace:** `E:\blender_modify\blender`
 > **Build Output:** `E:\blender_modify\build_windows_x64_vc17_Release`
-> **Branch:** `task/deep-exr-memory`
-> **Last Updated:** 2026-02-22
+> **Branch:** `vfx-rendering-branch-github`
+> **Last Updated:** 2026-03-05
 
 ---
 
@@ -47,7 +47,7 @@
 
 ## Branch Strategy
 
-Current working branch: `task/deep-exr-memory` (Deep EXR memory efficiency).
+Current working branch: `vfx-rendering-branch-github` (GitHub release/publishing branch).
 
 ```
 vfx-rendering-branch (has deep EXR)
@@ -58,6 +58,16 @@ vfx-rendering-branch (has deep EXR)
 ```
 
 Each feature branch is created from and merged back to `vfx-rendering-branch`.
+
+---
+
+## Release Artifact Scope
+
+- **Compiled Blender binary (local):** `E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\blender.exe`
+- **Test project (local):** `D:\blender_projects\deep-branch-test.blend`
+- **GitHub release asset:** only the packaged install zip from `E:\blender_modify\release\<tag>.zip`
+
+Test `.blend` files are kept local and are not bundled in release zips by default.
 
 ---
 
