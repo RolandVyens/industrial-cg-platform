@@ -10,3 +10,4 @@
 1. Indirect-only object toggle (no direct lighting)
 2. Per-collection/object material override
 3. Per-light-group lobe AOVs (LPE foundation)
+4. cheap realtime environment volume
