@@ -804,6 +804,14 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
                        bool use_half_float,
                        bool alpha_only)
 {
+  if (!BLI_file_ensure_parent_dir_exists(filepath)) {
+    CLOG_ERROR(&LOG,
+               "Unable to create parent directory for deep EXR '%s': %s",
+               filepath,
+               std::strerror(errno));
+    return false;
+  }
+
   std::unique_ptr<OStream> file_stream;
 
   try {
