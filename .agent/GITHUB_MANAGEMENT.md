@@ -15,6 +15,17 @@
 - **Exclude:** build tree binaries, `.pdb`, local test scenes (for example `D:\blender_projects\deep-branch-test.blend`), and temporary debug scripts.
 - **Reason:** keep release artifacts reproducible and small; test projects stay local/internal unless explicitly requested.
 
+## Release Notes Format (Required)
+- Always write release notes in Markdown.
+- Keep notes short and explicit.
+- Default template:
+
+```markdown
+## Release Build
+
+Release build: multi-arch CUDA (`sm_75` / `sm_86` / `sm_89`).
+```
+
 ## Constraints (Important)
 - **Blender Projects is not maintained.** Do not push or mirror to `projects.blender.org`.
 - **No force git ops without approval.** Always ask before running `--force`.
@@ -89,12 +100,22 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
 # Verify auth
 & $gh auth status
 
+# Markdown release notes
+$notes = @"
+## Release Build
+
+Release build: multi-arch CUDA (`sm_75` / `sm_86` / `sm_89`).
+"@
+
 # Create release + upload zip
 & $gh release create $tag `
   "E:\blender_modify\release\$tag.zip" `
   --repo RolandVyens/blender-vfx `
   --title $tag `
-  --notes "Release build: multi-arch CUDA (sm_75/86/89)."
+  --notes $notes
+
+# Update existing release notes in Markdown
+& $gh release edit $tag --repo RolandVyens/blender-vfx --notes $notes
 
 # Post-release verification (required)
 & $gh release view $tag --repo RolandVyens/blender-vfx --json name,tagName,url,assets,body
