@@ -33,7 +33,7 @@
 - **Release published:** GitHub release updated on 2026-03-04 with tag/title `blender-vfx-5.2-2026-03-04` and asset `blender-vfx-5.2-2026-03-04.zip`.
 - **Release checksum:** `SHA256 9CD99213DD1E1FA459A4981E6F20BFAE5BC569C3252AD416A95017270E5920F3`.
 - **Release scope docs:** `AGENT.md` + `GITHUB_MANAGEMENT.md` now explicitly document where compiled Blender and test project live locally, and why they are not included in GitHub release assets.
-- **Release notes policy:** 2026-03-05 release notes were reset to user-preferred Markdown format (`## Release Build`), and `GITHUB_MANAGEMENT.md` now requires Markdown notes template for future releases.
+- **Release notes policy:** Release notes should be written in Markdown.
 - **History:** Doc commits on feature/shadow-color squashed; vfx-rendering-branch history rewritten on 2026-02-22. Force-pushed to git.blender.org and GitHub snapshot.
 - **GitHub management:** Workflow documented in `.agent/GITHUB_MANAGEMENT.md` (snapshot mirroring + release via UI/gh).
 

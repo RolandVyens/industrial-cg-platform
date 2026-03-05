@@ -17,14 +17,6 @@
 
 ## Release Notes Format (Required)
 - Always write release notes in Markdown.
-- Keep notes short and explicit.
-- Default template:
-
-```markdown
-## Release Build
-
-Release build: multi-arch CUDA (`sm_75` / `sm_86` / `sm_89`).
-```
 
 ## Constraints (Important)
 - **Blender Projects is not maintained.** Do not push or mirror to `projects.blender.org`.
@@ -101,11 +93,11 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
 & $gh auth status
 
 # Markdown release notes
-$notes = @"
+$notes = @'
 ## Release Build
 
-Release build: multi-arch CUDA (`sm_75` / `sm_86` / `sm_89`).
-"@
+Write the release summary here.
+'@
 
 # Create release + upload zip
 & $gh release create $tag `
