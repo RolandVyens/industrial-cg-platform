@@ -57,6 +57,12 @@ class CyclesRender(bpy.types.RenderEngine):
 
     # final render
     def update(self, data, depsgraph):
+        scene = getattr(depsgraph, "scene", None)
+        if scene is not None:
+            for view_layer in scene.view_layers:
+                view_layer.update_render_passes()
+            engine.prune_stale_lightgroup_split_file_outputs(scene)
+
         if not self.session:
             if self.is_preview:
                 cscene = bpy.context.scene.cycles

@@ -3,7 +3,7 @@
 > **Workspace:** `E:\blender_modify\blender`
 > **Build Output:** `E:\blender_modify\build_windows_x64_vc17_Release`
 > **Branch:** `vfx-rendering-branch-github`
-> **Last Updated:** 2026-03-05
+> **Last Updated:** 2026-03-13
 
 ---
 
@@ -22,6 +22,10 @@
 ```powershell
 # Incremental build
 & 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build 'E:\blender_modify\build_windows_x64_vc17_Release' --target blender --config Release
+
+# Feature/per-lightgroup-lobe-passes worktree build + runtime sync
+& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build 'E:\blender_modify\build_lobe_passes' --target blender --config Release -- /m:28
+& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build 'E:\blender_modify\build_lobe_passes' --target install --config Release -- /m:28
 ```
 
 > [!IMPORTANT]
@@ -41,6 +45,9 @@
 ```powershell
 # Compositor render (deep EXR + flat outputs)
 & 'E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\blender.exe' -b "D:\blender_projects\deep-branch-test.blend" -f 1
+
+# Light pass AOV validation scene (environment/lightgroup channels)
+& 'E:\blender_modify\build_lobe_passes\bin\Release\blender.exe' -b "D:\blender_projects\light-passes-test-v001.blend" -f 3
 ```
 
 ---
@@ -54,7 +61,7 @@ vfx-rendering-branch (has deep EXR)
 |-- feature/shadow-color          (Per-light shadow color)
 |-- feature/no-direct-lighting    (Indirect-only object toggle)
 |-- feature/collection-material-override  (Per-collection/object mat override)
-`-- feature/per-lightgroup-lobe-passes    (Per-LG lobe AOVs / LPE foundation)
+`-- feature/per-lightgroup-lobe-passes    (Per-LG light pass AOVs / LPE foundation)
 ```
 
 Each feature branch is created from and merged back to `vfx-rendering-branch`.

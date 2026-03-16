@@ -128,6 +128,43 @@ static void declare_extra_passes(NodeDeclarationBuilder &b,
   }
 }
 
+static bool is_lightgroup_split_output_identifier(const StringRef identifier,
+                                                  const ViewLayer *view_layer)
+{
+  if (view_layer == nullptr) {
+    return false;
+  }
+
+  const auto has_matching_lightgroup = [&](const StringRef prefix) {
+    if (!identifier.startswith(prefix)) {
+      return false;
+    }
+
+    const StringRef lightgroup_name = identifier.drop_prefix(prefix.size());
+    if (lightgroup_name.is_empty()) {
+      return false;
+    }
+
+    for (const ViewLayerLightgroup &lightgroup : view_layer->lightgroups) {
+      if (lightgroup_name == StringRef(lightgroup.name)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  return has_matching_lightgroup("diffuse_direct_") ||
+         has_matching_lightgroup("diffuse_indirect_") || has_matching_lightgroup("diffuse_") ||
+         has_matching_lightgroup("glossy_direct_") ||
+         has_matching_lightgroup("glossy_indirect_") || has_matching_lightgroup("glossy_") ||
+         has_matching_lightgroup("transmission_direct_") ||
+         has_matching_lightgroup("transmission_indirect_") ||
+         has_matching_lightgroup("transmission_") ||
+         has_matching_lightgroup("volume_direct_") ||
+         has_matching_lightgroup("volume_indirect_") || has_matching_lightgroup("volume_");
+}
+
 /* Declares outputs that are linked and existed in the previous state of the node but no longer
  * exist in the new state. The outputs are set as unavailable, so they are not accessible to the
  * user. This is useful to retain links if the user changed the render engine and thus the passes
@@ -140,6 +177,10 @@ static void declare_old_linked_outputs(NodeDeclarationBuilder &b)
   }
   const bNodeTree *node_tree = b.tree_or_null();
   const bNode *node = b.node_or_null();
+  const Scene *scene = reinterpret_cast<const Scene *>(node->id);
+  const ViewLayer *view_layer = scene ? static_cast<const ViewLayer *>(
+                                            BLI_findlink(&scene->view_layers, node->custom1)) :
+                                        nullptr;
   node_tree->ensure_topology_cache();
   for (const bNodeSocket *output : node->output_sockets()) {
     if (added_outputs_identifiers.contains(output->identifier)) {
@@ -148,6 +189,13 @@ static void declare_old_linked_outputs(NodeDeclarationBuilder &b)
     if (!output->is_directly_linked()) {
       continue;
     }
+
+    /* Do not preserve removed lightgroup split sockets.
+     * These are dynamic and can become invalid when a lightgroup becomes combined-only. */
+    if (is_lightgroup_split_output_identifier(output->identifier, view_layer)) {
+      continue;
+    }
+
     declare_existing_output(b, output).available(false);
   }
 }

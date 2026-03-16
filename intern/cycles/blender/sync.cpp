@@ -779,6 +779,105 @@ static Pass *pass_add(Scene *scene,
   return pass;
 }
 
+static string lightgroup_from_object_or_parent(const blender::Object *b_object)
+{
+  if (b_object == nullptr) {
+    return "";
+  }
+
+  string lightgroup = b_object->lightgroup ? b_object->lightgroup->name : "";
+  if (!lightgroup.empty()) {
+    return lightgroup;
+  }
+
+  blender::Object *b_parent = b_object->parent;
+  if (b_parent != nullptr) {
+    lightgroup = b_parent->lightgroup ? b_parent->lightgroup->name : "";
+  }
+
+  return lightgroup;
+}
+
+static unordered_set<string> get_splittable_lightgroups(blender::PointerRNA &view_layer_rna_ptr,
+                                                        blender::ViewLayer &b_view_layer,
+                                                        blender::Scene *b_scene)
+{
+  unordered_set<string> splittable_lightgroups;
+
+  blender::CollectionPropertyIterator rna_iter;
+  for (RNA_collection_begin(&view_layer_rna_ptr, "objects", &rna_iter); rna_iter.valid;
+       RNA_property_collection_next(&rna_iter))
+  {
+    blender::Object *b_object = rna_iter.ptr.data_as<blender::Object>();
+    if (b_object == nullptr || b_object->type != blender::OB_LAMP) {
+      continue;
+    }
+
+    const string lightgroup = lightgroup_from_object_or_parent(b_object);
+    if (!lightgroup.empty()) {
+      splittable_lightgroups.insert(lightgroup);
+    }
+  }
+  blender::RNA_property_collection_end(&rna_iter);
+
+  blender::World *b_world = b_view_layer.world_override ? b_view_layer.world_override :
+                                                          b_scene->world;
+  if (b_world && b_world->lightgroup) {
+    const string world_lightgroup = b_world->lightgroup->name;
+    if (!world_lightgroup.empty()) {
+      splittable_lightgroups.insert(world_lightgroup);
+    }
+  }
+
+  return splittable_lightgroups;
+}
+
+static bool pass_add_lightgroup_if_available(Scene *scene,
+                                             const unordered_set<string> &available_passes,
+                                             unordered_set<string> &expected_passes,
+                                             const string &name,
+                                             const PassType pass_type,
+                                             const blender::ViewLayerLightgroup &b_lightgroup)
+{
+  if (!available_passes.count(name)) {
+    return false;
+  }
+
+  Pass *pass = pass_add(scene, pass_type, name.c_str(), PassMode::NOISY);
+  pass->set_lightgroup(ustring(b_lightgroup.name));
+  expected_passes.insert(name);
+  return true;
+}
+
+struct LightgroupSplitPassDesc {
+  const char *property_name;
+  const char *pass_name_format;
+  PassType pass_type;
+};
+
+static const LightgroupSplitPassDesc lightgroup_split_passes[] = {
+    {"use_lightgroup_light_pass_aov_diffuse_combined", "diffuse_%s", PASS_DIFFUSE},
+    {"use_lightgroup_light_pass_aov_diffuse_direct", "diffuse_direct_%s", PASS_DIFFUSE_DIRECT},
+    {"use_lightgroup_light_pass_aov_diffuse_indirect",
+     "diffuse_indirect_%s",
+     PASS_DIFFUSE_INDIRECT},
+    {"use_lightgroup_light_pass_aov_glossy_combined", "glossy_%s", PASS_GLOSSY},
+    {"use_lightgroup_light_pass_aov_glossy_direct", "glossy_direct_%s", PASS_GLOSSY_DIRECT},
+    {"use_lightgroup_light_pass_aov_glossy_indirect",
+     "glossy_indirect_%s",
+     PASS_GLOSSY_INDIRECT},
+    {"use_lightgroup_light_pass_aov_transmission_combined", "transmission_%s", PASS_TRANSMISSION},
+    {"use_lightgroup_light_pass_aov_transmission_direct",
+     "transmission_direct_%s",
+     PASS_TRANSMISSION_DIRECT},
+    {"use_lightgroup_light_pass_aov_transmission_indirect",
+     "transmission_indirect_%s",
+     PASS_TRANSMISSION_INDIRECT},
+    {"use_lightgroup_light_pass_aov_volume_combined", "volume_%s", PASS_VOLUME},
+    {"use_lightgroup_light_pass_aov_volume_direct", "volume_direct_%s", PASS_VOLUME_DIRECT},
+    {"use_lightgroup_light_pass_aov_volume_indirect", "volume_indirect_%s", PASS_VOLUME_INDIRECT},
+};
+
 void BlenderSync::sync_render_passes(blender::RenderLayer &b_rlay,
                                      blender::ViewLayer &b_view_layer)
 {
@@ -805,6 +904,32 @@ void BlenderSync::sync_render_passes(blender::RenderLayer &b_rlay,
   }
   scene->film->set_cryptomatte_passes(cryptomatte_passes);
 
+  blender::PointerRNA view_layer_rna_ptr = RNA_pointer_create_id_subdata(
+      b_scene->id, blender::RNA_ViewLayer, &b_view_layer);
+  blender::PointerRNA crl = RNA_pointer_get(&view_layer_rna_ptr, "cycles");
+  const bool use_lightgroup_light_pass_aovs = get_boolean(crl, "use_lightgroup_light_pass_aovs");
+  vector<const LightgroupSplitPassDesc *> enabled_split_passes;
+  if (use_lightgroup_light_pass_aovs) {
+    enabled_split_passes.reserve(sizeof(lightgroup_split_passes) /
+                                 sizeof(lightgroup_split_passes[0]));
+    for (const LightgroupSplitPassDesc &split_pass : lightgroup_split_passes) {
+      if (get_boolean(crl, split_pass.property_name)) {
+        enabled_split_passes.push_back(&split_pass);
+      }
+    }
+  }
+  const bool use_split_lightgroup_passes = !enabled_split_passes.empty();
+
+  unordered_set<string> splittable_lightgroups;
+  if (use_split_lightgroup_passes) {
+    splittable_lightgroups = get_splittable_lightgroups(view_layer_rna_ptr, b_view_layer, b_scene);
+  }
+
+  unordered_set<string> available_passes;
+  for (blender::RenderPass &b_pass : b_rlay.passes) {
+    available_passes.insert(b_pass.name);
+  }
+
   unordered_set<string> expected_passes;
 
   /* Custom AOV passes. */
@@ -817,6 +942,10 @@ void BlenderSync::sync_render_passes(blender::RenderLayer &b_rlay,
     const PassType type = (b_aov.type == blender::AOV_TYPE_COLOR) ? PASS_AOV_COLOR :
                                                                     PASS_AOV_VALUE;
 
+    if (!available_passes.count(name)) {
+      continue;
+    }
+
     pass_add(scene, type, name.c_str());
     expected_passes.insert(name);
   }
@@ -824,10 +953,30 @@ void BlenderSync::sync_render_passes(blender::RenderLayer &b_rlay,
   /* Light Group passes. */
   for (blender::ViewLayerLightgroup &b_lightgroup : b_view_layer.lightgroups) {
     const string name = string_printf("Combined_%s", b_lightgroup.name);
+    if (!available_passes.count(name)) {
+      continue;
+    }
 
     Pass *pass = pass_add(scene, PASS_COMBINED, name.c_str(), PassMode::NOISY);
     pass->set_lightgroup(ustring(b_lightgroup.name));
     expected_passes.insert(name);
+  }
+
+  if (use_split_lightgroup_passes) {
+    for (const LightgroupSplitPassDesc *split_pass : enabled_split_passes) {
+      for (blender::ViewLayerLightgroup &b_lightgroup : b_view_layer.lightgroups) {
+        if (!splittable_lightgroups.count(b_lightgroup.name)) {
+          continue;
+        }
+        pass_add_lightgroup_if_available(scene,
+                                         available_passes,
+                                         expected_passes,
+                                         string_printf(split_pass->pass_name_format,
+                                                       b_lightgroup.name),
+                                         split_pass->pass_type,
+                                         b_lightgroup);
+      }
+    }
   }
 
   /* Sync the passes that were defined in engine.py. */

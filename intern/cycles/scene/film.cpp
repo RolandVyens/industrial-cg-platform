@@ -197,6 +197,18 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->pass_volume_transmit_denoised = PASS_UNUSED;
   kfilm->pass_volume_majorant = PASS_UNUSED;
   kfilm->pass_lightgroup = PASS_UNUSED;
+  kfilm->pass_lightgroup_diffuse = PASS_UNUSED;
+  kfilm->pass_lightgroup_diffuse_direct = PASS_UNUSED;
+  kfilm->pass_lightgroup_diffuse_indirect = PASS_UNUSED;
+  kfilm->pass_lightgroup_glossy = PASS_UNUSED;
+  kfilm->pass_lightgroup_glossy_direct = PASS_UNUSED;
+  kfilm->pass_lightgroup_glossy_indirect = PASS_UNUSED;
+  kfilm->pass_lightgroup_transmission = PASS_UNUSED;
+  kfilm->pass_lightgroup_transmission_direct = PASS_UNUSED;
+  kfilm->pass_lightgroup_transmission_indirect = PASS_UNUSED;
+  kfilm->pass_lightgroup_volume = PASS_UNUSED;
+  kfilm->pass_lightgroup_volume_direct = PASS_UNUSED;
+  kfilm->pass_lightgroup_volume_indirect = PASS_UNUSED;
 
   /* Mark passes as unused so that the kernel knows the pass is inaccessible. */
   kfilm->pass_denoising_normal = PASS_UNUSED;
@@ -216,7 +228,6 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   bool have_cryptomatte = false;
   bool have_aov_color = false;
   bool have_aov_value = false;
-  bool have_lightgroup = false;
 
   for (size_t i = 0; i < scene->passes.size(); i++) {
     const Pass *pass = scene->passes[i];
@@ -258,10 +269,56 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
     }
 
     if (!pass->get_lightgroup().empty()) {
-      if (!have_lightgroup) {
-        kfilm->pass_lightgroup = kfilm->pass_stride;
-        have_lightgroup = true;
+      int *lightgroup_pass_offset = nullptr;
+
+      switch (pass->get_type()) {
+        case PASS_COMBINED:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup;
+          break;
+        case PASS_DIFFUSE:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse;
+          break;
+        case PASS_DIFFUSE_DIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse_direct;
+          break;
+        case PASS_DIFFUSE_INDIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse_indirect;
+          break;
+        case PASS_GLOSSY:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy;
+          break;
+        case PASS_GLOSSY_DIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy_direct;
+          break;
+        case PASS_GLOSSY_INDIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy_indirect;
+          break;
+        case PASS_TRANSMISSION:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission;
+          break;
+        case PASS_TRANSMISSION_DIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission_direct;
+          break;
+        case PASS_TRANSMISSION_INDIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission_indirect;
+          break;
+        case PASS_VOLUME:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume;
+          break;
+        case PASS_VOLUME_DIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume_direct;
+          break;
+        case PASS_VOLUME_INDIRECT:
+          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume_indirect;
+          break;
+        default:
+          break;
       }
+
+      if (lightgroup_pass_offset != nullptr && *lightgroup_pass_offset == PASS_UNUSED) {
+        *lightgroup_pass_offset = kfilm->pass_stride;
+      }
+
       kfilm->pass_stride += pass->get_info().num_components;
       continue;
     }

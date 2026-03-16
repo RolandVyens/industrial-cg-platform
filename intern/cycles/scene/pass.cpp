@@ -394,6 +394,32 @@ PassInfo Pass::get_info(const PassType type,
       break;
   }
 
+  /* Lightgroup light pass AOVs are written directly as raw sums. */
+  if (is_lightgroup) {
+    switch (type) {
+      case PASS_DIFFUSE:
+      case PASS_DIFFUSE_DIRECT:
+      case PASS_DIFFUSE_INDIRECT:
+      case PASS_GLOSSY:
+      case PASS_GLOSSY_DIRECT:
+      case PASS_GLOSSY_INDIRECT:
+      case PASS_TRANSMISSION:
+      case PASS_TRANSMISSION_DIRECT:
+      case PASS_TRANSMISSION_INDIRECT:
+      case PASS_VOLUME:
+      case PASS_VOLUME_DIRECT:
+      case PASS_VOLUME_INDIRECT:
+        pass_info.is_written = true;
+        pass_info.divide_type = PASS_NONE;
+        pass_info.direct_type = PASS_NONE;
+        pass_info.indirect_type = PASS_NONE;
+        pass_info.use_compositing = false;
+        break;
+      default:
+        break;
+    }
+  }
+
   return pass_info;
 }
 

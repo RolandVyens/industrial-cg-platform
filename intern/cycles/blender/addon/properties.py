@@ -376,6 +376,55 @@ def update_pause(self, context):
     context.area.tag_redraw()
 
 
+def _lightgroup_light_pass_aov_keys(lobe):
+    return (
+        f"use_lightgroup_light_pass_aov_{lobe}_combined",
+        f"use_lightgroup_light_pass_aov_{lobe}_direct",
+        f"use_lightgroup_light_pass_aov_{lobe}_indirect",
+    )
+
+
+def _lightgroup_light_pass_aov_get_all(self, lobe):
+    return all(getattr(self, key) for key in _lightgroup_light_pass_aov_keys(lobe))
+
+
+def _lightgroup_light_pass_aov_set_all(self, lobe, value):
+    for key in _lightgroup_light_pass_aov_keys(lobe):
+        setattr(self, key, value)
+
+
+def _lightgroup_light_pass_aov_get_diffuse_all(self):
+    return _lightgroup_light_pass_aov_get_all(self, "diffuse")
+
+
+def _lightgroup_light_pass_aov_set_diffuse_all(self, value):
+    _lightgroup_light_pass_aov_set_all(self, "diffuse", value)
+
+
+def _lightgroup_light_pass_aov_get_glossy_all(self):
+    return _lightgroup_light_pass_aov_get_all(self, "glossy")
+
+
+def _lightgroup_light_pass_aov_set_glossy_all(self, value):
+    _lightgroup_light_pass_aov_set_all(self, "glossy", value)
+
+
+def _lightgroup_light_pass_aov_get_transmission_all(self):
+    return _lightgroup_light_pass_aov_get_all(self, "transmission")
+
+
+def _lightgroup_light_pass_aov_set_transmission_all(self, value):
+    _lightgroup_light_pass_aov_set_all(self, "transmission", value)
+
+
+def _lightgroup_light_pass_aov_get_volume_all(self):
+    return _lightgroup_light_pass_aov_get_all(self, "volume")
+
+
+def _lightgroup_light_pass_aov_set_volume_all(self, value):
+    _lightgroup_light_pass_aov_set_all(self, "volume", value)
+
+
 class CyclesRenderSettings(bpy.types.PropertyGroup):
     __slots__ = ()
 
@@ -1556,6 +1605,108 @@ class CyclesRenderLayerSettings(bpy.types.PropertyGroup):
     use_pass_volume_majorant: BoolProperty(
         name="Volume Majorant",
         description="Majorant transmittance of the volume",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aovs: BoolProperty(
+        name="Light Group Light Pass AOVs",
+        description="Deliver per-light-group light pass AOVs",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_diffuse_all: BoolProperty(
+        name="All",
+        description="Enable all diffuse per-light-group light pass AOV variants",
+        get=_lightgroup_light_pass_aov_get_diffuse_all,
+        set=_lightgroup_light_pass_aov_set_diffuse_all,
+    )
+    use_lightgroup_light_pass_aov_diffuse_combined: BoolProperty(
+        name="Combined",
+        description="Deliver diffuse per-light-group combined light pass AOV",
+        default=True,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_diffuse_direct: BoolProperty(
+        name="Direct",
+        description="Deliver diffuse per-light-group direct light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_diffuse_indirect: BoolProperty(
+        name="Indirect",
+        description="Deliver diffuse per-light-group indirect light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_glossy_all: BoolProperty(
+        name="All",
+        description="Enable all glossy per-light-group light pass AOV variants",
+        get=_lightgroup_light_pass_aov_get_glossy_all,
+        set=_lightgroup_light_pass_aov_set_glossy_all,
+    )
+    use_lightgroup_light_pass_aov_glossy_combined: BoolProperty(
+        name="Combined",
+        description="Deliver glossy per-light-group combined light pass AOV",
+        default=True,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_glossy_direct: BoolProperty(
+        name="Direct",
+        description="Deliver glossy per-light-group direct light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_glossy_indirect: BoolProperty(
+        name="Indirect",
+        description="Deliver glossy per-light-group indirect light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_transmission_all: BoolProperty(
+        name="All",
+        description="Enable all transmission per-light-group light pass AOV variants",
+        get=_lightgroup_light_pass_aov_get_transmission_all,
+        set=_lightgroup_light_pass_aov_set_transmission_all,
+    )
+    use_lightgroup_light_pass_aov_transmission_combined: BoolProperty(
+        name="Combined",
+        description="Deliver transmission per-light-group combined light pass AOV",
+        default=True,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_transmission_direct: BoolProperty(
+        name="Direct",
+        description="Deliver transmission per-light-group direct light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_transmission_indirect: BoolProperty(
+        name="Indirect",
+        description="Deliver transmission per-light-group indirect light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_volume_all: BoolProperty(
+        name="All",
+        description="Enable all volume per-light-group light pass AOV variants",
+        get=_lightgroup_light_pass_aov_get_volume_all,
+        set=_lightgroup_light_pass_aov_set_volume_all,
+    )
+    use_lightgroup_light_pass_aov_volume_combined: BoolProperty(
+        name="Combined",
+        description="Deliver volume per-light-group combined light pass AOV",
+        default=True,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_volume_direct: BoolProperty(
+        name="Direct",
+        description="Deliver volume per-light-group direct light pass AOV",
+        default=False,
+        update=update_render_passes,
+    )
+    use_lightgroup_light_pass_aov_volume_indirect: BoolProperty(
+        name="Indirect",
+        description="Deliver volume per-light-group indirect light pass AOV",
         default=False,
         update=update_render_passes,
     )

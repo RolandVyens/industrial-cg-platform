@@ -2,7 +2,7 @@
 
 > **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-03-05
+> **Last Updated:** 2026-03-13
 
 ---
 
@@ -14,11 +14,65 @@
   Compositor deep EXRs now large (e.g., `test_compoutput_deep0001.exr` ~584 MB).
 - **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged.
 - **Working branch:** `vfx-rendering-branch-github`
-- **Next up:** Feature 4 (per-lightgroup lobe AOVs) when ready; dedicated LPE plan added to `VFX_RENDERING_PLAN.md`.
+- **Feature 4:** Phase 1 implementation started on `feature/per-lightgroup-lobe-passes`.
+- **Branch sync:** `feature/per-lightgroup-lobe-passes` re-synced to `vfx-rendering-branch-github` on 2026-03-09 after history rewrite. Backup branch: `backup/feature-per-lightgroup-lobe-passes-pre-resync-20260309`.
+- **Validation (Feature 4 WIP):** `python -m py_compile` passed for Cycles add-on files; full `blender` target build completed in `E:\blender_modify\build_lobe_passes` on 2026-03-09 (`blender.exe` timestamp 14:05:21).
+- **Runtime package:** `install` target run for `build_lobe_passes` on 2026-03-09 to populate `bin\Release\5.2` scripts/runtime files. Verified `ViewLayer.cycles.use_lightgroup_light_pass_aovs` is present in background Python check.
+- **Naming update:** Feature 4 UI/props wording updated from "Lobe Passes" to "Light Pass AOVs" on 2026-03-09.
+- **Feature 4 fix (2026-03-11):** Light-group direct/indirect diffuse/glossy/transmission/volume
+  pass metadata now forces raw-sum behavior (`divide_type = PASS_NONE`,
+  `use_compositing = false`) to fix over-bright direct/indirect channels.
+- **Feature 4 validation (2026-03-11):** Using
+  `D:\blender_projects\light-passes-test-v001.blend` frame 3 output EXRs,
+  `RGBA_env.rgb ~= diffuse+glossy+transmission+volume` and
+  `RGBA_env.rgb ~= sum(direct+indirect)` within small floating-point tolerance
+  (RGB max diff ~0.0029-0.0070 across tested view layers). Alpha channels are not additive.
+- **Feature 4 full-res validation (2026-03-11):** Re-ran at 1920x1080, 32 samples (frame 5).
+  RGB equations remain consistent; worst absolute diff ~0.0588 and worst relative diff <0.001.
+- **Feature 4 policy update (2026-03-12):** Emission lightgroup contributions are kept in
+  `Combined_<lg>` only and are no longer split into diffuse/glossy/transmission/volume
+  light pass AOV channels.
+- **Validation (2026-03-12):** Rebuilt `build_lobe_passes` (`bf_intern_cycles` + `blender`) and
+  rendered `D:\blender_projects\light-passes-test-v001.blend` frame 6 successfully.
+- **Feature 4 medium optimization rollout (2026-03-13):**
+  - `engine.py`: single-pass lightgroup classification + global early-outs for full Light Pass AOV
+    detection path.
+  - Split eligibility rule: only lightgroups used by LIGHT objects or active world are splittable.
+    All groups always keep `Combined_<lg>`.
+  - `sync.cpp`: precomputed `available_passes`, set-based pass gating, and split-pass sync aligned
+    strictly to registered pass names.
+  - `node_composite_render_layers.cc`: removed legacy preservation for deleted lightgroup split
+    sockets.
+  - File Output stale split cleanup now removes stale `file_output_items` (and fallback sockets),
+    triggered during pass registration and render update.
+- **Feature 4 validation (2026-03-13):**
+  - Strict build + install completed in `E:\blender_modify\build_lobe_passes`.
+  - `check_registered_passes.py`: emissive group only registers `Combined_emissive`; splittable
+    env/key groups keep full split channels.
+  - Single-render EXR check (frame 9): emissive subimages contain only `RGBA_emissive`
+    (no emissive split subimages remain).
+  - `update_render_passes` micro-benchmark confirms early-outs:
+    `split_off` ~0.061 ms, `split_on_lobes_off` ~0.067 ms, `split_on_lobes_on` ~0.137 ms.
+- **Feature 4 review follow-up (2026-03-13):**
+  - `sync.cpp`: replaced 12 duplicated split-pass blocks with a descriptor table loop and enabled
+    pass list, reducing maintenance risk and avoiding unnecessary RNA reads when global toggle is off.
+  - `node_composite_render_layers.cc`: tightened split-socket identification to require a known
+    lightgroup suffix, reducing false positives for similarly named non-lightgroup outputs.
+  - `engine.py`: added compatibility fallbacks for `scene.node_tree` and missing
+    `view_layer.world_override`.
+  - `light_passes.h`: added pass-availability guards before lightgroup split writes in direct-light
+    paths to reduce redundant per-sample checks when splits are disabled.
+  - Validation re-run: `blender` + `install` builds succeed; pass registration and EXR emissive
+    channel checks remain correct.
 - **Docs:** MoonRay LPE/AOV code report added at `.agent/MOONRAY_LPE_REPORT.md` (Cycles LPE reference).
 - **Docs:** Added Phase 1/Phase 2 LPE-ready strategy notes to Feature 4 in `VFX_RENDERING_PLAN.md`.
 - **Docs:** Added Phase 1 LPE-ready checklist under Feature 4 in `VFX_RENDERING_PLAN.md`.
 - **Docs:** Added Phase 1/Phase 2 acceptance criteria under Feature 4 in `VFX_RENDERING_PLAN.md`.
+- **Docs:** Added explicit Light Pass AOV formula/equation list in
+  `.agent/FEATURE_4_LIGHTGROUP_LOBE_PASSES.md`.
+- **Docs:** Added ray-event-level accumulation formulas and edge-case notes
+  (surface/volume, direct/indirect, camera-visible background/emission) in
+  `.agent/FEATURE_4_LIGHTGROUP_LOBE_PASSES.md`.
 - **Docs:** Added Feature 5 (World Environment Fog, aiFog-like) to `VFX_RENDERING_PLAN.md`.
 - **Docs:** Moved Feature 4 details into `.agent/FEATURE_4_LIGHTGROUP_LOBE_PASSES.md` and left link in `VFX_RENDERING_PLAN.md`.
 - **Docs:** Feature 5 scope clarified: environment fog is direct-light only (no indirect/shadows), and optional fog AOV split should reuse volume AOV.
@@ -139,13 +193,22 @@ See `VFX_RENDERING_PLAN.md` for detailed implementation plans.
 - **Status:** Not started
 - `mat_override` on LayerCollection and Base. Priority: Object > Collection > ViewLayer.
 
-### Feature 4: Per-Light-Group Lobe AOVs (LPE Foundation)
+### Feature 4: Per-Light-Group Light Pass AOVs (LPE Foundation)
 - **Branch:** `feature/per-lightgroup-lobe-passes`
 - **Difficulty:** Medium-High
-- **Status:** Not started
-- Per-lightgroup diffuse/glossy/transmission/volume passes with combined + direct/indirect variants.
+- **Status:** In progress (Phase 1 partial)
+- Per-lightgroup diffuse/glossy/transmission/volume light pass AOVs with combined + direct/indirect variants.
   Naming planned as `diffuse_<lg>`, `diffuse_direct_<lg>`, `diffuse_indirect_<lg>` (same pattern for other lobes).
   Dedicated LPE plan documented in `VFX_RENDERING_PLAN.md`.
+- **Implemented (2026-03-09):**
+  - KernelFilm offsets for per-lightgroup combined + direct/indirect light pass AOVs.
+  - Film pass allocation for per-lightgroup light pass AOV types.
+  - Kernel accumulation for direct-light and emission/background light pass AOV writes.
+  - Cycles add-on toggles + Light Groups UI sub-panel for light pass AOVs.
+  - Pass registration in add-on + Cycles sync with per-lightgroup pass tagging.
+- **Fixed (2026-03-11):**
+  - Light-group direct/indirect pass metadata now uses raw sums (no albedo divide/compositing),
+    so `RGBA_env.rgb`, lobe-combined sum, and direct+indirect sum are consistent.
 
 ---
 

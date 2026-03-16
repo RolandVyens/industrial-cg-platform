@@ -159,6 +159,18 @@ ccl_device_forceinline void film_clamp_light(KernelGlobals kg,
  * Adaptive sampling.
  */
 
+ccl_device_inline void film_write_lightgroup_pass(ccl_global float *ccl_restrict buffer,
+                                                  const int pass_offset,
+                                                  const int lightgroup,
+                                                  const Spectrum contribution)
+{
+  if (lightgroup == LIGHTGROUP_NONE || pass_offset == PASS_UNUSED) {
+    return;
+  }
+
+  film_write_pass_spectrum(buffer + pass_offset + 3 * lightgroup, contribution);
+}
+
 ccl_device_inline int film_write_sample(KernelGlobals kg,
                                         ConstIntegratorState state,
                                         ccl_global float *ccl_restrict render_buffer,
@@ -433,11 +445,9 @@ ccl_device_inline void film_write_emission_or_background_pass(
 #  endif /* __DENOISING_FEATURES__ */
 
   const bool is_shadowcatcher = (path_flag & PATH_RAY_SHADOW_CATCHER_HIT) != 0;
-  if (!is_shadowcatcher && lightgroup != LIGHTGROUP_NONE &&
-      kernel_data.film.pass_lightgroup != PASS_UNUSED)
-  {
-    film_write_pass_spectrum(buffer + kernel_data.film.pass_lightgroup + 3 * lightgroup,
-                             contribution);
+  if (!is_shadowcatcher) {
+    film_write_lightgroup_pass(
+        buffer, kernel_data.film.pass_lightgroup, lightgroup, contribution);
   }
 
   if (!(path_flag & PATH_RAY_ANY_PASS)) {
@@ -450,45 +460,85 @@ ccl_device_inline void film_write_emission_or_background_pass(
     return;
   }
   else if (kernel_data.kernel_features & KERNEL_FEATURE_LIGHT_PASSES) {
+    /* Keep emission events in Combined_<lg> only: do not split into lightgroup lobe channels. */
+    const bool split_lightgroup_lobes = (pass != kernel_data.film.pass_emission);
+
     if (path_flag & PATH_RAY_SURFACE_PASS) {
       /* Indirectly visible through reflection. */
       const Spectrum diffuse_weight = INTEGRATOR_STATE(state, path, pass_diffuse_weight);
       const Spectrum glossy_weight = INTEGRATOR_STATE(state, path, pass_glossy_weight);
+      const Spectrum transmission_weight = one_spectrum() - diffuse_weight - glossy_weight;
+      const Spectrum diffuse_contribution = diffuse_weight * contribution;
+      const Spectrum glossy_contribution = glossy_weight * contribution;
+      const Spectrum transmission_contribution = transmission_weight * contribution;
+      const bool is_direct = (INTEGRATOR_STATE(state, path, bounce) == 1);
 
       /* Glossy */
-      const int glossy_pass_offset = ((INTEGRATOR_STATE(state, path, bounce) == 1) ?
-                                          kernel_data.film.pass_glossy_direct :
-                                          kernel_data.film.pass_glossy_indirect);
+      const int glossy_pass_offset = is_direct ? kernel_data.film.pass_glossy_direct :
+                                                 kernel_data.film.pass_glossy_indirect;
       if (glossy_pass_offset != PASS_UNUSED) {
-        film_write_pass_spectrum(buffer + glossy_pass_offset, glossy_weight * contribution);
+        film_write_pass_spectrum(buffer + glossy_pass_offset, glossy_contribution);
       }
 
       /* Transmission */
-      const int transmission_pass_offset = ((INTEGRATOR_STATE(state, path, bounce) == 1) ?
-                                                kernel_data.film.pass_transmission_direct :
-                                                kernel_data.film.pass_transmission_indirect);
+      const int transmission_pass_offset = is_direct ? kernel_data.film.pass_transmission_direct :
+                                                       kernel_data.film
+                                                           .pass_transmission_indirect;
 
       if (transmission_pass_offset != PASS_UNUSED) {
-        /* Transmission is what remains if not diffuse and glossy, not stored explicitly to save
-         * GPU memory. */
-        const Spectrum transmission_weight = one_spectrum() - diffuse_weight - glossy_weight;
-        film_write_pass_spectrum(buffer + transmission_pass_offset,
-                                 transmission_weight * contribution);
+        film_write_pass_spectrum(buffer + transmission_pass_offset, transmission_contribution);
+      }
+
+      if (split_lightgroup_lobes) {
+        film_write_lightgroup_pass(
+            buffer, kernel_data.film.pass_lightgroup_diffuse, lightgroup, diffuse_contribution);
+        film_write_lightgroup_pass(
+            buffer, kernel_data.film.pass_lightgroup_glossy, lightgroup, glossy_contribution);
+        film_write_lightgroup_pass(buffer,
+                                   kernel_data.film.pass_lightgroup_transmission,
+                                   lightgroup,
+                                   transmission_contribution);
+        film_write_lightgroup_pass(buffer,
+                                   is_direct ? kernel_data.film.pass_lightgroup_diffuse_direct :
+                                               kernel_data.film.pass_lightgroup_diffuse_indirect,
+                                   lightgroup,
+                                   diffuse_contribution);
+        film_write_lightgroup_pass(buffer,
+                                   is_direct ? kernel_data.film.pass_lightgroup_glossy_direct :
+                                               kernel_data.film.pass_lightgroup_glossy_indirect,
+                                   lightgroup,
+                                   glossy_contribution);
+        film_write_lightgroup_pass(
+            buffer,
+            is_direct ? kernel_data.film.pass_lightgroup_transmission_direct :
+                        kernel_data.film.pass_lightgroup_transmission_indirect,
+            lightgroup,
+            transmission_contribution);
       }
 
       /* Reconstruct diffuse subset of throughput. */
-      pass_offset = (INTEGRATOR_STATE(state, path, bounce) == 1) ?
-                        kernel_data.film.pass_diffuse_direct :
-                        kernel_data.film.pass_diffuse_indirect;
+      pass_offset = is_direct ? kernel_data.film.pass_diffuse_direct :
+                                kernel_data.film.pass_diffuse_indirect;
       if (pass_offset != PASS_UNUSED) {
-        contribution *= diffuse_weight;
+        contribution = diffuse_contribution;
       }
     }
     else if (path_flag & PATH_RAY_VOLUME_PASS) {
       /* Indirectly visible through volume. */
-      pass_offset = (INTEGRATOR_STATE(state, path, bounce) == 1) ?
-                        kernel_data.film.pass_volume_direct :
-                        kernel_data.film.pass_volume_indirect;
+      const bool is_direct = (INTEGRATOR_STATE(state, path, bounce) == 1);
+      pass_offset = is_direct ? kernel_data.film.pass_volume_direct :
+                                kernel_data.film.pass_volume_indirect;
+
+      if (split_lightgroup_lobes) {
+        film_write_lightgroup_pass(
+            buffer, kernel_data.film.pass_lightgroup_volume, lightgroup, contribution);
+        film_write_lightgroup_pass(
+            buffer,
+            is_direct ? kernel_data.film.pass_lightgroup_volume_direct :
+                        kernel_data.film.pass_lightgroup_volume_indirect,
+            lightgroup,
+            contribution);
+      }
     }
   }
 
@@ -553,10 +603,7 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
 
     /* Write lightgroup pass. LIGHTGROUP_NONE is ~0 so decode from unsigned to signed */
     const int lightgroup = (int)(INTEGRATOR_STATE(state, shadow_path, lightgroup)) - 1;
-    if (lightgroup != LIGHTGROUP_NONE && kernel_data.film.pass_lightgroup != PASS_UNUSED) {
-      film_write_pass_spectrum(buffer + kernel_data.film.pass_lightgroup + 3 * lightgroup,
-                               contribution);
-    }
+    film_write_lightgroup_pass(buffer, kernel_data.film.pass_lightgroup, lightgroup, contribution);
 
     if (kernel_data.kernel_features & KERNEL_FEATURE_LIGHT_PASSES) {
       int pass_offset = PASS_UNUSED;
@@ -565,41 +612,93 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
         /* Indirectly visible through reflection. */
         const Spectrum diffuse_weight = INTEGRATOR_STATE(state, shadow_path, pass_diffuse_weight);
         const Spectrum glossy_weight = INTEGRATOR_STATE(state, shadow_path, pass_glossy_weight);
+        const Spectrum transmission_weight = one_spectrum() - diffuse_weight - glossy_weight;
+        const Spectrum diffuse_contribution = diffuse_weight * contribution;
+        const Spectrum glossy_contribution = glossy_weight * contribution;
+        const Spectrum transmission_contribution = transmission_weight * contribution;
+        const bool is_direct = (INTEGRATOR_STATE(state, shadow_path, bounce) == 0);
 
         /* Glossy */
-        const int glossy_pass_offset = ((INTEGRATOR_STATE(state, shadow_path, bounce) == 0) ?
-                                            kernel_data.film.pass_glossy_direct :
-                                            kernel_data.film.pass_glossy_indirect);
+        const int glossy_pass_offset = is_direct ? kernel_data.film.pass_glossy_direct :
+                                                   kernel_data.film.pass_glossy_indirect;
         if (glossy_pass_offset != PASS_UNUSED) {
-          film_write_pass_spectrum(buffer + glossy_pass_offset, glossy_weight * contribution);
+          film_write_pass_spectrum(buffer + glossy_pass_offset, glossy_contribution);
         }
 
         /* Transmission */
-        const int transmission_pass_offset = ((INTEGRATOR_STATE(state, shadow_path, bounce) == 0) ?
-                                                  kernel_data.film.pass_transmission_direct :
-                                                  kernel_data.film.pass_transmission_indirect);
+        const int transmission_pass_offset =
+            is_direct ? kernel_data.film.pass_transmission_direct :
+                        kernel_data.film.pass_transmission_indirect;
 
         if (transmission_pass_offset != PASS_UNUSED) {
-          /* Transmission is what remains if not diffuse and glossy, not stored explicitly to save
-           * GPU memory. */
-          const Spectrum transmission_weight = one_spectrum() - diffuse_weight - glossy_weight;
-          film_write_pass_spectrum(buffer + transmission_pass_offset,
-                                   transmission_weight * contribution);
+          film_write_pass_spectrum(buffer + transmission_pass_offset, transmission_contribution);
+        }
+
+        const bool has_lightgroup_surface_passes =
+            kernel_data.film.pass_lightgroup_diffuse != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_glossy != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_transmission != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_diffuse_direct != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_diffuse_indirect != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_glossy_direct != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_glossy_indirect != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_transmission_direct != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_transmission_indirect != PASS_UNUSED;
+        if (has_lightgroup_surface_passes) {
+          film_write_lightgroup_pass(
+              buffer, kernel_data.film.pass_lightgroup_diffuse, lightgroup, diffuse_contribution);
+          film_write_lightgroup_pass(
+              buffer, kernel_data.film.pass_lightgroup_glossy, lightgroup, glossy_contribution);
+          film_write_lightgroup_pass(buffer,
+                                     kernel_data.film.pass_lightgroup_transmission,
+                                     lightgroup,
+                                     transmission_contribution);
+          film_write_lightgroup_pass(
+              buffer,
+              is_direct ? kernel_data.film.pass_lightgroup_diffuse_direct :
+                          kernel_data.film.pass_lightgroup_diffuse_indirect,
+              lightgroup,
+              diffuse_contribution);
+          film_write_lightgroup_pass(
+              buffer,
+              is_direct ? kernel_data.film.pass_lightgroup_glossy_direct :
+                          kernel_data.film.pass_lightgroup_glossy_indirect,
+              lightgroup,
+              glossy_contribution);
+          film_write_lightgroup_pass(
+              buffer,
+              is_direct ? kernel_data.film.pass_lightgroup_transmission_direct :
+                          kernel_data.film.pass_lightgroup_transmission_indirect,
+              lightgroup,
+              transmission_contribution);
         }
 
         /* Reconstruct diffuse subset of throughput. */
-        pass_offset = (INTEGRATOR_STATE(state, shadow_path, bounce) == 0) ?
-                          kernel_data.film.pass_diffuse_direct :
-                          kernel_data.film.pass_diffuse_indirect;
+        pass_offset = is_direct ? kernel_data.film.pass_diffuse_direct :
+                                  kernel_data.film.pass_diffuse_indirect;
         if (pass_offset != PASS_UNUSED) {
-          contribution *= diffuse_weight;
+          contribution = diffuse_contribution;
         }
       }
       else if (path_flag & PATH_RAY_VOLUME_PASS) {
         /* Indirectly visible through volume. */
-        pass_offset = (INTEGRATOR_STATE(state, shadow_path, bounce) == 0) ?
-                          kernel_data.film.pass_volume_direct :
-                          kernel_data.film.pass_volume_indirect;
+        const bool is_direct = (INTEGRATOR_STATE(state, shadow_path, bounce) == 0);
+        pass_offset = is_direct ? kernel_data.film.pass_volume_direct :
+                                  kernel_data.film.pass_volume_indirect;
+
+        if (kernel_data.film.pass_lightgroup_volume != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_volume_direct != PASS_UNUSED ||
+            kernel_data.film.pass_lightgroup_volume_indirect != PASS_UNUSED)
+        {
+          film_write_lightgroup_pass(
+              buffer, kernel_data.film.pass_lightgroup_volume, lightgroup, contribution);
+          film_write_lightgroup_pass(
+              buffer,
+              is_direct ? kernel_data.film.pass_lightgroup_volume_direct :
+                          kernel_data.film.pass_lightgroup_volume_indirect,
+              lightgroup,
+              contribution);
+        }
       }
 
       /* Single write call for GPU coherence. */
