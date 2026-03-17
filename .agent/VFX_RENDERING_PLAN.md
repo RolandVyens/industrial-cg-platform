@@ -15,6 +15,18 @@ not need it.
 - Clamp auto tile size when `film.use_deep_output` is on and deep buffers exceed budget.
 - Budget: user setting `deep_tile_budget_mb` (default 1024 MB), per device, 0 disables clamp.
 - Skip `RenderResult.deep_data` population unless compositor has a Deep EXR File Output node.
+- Deep EXR surface edge follow-up (2026-03-16): preserve opaque surface duplicates through the deep
+  merge stage and reconstruct conditional edge alpha from sorted hard-surface hits before export, so
+  foreground edge samples no longer stay solid `1.0` in Deep EXR outputs.
+- Deep EXR single-surface follow-up (2026-03-16): use internal tiled `PASS_SAMPLE_COUNT` capture
+  for multi-depth hard-surface reconstruction, but when preserved opaque duplicates still collapse
+  to one depth group, assign the final deep alpha directly from flattened beauty alpha to keep
+  single-surface AA edges consistent with the flat EXR.
+- Deep EXR cleanup sweep (2026-03-17): follow-up code review items were applied in
+  `feature/deep-exr-edge-alpha-fix`, including `size_t` sample offsets, cache pixel-count overflow
+  cleanup, unified pixel-population helper flow, mutable deep-buffer accessor rename cleanup,
+  `deep_compute_buffer_bytes()` declaration/definition matching, and normalization of mixed EOLs
+  across all modified tracked files in the fix worktree.
 
 **Features sorted by development difficulty (easiest first):**
 1. Per-Light Shadow Color
@@ -214,7 +226,8 @@ overridden objects/materials). Ensure overrides work in both local and linked da
 
 **Branch:** `feature/per-lightgroup-lobe-passes`
 **Difficulty:** Medium-High
-**Status:** In progress (Phase 1 core implemented, channel-consistency fix on 2026-03-11)
+**Status:** Phase 1 complete. Merged into `vfx-rendering-branch-github` and cherry-picked into
+`vfx-rendering-branch` on 2026-03-16.
 **Goal:** Render per-lightgroup light pass AOVs with **combined**, **direct**, and **indirect** components.
 Foundation for future LPE support; combined light pass AOVs are **raw sums** (no albedo divide).
 
@@ -263,6 +276,14 @@ Progress snapshot (2026-03-13):
     - Python world/node-tree fallback hardening,
     - direct-light split-write availability guards added.
 
+
+Progress snapshot (2026-03-16):
+- Integrated into both long-lived VFX branches:
+  - `vfx-rendering-branch-github` at `da0b36c3c14`
+  - `vfx-rendering-branch` via cherry-pick `af66efa870f`
+- `feature/world-environment-fog` was fast-forwarded to the current VFX base so follow-up
+  development can start from the Light Pass AOV-ready branch state.
+
 Detailed specification and implementation plan:
 - `.agent/FEATURE_4_LIGHTGROUP_LOBE_PASSES.md`
 
@@ -278,7 +299,9 @@ vfx-rendering-branch (has deep EXR)
 `-- feature/per-lightgroup-lobe-passes
 ```
 
-Each feature branch is independently developed, tested, and merged back to vfx-rendering-branch.
+Each feature branch is independently developed, tested, and merged back to the current VFX base
+branch in use. Re-sync older branches before development if they predate the latest VFX integration
+point.
 
 ---
 
@@ -286,6 +309,8 @@ Each feature branch is independently developed, tested, and merged back to vfx-r
 
 **Branch:** `feature/world-environment-fog`
 **Difficulty:** Medium
+**Status:** Branch created on 2026-03-09 and fast-forwarded to the latest
+`vfx-rendering-branch-github` base on 2026-03-16. Implementation not started.
 **Goal:** Add a world-shader fog/atmosphere control that behaves like Arnold’s `aiFog` shader
 (environment fog driven by distance and optional height).
 

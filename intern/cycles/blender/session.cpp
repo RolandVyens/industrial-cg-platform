@@ -579,15 +579,21 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       const float *combined_data = nullptr;
       int combined_w = 0;
       int combined_h = 0;
+      const float *sample_count_data = nullptr;
+      int sample_count_w = 0;
+      int sample_count_h = 0;
 
       /* Get beauty (Combined pass) for deep recolor.
        * Prefer output driver capture, fallback to RenderResult. */
       vector<float> combined_local;
+      vector<float> sample_count_local;
       if (blender_output_driver) {
         combined_data = blender_output_driver->get_combined_pass(combined_w, combined_h);
+        sample_count_data = blender_output_driver->get_sample_count_pass(sample_count_w,
+                                                                         sample_count_h);
       }
       blender::RenderResult *beauty_result = RE_engine_get_result(&b_engine);
-      if (!combined_data && beauty_result) {
+      if ((!combined_data || !sample_count_data) && beauty_result) {
         blender::RenderLayer *beauty_layer = RE_GetRenderLayer(beauty_result, b_rlay_name.c_str());
         if (!beauty_layer) {
           beauty_layer = static_cast<blender::RenderLayer *>(beauty_result->layers.first);
@@ -598,19 +604,31 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                b_pass;
                b_pass = b_pass->next)
           {
-            if (b_pass->name && strcmp(b_pass->name, "Combined") == 0 && b_pass->channels == 4 &&
-                b_pass->ibuf && b_pass->ibuf->float_buffer.data)
-            {
+            if (b_pass->name && b_pass->ibuf && b_pass->ibuf->float_buffer.data) {
               const int w = b_pass->rectx;
               const int h = b_pass->recty;
-              if (w > 0 && h > 0) {
+              if (w <= 0 || h <= 0) {
+                continue;
+              }
+
+              if (!combined_data && strcmp(b_pass->name, "Combined") == 0 && b_pass->channels == 4)
+              {
                 const size_t size = static_cast<size_t>(w) * h * 4;
                 combined_local.assign(b_pass->ibuf->float_buffer.data,
                                       b_pass->ibuf->float_buffer.data + size);
                 combined_data = combined_local.data();
                 combined_w = w;
                 combined_h = h;
-                break;
+              }
+              else if (!sample_count_data && strcmp(b_pass->name, "Debug Sample Count") == 0 &&
+                       b_pass->channels == 1)
+              {
+                const size_t size = static_cast<size_t>(w) * h;
+                sample_count_local.assign(b_pass->ibuf->float_buffer.data,
+                                          b_pass->ibuf->float_buffer.data + size);
+                sample_count_data = sample_count_local.data();
+                sample_count_w = w;
+                sample_count_h = h;
               }
             }
           }
@@ -637,6 +655,11 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       if (combined_data) {
         deep_driver->set_beauty_buffer(combined_data, combined_w, combined_h);
       }
+      /* Blender's Debug Sample Count pass is normalized by the active render sample limit.
+       * Convert it back to absolute per-pixel counts before deep edge reconstruction. */
+      const float sample_count_scale = max(float(session->params.samples), 1.0f);
+      deep_driver->set_sample_count_buffer(
+          sample_count_data, sample_count_w, sample_count_h, sample_count_scale);
 
       if (is_deep_exr_format) {
         /* Construct deep output path. */

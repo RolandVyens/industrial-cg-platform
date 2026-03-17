@@ -77,10 +77,7 @@ template<> struct DeepSampleTraits<ccl::DeepSampleData> {
 
 CCL_NAMESPACE_BEGIN
 
-bool deep_compute_buffer_bytes(const int width,
-                               const int height,
-                               const int max_samples,
-                               size_t &bytes)
+bool deep_compute_buffer_bytes(int width, int height, int max_samples, size_t &bytes)
 {
   if (width <= 0 || height <= 0 || max_samples <= 0) {
     bytes = 0;
@@ -299,7 +296,8 @@ void DeepRenderBuffers::merge_nearby_samples()
         num_samples,
         depth_merge_threshold_,
         alpha_merge_threshold_,
-        deep_volume_depth_epsilon);
+        deep_volume_depth_epsilon,
+        true);
   }
 }
 

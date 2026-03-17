@@ -20,6 +20,8 @@ namespace {
 constexpr float deep_alpha_epsilon = 1e-6f;
 constexpr float deep_alpha_linear_fallback = 1e-3f;
 constexpr float deep_alpha_log_min_transparency = 1e-5f;
+constexpr float deep_surface_depth_epsilon = 1e-6f;
+constexpr float deep_opaque_surface_alpha_threshold = 1.0f - 1e-6f;
 }  // namespace
 
 struct DeepOutputDriver::DeepBufferSnapshot {
@@ -36,6 +38,13 @@ struct DeepOutputDriver::DeepBufferSnapshot {
   vector<uint32_t> sample_counts;
   vector<DeepSampleData> sample_data;
 };
+
+static void deep_assign_single_sample_with_beauty(std::vector<blender::DeepSample> &pixel_samples,
+                                                  const DeepSampleData &src,
+                                                  float beauty_r,
+                                                  float beauty_g,
+                                                  float beauty_b,
+                                                  float beauty_a);
 
 DeepOutputDriver::DeepOutputDriver(Device *device) : device_(device)
 {
@@ -55,6 +64,9 @@ void DeepOutputDriver::reset(int width, int height, int max_samples_per_pixel)
   pixel_written_.clear();
   beauty_buffer_.clear();
   use_beauty_buffer_ = false;
+  sample_count_buffer_.clear();
+  use_sample_count_buffer_ = false;
+  sample_count_scale_ = 1.0f;
   device_buffers_.clear();
 }
 
@@ -286,8 +298,8 @@ void DeepOutputDriver::restore_snapshots(const vector<DeepBufferSnapshot> &snaps
     const int dst_width = slice.width;
     const int dst_height = slice.height;
     const int dst_max_samples = slice.buffers->get_max_samples_per_pixel();
-    uint32_t *dst_counts = slice.buffers->get_sample_counts_data();
-    DeepSampleData *dst_samples = slice.buffers->get_sample_data_data();
+    uint32_t *dst_counts = slice.buffers->get_sample_counts_ptr();
+    DeepSampleData *dst_samples = slice.buffers->get_sample_data_ptr();
     if (!dst_counts || !dst_samples) {
       LOG_ERROR << "Deep EXR buffer preservation failed: host memory unavailable";
       continue;
@@ -428,14 +440,12 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::get_processed_d
 
 void DeepOutputDriver::set_beauty_buffer(const float *rgba_buffer, int width, int height)
 {
-  if (!pixel_written_.empty()) {
-    return;
-  }
-
   if (!rgba_buffer || width != width_ || height != height_) {
     use_beauty_buffer_ = false;
     beauty_buffer_.clear();
-    processed_cache_.reset();
+    if (pixel_written_.empty()) {
+      processed_cache_.reset();
+    }
     return;
   }
 
@@ -443,10 +453,69 @@ void DeepOutputDriver::set_beauty_buffer(const float *rgba_buffer, int width, in
   beauty_buffer_.resize(size);
   memcpy(beauty_buffer_.data(), rgba_buffer, size * sizeof(float));
   use_beauty_buffer_ = true;
-  processed_cache_.reset();
+
+  if (pixel_written_.empty()) {
+    processed_cache_.reset();
+    return;
+  }
+
+  if (!processed_cache_) {
+    return;
+  }
+
+  for (size_t global_idx = 0; global_idx < processed_cache_->size(); global_idx++) {
+    std::vector<blender::DeepSample> &pixel_samples = (*processed_cache_)[global_idx];
+    if (pixel_samples.size() != 1) {
+      continue;
+    }
+
+    const size_t beauty_offset = global_idx * 4;
+    if (beauty_offset + 3 >= beauty_buffer_.size()) {
+      continue;
+    }
+
+    deep_assign_single_sample_with_beauty(pixel_samples,
+                                          DeepSampleData{pixel_samples[0].r,
+                                                         pixel_samples[0].g,
+                                                         pixel_samples[0].b,
+                                                         pixel_samples[0].a,
+                                                         pixel_samples[0].z,
+                                                         pixel_samples[0].z_back},
+                                          beauty_buffer_[beauty_offset + 0],
+                                          beauty_buffer_[beauty_offset + 1],
+                                          beauty_buffer_[beauty_offset + 2],
+                                          beauty_buffer_[beauty_offset + 3]);
+  }
+}
+
+void DeepOutputDriver::set_sample_count_buffer(const float *sample_count_buffer,
+                                               int width,
+                                               int height,
+                                               float sample_count_scale)
+{
+  if (!sample_count_buffer || width != width_ || height != height_) {
+    use_sample_count_buffer_ = false;
+    sample_count_buffer_.clear();
+    sample_count_scale_ = 1.0f;
+    if (pixel_written_.empty()) {
+      processed_cache_.reset();
+    }
+    return;
+  }
+
+  const size_t size = static_cast<size_t>(width) * height;
+  sample_count_buffer_.resize(size);
+  memcpy(sample_count_buffer_.data(), sample_count_buffer, size * sizeof(float));
+  use_sample_count_buffer_ = true;
+  sample_count_scale_ = max(sample_count_scale, 0.0f);
+  if (pixel_written_.empty()) {
+    processed_cache_.reset();
+  }
 }
 
 void DeepOutputDriver::accumulate_tile(const float *beauty_pixels,
+                                       const float *sample_count_pixels,
+                                       float sample_count_scale,
                                        int tile_width,
                                        int tile_height,
                                        int tile_offset_x,
@@ -466,6 +535,31 @@ void DeepOutputDriver::accumulate_tile(const float *beauty_pixels,
 
   if (pixel_written_.empty()) {
     pixel_written_.assign(static_cast<size_t>(width_) * height_, 0);
+  }
+
+  if (sample_count_pixels && tile_width > 0 && tile_height > 0) {
+    if (sample_count_buffer_.size() != static_cast<size_t>(width_) * height_) {
+      sample_count_buffer_.assign(static_cast<size_t>(width_) * height_, 0.0f);
+    }
+    use_sample_count_buffer_ = true;
+    sample_count_scale_ = max(sample_count_scale, 0.0f);
+
+    for (int y = 0; y < tile_height; y++) {
+      const int global_y = tile_offset_y + y;
+      if (global_y < 0 || global_y >= height_) {
+        continue;
+      }
+      for (int x = 0; x < tile_width; x++) {
+        const int global_x = tile_offset_x + x;
+        if (global_x < 0 || global_x >= width_) {
+          continue;
+        }
+
+        const size_t src_idx = static_cast<size_t>(y) * tile_width + x;
+        const size_t global_idx = static_cast<size_t>(global_y) * width_ + global_x;
+        sample_count_buffer_[global_idx] = sample_count_pixels[src_idx];
+      }
+    }
   }
 
   const bool track_overlap = true;
@@ -558,6 +652,7 @@ bool DeepOutputDriver::process_device_buffers()
       slice.buffers->set_merge_thresholds(merge_threshold_, alpha_merge_threshold_);
       slice.buffers->merge_nearby_samples();
     }
+
   }
 
   deep_buffers_processed_ = true;
@@ -566,7 +661,8 @@ bool DeepOutputDriver::process_device_buffers()
 
 void DeepOutputDriver::init_processed_cache()
 {
-  processed_cache_ = make_unique<std::vector<std::vector<blender::DeepSample>>>(width_ * height_);
+  const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
+  processed_cache_ = make_unique<std::vector<std::vector<blender::DeepSample>>>(pixel_count);
 }
 
 void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
@@ -608,6 +704,12 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
       const size_t local_idx = static_cast<size_t>(local_y) * buffer_width + local_x;
       const size_t global_idx = static_cast<size_t>(global_y) * width_ + global_x;
 
+      const int count = static_cast<int>(sample_counts[local_idx]);
+      const size_t offset = local_idx * static_cast<size_t>(buffer_max_samples);
+      if (count <= 0) {
+        continue;
+      }
+
       if (track_overlap) {
         if (pixel_written[global_idx]) {
           if (!overlap_logged) {
@@ -618,9 +720,6 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
         }
         pixel_written[global_idx] = 1;
       }
-
-      const int count = static_cast<int>(sample_counts[local_idx]);
-      const int offset = static_cast<int>(local_idx * static_cast<size_t>(buffer_max_samples));
 
       if (beauty_pixels && beauty_width > 0 && beauty_height > 0) {
         const int beauty_x = global_x - beauty_offset_x;
@@ -634,8 +733,8 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
           const float beauty_g = beauty_pixels[beauty_idx + 1];
           const float beauty_b = beauty_pixels[beauty_idx + 2];
           const float beauty_a = beauty_pixels[beauty_idx + 3];
-          populate_pixel_samples_with_beauty(
-              global_idx, count, sample_data, offset, beauty_r, beauty_g, beauty_b, beauty_a);
+          populate_pixel_samples_with_resolved_beauty(
+              global_idx, count, sample_data, offset, true, beauty_r, beauty_g, beauty_b, beauty_a);
           continue;
         }
       }
@@ -665,8 +764,17 @@ void DeepOutputDriver::get_beauty_pixel(size_t global_idx,
   }
 }
 
+float DeepOutputDriver::get_sample_count_pixel(size_t global_idx) const
+{
+  if (!use_sample_count_buffer_ || global_idx >= sample_count_buffer_.size()) {
+    return 0.0f;
+  }
+
+  return sample_count_buffer_[global_idx] * sample_count_scale_;
+}
+
 void DeepOutputDriver::compute_scaled_alphas(const DeepSampleData *sample_data,
-                                             int offset,
+                                             size_t offset,
                                              int count,
                                              float beauty_a,
                                              vector<float> &scaled_alphas,
@@ -677,7 +785,7 @@ void DeepOutputDriver::compute_scaled_alphas(const DeepSampleData *sample_data,
   const float target_alpha = clamp(beauty_a, 0.0f, 1.0f);
   float deep_alpha = 0.0f;
 
-  scaled_alphas.resize(count);
+  scaled_alphas.resize(static_cast<size_t>(count));
   for (int s = 0; s < count; s++) {
     float a = sample_data[offset + s].a;
     a = clamp(a, 0.0f, 1.0f);
@@ -738,79 +846,188 @@ void DeepOutputDriver::compute_scaled_alphas(const DeepSampleData *sample_data,
   }
 }
 
+static void deep_assign_single_sample_with_beauty(std::vector<blender::DeepSample> &pixel_samples,
+                                                  const DeepSampleData &src,
+                                                  float beauty_r,
+                                                  float beauty_g,
+                                                  float beauty_b,
+                                                  float beauty_a)
+{
+  const float sample_alpha = clamp(beauty_a, 0.0f, 1.0f);
+  if (beauty_a > deep_alpha_epsilon) {
+    const float inv_alpha = 1.0f / beauty_a;
+    beauty_r *= inv_alpha;
+    beauty_g *= inv_alpha;
+    beauty_b *= inv_alpha;
+  }
+  else {
+    beauty_r = 0.0f;
+    beauty_g = 0.0f;
+    beauty_b = 0.0f;
+  }
+
+  pixel_samples.clear();
+  blender::DeepSample &dst = pixel_samples.emplace_back();
+  dst.r = beauty_r * sample_alpha;
+  dst.g = beauty_g * sample_alpha;
+  dst.b = beauty_b * sample_alpha;
+  dst.a = sample_alpha;
+  dst.z = src.z;
+  dst.z_back = src.z_back;
+}
+
+bool DeepOutputDriver::populate_opaque_surface_samples(size_t global_idx,
+                                                       int count,
+                                                       const DeepSampleData *sample_data,
+                                                       size_t offset,
+                                                       float beauty_r,
+                                                       float beauty_g,
+                                                       float beauty_b,
+                                                       float beauty_a)
+{
+  if (count <= 0) {
+    return false;
+  }
+
+  const float sample_count = get_sample_count_pixel(global_idx);
+
+  int num_surface_groups = 0;
+  const float surface_group_threshold = max(merge_threshold_, 0.0f);
+
+  for (int s = 0; s < count; s++) {
+    const DeepSampleData &sample = sample_data[offset + s];
+    const bool is_surface = (sample.z_back <= sample.z + deep_surface_depth_epsilon);
+    const bool is_opaque_surface = is_surface &&
+                                   (sample.a >= deep_opaque_surface_alpha_threshold);
+    if (!is_opaque_surface) {
+      return false;
+    }
+
+    if (s == 0) {
+      num_surface_groups = 1;
+      continue;
+    }
+
+    const float prev_z = sample_data[offset + s - 1].z;
+    const bool same_group = (surface_group_threshold > 0.0f) ?
+                                (fabsf(sample.z - prev_z) < surface_group_threshold) :
+                                (fabsf(sample.z - prev_z) <= deep_surface_depth_epsilon);
+    if (!same_group) {
+      num_surface_groups++;
+    }
+  }
+
+  if (num_surface_groups == 1) {
+    deep_assign_single_sample_with_beauty(
+        (*processed_cache_)[global_idx], sample_data[offset], beauty_r, beauty_g, beauty_b, beauty_a);
+    return true;
+  }
+
+  const float total_sample_count = (sample_count > 0.0f) ? max(sample_count, float(count)) :
+                                                         float(count);
+  float remaining_coverage = 1.0f;
+  if (beauty_a > deep_alpha_epsilon) {
+    const float inv_alpha = 1.0f / beauty_a;
+    beauty_r *= inv_alpha;
+    beauty_g *= inv_alpha;
+    beauty_b *= inv_alpha;
+  }
+  else {
+    beauty_r = 0.0f;
+    beauty_g = 0.0f;
+    beauty_b = 0.0f;
+  }
+
+  (*processed_cache_)[global_idx].clear();
+  (*processed_cache_)[global_idx].reserve(count);
+
+  int start = 0;
+  while (start < count && remaining_coverage > deep_alpha_epsilon) {
+    int end = start + 1;
+    const float group_z = sample_data[offset + start].z;
+    while (end < count) {
+      const float next_z = sample_data[offset + end].z;
+      const bool same_group = (surface_group_threshold > 0.0f) ?
+                                  (fabsf(next_z - group_z) < surface_group_threshold) :
+                                  (fabsf(next_z - group_z) <= deep_surface_depth_epsilon);
+      if (!same_group) {
+        break;
+      }
+      end++;
+    }
+
+    const float group_coverage = clamp(float(end - start) / total_sample_count,
+                                       0.0f,
+                                       remaining_coverage);
+    const float sample_alpha = (remaining_coverage > deep_alpha_epsilon) ?
+                                   clamp(group_coverage / remaining_coverage, 0.0f, 1.0f) :
+                                   0.0f;
+
+    blender::DeepSample &dst = (*processed_cache_)[global_idx].emplace_back();
+    dst.r = beauty_r * sample_alpha;
+    dst.g = beauty_g * sample_alpha;
+    dst.b = beauty_b * sample_alpha;
+    dst.a = sample_alpha;
+    dst.z = sample_data[offset + start].z;
+    dst.z_back = sample_data[offset + start].z;
+
+    remaining_coverage = max(0.0f, remaining_coverage - group_coverage);
+    start = end;
+  }
+
+  return !(*processed_cache_)[global_idx].empty();
+}
+
 void DeepOutputDriver::populate_pixel_samples(size_t global_idx,
                                               int count,
                                               const DeepSampleData *sample_data,
-                                              int offset)
+                                              size_t offset)
 {
-  (*processed_cache_)[global_idx].resize(count);
-
   float beauty_r = 0.0f;
   float beauty_g = 0.0f;
   float beauty_b = 0.0f;
   float beauty_a = -1.0f;
   get_beauty_pixel(global_idx, beauty_r, beauty_g, beauty_b, beauty_a);
 
-  vector<float> scaled_alphas;
-  if (use_beauty_buffer_ && beauty_a >= 0.0f && count > 0) {
-    compute_scaled_alphas(
-        sample_data, offset, count, beauty_a, scaled_alphas, beauty_r, beauty_g, beauty_b);
-  }
-
-  /* Deep Recolor: Premultiply beauty RGB by per-sample alpha.
-   *
-   * This matches deep compositing expectations where RGB is associated with alpha. */
-  for (int s = 0; s < count; s++) {
-    const DeepSampleData &src = sample_data[offset + s];
-    blender::DeepSample &dst = (*processed_cache_)[global_idx][s];
-
-    /* Use raw or scaled alpha. */
-    const float sample_alpha = scaled_alphas.empty() ? src.a : scaled_alphas[s];
-
-    if (use_beauty_buffer_) {
-      dst.r = beauty_r * sample_alpha;
-      dst.g = beauty_g * sample_alpha;
-      dst.b = beauty_b * sample_alpha;
-      dst.a = sample_alpha;
-    }
-    else {
-      /* No beauty data available - fall back to kernel values. */
-      dst.r = src.r;
-      dst.g = src.g;
-      dst.b = src.b;
-      dst.a = sample_alpha;
-    }
-
-    dst.z = src.z;
-    dst.z_back = src.z_back;
-  }
+  populate_pixel_samples_with_resolved_beauty(
+      global_idx, count, sample_data, offset, use_beauty_buffer_ && beauty_a >= 0.0f, beauty_r, beauty_g, beauty_b, beauty_a);
 }
 
-void DeepOutputDriver::populate_pixel_samples_with_beauty(size_t global_idx,
-                                                          int count,
-                                                          const DeepSampleData *sample_data,
-                                                          int offset,
-                                                          float beauty_r,
-                                                          float beauty_g,
-                                                          float beauty_b,
-                                                          float beauty_a)
+void DeepOutputDriver::populate_pixel_samples_with_resolved_beauty(size_t global_idx,
+                                                                   int count,
+                                                                   const DeepSampleData *sample_data,
+                                                                   size_t offset,
+                                                                   bool has_beauty,
+                                                                   float beauty_r,
+                                                                   float beauty_g,
+                                                                   float beauty_b,
+                                                                   float beauty_a)
 {
-  (*processed_cache_)[global_idx].resize(count);
-
   vector<float> scaled_alphas;
-  if (beauty_a >= 0.0f && count > 0) {
+  if (has_beauty && count > 0) {
+    if (count == 1) {
+      deep_assign_single_sample_with_beauty(
+          (*processed_cache_)[global_idx], sample_data[offset], beauty_r, beauty_g, beauty_b, beauty_a);
+      return;
+    }
+    if (populate_opaque_surface_samples(
+            global_idx, count, sample_data, offset, beauty_r, beauty_g, beauty_b, beauty_a))
+    {
+      return;
+    }
     compute_scaled_alphas(sample_data, offset, count, beauty_a, scaled_alphas, beauty_r, beauty_g,
                           beauty_b);
   }
 
-  const bool use_beauty = (beauty_a >= 0.0f);
+  (*processed_cache_)[global_idx].resize(static_cast<size_t>(count));
+
   for (int s = 0; s < count; s++) {
     const DeepSampleData &src = sample_data[offset + s];
     blender::DeepSample &dst = (*processed_cache_)[global_idx][s];
 
     const float sample_alpha = scaled_alphas.empty() ? src.a : scaled_alphas[s];
 
-    if (use_beauty) {
+    if (has_beauty) {
       dst.r = beauty_r * sample_alpha;
       dst.g = beauty_g * sample_alpha;
       dst.b = beauty_b * sample_alpha;
@@ -845,7 +1062,8 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::ensure_processe
     bool overlap_logged = false;
     vector<uint8_t> pixel_written;
     if (track_overlap) {
-      pixel_written.resize(width_ * height_, 0);
+      const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
+      pixel_written.resize(pixel_count, 0);
     }
 
     for (const DeepBufferSlice &slice : device_buffers_) {

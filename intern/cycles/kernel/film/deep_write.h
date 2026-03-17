@@ -105,7 +105,7 @@ ccl_device_inline void film_write_deep_sample_transparent(
     return;
   }
 
-  const uint64_t offset = (uint64_t)pixel_index * kernel_data.film.deep_max_samples + sample_idx;
+  const uint64_t offset = uint64_t(pixel_index) * kernel_data.film.deep_max_samples + sample_idx;
 
   /* Alpha-only deep samples (RGB=0). Color is applied via Deep Recolor post-processing. */
   deep_samples[offset].r = 0.0f;

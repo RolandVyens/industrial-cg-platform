@@ -742,8 +742,10 @@ bool Session::update_scene(const bool reset_samples)
   scene->integrator->set_sample_subset_length(params.sample_subset_length);
 
   /* When multiple tiles are used SAMPLE_COUNT pass is used to keep track of possible partial
-   * tile results. */
-  scene->film->set_use_sample_count(tile_manager_.has_multiple_tiles());
+   * tile results. Deep output also needs per-pixel sample counts to reconstruct hard-surface
+   * edge coverage after sorting deep hits by depth. */
+  scene->film->set_use_sample_count(tile_manager_.has_multiple_tiles() ||
+                                    scene->film->get_use_deep_output());
 
   const bool reset = scene->need_reset(false);
 
