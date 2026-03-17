@@ -1,8 +1,8 @@
-# VFX Rendering Branch - Agent Handoff
+﻿# VFX Rendering Branch - Agent Handoff
 
 > **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-03-13
+> **Last Updated:** 2026-03-16
 
 ---
 
@@ -12,12 +12,57 @@
 - **Deep EXR memory:** Implemented user-controlled budget (default 1024 MB) + tile clamp; RenderResult deep storage skipped unless compositor needs it. Added tiled deep accumulation to avoid last-tile-only deep outputs. Merged into `vfx-rendering-branch` on 2026-02-22; code review checklist resolved.
 - **Validation:** Rendered `D:\blender_projects\deep-branch-test.blend` on 2026-02-22; deep compositor outputs saved and tile rendering confirmed.
   Compositor deep EXRs now large (e.g., `test_compoutput_deep0001.exr` ~584 MB).
-- **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged.
+- **Deep EXR edge alpha fix (2026-03-16):** Root cause traced to hard-surface deep samples being
+  stored with opaque alpha and later normalized only against flattened beauty alpha, which cannot
+  recover per-depth edge coverage at foreground/background intersections. The fix preserves opaque
+  surface duplicates through deep merge and reconstructs front-to-back conditional alpha from the
+  per-pixel deep hit distribution before Deep Recolor/output.
+- **Deep EXR edge alpha validation (2026-03-16):**
+  - CPU render re-run with `--factory-startup` on `D:\blender_projects\deep-branch-test.blend`.
+  - `.agent/check_deep_surface_front_alpha.py C:\tmp\surface_compoutput_deep0001.exr` now reports
+    `violating_front_alpha_pixels=0` (was `317109` before the fix).
+  - Example fixed pixel `(574, 150)` now starts with front alpha `0.0625` instead of `1.0`.
+- **Deep EXR single-surface AA fix (2026-03-16):**
+  - Remaining seam/AA failures were traced to pixels that still collapse to a single visible deep
+    surface after grouping, but arrive as multiple same-depth opaque duplicates before export.
+  - Deep output now uses the flattened beauty alpha directly for that single-group case, while
+    multi-depth hard-surface pixels still use internal `PASS_SAMPLE_COUNT` capture for
+    front-to-back conditional alpha reconstruction.
+  - Validation on `D:\blender_projects\deep-branch-test.blend` frame 1:
+    - `.agent/check_deep_single_surface_alpha.py C:\tmp\surface_compoutput_flat0001.exr C:\tmp\surface_compoutput_deep0001.exr`
+      reports `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py C:\tmp\surface_compoutput_deep0001.exr` remains
+      clean with `violating_front_alpha_pixels=0`.
+- **Deep EXR cleanup sweep (2026-03-17):**
+  - Follow-up implementation worktree: `E:\blender_modify\blender_deep_exr_fix`
+    on branch `feature/deep-exr-edge-alpha-fix`.
+  - Accepted review items: mixed-EOL normalization across all modified tracked files, deep sample
+    offset widening to `size_t`, cache pixel-count overflow cleanup, duplicate pixel-population
+    helper removal, early fast-path allocation cleanup, mutable accessor rename cleanup, and
+    declaration/definition signature match for `deep_compute_buffer_bytes()`.
+  - Rejected/non-actioned review items: the `kg` “unused parameter” note and the self-corrected
+    bounds-check note.
+  - Fresh verification on 2026-03-17:
+    - `cmake --build E:\blender_modify\build_deep_exr_fix --target blender --config Release -- /m:28`
+      succeeded.
+    - CPU/factory-startup render of `D:\blender_projects\deep-branch-test.blend` frame 1 completed
+      and wrote updated deep/flat EXRs in `C:\tmp\` (PowerShell surfaced OpenColorIO warnings on
+      stderr, but Blender completed and saved outputs).
+    - `.agent/check_deep_single_surface_alpha.py` reports
+      `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` reports `multi_sample_pixels=39349`,
+      `violating_front_alpha_pixels=0`.
+- **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged. Feature 4 Phase 1 is
+  now merged into both VFX branches.
 - **Working branch:** `vfx-rendering-branch-github`
-- **Feature 4:** Phase 1 implementation started on `feature/per-lightgroup-lobe-passes`.
+- **Feature 4:** Phase 1 implementation completed on `feature/per-lightgroup-lobe-passes`.
 - **Branch sync:** `feature/per-lightgroup-lobe-passes` re-synced to `vfx-rendering-branch-github` on 2026-03-09 after history rewrite. Backup branch: `backup/feature-per-lightgroup-lobe-passes-pre-resync-20260309`.
 - **Validation (Feature 4 WIP):** `python -m py_compile` passed for Cycles add-on files; full `blender` target build completed in `E:\blender_modify\build_lobe_passes` on 2026-03-09 (`blender.exe` timestamp 14:05:21).
 - **Runtime package:** `install` target run for `build_lobe_passes` on 2026-03-09 to populate `bin\Release\5.2` scripts/runtime files. Verified `ViewLayer.cycles.use_lightgroup_light_pass_aovs` is present in background Python check.
+- **Build:** Followed `.agent/workflows/build-blender.md` incremental build command on 2026-03-09; output `E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\blender.exe` updated (timestamp 14:12:01).
+- **Branch setup:** Created `feature/world-environment-fog` worktree at `E:\blender_modify\blender_env_fog` on 2026-03-09 from `vfx-rendering-branch-github`.
 - **Naming update:** Feature 4 UI/props wording updated from "Lobe Passes" to "Light Pass AOVs" on 2026-03-09.
 - **Feature 4 fix (2026-03-11):** Light-group direct/indirect diffuse/glossy/transmission/volume
   pass metadata now forces raw-sum behavior (`divide_type = PASS_NONE`,
@@ -64,6 +109,15 @@
     paths to reduce redundant per-sample checks when splits are disabled.
   - Validation re-run: `blender` + `install` builds succeed; pass registration and EXR emissive
     channel checks remain correct.
+- **Feature 4 branch integration (2026-03-16):**
+  - Merged into `vfx-rendering-branch-github` at `da0b36c3c14`.
+  - Cherry-picked into `vfx-rendering-branch` at `af66efa870f` to keep the non-GitHub branch in
+    parity without unrelated-history merge noise.
+- **Branch prep (2026-03-16):**
+  - `feature/world-environment-fog` fast-forwarded from `1cf4166c5f3` to `da0b36c3c14` so future
+    work starts from the current Light Pass AOV base.
+  - `feature/no-direct-lighting` and `feature/collection-material-override` still need re-sync
+    before development resumes.
 - **Docs:** MoonRay LPE/AOV code report added at `.agent/MOONRAY_LPE_REPORT.md` (Cycles LPE reference).
 - **Docs:** Added Phase 1/Phase 2 LPE-ready strategy notes to Feature 4 in `VFX_RENDERING_PLAN.md`.
 - **Docs:** Added Phase 1 LPE-ready checklist under Feature 4 in `VFX_RENDERING_PLAN.md`.
@@ -196,7 +250,8 @@ See `VFX_RENDERING_PLAN.md` for detailed implementation plans.
 ### Feature 4: Per-Light-Group Light Pass AOVs (LPE Foundation)
 - **Branch:** `feature/per-lightgroup-lobe-passes`
 - **Difficulty:** Medium-High
-- **Status:** In progress (Phase 1 partial)
+- **Status:** Complete for Phase 1. Merged to `vfx-rendering-branch-github` and cherry-picked to
+  `vfx-rendering-branch` on 2026-03-16.
 - Per-lightgroup diffuse/glossy/transmission/volume light pass AOVs with combined + direct/indirect variants.
   Naming planned as `diffuse_<lg>`, `diffuse_direct_<lg>`, `diffuse_indirect_<lg>` (same pattern for other lobes).
   Dedicated LPE plan documented in `VFX_RENDERING_PLAN.md`.
@@ -209,6 +264,13 @@ See `VFX_RENDERING_PLAN.md` for detailed implementation plans.
 - **Fixed (2026-03-11):**
   - Light-group direct/indirect pass metadata now uses raw sums (no albedo divide/compositing),
     so `RGBA_env.rgb`, lobe-combined sum, and direct+indirect sum are consistent.
+
+### Feature 5: World Environment Fog (aiFog-like, Direct-Light Only)
+- **Branch:** `feature/world-environment-fog`
+- **Difficulty:** Medium
+- **Status:** Branch created on 2026-03-09 and fast-forwarded to the latest
+  `vfx-rendering-branch-github` base on 2026-03-16; implementation not started
+- Environment fog in world shader with aiFog-like controls, direct-light only (no indirect/shadowing).
 
 ---
 

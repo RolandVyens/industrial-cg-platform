@@ -880,11 +880,16 @@ void PathTrace::write_tile_buffer(const RenderWork &render_work)
     const int2 tile_size = get_render_tile_size();
     const int2 tile_offset = get_render_tile_offset();
     vector<float> beauty_pixels(static_cast<size_t>(tile_size.x) * tile_size.y * 4);
+    vector<float> sample_count_pixels(static_cast<size_t>(tile_size.x) * tile_size.y);
 
     const PathTraceTile tile(*this);
     const bool has_beauty = tile.get_pass_pixels("Combined", 4, beauty_pixels.data());
+    const bool has_sample_count = tile.get_pass_pixels(
+        PASS_SAMPLE_COUNT, 1, sample_count_pixels.data());
 
     deep_output_driver_->accumulate_tile(has_beauty ? beauty_pixels.data() : nullptr,
+                                         has_sample_count ? sample_count_pixels.data() : nullptr,
+                                         float(get_num_render_tile_samples()),
                                          tile_size.x,
                                          tile_size.y,
                                          tile_offset.x,

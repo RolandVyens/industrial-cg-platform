@@ -3,7 +3,7 @@
 > **Workspace:** `E:\blender_modify\blender`
 > **Build Output:** `E:\blender_modify\build_windows_x64_vc17_Release`
 > **Branch:** `vfx-rendering-branch-github`
-> **Last Updated:** 2026-03-13
+> **Last Updated:** 2026-03-16
 
 ---
 
@@ -46,6 +46,15 @@
 # Compositor render (deep EXR + flat outputs)
 & 'E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\blender.exe' -b "D:\blender_projects\deep-branch-test.blend" -f 1
 
+# Safer Deep EXR validation render (CPU, avoids local GPU/add-on state)
+& 'E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\blender.exe' --factory-startup -b "D:\blender_projects\deep-branch-test.blend" --python-expr "import bpy; bpy.context.scene.cycles.device='CPU'; prefs=bpy.context.preferences.addons['cycles'].preferences; prefs.compute_device_type='NONE'" -f 1
+
+# Deep hard-surface front-alpha regression check
+& 'E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\5.2\python\bin\python.exe' 'E:\blender_modify\blender\.agent\check_deep_surface_front_alpha.py' 'C:\tmp\surface_compoutput_deep0001.exr'
+
+# Deep single-surface AA alpha regression check
+& 'E:\blender_modify\build_windows_x64_vc17_Release\bin\Release\5.2\python\bin\python.exe' 'E:\blender_modify\blender\.agent\check_deep_single_surface_alpha.py' 'C:\tmp\surface_compoutput_flat0001.exr' 'C:\tmp\surface_compoutput_deep0001.exr'
+
 # Light pass AOV validation scene (environment/lightgroup channels)
 & 'E:\blender_modify\build_lobe_passes\bin\Release\blender.exe' -b "D:\blender_projects\light-passes-test-v001.blend" -f 3
 ```
@@ -55,16 +64,19 @@
 ## Branch Strategy
 
 Current working branch: `vfx-rendering-branch-github` (GitHub release/publishing branch).
+Local parity branch: `vfx-rendering-branch` (non-GitHub integration branch).
 
 ```
-vfx-rendering-branch (has deep EXR)
-|-- feature/shadow-color          (Per-light shadow color)
-|-- feature/no-direct-lighting    (Indirect-only object toggle)
-|-- feature/collection-material-override  (Per-collection/object mat override)
-`-- feature/per-lightgroup-lobe-passes    (Per-LG light pass AOVs / LPE foundation)
+vfx-rendering-branch-github / vfx-rendering-branch
+|-- merged: feature/shadow-color
+|-- pending re-sync: feature/no-direct-lighting
+|-- pending re-sync: feature/collection-material-override
+|-- merged: feature/per-lightgroup-lobe-passes
+`-- next candidate: feature/world-environment-fog
 ```
 
-Each feature branch is created from and merged back to `vfx-rendering-branch`.
+Feature branches should be re-synced to the latest VFX base before active development if they predate
+the 2026-02-22 history rewrite or the 2026-03-16 Feature 4 merge integration.
 
 ---
 
@@ -87,13 +99,21 @@ E:\blender_modify\blender               (feature/shadow-color)
 E:\blender_modify\blender_no_direct     (feature/no-direct-lighting)
 E:\blender_modify\blender_mat_override  (feature/collection-material-override)
 E:\blender_modify\blender_lobe_passes   (feature/per-lightgroup-lobe-passes)
+E:\blender_modify\blender_env_fog       (feature/world-environment-fog)
+E:\blender_modify\blender_deep_exr_fix  (feature/deep-exr-edge-alpha-fix)
 
 E:\blender_modify\build_no_direct
 E:\blender_modify\build_mat_override
 E:\blender_modify\build_lobe_passes
+E:\blender_modify\build_env_fog
+E:\blender_modify\build_deep_exr_fix
 ```
-
-Configure each build dir with the same CMake flags as the main build, but swap `-S`/`-B` paths.
+As of 2026-03-16, `feature/per-lightgroup-lobe-passes` is merged back to both VFX branches, and
+`feature/world-environment-fog` has been fast-forwarded to the latest
+`vfx-rendering-branch-github` tip for next-step development. The other two feature worktrees are
+still on pre-rewrite history and should be re-synced before development. The Deep EXR follow-up
+cleanup and regression verification worktree lives at
+`E:\blender_modify\blender_deep_exr_fix` / `E:\blender_modify\build_deep_exr_fix`.
 
 ---
 

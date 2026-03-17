@@ -23,7 +23,8 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
                                         size_t count,
                                         const float depth_merge_threshold,
                                         const float alpha_merge_threshold,
-                                        const float volume_depth_epsilon)
+                                        const float volume_depth_epsilon,
+                                        const bool preserve_opaque_surface_duplicates = false)
 {
   if (depth_merge_threshold <= 0.0f || count <= 1) {
     return count;
@@ -44,37 +45,41 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
       const float curr_z_back = DeepSampleTraits<Sample>::z_back(current);
       const float curr_a = DeepSampleTraits<Sample>::a(current);
       const bool curr_volume = (curr_z_back > curr_z + volume_depth_epsilon);
+      const bool prev_opaque_surface = !prev_volume && prev_a >= (1.0f - volume_depth_epsilon);
+      const bool curr_opaque_surface = !curr_volume && curr_a >= (1.0f - volume_depth_epsilon);
 
       if (prev_volume == curr_volume) {
-        bool depth_similar = std::abs(curr_z - prev_z) < depth_merge_threshold;
-        if (prev_volume) {
-          /* Volumes: allow merging of contiguous segments along the ray. */
-          depth_similar = (curr_z <= prev_z_back + depth_merge_threshold);
-        }
-        const bool alpha_similar = std::abs(curr_a - prev_a) < alpha_merge_threshold;
-        if (depth_similar && alpha_similar) {
-          /* Merge: composite current over previous. */
-          const float one_minus_a = 1.0f - curr_a;
-          const float prev_r = DeepSampleTraits<Sample>::r(prev);
-          const float prev_g = DeepSampleTraits<Sample>::g(prev);
-          const float prev_b = DeepSampleTraits<Sample>::b(prev);
-
-          DeepSampleTraits<Sample>::set_r(prev, DeepSampleTraits<Sample>::r(current) +
-                                                     prev_r * one_minus_a);
-          DeepSampleTraits<Sample>::set_g(prev, DeepSampleTraits<Sample>::g(current) +
-                                                     prev_g * one_minus_a);
-          DeepSampleTraits<Sample>::set_b(prev, DeepSampleTraits<Sample>::b(current) +
-                                                     prev_b * one_minus_a);
-          DeepSampleTraits<Sample>::set_a(prev, curr_a + prev_a * one_minus_a);
-
+        if (!(preserve_opaque_surface_duplicates && prev_opaque_surface && curr_opaque_surface)) {
+          bool depth_similar = std::abs(curr_z - prev_z) < depth_merge_threshold;
           if (prev_volume) {
-            DeepSampleTraits<Sample>::set_z_back(prev, std::max(prev_z_back, curr_z_back));
+            /* Volumes: allow merging of contiguous segments along the ray. */
+            depth_similar = (curr_z <= prev_z_back + depth_merge_threshold);
           }
-          else {
-            /* Keep merged surfaces as surfaces (no thickness). */
-            DeepSampleTraits<Sample>::set_z_back(prev, prev_z);
+          const bool alpha_similar = std::abs(curr_a - prev_a) < alpha_merge_threshold;
+          if (depth_similar && alpha_similar) {
+            /* Merge: composite current over previous. */
+            const float one_minus_a = 1.0f - curr_a;
+            const float prev_r = DeepSampleTraits<Sample>::r(prev);
+            const float prev_g = DeepSampleTraits<Sample>::g(prev);
+            const float prev_b = DeepSampleTraits<Sample>::b(prev);
+
+            DeepSampleTraits<Sample>::set_r(prev, DeepSampleTraits<Sample>::r(current) +
+                                                       prev_r * one_minus_a);
+            DeepSampleTraits<Sample>::set_g(prev, DeepSampleTraits<Sample>::g(current) +
+                                                       prev_g * one_minus_a);
+            DeepSampleTraits<Sample>::set_b(prev, DeepSampleTraits<Sample>::b(current) +
+                                                       prev_b * one_minus_a);
+            DeepSampleTraits<Sample>::set_a(prev, curr_a + prev_a * one_minus_a);
+
+            if (prev_volume) {
+              DeepSampleTraits<Sample>::set_z_back(prev, std::max(prev_z_back, curr_z_back));
+            }
+            else {
+              /* Keep merged surfaces as surfaces (no thickness). */
+              DeepSampleTraits<Sample>::set_z_back(prev, prev_z);
+            }
+            continue;
           }
-          continue;
         }
       }
     }

@@ -42,6 +42,29 @@ bool PathTraceTile::get_pass_pixels(const string_view pass_name,
     return false;
   }
 
+  return get_pass_pixels(pass->type, num_channels, pixels);
+}
+
+bool PathTraceTile::get_pass_pixels(const PassType pass_type,
+                                    const int num_channels,
+                                    float *pixels) const
+{
+  /* NOTE: The code relies on a fact that session is fully update and no scene/buffer modification
+   * is happening while this function runs. */
+
+  if (!copied_from_device_) {
+    /* Copy from device on demand. */
+    path_trace_.copy_render_tile_from_device();
+    copied_from_device_ = true;
+  }
+
+  const BufferParams &buffer_params = path_trace_.get_render_tile_params();
+
+  const BufferPass *pass = buffer_params.find_pass(pass_type);
+  if (pass == nullptr) {
+    return false;
+  }
+
   const bool has_denoised_result = path_trace_.has_denoised_result() ||
                                    is_volume_guiding_pass(pass->type);
   if (pass->mode == PassMode::DENOISED && !has_denoised_result) {

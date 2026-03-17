@@ -95,8 +95,16 @@ class DeepOutputDriver {
    * The buffer should contain RGBA floats, size = width * height * 4. */
   void set_beauty_buffer(const float *rgba_buffer, int width, int height);
 
+  /* Set per-pixel sample count buffer for hard-surface deep coverage reconstruction.
+   * Blender's Debug Sample Count pass is normalized by the render sample limit, so
+   * `sample_count_scale` converts stored values back to absolute per-pixel sample counts. */
+  void set_sample_count_buffer(
+      const float *sample_count_buffer, int width, int height, float sample_count_scale);
+
   /* Accumulate deep samples for the current tile into the processed cache. */
   void accumulate_tile(const float *beauty_pixels,
+                       const float *sample_count_pixels,
+                       float sample_count_scale,
                        int tile_width,
                        int tile_height,
                        int tile_offset_x,
@@ -156,6 +164,11 @@ class DeepOutputDriver {
   vector<float> beauty_buffer_;
   bool use_beauty_buffer_ = false;
 
+  /* Sample count buffer for hard-surface edge coverage reconstruction. */
+  vector<float> sample_count_buffer_;
+  bool use_sample_count_buffer_ = false;
+  float sample_count_scale_ = 1.0f;
+
   /* Stored as std::vector to match Blender's IMB_exr_save_deep API. */
   unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_cache_;
   bool deep_buffers_processed_ = false;
@@ -185,28 +198,38 @@ class DeepOutputDriver {
   void populate_pixel_samples(size_t global_idx,
                               int count,
                               const DeepSampleData *sample_data,
-                              int offset);
-  void populate_pixel_samples_with_beauty(size_t global_idx,
-                                          int count,
-                                          const DeepSampleData *sample_data,
-                                          int offset,
-                                          float beauty_r,
-                                          float beauty_g,
-                                          float beauty_b,
-                                          float beauty_a);
+                              size_t offset);
+  void populate_pixel_samples_with_resolved_beauty(size_t global_idx,
+                                                   int count,
+                                                   const DeepSampleData *sample_data,
+                                                   size_t offset,
+                                                   bool has_beauty,
+                                                   float beauty_r,
+                                                   float beauty_g,
+                                                   float beauty_b,
+                                                   float beauty_a);
   void get_beauty_pixel(size_t global_idx,
                         float &beauty_r,
                         float &beauty_g,
                         float &beauty_b,
                         float &beauty_a) const;
+  float get_sample_count_pixel(size_t global_idx) const;
   void compute_scaled_alphas(const DeepSampleData *sample_data,
-                             int offset,
+                             size_t offset,
                              int count,
                              float beauty_a,
                              vector<float> &scaled_alphas,
                              float &beauty_r,
                              float &beauty_g,
                              float &beauty_b);
+  bool populate_opaque_surface_samples(size_t global_idx,
+                                       int count,
+                                       const DeepSampleData *sample_data,
+                                       size_t offset,
+                                       float beauty_r,
+                                       float beauty_g,
+                                       float beauty_b,
+                                       float beauty_a);
 
   std::vector<std::vector<blender::DeepSample>> *ensure_processed_cache();
 };

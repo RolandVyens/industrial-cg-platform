@@ -26,6 +26,9 @@ class BlenderOutputDriver : public OutputDriver {
   /* Get captured Combined pass for deep recolor (post-render). */
   const float *get_combined_pass(int &width, int &height) const;
 
+  /* Get captured Debug Sample Count pass for deep coverage reconstruction. */
+  const float *get_sample_count_pass(int &width, int &height) const;
+
  protected:
   blender::RenderEngine &b_engine_;
 
@@ -33,6 +36,11 @@ class BlenderOutputDriver : public OutputDriver {
   std::vector<float> combined_pass_buffer_;
   int combined_width_ = 0;
   int combined_height_ = 0;
+
+  /* Captured Debug Sample Count pass for deep edge coverage reconstruction. */
+  std::vector<float> sample_count_pass_buffer_;
+  int sample_count_width_ = 0;
+  int sample_count_height_ = 0;
 };
 
 CCL_NAMESPACE_END

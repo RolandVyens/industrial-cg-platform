@@ -135,7 +135,7 @@ class DeepRenderBuffers {
     return sample_counts_;
   }
 
-  uint32_t *get_sample_counts_data()
+  uint32_t *get_sample_counts_ptr()
   {
     return sample_counts_.data();
   }
@@ -145,7 +145,7 @@ class DeepRenderBuffers {
     return sample_data_;
   }
 
-  DeepSampleData *get_sample_data_data()
+  DeepSampleData *get_sample_data_ptr()
   {
     return sample_data_.data();
   }
