@@ -150,6 +150,9 @@ KERNEL_STRUCT_MEMBER(film, int, pass_lightgroup_transmission_indirect)
 KERNEL_STRUCT_MEMBER(film, int, pass_lightgroup_volume)
 KERNEL_STRUCT_MEMBER(film, int, pass_lightgroup_volume_direct)
 KERNEL_STRUCT_MEMBER(film, int, pass_lightgroup_volume_indirect)
+KERNEL_STRUCT_MEMBER(film, int, lightgroup_split_index_count)
+KERNEL_STRUCT_MEMBER_DONT_SPECIALIZE
+KERNEL_STRUCT_MEMBER(film, uint64_t, lightgroup_split_index_ptr)
 /* Baking. */
 KERNEL_STRUCT_MEMBER(film, int, pass_bake_primitive)
 KERNEL_STRUCT_MEMBER(film, int, pass_bake_seed)

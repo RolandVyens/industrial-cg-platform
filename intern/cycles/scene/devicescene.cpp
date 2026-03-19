@@ -30,6 +30,7 @@ DeviceScene::DeviceScene(Device *device)
       object_motion(device, "object_motion", MEM_GLOBAL),
       object_flag(device, "object_flag", MEM_GLOBAL),
       object_prim_offset(device, "object_prim_offset", MEM_GLOBAL),
+      lightgroup_split_index(device, "lightgroup_split_index", MEM_GLOBAL),
       camera_motion(device, "camera_motion", MEM_GLOBAL),
       attributes_map(device, "attributes_map", MEM_GLOBAL),
       attributes_float(device, "attributes_float", MEM_GLOBAL),

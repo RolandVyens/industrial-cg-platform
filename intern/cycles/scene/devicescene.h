@@ -42,6 +42,7 @@ class DeviceScene {
   device_vector<DecomposedTransform> object_motion;
   device_vector<uint> object_flag;
   device_vector<uint> object_prim_offset;
+  device_vector<int> lightgroup_split_index;
 
   /* cameras */
   device_vector<DecomposedTransform> camera_motion;

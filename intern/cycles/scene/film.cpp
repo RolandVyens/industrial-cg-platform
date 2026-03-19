@@ -19,6 +19,8 @@
 #include "util/math_cdf.h"
 #include "util/time.h"
 
+#include <cstring>
+
 CCL_NAMESPACE_BEGIN
 
 /* Pixel Filter */
@@ -81,6 +83,42 @@ static vector<float> filter_table(FilterType type, float width)
       filter_table);
 
   return filter_table;
+}
+
+static vector<int> lightgroup_split_index_map(const Scene *scene)
+{
+  vector<int> split_index_map(scene->lightgroups.size(), -1);
+  if (scene->lightgroups.empty()) {
+    return split_index_map;
+  }
+
+  vector<bool> has_split_lightgroup(scene->lightgroups.size(), false);
+
+  for (const Pass *pass : scene->passes) {
+    if (pass->get_lightgroup().empty() || pass->get_type() == PASS_COMBINED ||
+        !pass->is_written())
+    {
+      continue;
+    }
+
+    const auto it = scene->lightgroups.find(pass->get_lightgroup());
+    if (it == scene->lightgroups.end()) {
+      continue;
+    }
+
+    has_split_lightgroup[it->second] = true;
+  }
+
+  int split_index = 0;
+  for (size_t lightgroup_index = 0; lightgroup_index < has_split_lightgroup.size();
+       lightgroup_index++)
+  {
+    if (has_split_lightgroup[lightgroup_index]) {
+      split_index_map[lightgroup_index] = split_index++;
+    }
+  }
+
+  return split_index_map;
 }
 
 /* Film */
@@ -209,6 +247,8 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->pass_lightgroup_volume = PASS_UNUSED;
   kfilm->pass_lightgroup_volume_direct = PASS_UNUSED;
   kfilm->pass_lightgroup_volume_indirect = PASS_UNUSED;
+  kfilm->lightgroup_split_index_count = 0;
+  kfilm->lightgroup_split_index_ptr = 0;
 
   /* Mark passes as unused so that the kernel knows the pass is inaccessible. */
   kfilm->pass_denoising_normal = PASS_UNUSED;
@@ -511,6 +551,20 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->deep_height = deep_height_;
   kfilm->deep_samples_ptr = deep_samples_ptr_;
   kfilm->deep_sample_counts_ptr = deep_sample_counts_ptr_;
+
+  vector<int> split_index_map = lightgroup_split_index_map(scene);
+  if (split_index_map.empty()) {
+    dscene->lightgroup_split_index.free();
+  }
+  else {
+    int *device_split_index_map = dscene->lightgroup_split_index.alloc(split_index_map.size());
+    memcpy(device_split_index_map, split_index_map.data(), split_index_map.size() * sizeof(int));
+    dscene->lightgroup_split_index.copy_to_device();
+    dscene->lightgroup_split_index.clear_modified();
+  }
+
+  kfilm->lightgroup_split_index_count = static_cast<int>(split_index_map.size());
+  kfilm->lightgroup_split_index_ptr = dscene->lightgroup_split_index.device_pointer;
 
   clear_modified();
 }

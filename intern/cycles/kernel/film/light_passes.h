@@ -171,6 +171,38 @@ ccl_device_inline void film_write_lightgroup_pass(ccl_global float *ccl_restrict
   film_write_pass_spectrum(buffer + pass_offset + 3 * lightgroup, contribution);
 }
 
+ccl_device_inline int film_get_split_lightgroup_index(KernelGlobals kg, const int lightgroup)
+{
+  if (lightgroup == LIGHTGROUP_NONE || lightgroup < 0 ||
+      lightgroup >= kernel_data.film.lightgroup_split_index_count)
+  {
+    return LIGHTGROUP_NONE;
+  }
+
+  ccl_global const int *split_index_map = (ccl_global const int *)
+      kernel_data.film.lightgroup_split_index_ptr;
+  if (split_index_map == nullptr) {
+    return LIGHTGROUP_NONE;
+  }
+
+  const int split_lightgroup = split_index_map[lightgroup];
+  return (split_lightgroup >= 0) ? split_lightgroup : LIGHTGROUP_NONE;
+}
+
+ccl_device_inline void film_write_lightgroup_split_pass(KernelGlobals kg,
+                                                        ccl_global float *ccl_restrict buffer,
+                                                        const int pass_offset,
+                                                        const int lightgroup,
+                                                        const Spectrum contribution)
+{
+  const int split_lightgroup = film_get_split_lightgroup_index(kg, lightgroup);
+  if (split_lightgroup == LIGHTGROUP_NONE || pass_offset == PASS_UNUSED) {
+    return;
+  }
+
+  film_write_pass_spectrum(buffer + pass_offset + 3 * split_lightgroup, contribution);
+}
+
 ccl_device_inline int film_write_sample(KernelGlobals kg,
                                         ConstIntegratorState state,
                                         ccl_global float *ccl_restrict render_buffer,
@@ -490,25 +522,33 @@ ccl_device_inline void film_write_emission_or_background_pass(
       }
 
       if (split_lightgroup_lobes) {
-        film_write_lightgroup_pass(
+        film_write_lightgroup_split_pass(
+            kg,
             buffer, kernel_data.film.pass_lightgroup_diffuse, lightgroup, diffuse_contribution);
-        film_write_lightgroup_pass(
+        film_write_lightgroup_split_pass(
+            kg,
             buffer, kernel_data.film.pass_lightgroup_glossy, lightgroup, glossy_contribution);
-        film_write_lightgroup_pass(buffer,
-                                   kernel_data.film.pass_lightgroup_transmission,
-                                   lightgroup,
-                                   transmission_contribution);
-        film_write_lightgroup_pass(buffer,
-                                   is_direct ? kernel_data.film.pass_lightgroup_diffuse_direct :
-                                               kernel_data.film.pass_lightgroup_diffuse_indirect,
-                                   lightgroup,
-                                   diffuse_contribution);
-        film_write_lightgroup_pass(buffer,
-                                   is_direct ? kernel_data.film.pass_lightgroup_glossy_direct :
-                                               kernel_data.film.pass_lightgroup_glossy_indirect,
-                                   lightgroup,
-                                   glossy_contribution);
-        film_write_lightgroup_pass(
+        film_write_lightgroup_split_pass(kg,
+                                         buffer,
+                                         kernel_data.film.pass_lightgroup_transmission,
+                                         lightgroup,
+                                         transmission_contribution);
+        film_write_lightgroup_split_pass(
+            kg,
+            buffer,
+            is_direct ? kernel_data.film.pass_lightgroup_diffuse_direct :
+                        kernel_data.film.pass_lightgroup_diffuse_indirect,
+            lightgroup,
+            diffuse_contribution);
+        film_write_lightgroup_split_pass(
+            kg,
+            buffer,
+            is_direct ? kernel_data.film.pass_lightgroup_glossy_direct :
+                        kernel_data.film.pass_lightgroup_glossy_indirect,
+            lightgroup,
+            glossy_contribution);
+        film_write_lightgroup_split_pass(
+            kg,
             buffer,
             is_direct ? kernel_data.film.pass_lightgroup_transmission_direct :
                         kernel_data.film.pass_lightgroup_transmission_indirect,
@@ -530,9 +570,11 @@ ccl_device_inline void film_write_emission_or_background_pass(
                                 kernel_data.film.pass_volume_indirect;
 
       if (split_lightgroup_lobes) {
-        film_write_lightgroup_pass(
+        film_write_lightgroup_split_pass(
+            kg,
             buffer, kernel_data.film.pass_lightgroup_volume, lightgroup, contribution);
-        film_write_lightgroup_pass(
+        film_write_lightgroup_split_pass(
+            kg,
             buffer,
             is_direct ? kernel_data.film.pass_lightgroup_volume_direct :
                         kernel_data.film.pass_lightgroup_volume_indirect,
@@ -645,27 +687,33 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
             kernel_data.film.pass_lightgroup_transmission_direct != PASS_UNUSED ||
             kernel_data.film.pass_lightgroup_transmission_indirect != PASS_UNUSED;
         if (has_lightgroup_surface_passes) {
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer, kernel_data.film.pass_lightgroup_diffuse, lightgroup, diffuse_contribution);
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer, kernel_data.film.pass_lightgroup_glossy, lightgroup, glossy_contribution);
-          film_write_lightgroup_pass(buffer,
-                                     kernel_data.film.pass_lightgroup_transmission,
-                                     lightgroup,
-                                     transmission_contribution);
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(kg,
+                                           buffer,
+                                           kernel_data.film.pass_lightgroup_transmission,
+                                           lightgroup,
+                                           transmission_contribution);
+          film_write_lightgroup_split_pass(
+              kg,
               buffer,
               is_direct ? kernel_data.film.pass_lightgroup_diffuse_direct :
                           kernel_data.film.pass_lightgroup_diffuse_indirect,
               lightgroup,
               diffuse_contribution);
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer,
               is_direct ? kernel_data.film.pass_lightgroup_glossy_direct :
                           kernel_data.film.pass_lightgroup_glossy_indirect,
               lightgroup,
               glossy_contribution);
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer,
               is_direct ? kernel_data.film.pass_lightgroup_transmission_direct :
                           kernel_data.film.pass_lightgroup_transmission_indirect,
@@ -690,9 +738,11 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
             kernel_data.film.pass_lightgroup_volume_direct != PASS_UNUSED ||
             kernel_data.film.pass_lightgroup_volume_indirect != PASS_UNUSED)
         {
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer, kernel_data.film.pass_lightgroup_volume, lightgroup, contribution);
-          film_write_lightgroup_pass(
+          film_write_lightgroup_split_pass(
+              kg,
               buffer,
               is_direct ? kernel_data.film.pass_lightgroup_volume_direct :
                           kernel_data.film.pass_lightgroup_volume_indirect,
