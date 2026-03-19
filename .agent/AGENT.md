@@ -38,6 +38,12 @@
 & 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build 'E:\blender_modify\build_windows_x64_vc17_Release' --target blender --config Release -- /m:28
 ```
 
+> [!IMPORTANT]
+> Do **not** run `cmake --build ... --target blender` and `cmake --build ... --target install`
+> concurrently against the same build directory. On Windows/MSBuild this can cause `.tlog`, `.obj`,
+> and `.pdb` file locking failures. If that happens, rerun the targets **sequentially**; for recovery
+> in `build_lobe_passes`, `-- /m:1 /nr:false` worked reliably on 2026-03-19.
+
 ---
 
 ## How To Test

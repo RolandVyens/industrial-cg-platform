@@ -2,7 +2,11 @@
 
 > **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-03-16
+<<<<<<< HEAD
+> **Last Updated:** 2026-03-19
+=======
+> **Last Updated:** 2026-03-19
+>>>>>>> c0889eaf738 (Cycles: fix GPU lightgroup split-pass indexing)
 
 ---
 
@@ -12,6 +16,7 @@
 - **Deep EXR memory:** Implemented user-controlled budget (default 1024 MB) + tile clamp; RenderResult deep storage skipped unless compositor needs it. Added tiled deep accumulation to avoid last-tile-only deep outputs. Merged into `vfx-rendering-branch` on 2026-02-22; code review checklist resolved.
 - **Validation:** Rendered `D:\blender_projects\deep-branch-test.blend` on 2026-02-22; deep compositor outputs saved and tile rendering confirmed.
   Compositor deep EXRs now large (e.g., `test_compoutput_deep0001.exr` ~584 MB).
+<<<<<<< HEAD
 - **Deep EXR edge alpha fix (2026-03-16):** Root cause traced to hard-surface deep samples being
   stored with opaque alpha and later normalized only against flattened beauty alpha, which cannot
   recover per-depth edge coverage at foreground/background intersections. The fix preserves opaque
@@ -56,6 +61,10 @@
       `violating_front_alpha_pixels=0`.
 - **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged. Feature 4 Phase 1 is
   now merged into both VFX branches.
+=======
+- **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged. Feature 4 Phase 1 is
+  complete on this branch, with the 2026-03-19 GPU split-pass corruption fix now ported here.
+>>>>>>> c0889eaf738 (Cycles: fix GPU lightgroup split-pass indexing)
 - **Working branch:** `vfx-rendering-branch-github`
 - **Feature 4:** Phase 1 implementation completed on `feature/per-lightgroup-lobe-passes`.
 - **Branch sync:** `feature/per-lightgroup-lobe-passes` re-synced to `vfx-rendering-branch-github` on 2026-03-09 after history rewrite. Backup branch: `backup/feature-per-lightgroup-lobe-passes-pre-resync-20260309`.
@@ -118,6 +127,34 @@
     work starts from the current Light Pass AOV base.
   - `feature/no-direct-lighting` and `feature/collection-material-override` still need re-sync
     before development resumes.
+- **Feature 4 GPU hole investigation (2026-03-19):**
+  - `D:\blender_projects\light-passes-test-v001.blend` reproduces a large flat-beauty alpha hole on `af66efa870f` when rendered on GPU/CUDA, even with compositor Deep EXR output disabled.
+  - Controlled background render evidence on `E:\blender_modify\build_af66_origin\bin\Release\blender.exe`:
+    - CPU flat (`C:\tmp\af66_cpu_flat_0002.exr`) vs GPU flat (`C:\tmp\af66_gpu_cuda_flat_0002.exr`): `alpha_max_diff=1.0`, `alpha_diff_pixels_gt_0.01=216555`; worst sampled pixel `(851, 344)` is `alpha 1.0 -> 0.0`.
+    - GPU with `ViewLayer.cycles.use_lightgroup_light_pass_aovs=False` (`C:\tmp\af66_gpu_cuda_flat_aovs_off_0002.exr`) collapses the regression to only 7 small alpha diffs (`alpha_max_diff=0.03125`).
+    - GPU with the emissive mesh lightgroup cleared (`Cone.lightgroup=''`) while keeping split light pass AOVs enabled (`C:\tmp\af66_gpu_cuda_flat_cone_nolg_0002.exr`) also collapses the regression to the same small residual diffs (`alpha_max_diff=0.03125`).
+  - Root cause was later confirmed: Feature 4 split lightgroup pass allocation skips combined-only emissive mesh lightgroups, but GPU split-lobe write sites were still indexing dense split storage with the logical global lightgroup index, corrupting adjacent film-pass data.
+- **Feature 4 GPU split-pass corruption fix (2026-03-19):**
+  - Fix implemented on `vfx-rendering-branch-github` with an internal dense remap `logical_lightgroup_index -> split_lightgroup_index` stored in `DeviceScene` / `KernelFilm`.
+  - Combined lightgroup writes still use the original logical lightgroup index, so `Combined_<lg>` behavior is unchanged.
+  - Split lobe writes now go through a dedicated remapped helper and return early for combined-only lightgroups (`-1` remap), preventing out-of-bounds/dense-pack corruption on GPU.
+  - Files touched for the fix:
+    - `intern/cycles/scene/devicescene.h`
+    - `intern/cycles/scene/devicescene.cpp`
+    - `intern/cycles/kernel/data_template.h`
+    - `intern/cycles/kernel/film/light_passes.h`
+    - `intern/cycles/scene/film.cpp`
+  - Verification:
+    - Incremental build succeeded in `E:\blender_modify\build_windows_x64_vc17_Release`.
+    - `install` target re-run was required so updated GPU kernel/runtime files were copied into `bin\Release\5.2`; the earlier CUDA illegal-address symptom was stale runtime state, not a new logic regression.
+    - Fresh CPU/GPU flat renders on `D:\blender_projects\light-passes-test-v001.blend` frame 2:
+      - `C:\tmp\feature4_fix_cpu_flat_0002.exr`
+      - `C:\tmp\feature4_fix_gpu_flat_0002.exr`
+      - `.agent/check_feature4_gpu_flat_alpha_hole.py` now reports `hole_pixel_count=0`, `alpha_diff_pixels_gt_0.01=7`, `alpha_max_diff=0.03125`.
+    - Fresh GPU compositor multilayer output:
+      - `C:\tmp\feature4_gpu_comp\rgba\feature4_gpu_rgba_0002.exr`
+      - `.agent/check_feature4_lightgroup_subimages.py` reports 28 required subimages present, `RGBA_emissive` preserved, no emissive split subimages, and all env/key split subimages remain non-zero.
+  - Deep EXR was ruled out as the primary cause of the flat-beauty hole; this was a film-pass indexing bug in Feature 4 GPU split writes.
 - **Docs:** MoonRay LPE/AOV code report added at `.agent/MOONRAY_LPE_REPORT.md` (Cycles LPE reference).
 - **Docs:** Added Phase 1/Phase 2 LPE-ready strategy notes to Feature 4 in `VFX_RENDERING_PLAN.md`.
 - **Docs:** Added Phase 1 LPE-ready checklist under Feature 4 in `VFX_RENDERING_PLAN.md`.

@@ -226,8 +226,13 @@ overridden objects/materials). Ensure overrides work in both local and linked da
 
 **Branch:** `feature/per-lightgroup-lobe-passes`
 **Difficulty:** Medium-High
+<<<<<<< HEAD
 **Status:** Phase 1 complete. Merged into `vfx-rendering-branch-github` and cherry-picked into
 `vfx-rendering-branch` on 2026-03-16.
+=======
+**Status:** Phase 1 complete on this branch, including the 2026-03-19 GPU split-pass corruption
+fix for combined-only lightgroups.
+>>>>>>> c0889eaf738 (Cycles: fix GPU lightgroup split-pass indexing)
 **Goal:** Render per-lightgroup light pass AOVs with **combined**, **direct**, and **indirect** components.
 Foundation for future LPE support; combined light pass AOVs are **raw sums** (no albedo divide).
 
@@ -276,6 +281,30 @@ Progress snapshot (2026-03-13):
     - Python world/node-tree fallback hardening,
     - direct-light split-write availability guards added.
 
+
+Progress snapshot (2026-03-19):
+- GPU flat-beauty hole root cause confirmed on `light-passes-test-v001.blend`: this was a
+  Feature 4 film-pass indexing bug, not a Deep EXR bug.
+- Repro baseline stayed `af66efa870f` / `E:\blender_modify\build_af66_origin`; disabling
+  `use_lightgroup_light_pass_aovs` or clearing the emissive mesh lightgroup removed the major hole,
+  isolating the issue to combined-only lightgroup split writes.
+- Implemented fix direction:
+  - keep logical lightgroup indices for `Combined_<lg>` passes,
+  - build a dense internal remap `logical_lightgroup_index -> split_lightgroup_index`,
+  - expose the remap through `DeviceScene` / `KernelFilm`,
+  - route split lobe writes through a split-specific helper,
+  - skip split writes entirely for combined-only lightgroups (`-1` remap).
+- Verification on the active VFX branch in `E:\blender_modify\build_windows_x64_vc17_Release`:
+  - incremental `blender` build succeeded,
+  - `install` target re-run was required to sync updated GPU kernel/runtime files,
+  - fresh CPU/GPU flat frame-2 renders now pass `.agent/check_feature4_gpu_flat_alpha_hole.py`
+    with `hole_pixel_count=0`, `alpha_diff_pixels_gt_0.01=7`, `alpha_max_diff=0.03125`,
+  - fresh GPU compositor multilayer output passes
+    `.agent/check_feature4_lightgroup_subimages.py`: `RGBA_emissive` preserved, emissive split
+    subimages absent, env/key split subimages present and non-zero.
+- The earlier 2026-03-11 / 2026-03-13 light-pass equation validations remain the reference for
+  pass math behavior; the 2026-03-19 change only corrects split-pass addressing and does not alter
+  contribution formulas or combined-only policy.
 
 Progress snapshot (2026-03-16):
 - Integrated into both long-lived VFX branches:
