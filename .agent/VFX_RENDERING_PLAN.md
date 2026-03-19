@@ -27,6 +27,46 @@ not need it.
   cleanup, unified pixel-population helper flow, mutable deep-buffer accessor rename cleanup,
   `deep_compute_buffer_bytes()` declaration/definition matching, and normalization of mixed EOLs
   across all modified tracked files in the fix worktree.
+- Deep EXR long-term redesign direction (2026-03-17): the next hard-surface edge pass should move
+  away from beauty/sample-count inference and toward a MoonRay-inspired explicit hard-surface
+  coverage model. Scope is locked to **solid surfaces only**; the current volume deep output is
+  accepted and must remain unchanged during this redesign.
+- Deep EXR surface-only status update (2026-03-18): current implementation in
+  `feature/deep-exr-surface-coverage` keeps the explicit front-prefix reconstruction for the
+  multi-depth hard-surface case, but restores flattened beauty alpha for the **pure single-group
+  hard-surface case** after tiled-render debugging showed that this case is not yet a reliable
+  target for the duplicate-count proxy. Volume deep output remains unchanged and validated against
+  the baseline.
+- Deep EXR mixed volume+surface correction (2026-03-18): the attempted
+  `preserve_opaque_surface_prefix` narrowing was too aggressive for pixels that contain front
+  volume samples with opaque surfaces behind them (for example, a plane behind a volume). That
+  narrowing changed the downstream beauty-normalization stack and inflated front volume alpha. The
+  current worktree reverts that narrowing so opaque surface duplicates are preserved anywhere in the
+  sorted deep sample list when the surface-edge reconstruction path requests it. This fixes the
+  reported plane-behind-volume regression while keeping the surface edge checks green.
+- Deep EXR mixed case-1 follow-up (2026-03-18): for the existing
+  **opaque surface prefix + volume-only suffix** path, the corrected front surface coverage must
+  also reserve part of the pixel alpha budget for the suffix. The current worktree therefore
+  rescales only the trailing volume-only suffix against the **remaining transparency after the
+  corrected surface prefix**, rather than leaving that suffix at near-raw alpha.
+- Deep EXR mixed case-1 regression check (2026-03-18): add
+  `.agent/check_deep_mixed_surface_volume_case1.py` to compare flattened deep alpha against the
+  flat EXR on known mixed pixels from `test_compoutput_deep0001.exr`.
+- Deep EXR pure multi-depth surface follow-up (2026-03-18): the committed hard-surface coverage
+  path also over-counted **pure multi-depth hard-surface** pixels in
+  `light-passes-test-v001.blend` because preserved opaque-surface duplicate hits were still being
+  used as the total prefix coverage source. The current `feature/deep-exr-surface-coverage`
+  worktree now uses the flattened beauty alpha as the **total surface coverage budget** for the
+  pure hard-surface multi-depth case and distributes that budget across the preserved surface
+  groups, while leaving the mixed surface+volume suffix path and pure volume output unchanged.
+- Deep EXR pure multi-depth regression check (2026-03-18): add
+  `.agent/check_deep_surface_multidepth_partial_alpha.py` for the known bad
+  `light-passes-test-v001.blend` pixels and keep the full-scene flat-vs-deep alpha scan at
+  `bad_count=0` as the acceptance target for that scene.
+- Deep EXR future memory direction (2026-03-17): current Cycles deep storage remains a
+  fixed-capacity, tile-budgeted allocation model for predictable memory use. A later follow-up may
+  borrow MoonRay-style sparse/compressed deep storage ideas for memory efficiency, but that is out
+  of scope for the current hard-surface correctness work.
 
 **Features sorted by development difficulty (easiest first):**
 1. Per-Light Shadow Color

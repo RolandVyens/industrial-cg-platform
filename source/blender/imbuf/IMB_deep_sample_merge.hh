@@ -33,6 +33,11 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
   size_t write_idx = 0;
   for (size_t read_idx = 0; read_idx < count; read_idx++) {
     const Sample current = samples[read_idx];
+    const float curr_z = DeepSampleTraits<Sample>::z(current);
+    const float curr_z_back = DeepSampleTraits<Sample>::z_back(current);
+    const float curr_a = DeepSampleTraits<Sample>::a(current);
+    const bool curr_volume = (curr_z_back > curr_z + volume_depth_epsilon);
+    const bool curr_opaque_surface = !curr_volume && curr_a >= (1.0f - volume_depth_epsilon);
 
     if (write_idx > 0) {
       Sample &prev = samples[write_idx - 1];
@@ -40,13 +45,7 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
       const float prev_z_back = DeepSampleTraits<Sample>::z_back(prev);
       const float prev_a = DeepSampleTraits<Sample>::a(prev);
       const bool prev_volume = (prev_z_back > prev_z + volume_depth_epsilon);
-
-      const float curr_z = DeepSampleTraits<Sample>::z(current);
-      const float curr_z_back = DeepSampleTraits<Sample>::z_back(current);
-      const float curr_a = DeepSampleTraits<Sample>::a(current);
-      const bool curr_volume = (curr_z_back > curr_z + volume_depth_epsilon);
       const bool prev_opaque_surface = !prev_volume && prev_a >= (1.0f - volume_depth_epsilon);
-      const bool curr_opaque_surface = !curr_volume && curr_a >= (1.0f - volume_depth_epsilon);
 
       if (prev_volume == curr_volume) {
         if (!(preserve_opaque_surface_duplicates && prev_opaque_surface && curr_opaque_surface)) {

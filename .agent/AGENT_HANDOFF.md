@@ -2,7 +2,7 @@
 
 > **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-03-16
+> **Last Updated:** 2026-03-18
 
 ---
 
@@ -54,6 +54,133 @@
       `mismatching_single_surface_pixels=0`.
     - `.agent/check_deep_surface_front_alpha.py` reports `multi_sample_pixels=39349`,
       `violating_front_alpha_pixels=0`.
+- **Deep EXR surface coverage redesign (2026-03-17):**
+  - Current deep edge work is being re-scoped away from beauty/sample-count alpha reconstruction
+    toward a MoonRay-inspired hard-surface coverage redesign.
+  - Locked scope for the next implementation pass: **solid surface deep edge alpha only**.
+    Current volume deep output and volume alpha behavior must remain unchanged.
+  - Mixed surface/volume pixels should prefer baseline-preserving passthrough for the volume
+    portion; ambiguity should not be resolved by rewriting volume samples.
+  - Architectural note: current Cycles deep storage is tile-budgeted and predictable, but it is
+    still a fixed-capacity per-tile allocation model and is likely less memory-efficient than
+    MoonRay's sparse/compressed deep storage design. Any MoonRay-style storage optimization is a
+    future follow-up and is out of scope for the current visible-behavior fix.
+- **Deep EXR surface-only follow-up (2026-03-18):**
+  - Active implementation worktree: `E:\blender_modify\blender_deep_surface_coverage`
+    on branch `feature/deep-exr-surface-coverage`.
+  - Volume behavior remains intentionally unchanged. Verification against
+    `C:\tmp\volume_compoutput_deep0001_baseline_e720.exr` confirms
+    `checked_volume_pixels=700715`, `mismatching_volume_pixels=0`.
+  - Root cause for the remaining surface-edge regression in this worktree was narrowed to the
+    **pure single-group hard-surface case**: the front-prefix explicit coverage path is still the
+    right long-term direction for multi-depth / mixed pixels, but some single-group pixels in the
+    tiled compositor path cannot reliably use the duplicate-count proxy as their final alpha source.
+  - Final current behavior in this worktree:
+    - **Pure single-group hard-surface pixels:** assign deep alpha from flattened beauty alpha.
+    - **Multi-depth hard-surface prefix pixels:** keep the explicit front-prefix reconstruction.
+    - **Mixed surface/volume pixels:** preserve the volume suffix on the untouched/raw path.
+  - Fresh verification on 2026-03-18 using
+    `D:\blender_projects\deep-branch-test.blend` frame 1:
+    - `cmake --build E:\blender_modify\build_deep_surface_coverage --target blender --config Release -- /m:28`
+      succeeded.
+    - CPU/factory-startup render completed successfully and rewrote the deep/flat EXRs in
+      `C:\tmp\`.
+    - `.agent/check_deep_single_surface_alpha.py` reports
+      `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` reports `multi_sample_pixels=39349`,
+      `violating_front_alpha_pixels=0`.
+- **Deep EXR mixed volume+surface regression follow-up (2026-03-18):**
+  - User-reported “volume still alphaed” case was reproduced in the combined
+    `test_compoutput_deep0001.exr` output after accounting for a **plane behind the volume**.
+  - Root cause: the narrowed `preserve_opaque_surface_prefix` merge behavior in
+    `IMB_deep_sample_merge.hh` was collapsing opaque surface duplicates that sit **behind** front
+    volume segments. That changed the sample stack seen by later beauty-based alpha normalization
+    and incorrectly boosted the front volume alpha in mixed pixels.
+  - Minimal fix applied in `feature/deep-exr-surface-coverage`: revert that narrowing so
+    `preserve_opaque_surface_duplicates=true` again preserves opaque surface duplicates anywhere in
+    the sorted pixel sample list.
+  - Concrete regression check after rebuild/render:
+    - Example mixed pixels now match the saved combined baseline again:
+      - `(1308, 397)` restored from current bad `5` samples / boosted front volume alpha
+        `0.1958440840` back to baseline `14` samples / `0.0676613897`.
+      - `(1308, 396)` restored from current bad front volume alpha `0.0254850723` back to
+        baseline `0.0212831274`.
+    - Surface checks remain green:
+      - `checked_single_surface_fractional_pixels=6657`,
+        `mismatching_single_surface_pixels=0`
+      - `multi_sample_pixels=39349`, `violating_front_alpha_pixels=0`
+    - Volume-only passthrough check remains green:
+      - `checked_volume_pixels=700715`, `mismatching_volume_pixels=0`
+    - Combined baseline comparison improved from the earlier `772` active mismatching pixels to
+      `82` remaining mixed-pixel diffs; the specific plane-behind-volume regression is fixed, but
+      strict old-baseline parity for all mixed pixels may still need follow-up debugging if
+      required.
+- **Deep EXR mixed case-1 residual-alpha fix (2026-03-18):**
+  - Root cause for the remaining mixed-pixel failures was confirmed in Cycles, not compositor file
+    output: after front hard-surface coverage was corrected, the trailing volume-only suffix in the
+    same pixel was still exported with near-raw alpha, so the combined deep stack greatly exceeded
+    the flat/beauty alpha budget.
+  - `intern/cycles/session/deep_output_driver.cpp` now rescales the **volume-only suffix** for the
+    existing “opaque surface prefix + volume-only suffix” path against the **remaining
+    transparency** left after the corrected hard-surface prefix, instead of leaving that suffix on
+    the raw path.
+  - Scope stays locked:
+    - front hard-surface coverage logic remains active,
+    - pure volume pixels remain untouched,
+    - pure hard-surface checks remain unchanged.
+  - Fresh verification on 2026-03-18 after rebuild + CPU/factory-startup render:
+    - `.agent/check_deep_mixed_surface_volume_case1.py` reports
+      `checked_pixels=4`, `mismatching_pixels=0`
+      for previously failing mixed pixels like `(1066,533)`, `(1066,534)`, `(1066,535)`,
+      `(1067,536)`.
+    - `.agent/check_deep_single_surface_alpha.py` remains green with
+      `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` remains green with
+      `multi_sample_pixels=39349`, `violating_front_alpha_pixels=0`.
+    - `.agent/check_deep_volume_passthrough.py` remains green with
+      `checked_volume_pixels=700715`, `mismatching_volume_pixels=0`.
+- **Deep EXR pure multi-depth surface coverage correction (2026-03-18):**
+  - User-reported `light-passes-test-v001.blend` holes were traced on a **clean committed**
+    baseline (`e720d4ce200`) and confirmed to predate the current uncommitted worktree edits.
+  - Root cause was narrowed to the **pure hard-surface multi-depth path** in
+    `intern/cycles/session/deep_output_driver.cpp`:
+    `populate_surface_coverage_samples()` was treating preserved opaque-surface duplicate hits as
+    the total coverage source for the prefix. On traced bad pixels like render-space
+    `(1792, 949)` / EXR-space `(1792, 130)`, that produced `prefix_count=38`,
+    `num_surface_groups=19`, `sample_count=32`, `beauty_a=0.59375`, so the old prefix coverage
+    math over-allocated alpha toward `1.0`.
+  - Current fix scope stays locked:
+    - **pure multi-depth hard-surface pixels** now use the flattened beauty alpha as the **total
+      surface coverage budget** and distribute that budget across the preserved surface groups,
+      instead of letting preserved duplicate-hit counts define the total prefix coverage;
+    - **mixed surface + volume suffix** logic remains on the existing case-1 path;
+    - **pure volume** output remains untouched.
+  - Added focused regression script:
+    `.agent/check_deep_surface_multidepth_partial_alpha.py`
+    for the known bad `light-passes-test-v001.blend` pixels.
+  - Fresh verification on 2026-03-18 after rebuild + render:
+    - `cmake --build E:\blender_modify\build_deep_surface_coverage --target blender --config Release -- /m:28`
+      succeeded.
+    - CPU/factory-startup render of `D:\blender_projects\light-passes-test-v001.blend` frame 1
+      succeeded.
+    - `.agent/check_deep_surface_multidepth_partial_alpha.py` now reports
+      `checked_multidepth_partial_pixels=5`,
+      `mismatching_multidepth_partial_pixels=0`
+      (was `5` mismatches before the fix).
+    - Full-scene flat-vs-deep alpha scan on the fresh light-passes outputs now reports
+      `bad_count=0` (was `67` before the fix).
+    - Existing deep-branch regressions remain green after a fresh
+      `D:\blender_projects\deep-branch-test.blend` render:
+      - `checked_single_surface_fractional_pixels=6657`,
+        `mismatching_single_surface_pixels=0`
+      - `multi_sample_pixels=39349`,
+        `violating_front_alpha_pixels=0`
+      - `checked_pixels=4`,
+        `mismatching_pixels=0`
+      - `checked_volume_pixels=700715`,
+        `mismatching_volume_pixels=0`
 - **VFX features:** Feature 1 complete (Per-Light Shadow Color) and merged. Feature 4 Phase 1 is
   now merged into both VFX branches.
 - **Working branch:** `vfx-rendering-branch-github`
