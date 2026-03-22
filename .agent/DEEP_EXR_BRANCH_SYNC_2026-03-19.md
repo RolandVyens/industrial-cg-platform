@@ -32,12 +32,3 @@ Validated in `E:\blender_modify\blender_deep_exr_fix` / `E:\blender_modify\build
 Under `--factory-startup`, `prefs.get_devices()` exposed both CUDA and OPTIX entries for the same GPU.
 For the flat-hole regression test, only the CUDA device should be enabled; enabling every returned
 device caused a CUDA illegal-address crash during CLI validation.
-
-## Cleanup follow-up
-- After the black-hole root cause was confirmed as a Feature 4 GPU split-pass indexing bug, the
-  temporary Deep EXR trace instrumentation that had been added in
-  `intern/cycles/session/deep_output_driver.cpp` and
-  `source/blender/nodes/composite/nodes/node_composite_file_output.cc` was removed again.
-- The actual Deep EXR surface/mixed-pixel logic changes were kept in place, including the
-  hard-surface coverage path and the mixed surface+volume handling still under evaluation on this
-  branch.

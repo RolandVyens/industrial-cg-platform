@@ -23,18 +23,6 @@ feature:
    `DeepOutputDriver::accumulate_tile()` call so all tiles are collected rather than only the
    last one.
 
-## Follow-up Direction (2026-03-17)
-
-- Current Cycles deep storage is still a **fixed-capacity per-tile allocation model** with a
-  user-controlled tile budget. This makes deep memory use predictable and clampable, but it is not
-  as storage-efficient as a sparse/compressed deep architecture.
-- Local MoonRay code review indicates MoonRay's deep path is likely more memory-efficient overall
-  because it uses sparser/compressed deep structures and per-pixel/per-thread volume working data
-  rather than a full worst-case fixed-capacity deep buffer for every pixel.
-- Current branch priority is **solid-surface deep alpha correctness**, not a deep volume or deep
-  storage rewrite. Future memory optimization may borrow MoonRay-style sparse/compressed storage
-  ideas, but any such work must preserve the current accepted volume deep behavior.
-
 ### Changed files
 
 | File | Change |

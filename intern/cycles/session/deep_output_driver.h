@@ -222,15 +222,14 @@ class DeepOutputDriver {
                              float &beauty_r,
                              float &beauty_g,
                              float &beauty_b);
-  bool populate_surface_coverage_samples(size_t global_idx,
-                                         int count,
-                                         const DeepSampleData *sample_data,
-                                         size_t offset,
-                                         bool has_beauty,
-                                         float beauty_r,
-                                         float beauty_g,
-                                         float beauty_b,
-                                         float beauty_a);
+  bool populate_opaque_surface_samples(size_t global_idx,
+                                       int count,
+                                       const DeepSampleData *sample_data,
+                                       size_t offset,
+                                       float beauty_r,
+                                       float beauty_g,
+                                       float beauty_b,
+                                       float beauty_a);
 
   std::vector<std::vector<blender::DeepSample>> *ensure_processed_cache();
 };
