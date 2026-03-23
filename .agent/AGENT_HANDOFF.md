@@ -12,6 +12,37 @@ Reference summary document:
 - `.agent/DEEP_EXR_DEVELOPMENT_STATE.md` now holds the consolidated current Deep EXR development
   state, behavior summary, root causes, fixes, and latest validation results.
 
+- **Deep EXR metadata reconstruction activation (2026-03-23, validated/current):**
+  - Activated the kernel-side hard-surface metadata path on the current worktree:
+    - `state_template.h` / `path_state.h` now store `path.deep_surface_sample_idx`;
+    - `shadow_state_template.h` / `state_flow.h` now carry/reset the matching
+      `shadow_path.deep_surface_sample_idx` for bounce-0 surface shadow writes;
+    - `shade_surface.h` now writes bounce-0 hard-surface deep samples through
+      `film_write_deep_surface_sample_transparent(...)`, using
+      `deep_make_surface_key(sd.object, sd.prim, sd.shader)` and
+      `deep_pack_geometric_normal(sd.Ng)`, and stores the returned sample index into path state;
+    - `light_passes.h` now accumulates bounce-0 surface/shadow RGB into that exact deep sample via
+      `film_accumulate_deep_surface_rgb(...)`.
+  - Volume deep remains unchanged.
+  - Fresh verification on the current build/worktree:
+    - `.agent/check_deep_surface_metadata_wiring.py` now passes with
+      `metadata_wiring_failures=0`.
+    - Fresh rebuild of `E:\blender_modify\build_deep_surface_coverage` completed successfully.
+    - Fresh controlled render of `D:\blender_projects\light-passes-test-v001.blend` frame 2 to
+      `C:\tmp\scene_output_rgba_deep_probe_####.exr` completed successfully.
+    - Existing regressions still pass:
+      - `.agent/check_deep_surface_opaque_coverage.py`: `mismatching_opaque_pixels=0`
+      - `.agent/check_deep_surface_compaction.py`: `overfragmented_pixels=0`
+      - `.agent/check_deep_single_surface_alpha.py`: `mismatching_single_surface_pixels=0`
+      - `.agent/check_deep_surface_front_alpha.py`: `violating_front_surface_alpha_pixels=0`
+      - `.agent/check_deep_surface_sample_color.py` passes with
+        `interior_to_edge_ratio=0.091213669`
+    - Fresh Nuke validation rewrote:
+      - `C:\tmp\nuke_scene_output_rgba_deep_probe.png`
+      - `C:\tmp\nuke_scene_output_rgba_deep_probe_mask.png`
+      The large white seam stays gone; remaining mask stays in the previously accepted tiny sparse
+      noise range.
+
 - **Deep EXR hard-surface opaque-coverage follow-up (2026-03-23, validated/current):**
   - Confirmed the remaining direct scene-output DeepMerge seam was **not** the earlier
     object/shader compaction bug anymore. The fresh controlled render still had opaque seam pixels
@@ -51,11 +82,11 @@ Reference summary document:
       - mask: `C:\tmp\nuke_scene_output_rgba_deep_probe_mask.png`
       The large white seam is visually gone; only a tiny sparse residual mask cluster remains for
       follow-up classification.
-  - Expanded review note (2026-03-23): the **currently active** validated fix is the low-level
-    opaque-duplicate preservation in `DeepRenderBuffers::merge_nearby_samples()`. The newer
-    metadata-aware hard-surface reconstruction helpers are present in the branch as groundwork, but
-    the kernel-side metadata write path is not fully wired yet, so that metadata-aware path is not
-    currently the primary reason the validated renders look correct.
+  - Updated interpretation after the follow-up metadata activation (2026-03-23): the validated
+    visible coverage fix is still anchored first in the low-level opaque-duplicate preservation in
+    `DeepRenderBuffers::merge_nearby_samples()`, but the kernel-side metadata write / RGB
+    accumulation path is now live for bounce-0 hard surfaces and is part of the current accepted
+    state.
 
 - **Deep EXR hard-surface compaction follow-up (2026-03-22, validated/current):**
   - Resumed debugging from a **fresh controlled scene-output Deep EXR** render instead of the
@@ -85,9 +116,10 @@ Reference summary document:
       `violating_front_surface_alpha_pixels=0`.
   - Separate note: the older front-sample true-color/noise check on fully opaque pixels is still a
     different issue from this compaction fix and remains out of the current change.
-  - Current interpretation after expanded review: treat the metadata-aware compaction code in
-    `intern/cycles/session/deep_output_driver.cpp` as partial future groundwork until the kernel
-    metadata write/accumulate path is fully activated.
+  - Current interpretation after the 2026-03-23 follow-up: the export-side metadata-aware
+    compaction code in `intern/cycles/session/deep_output_driver.cpp` is now backed by active
+    kernel-side metadata writes and bounce-0 RGB accumulation, while still relying on the
+    low-level opaque-duplicate preservation fix for correct coverage reconstruction.
 
 - **Deep EXR review cleanup follow-up (2026-03-22, in progress):**
   - Applied the verified code-review cleanup items on the active worktree:

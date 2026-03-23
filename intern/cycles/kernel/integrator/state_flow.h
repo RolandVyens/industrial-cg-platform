@@ -104,6 +104,7 @@ ccl_device_forceinline IntegratorShadowState integrator_shadow_path_init(
       &kernel_integrator_state.next_shadow_path_index[0], 1);
   atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->num_queued[next_kernel], 1);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, queued_kernel) = next_kernel;
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = 0xffffffffu;
 #  if defined(__PATH_GUIDING__)
   if ((kernel_data.kernel_features & KERNEL_FEATURE_PATH_GUIDING)) {
     INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, path_segment) = nullptr;
@@ -230,6 +231,7 @@ integrator_shadow_path_init(ccl_attr_maybe_unused KernelGlobals kg,
 {
   IntegratorShadowState shadow_state = (is_ao) ? &state->ao : &state->shadow;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, queued_kernel) = next_kernel;
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = 0xffffffffu;
 #  if defined(__PATH_GUIDING__)
   if ((kernel_data.kernel_features & KERNEL_FEATURE_PATH_GUIDING)) {
     INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, path_segment) = nullptr;

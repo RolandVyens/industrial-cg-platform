@@ -248,6 +248,8 @@ integrate_direct_light_shadow_init_common(KernelGlobals kg,
       state, path, rng_pixel);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, sample) = INTEGRATOR_STATE(
       state, path, sample);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
+      state, path, deep_surface_sample_idx);
 
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = INTEGRATOR_STATE(
       state, path, transparent_bounce);
@@ -713,6 +715,8 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
       state, path, rng_pixel);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, sample) = INTEGRATOR_STATE(
       state, path, sample);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
+      state, path, deep_surface_sample_idx);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, flag) = shadow_flag;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, bounce) = bounce;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = transparent_bounce;
@@ -794,8 +798,18 @@ ccl_device int integrate_surface(KernelGlobals kg,
             ccl_global uint32_t *deep_sample_counts = (ccl_global uint32_t *)
                                                           kernel_data.film.deep_sample_counts_ptr;
             if (deep_samples && deep_sample_counts) {
-              film_write_deep_sample_transparent(
-                  kg, pixel_index, deep_samples, deep_sample_counts, alpha, depth, depth);
+              INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) =
+                  film_write_deep_surface_sample_transparent(kg,
+                                                             pixel_index,
+                                                             deep_samples,
+                                                             deep_sample_counts,
+                                                             alpha,
+                                                             depth,
+                                                             depth,
+                                                             deep_make_surface_key(
+                                                                 sd.object, sd.prim, sd.shader),
+                                                             deep_pack_geometric_normal(sd.Ng),
+                                                             INTEGRATOR_STATE(state, path, sample));
             }
           }
         }

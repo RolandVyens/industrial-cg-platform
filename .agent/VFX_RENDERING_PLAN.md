@@ -103,11 +103,16 @@ not need it.
   `.agent/check_deep_surface_front_alpha.py ... violating_front_surface_alpha_pixels=0`. Updated
   Nuke artifacts in `C:\tmp\nuke_scene_output_rgba_deep_probe*.png` show the large white seam
   removed, with only a tiny residual mask cluster still visible for later polish/debug.
-- Expanded review interpretation (2026-03-23): the accepted current visible fix should be
-  attributed first to preserved opaque duplicate coverage in
-  `DeepRenderBuffers::merge_nearby_samples()`. The metadata-aware hard-surface reconstruction code
-  in `deep_write.h` / `deep_buffers.h` / `deep_output_driver.cpp` remains partial groundwork until
-  the kernel-side metadata write and accumulation call sites are fully activated in a later step.
+- Deep EXR metadata reconstruction activation (2026-03-23): the newer hard-surface metadata path is
+  now active on the kernel side. Bounce-0 hard-surface hits write metadata through
+  `film_write_deep_surface_sample_transparent(...)`, path/shadow state carries
+  `deep_surface_sample_idx`, and `light_passes.h` accumulates bounce-0 surface/shadow RGB into the
+  exact deep sample via `film_accumulate_deep_surface_rgb(...)`. Volume deep remains unchanged.
+- Current interpretation after the activation follow-up (2026-03-23): the accepted visible
+  coverage fix should still be attributed first to preserved opaque duplicate coverage in
+  `DeepRenderBuffers::merge_nearby_samples()`, while the metadata-aware hard-surface
+  reconstruction code in `deep_write.h` / `deep_buffers.h` / `deep_output_driver.cpp` is now
+  partially live rather than pure groundwork.
 - Validation (2026-03-20): `deep-branch-test.blend` CPU/factory-startup rerun keeps
   `checked_single_surface_fractional_pixels=6657`, `mismatching_single_surface_pixels=0`,
   `multi_sample_pixels=39349`, and `violating_front_alpha_pixels=0`.

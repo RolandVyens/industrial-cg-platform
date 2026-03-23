@@ -23,9 +23,11 @@ Volume deep was intentionally left unchanged in this phase.
 Important implementation-state note:
 - the **currently active visible fix** comes from the low-level deep-buffer merge change that now
   preserves opaque hard-surface duplicates before export;
-- the newer metadata-aware hard-surface reconstruction helpers are present in the branch as
-  groundwork, but the kernel-side metadata write path is **not fully wired yet**, so that path is
-  not the main reason the current validated renders look correct.
+- the metadata-aware hard-surface path is now partially active on the kernel side for bounce-0
+  surfaces: primary/bounce-0 surface hits write hard-surface metadata, bounce-0 surface/shadow
+  contributions accumulate RGB into that exact deep sample, and the older export fallback remains
+  in place when metadata is absent;
+- volume deep remains unchanged.
 
 ---
 
@@ -121,10 +123,10 @@ Root cause:
   hits more than desired.
 
 Current code state:
-- export-side grouping helpers for visible-surface identity and normal continuity are present in the
-  branch as metadata-aware groundwork;
-- however, the kernel-side hard-surface metadata write path is not fully activated yet, so this is
-  not the primary active reason for the validated current result.
+- export-side grouping helpers for visible-surface identity and normal continuity are active
+  together with the newly wired kernel-side hard-surface metadata write / RGB accumulation path;
+- the accepted visible coverage fix still depends first on preserved opaque duplicate coverage in
+  `DeepRenderBuffers::merge_nearby_samples()`.
 
 Result:
 - the validated scene no longer shows the earlier over-fragmented output, but the accepted current
@@ -199,7 +201,16 @@ Result:
 - `pixel=(655,403) flat_alpha=1.000000000 deep_alpha=1.000000000 diff=0.000000000`
 - `mismatching_opaque_pixels=0`
 
-### 7.2 Hard-surface compaction regression
+### 7.2 Metadata wiring regression
+
+Command:
+- `.agent/check_deep_surface_metadata_wiring.py`
+
+Result:
+- `PASS: Deep EXR surface metadata wiring is active.`
+- `metadata_wiring_failures=0`
+
+### 7.3 Hard-surface compaction regression
 
 Command:
 - `.agent/check_deep_surface_compaction.py`
@@ -209,7 +220,7 @@ Result:
 - `all_surface_fractional_pixels=4704`
 - `overfragmented_pixels=0`
 
-### 7.3 Single-surface AA regression
+### 7.4 Single-surface AA regression
 
 Command:
 - `.agent/check_deep_single_surface_alpha.py`
@@ -218,7 +229,7 @@ Result:
 - `checked_single_surface_fractional_pixels=4696`
 - `mismatching_single_surface_pixels=0`
 
-### 7.4 Front-surface alpha regression
+### 7.5 Front-surface alpha regression
 
 Command:
 - `.agent/check_deep_surface_front_alpha.py`
@@ -229,15 +240,16 @@ Result:
 - `multi_surface_pixels=0`
 - `violating_front_surface_alpha_pixels=0`
 
-### 7.5 Surface sample color regression
+### 7.6 Surface sample color regression
 
 Command:
 - `.agent/check_deep_surface_sample_color.py`
 
 Result:
-- passes on the previously bad seam case `(655, 403)`.
+- passes on the previously bad seam case `(655, 403)`;
+- current measured ratio is `interior_to_edge_ratio=0.091213669`.
 
-### 7.6 Nuke visual validation
+### 7.7 Nuke visual validation
 
 Command path:
 - `.agent/run_nuke_direct_scene_output_test.py`
@@ -273,8 +285,11 @@ Current responsibility:
 - leave volume suffix handling on the current existing path.
 
 Important note:
-- metadata-aware hard-surface grouping/reconstruction helpers are currently present but are not yet
-  fully exercised because the kernel-side metadata write/accumulate flow is not fully wired.
+- bounce-0 hard-surface metadata writes and RGB accumulation are now active;
+- preserved opaque duplicate coverage is still required so export-side reconstruction sees the real
+  camera-hit coverage distribution;
+- the older export fallback remains important for no-metadata cases;
+- volume deep stays on the existing path unchanged.
 
 ---
 
