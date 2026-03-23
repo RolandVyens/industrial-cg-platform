@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Validate deep merge behavior across direct/compositor deep outputs.
+"""Validate seam-pixel deep merge behavior across direct/compositor outputs.
 
-Task-1 TDD intent:
-- Record seam-pixel deep metrics for 3 outputs.
-- Assert expectations that should fail on current direct output behavior.
+This checker is used as a lightweight structural regression test for the current
+Deep EXR workflow:
+- direct scene-output deep
+- runtime-wired compositor RGBA deep
+- compositor alpha-only deep
 """
 
 from __future__ import annotations
@@ -49,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--compositor-rgba-deep",
-        default=r"D:\blender_projects\rendered\test\ViewLayer\Deep\ViewLayer_Deep_v001_0002.exr",
+        default=r"D:\blender_projects\rendered\test\TempDeepRGBA\ViewLayer_Deep_v001_0002.exr",
     )
     parser.add_argument(
         "--compositor-alpha-only-deep",

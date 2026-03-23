@@ -1,14 +1,271 @@
-﻿# VFX Rendering Branch - Agent Handoff
+# VFX Rendering Branch - Agent Handoff
 
 > **Branch:** `vfx-rendering-branch-github`
 > **Base:** Blender `main` (5.2 dev)
-> **Last Updated:** 2026-03-16
+> **Last Updated:** 2026-03-23
 
 ---
 
 ## Current Status
 
+Reference summary document:
+- `.agent/DEEP_EXR_DEVELOPMENT_STATE.md` now holds the consolidated current Deep EXR development
+  state, behavior summary, root causes, fixes, and latest validation results.
+
+- **Deep EXR hard-surface opaque-coverage follow-up (2026-03-23, validated/current):**
+  - Confirmed the remaining direct scene-output DeepMerge seam was **not** the earlier
+    object/shader compaction bug anymore. The fresh controlled render still had opaque seam pixels
+    like EXR `(655, 403)` flattening to only `deep_alpha=0.125` while the flat RGBA pixel stayed
+    fully opaque `1.0`.
+  - Root cause: `intern/cycles/session/deep_buffers.cpp` was still calling the shared
+    `merge_sorted_deep_samples(..., preserve_opaque_surface_duplicates=false)` path before export.
+    That generic pre-export merge collapsed many identical opaque hard-surface camera hits into only
+    a few representatives, so later export-side coverage reconstruction saw only `4` raw opaque
+    hits with `sample_count=32` on the traced seam pixel and assigned tiny front alphas like
+    `1/32`, `1/31`, etc.
+  - Fix: restored opaque duplicate preservation in `DeepRenderBuffers::merge_nearby_samples()` by
+    passing `true` for `preserve_opaque_surface_duplicates`, while leaving volume merging untouched.
+    Export-side prefix grouping/compaction still collapses the preserved hard-surface duplicates
+    into compact final deep samples using the real camera-hit counts.
+  - Fresh verification on the controlled scene-output render
+    `C:\tmp\scene_output_rgba_deep_probe_####.exr` from
+    `D:\blender_projects\light-passes-test-v001.blend` frame 2:
+    - new red/green checker
+      `.agent/check_deep_surface_opaque_coverage.py D:\blender_projects\rendered\test\ViewLayer\RGBA\ViewLayer_RGBA_v001_0002.exr C:\tmp\scene_output_rgba_deep_probe_####.exr`
+      now reports `pixel=(655,403) flat_alpha=1.0 deep_alpha=1.0 diff=0.0 samples=3`
+      (was `deep_alpha=0.125` before the fix).
+    - `.agent/check_deep_surface_compaction.py` still reports `overfragmented_pixels=0`.
+    - `.agent/check_deep_single_surface_alpha.py` still reports
+      `checked_single_surface_fractional_pixels=4696`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` still reports
+      `active_sample_pixels=1807695`, `multi_active_sample_pixels=0`,
+      `violating_front_surface_alpha_pixels=0`.
+    - `check_deep_surface_sample_color.py` now passes on the previously failing opaque seam pixel
+      `(655, 403)`; the front sample unpremultiplied RGB is back near the teapot interior color
+      instead of the flat edge color.
+    - Fresh Nuke validation via
+      `.agent/run_nuke_direct_scene_output_test.py --deep-input C:\tmp\scene_output_rgba_deep_probe_####.exr`
+      rewrote:
+      - preview: `C:\tmp\nuke_scene_output_rgba_deep_probe.png`
+      - mask: `C:\tmp\nuke_scene_output_rgba_deep_probe_mask.png`
+      The large white seam is visually gone; only a tiny sparse residual mask cluster remains for
+      follow-up classification.
+  - Expanded review note (2026-03-23): the **currently active** validated fix is the low-level
+    opaque-duplicate preservation in `DeepRenderBuffers::merge_nearby_samples()`. The newer
+    metadata-aware hard-surface reconstruction helpers are present in the branch as groundwork, but
+    the kernel-side metadata write path is not fully wired yet, so that metadata-aware path is not
+    currently the primary reason the validated renders look correct.
+
+- **Deep EXR hard-surface compaction follow-up (2026-03-22, validated/current):**
+  - Resumed debugging from a **fresh controlled scene-output Deep EXR** render instead of the
+    stale `D:\blender_projects\rendered\test\trash_output\.exr` path. Current controlled render:
+    `C:\tmp\scene_output_rgba_deep_probe_####.exr`
+    from `D:\blender_projects\light-passes-test-v001.blend` using runtime-only scene settings
+    (`.agent/render_scene_output_rgba_deep_probe.py`).
+  - Root cause of the remaining hard-surface over-fragmentation:
+    `intern/cycles/session/deep_output_driver.cpp` was still grouping hard-surface prefix samples by
+    full `object+shader+prim` metadata identity. Adjacent triangles from the same visible surface
+    therefore stayed split even when normals matched and they should have compacted.
+  - Current follow-up changes the prefix grouping comparison to the visible-surface identity
+    `object+shader` plus normal continuity, while still using the stored per-sample RGB metadata for
+    group color.
+  - Fresh verification on the controlled scene-output render:
+    - `.agent/check_deep_surface_compaction.py C:\tmp\scene_output_rgba_deep_probe_####.exr D:\blender_projects\rendered\test\ViewLayer\RGBA\ViewLayer_RGBA_v001_0002.exr`
+      now reports `overfragmented_pixels=0` (was `3469` before this follow-up).
+    - traced far-ground pixel `(1855, 128)` collapsed from `3` thin hard-surface samples to `1`
+      sample with `A=0.09375`.
+    - traced mixed edge pixel `(302, 150)` collapsed from `4` samples to `2`
+      (`foreground + merged background`).
+    - `.agent/check_deep_single_surface_alpha.py` on the fresh controlled render reports
+      `checked_single_surface_fractional_pixels=4696`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` on the fresh controlled render reports
+      `active_sample_pixels=1807695`, `multi_active_sample_pixels=0`,
+      `violating_front_surface_alpha_pixels=0`.
+  - Separate note: the older front-sample true-color/noise check on fully opaque pixels is still a
+    different issue from this compaction fix and remains out of the current change.
+  - Current interpretation after expanded review: treat the metadata-aware compaction code in
+    `intern/cycles/session/deep_output_driver.cpp` as partial future groundwork until the kernel
+    metadata write/accumulate path is fully activated.
+
+- **Deep EXR review cleanup follow-up (2026-03-22, in progress):**
+  - Applied the verified code-review cleanup items on the active worktree:
+    - `intern/cycles/blender/session.cpp` now uses one shared
+      `deep_file_debug_enabled()` helper instead of duplicated lambdas, and the env-var-gated deep
+      file trace messages were lowered from `LOG_WARNING` to `LOG_DEBUG`.
+    - Added explicit host/kernel sync comments for the duplicated deep metadata constants/helpers in
+      `intern/cycles/kernel/film/deep_write.h` and `intern/cycles/session/deep_buffers.h`.
+  - Current commit-prep cleanup scope keeps unrelated renderer/debug branch work untouched.
+  - Touched tracked files in the current staged helper/doc set were normalized back to CRLF for
+    this checkout before re-staging.
+
+- **Deep merge matrix validation refresh (2026-03-22, in progress):**
+  - Confirmed the current renderer-side state is no longer the earlier direct-scene overfragmented
+    22-sample case on the traced seam pixel. Latest direct scene-output render of
+    `D:\blender_projects\light-passes-test-v001.blend` frame 2 now gives pixel `(302, 150)` only
+    **4** deep samples in `D:\blender_projects\rendered\test\trash_output\.exr`.
+  - Confirmed the untouched blend still ships only an **alpha-only** compositor Deep EXR output
+    node (`ViewLayer--Deep` linked from `ViewLayer.Alpha`). The file at
+    `D:\blender_projects\rendered\test\ViewLayer\Deep\ViewLayer_Deep_v001_0002.exr` therefore has
+    channels `A/Z/ZBack` only by design, even though the node format says `RGBA`.
+  - Added runtime-only validation helper
+    `E:\blender_modify\blender_deep_surface_coverage\.agent\render_temp_compositor_rgba_deep.py`.
+    It rewires the existing compositor deep file-output node to `ViewLayer.Image`, writes to
+    `D:\blender_projects\rendered\test\TempDeepRGBA\`, and renders frame 2 without modifying the
+    saved blend.
+  - Updated matrix checker default compositor RGBA path to the runtime temp output:
+    `E:\blender_modify\blender_deep_surface_coverage\.agent\check_deep_merge_matrix.py`
+    now expects `D:\blender_projects\rendered\test\TempDeepRGBA\ViewLayer_Deep_v001_0002.exr`
+    unless overridden.
+  - Verification:
+    - direct scene-output deep:
+      `D:\blender_projects\rendered\test\trash_output\.exr`
+    - runtime compositor RGBA deep:
+      `D:\blender_projects\rendered\test\TempDeepRGBA\ViewLayer_Deep_v001_0002.exr`
+    - untouched compositor alpha-only deep:
+      `D:\blender_projects\rendered\test\ViewLayer\Deep\ViewLayer_Deep_v001_0002.exr`
+    - traced seam pixel `(302, 150)` now matches structurally across all 3:
+      `sample_count=4`, same `A/Z/ZBack`; direct + temp compositor RGBA also match the same
+      nonzero `R/G/B`.
+    - Current matrix command passes:
+      `check_deep_merge_matrix.py --compositor-alpha-only-deep D:\blender_projects\rendered\test\ViewLayer\Deep\ViewLayer_Deep_v001_0002.exr`
+
+- **Deep EXR seam debug direction correction (2026-03-22, in progress):**
+  - Reverted the temporary compositor `alpha_only=false` experiment in
+    `source/blender/nodes/composite/nodes/node_composite_file_output.cc`. The user-confirmed
+    policy stays unchanged: if the File Output Deep EXR node is linked from `Alpha`, it remains an
+    alpha-only deep output.
+  - Switched the active visual debug target away from the compositor/deep-recolor path to a
+    **straight scene-output Deep EXR** test using the unchanged
+    `D:\blender_projects\light-passes-test-v001.blend` scene saved as
+    `C:\tmp\light_passes_test_deep_saved.blend` with scene Deep EXR output path
+    `C:\tmp\scene_output_rgba_deep_saved_####.exr`.
+  - Current direct scene-output visual check (Nuke graph kept on the same DeepMerge setup, but
+    `DeepMerge1` fed directly from `DeepRead1` instead of `DeepRecolor1`) still shows the white
+    seam. Latest reporting PNG:
+    `C:\tmp\direct_scene_output_saved_write1.png`.
+  - Added repeatable helper script:
+    `E:\blender_modify\blender_deep_surface_coverage\.agent\run_nuke_direct_scene_output_test.py`
+    It copies the current direct scene-output Deep EXR to a stable exact filename, repoints the
+    authored direct DeepRead node in the Nuke test (`DeepRead2` after the user 2026-03-22 update),
+    renders the existing `Write1` preview, and exports the authored mask node (`Shuffle1`).
+  - Current paired Nuke artifacts per test round:
+    - preview: `C:\tmp\direct_scene_output_saved_write1.png`
+    - mask: `C:\tmp\direct_scene_output_saved_mask.png`
+  - After the user updated both the Nuke script and the blend output settings on 2026-03-22, the
+    direct scene-output Deep EXR under test is now:
+    `D:\blender_projects\rendered\test\trash_output\.exr`
+  - The direct scene-output file now proves the compositor RGB-loss hypothesis is not the active
+    blocker for this test:
+    - `C:\tmp\scene_output_rgba_deep_saved_####.exr` contains nonzero RGB deep samples.
+    - Traced seam pixel `(302, 150)` currently has **22** deep samples, with 19 front hard-surface
+      samples before the far ground suffix.
+  - Current debug focus is back on **hard-surface prefix compaction / coverage behavior** on the
+    direct scene-output path. Volume handling remains untouched.
+
+
+- **Deep EXR direct scene-output + hard-surface grouping debug (2026-03-21, in progress):**
+  - Verified the host-side direct scene-output Deep EXR finalization bug and kept the fix in
+    `intern/cycles/blender/session.cpp`: when full-frame Combined / Debug Sample Count buffers are
+    unavailable at finalize time, we now skip `set_beauty_buffer(nullptr, ...)` /
+    `set_sample_count_buffer(nullptr, ...)` instead of clearing the already accumulated
+    `processed_cache_`.
+  - Repro/verification on `C:\tmp\light_passes_test_deep_saved.blend` frame 2 with
+    `CYCLES_DEEP_FILE_DEBUG=1`:
+    - before the guard, direct scene-output Deep EXR finalization wrote `nonempty_pixels=0`,
+      `total_samples=0`, and produced tiny empty files;
+    - after the guard, finalization reports `nonempty_pixels=1807695`,
+      `total_samples=69538624`, `max_samples=235`, and the saved file grew to
+      `C:\tmp\scene_output_rgba_deep_saved_####.exr` ≈ `1.47 GB`.
+  - Continued hard-surface seam tracing on checker pixel `(302, 150)` in saved EXR space
+    (`DeepOutputDriver` debug pixel `(302, 929)`):
+    - current raw prefix is 24 teapot hits + 3 ground hits with `beauty_a=0.84375`;
+    - the prior grouping path was still merging by `object+shader` only, so 24 different teapot
+      primitive hits collapsed into one front sample at alpha `0.75`.
+  - Current narrow hypothesis test in `intern/cycles/session/deep_output_driver.cpp` switches that
+    merge to exact `surface_key` matching (preserving primitive identity during prefix grouping).
+    On the traced pixel this changes the saved deep result from 2 samples
+    (`0.75` teapot + `0.375` ground) to 22 samples whose front teapot alphas start at
+    `0.03125`, `0.032258`, `0.033333`, ... while preserving cumulative pixel alpha
+    (`deep_total_alpha ≈ 0.84375001`, flat alpha `0.84375`).
+  - Regression sanity after the grouping change:
+    - CPU/factory-startup rerender of `D:\blender_projects\deep-branch-test.blend` frame 1
+      completed cleanly with the current build.
+    - `.agent/check_deep_single_surface_alpha.py` still reports
+      `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py` still reports
+      `active_sample_pixels=872806`, `multi_active_sample_pixels=0`,
+      `violating_front_surface_alpha_pixels=0`.
+  - Nuke CLI validation is currently blocked by local parsing of `E:\blender_modify\deep_merge_test.nk`
+    (`OctaneExport: Unknown command` from the existing test script path section), so the white-seam
+    visual pass/fail is still pending and not yet claimed fixed.
+- **Deep EXR hard-surface compaction debug (2026-03-21, in progress):**
+  - Traced the remaining over-fragmented DeepMerge seam on
+    `D:\blender_projects\light-passes-test-v001.blend` frame 2 to a hard-surface prefix grouping
+    split, not a volume rewrite.
+  - Root cause pixel: checker pixel `(302, 150)` in saved EXR space (debug pixel `(302, 929)` in
+    `DeepOutputDriver` buffer space). Raw prefix had 24 teapot hits + 3 ground hits, but the
+    teapot prefix was split into two groups because one valid foreground hit had normal dot
+    `~0.9679` against the rest while `deep_surface_normal_dot_threshold` was `0.98`.
+  - Current narrow follow-up test lowers the hard-surface prefix normal grouping threshold to
+    `0.95`, which collapses that pixel from 3 saved thin surface samples to the expected 2
+    (`foreground alpha 0.75`, `background alpha 0.375`).
+  - Verification on the current worktree/build:
+    - CPU/factory-startup render of `light-passes-test-v001.blend` frame 2 completed cleanly.
+    - `.agent/check_deep_surface_compaction.py` now reports `overfragmented_pixels=0`
+      (was `1` on the traced repro after the stale `v001` files were refreshed).
+    - Updated Nuke AgX Punchy validation PNG written to
+      `C:\tmp\current_deep_merge_agx_punchy.png`.
+- **Deep EXR surface follow-up (2026-03-20, in progress):** The current worktree source is back on the older e720-like hard-surface path (the broad surface-coverage experiment is not the active code path). The next narrow fix only reconstructs front hard-surface prefixes and keeps volume suffix handling on the existing path.
 - **Deep EXR:** Merged and complete. Code reviewed, all critical/high issues fixed.
+- **Deep EXR front-prefix surface fix (2026-03-20):**
+  - Implemented a narrow hard-surface-only follow-up on the current e720-like Deep EXR path.
+  - Deep output now collapses single-active-sample pixels before export and reconstructs only the
+    front opaque-surface prefix when later samples are volume-only, while leaving the suffix on the
+    existing volume/scaled path.
+  - Validation:
+    - `D:\blender_projects\deep-branch-test.blend` rendered with `--factory-startup` on CPU.
+    - `.agent/check_deep_single_surface_alpha.py C:\tmp\surface_compoutput_flat0001.exr C:\tmp\surface_compoutput_deep0001.exr`
+      reports `checked_single_surface_fractional_pixels=6657`,
+      `mismatching_single_surface_pixels=0`.
+    - `.agent/check_deep_surface_front_alpha.py C:\tmp\surface_compoutput_deep0001.exr`
+      reports `multi_sample_pixels=39349`, `violating_front_alpha_pixels=0`.
+    - `D:\blender_projects\light-passes-test-v001.blend` mixed-case safety check remains clean:
+      `.agent/check_deep_mixed_surface_volume_case1.py` reports `mismatching_pixels=0`.
+    - On `light-passes-test-v001.blend`, the legacy front-alpha script still flags many pixels due
+      to inactive zero deep samples, but a direct inspection ignoring inactive samples found
+      `multi_active_pixels=0` and `violating_front_alpha_pixels=0` for that scene.
+- **CUDA runtime kernel copy regression (2026-03-20):**
+  - The fresh GPU illegal-address/OOM repro on `D:\blender_projects\light-passes-test-v001.blend`
+    was traced to a **stale runtime CUDA cubin** issue, not the newest Deep EXR surface-coverage
+    source logic.
+  - Root cause: `intern/cycles/kernel/CMakeLists.txt` hooked
+    `cycles_add_runtime_copy(...)` **before** `add_subdirectory(device/cuda)` /
+    `add_subdirectory(device/optix)` created the backend kernel targets. The
+    `if(TARGET ${target})` guard then failed during configure, so the local-build runtime copies
+    into `bin/<config>/<version>/scripts/addons_core/cycles/lib` were never generated.
+  - Symptom: host code from `ca742cc58b8`+ loaded old runtime cubins from 2026-03-17, producing a
+    host/kernel layout mismatch around `kernel_params` and later `shader_eval_background` illegal
+    addresses on CUDA.
+  - Verification before the source fix: manually copying the freshly rebuilt
+    `intern/cycles/kernel/device/cuda/kernel_sm_*.cubin.zst` files into the runtime `scripts`
+    folder restored clean CUDA rendering on `light-passes-test-v001.blend` under
+    `--factory-startup` with exactly one CUDA device enabled.
+  - Verification after the source fix (2026-03-20):
+    - Rebuilt `blender` in `E:\blender_modify\build_deep_surface_coverage`; build output now shows
+      `Copying Cycles kernel binaries for cycles_kernel_cuda` and
+      `Copying Cycles kernel binaries for cycles_kernel_optix`.
+    - Clean repro rerun with `--factory-startup`, `compute_device_type='CUDA'`, and exactly one
+      CUDA device enabled completed successfully on
+      `D:\blender_projects\light-passes-test-v001.blend` frame 1.
+    - Cycles reported `Path tracing on: NVIDIA GeForce RTX 4080 SUPER (CUDA)` and no illegal
+      address / invalid-context failures occurred.
+    - Runtime/intermediate CUDA cubin verification: `kernel_sm_89.cubin.zst` SHA256 matched between
+      `intern/cycles/kernel/device/cuda/` and
+      `bin/Release/5.2/scripts/addons_core/cycles/lib/`
+      (`C84A8CF183A81EFE745605212D68FA00944A66F5BAD78B4BB10AC03C2B6B8FC0`).
 - **Deep EXR memory:** Implemented user-controlled budget (default 1024 MB) + tile clamp; RenderResult deep storage skipped unless compositor needs it. Added tiled deep accumulation to avoid last-tile-only deep outputs. Merged into `vfx-rendering-branch` on 2026-02-22; code review checklist resolved.
 - **Validation:** Rendered `D:\blender_projects\deep-branch-test.blend` on 2026-02-22; deep compositor outputs saved and tile rendering confirmed.
   Compositor deep EXRs now large (e.g., `test_compoutput_deep0001.exr` ~584 MB).

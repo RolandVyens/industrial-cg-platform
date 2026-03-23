@@ -6,6 +6,10 @@ The vfx-rendering-branch already has deep EXR support merged. We're planning the
 
 ## Active Optimization: Deep EXR Memory Efficiency (task/deep-exr-memory)
 
+Consolidated current-state reference:
+- `.agent/DEEP_EXR_DEVELOPMENT_STATE.md`
+
+- **Deep EXR surface follow-up (2026-03-20, validated/current):** The current worktree source is back on the older e720-like hard-surface path (the broad surface-coverage experiment is not the active code path). The accepted hard-surface fix reconstructs front opaque-surface prefixes and keeps volume suffix handling on the existing path.
 **Goal:** Reduce RAM/VRAM usage for Deep EXR renders by clamping tile size based on a user-controlled
 deep buffer budget (default 1024 MB) and skipping RenderResult deep storage when the compositor does
 not need it.
@@ -28,6 +32,87 @@ not need it.
   `deep_compute_buffer_bytes()` declaration/definition matching, and normalization of mixed EOLs
   across all modified tracked files in the fix worktree.
 
+- Deep EXR narrow front-prefix follow-up (2026-03-20): on the current e720-like Deep EXR path,
+  collapse single-active-sample pixels before export and reconstruct only the front opaque-surface
+  prefix when any remaining suffix is volume-only. Leave the suffix on the existing volume/scaled
+  path instead of reintroducing the broader surface-coverage experiment.
+- Deep EXR hard-surface compaction debug (2026-03-21): traced the remaining Nuke DeepMerge seam on
+  `light-passes-test-v001.blend` frame 2 to an over-strict hard-surface prefix normal threshold.
+  Saved EXR checker pixel `(302, 150)` was splitting one teapot foreground segment into two groups
+  because one valid hit had normal dot `~0.9679` against the main foreground cluster while the
+  grouping threshold was `0.98`. The current narrow follow-up test lowers
+  `deep_surface_normal_dot_threshold` to `0.95`; refreshed frame-2 validation now reports
+  `.agent/check_deep_surface_compaction.py ... overfragmented_pixels=0`.
+- Deep EXR direct scene-output follow-up (2026-03-21): direct scene-output Deep EXR finalization on
+  `light_passes_test_deep_saved.blend` was dropping all accumulated samples whenever finalize-time
+  full-frame Combined / Debug Sample Count buffers were missing. The current fix keeps the
+  accumulated `processed_cache_` alive by skipping null beauty/sample-count resets in
+  `intern/cycles/blender/session.cpp`; verification now reports
+  `nonempty_pixels=1807695`, `total_samples=69538624`, `max_samples=235` for
+  `C:\tmp\scene_output_rgba_deep_saved_####.exr`.
+- Deep EXR hard-surface grouping follow-up (2026-03-21): the traced checker pixel
+  `(302, 150)` still showed a single overly strong front teapot sample because prefix compaction was
+  merging by `object+shader` only. The current hypothesis test switches prefix grouping to exact
+  `surface_key` matching, preserving primitive identity for hard-surface prefix export. On the
+  traced pixel the front teapot sample no longer collapses to `A=0.75`; it becomes a stack of
+  smaller front samples (`0.03125`, `0.032258`, `0.033333`, ...) while preserving total resolved
+  alpha. Volume handling remains unchanged.
+- Deep EXR scene-output validation redirect (2026-03-22): the active visual
+  validation path is now the **straight scene-output Deep EXR** case, not the compositor
+  DeepRecolor path. The temporary compositor `alpha_only=false` hypothesis was rejected and backed
+  out. Current direct scene-output Nuke validation still shows the white seam in
+  `C:\tmp\direct_scene_output_saved_write1.png`, while the traced seam pixel `(302, 150)` in
+  `C:\tmp\scene_output_rgba_deep_saved_####.exr` contains 22 deep samples with real RGB. This keeps
+  the current investigation focused on hard-surface prefix compaction / coverage, not compositor
+  deep channel stripping.
+- Deep merge matrix refresh (2026-03-22): the untouched `light-passes-test-v001.blend` currently
+  contains only an alpha-only compositor Deep EXR node (`ViewLayer--Deep` linked from
+  `ViewLayer.Alpha`). For current regression checks, compositor RGBA deep validation is therefore
+  done with the runtime-only helper
+  `.agent/render_temp_compositor_rgba_deep.py`, which rewires that node to `ViewLayer.Image` and
+  writes `D:\blender_projects\rendered\test\TempDeepRGBA\ViewLayer_Deep_v001_0002.exr` without
+  saving the blend. Latest seam-pixel matrix check at `(302, 150)` passes with matching
+  `sample_count=4` across direct scene-output, runtime compositor RGBA deep, and untouched
+  compositor alpha-only deep; direct and runtime compositor RGBA also match the same nonzero deep
+  RGB values.
+- Deep EXR review cleanup follow-up (2026-03-22): current merge-prep cleanup now uses a shared
+  `deep_file_debug_enabled()` helper in `intern/cycles/blender/session.cpp`, lowers the env-var
+  deep file tracing to `LOG_DEBUG`, and adds cross-reference comments that keep the duplicated deep
+  metadata constants/helpers synchronized between `deep_write.h` and `deep_buffers.h`.
+- Deep EXR hard-surface compaction follow-up (2026-03-22): resumed from a fresh controlled
+  scene-output Deep EXR render path (`C:\tmp\scene_output_rgba_deep_probe_####.exr`) to avoid
+  stale-file confusion from `trash_output\.exr`. Root cause of the remaining over-fragmentation was
+  that hard-surface prefix grouping still compared full `object+shader+prim` identity, so adjacent
+  triangles on the same visible surface never compacted. The current follow-up groups by
+  `object+shader` plus normal continuity instead. Fresh verification now reports
+  `.agent/check_deep_surface_compaction.py ... overfragmented_pixels=0`, while the fresh controlled
+  render still keeps `mismatching_single_surface_pixels=0` and
+  `violating_front_surface_alpha_pixels=0`.
+- Deep EXR hard-surface opaque-coverage follow-up (2026-03-23): the remaining DeepMerge seam after
+  compaction was traced to **pre-export opaque duplicate collapse**, not to the export-side
+  grouping logic. `DeepRenderBuffers::merge_nearby_samples()` was still running the shared deep
+  merge helper with `preserve_opaque_surface_duplicates=false`, collapsing many identical opaque
+  hard-surface camera hits into only a few representatives before export. That left pixels like
+  EXR `(655, 403)` with only `4` raw opaque hits but `sample_count=32`, so export reconstructed
+  tiny front alphas and the flattened deep alpha dropped to `0.125` instead of `1.0`. The current
+  fix restores `preserve_opaque_surface_duplicates=true` in the Cycles deep-buffer merge path while
+  leaving volume merging unchanged. Fresh controlled-render verification now keeps:
+  `.agent/check_deep_surface_opaque_coverage.py ... mismatching_opaque_pixels=0`,
+  `.agent/check_deep_surface_compaction.py ... overfragmented_pixels=0`,
+  `.agent/check_deep_single_surface_alpha.py ... mismatching_single_surface_pixels=0`, and
+  `.agent/check_deep_surface_front_alpha.py ... violating_front_surface_alpha_pixels=0`. Updated
+  Nuke artifacts in `C:\tmp\nuke_scene_output_rgba_deep_probe*.png` show the large white seam
+  removed, with only a tiny residual mask cluster still visible for later polish/debug.
+- Expanded review interpretation (2026-03-23): the accepted current visible fix should be
+  attributed first to preserved opaque duplicate coverage in
+  `DeepRenderBuffers::merge_nearby_samples()`. The metadata-aware hard-surface reconstruction code
+  in `deep_write.h` / `deep_buffers.h` / `deep_output_driver.cpp` remains partial groundwork until
+  the kernel-side metadata write and accumulation call sites are fully activated in a later step.
+- Validation (2026-03-20): `deep-branch-test.blend` CPU/factory-startup rerun keeps
+  `checked_single_surface_fractional_pixels=6657`, `mismatching_single_surface_pixels=0`,
+  `multi_sample_pixels=39349`, and `violating_front_alpha_pixels=0`.
+- Mixed-case safety (2026-03-20): `light-passes-test-v001.blend` still passes
+  `.agent/check_deep_mixed_surface_volume_case1.py` with `mismatching_pixels=0`.
 **Features sorted by development difficulty (easiest first):**
 1. Per-Light Shadow Color
 2. Indirect-Only Object Toggle (No Direct Lighting)
@@ -311,7 +396,7 @@ point.
 **Difficulty:** Medium
 **Status:** Branch created on 2026-03-09 and fast-forwarded to the latest
 `vfx-rendering-branch-github` base on 2026-03-16. Implementation not started.
-**Goal:** Add a world-shader fog/atmosphere control that behaves like Arnold’s `aiFog` shader
+**Goal:** Add a world-shader fog/atmosphere control that behaves like Arnold鈥檚 `aiFog` shader
 (environment fog driven by distance and optional height).
 
 ### Scope
