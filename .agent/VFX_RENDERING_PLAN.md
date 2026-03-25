@@ -1012,3 +1012,46 @@ for finer material-component AOVs (Arnold-style workflows). Planned scope:
   bright/specular regions, not as a return of the previous hard-surface seam bug.
 - Keep current source state as the checkpoint baseline; next work should debug the CPU-wide RGB
   mismatch before any additional visible-behavior redesign.
+
+## Deep EXR Beauty / Sample-Count Capture Y Fix - 2026-03-25
+
+- Current active Deep EXR fix is the capture-side row-layout correction in
+  `intern/cycles/blender/output_driver.cpp`.
+- Confirmed problem:
+  - cached full-frame Combined and Debug Sample Count buffers were populated from tiles with
+    bottom-left row indexing
+  - later deep processing consumed those buffers as top-to-bottom image coordinates
+  - that mismatch could mirror the beauty/sample-count lookup and make edge pixels falsely opaque
+- Implemented correction:
+  - mirror tile rows into the full-frame caches using
+    `dst_y = full_height - tile.offset.y - tile.size.y + y`
+  - apply this consistently to both Combined and Debug Sample Count capture
+- Important project note:
+  - the earlier save-path Y-flip hypothesis in `IMB_exr_save_deep(...)` was rejected and reverted
+  - current checkpoint should treat the cache-capture orientation fix as the real source change
+
+## Deep EXR Matrix Status After Capture Y Fix - 2026-03-25
+
+- Locked validation remains:
+  - scene: `D:\blender_projects\light-passes-test-v001.blend`
+  - devices: **CPU** and **OptiX**
+  - fresh outputs/previews in `C:\tmp\`
+- Current required checks:
+  - `check_deep_single_surface_alpha.py`: passes on CPU direct / CPU comp RGBA / OptiX direct /
+    OptiX comp RGBA
+  - `check_deep_mixed_surface_volume_case1.py`: passes on CPU direct / CPU comp RGBA / OptiX direct
+    / OptiX comp RGBA
+  - `check_deep_flatten_matches_flat.py`:
+    - CPU direct: fails with `mean_abs_rgb=(0.0115043, 0.0091180, 0.0136908)`,
+      `pixels_gt_0.05=173970`
+    - CPU comp RGBA: fails with `mean_abs_rgb=(0.0115109, 0.0091245, 0.0136974)`,
+      `pixels_gt_0.05=174058`
+    - OptiX direct: passes with `mean_abs_rgb=(0.0007401, 0.0006672, 0.0006575)`,
+      `pixels_gt_0.05=916`
+    - OptiX comp RGBA: passes with `mean_abs_rgb=(0.0007481, 0.0006748, 0.0006651)`,
+      `pixels_gt_0.05=1038`
+- Current planning read:
+  - the earlier hard-surface opaque-edge regression is no longer the main blocker
+  - OptiX is currently in acceptable shape on the locked checks
+  - next debug target is the **CPU-only broad flatten-vs-flat RGB mismatch**, not another writer
+    orientation rewrite

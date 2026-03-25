@@ -1927,3 +1927,59 @@ Old deep EXR development history, utility scripts, code review reports, and impl
     flattened deep RGB was much brighter than the flat image in a hot highlight
 - Approved next step after this snapshot commit: keep the current code state, then debug the
   **CPU-wide flatten-vs-flat RGB mismatch** without assuming the old seam bug has returned.
+
+## 2026-03-25 Deep EXR Beauty / Sample-Count Capture Y Fix Checkpoint
+
+- Worktree/branch: `E:\blender_modify\blender_deep_surface_coverage` /
+  `feature/deep-exr-surface-coverage`
+- Build used: `E:\blender_modify\build_deep_surface_coverage\bin\Release\blender.exe`
+- Active source fix is in `intern/cycles/blender/output_driver.cpp`, not in the OpenEXR save path.
+- Confirmed root cause:
+  - full-frame Combined and Debug Sample Count caches were copied from render tiles using
+    bottom-left tile coordinates
+  - later deep reconstruction indexed those caches in top-to-bottom image coordinates
+  - result: deep alpha/color reconstruction could read the vertically mirrored beauty/sample-count
+    pixel and make edge samples falsely opaque
+- Implemented fix:
+  - cache tile rows into the full-frame Combined buffer with
+    `dst_y = full_height - tile.offset.y - tile.size.y + y`
+  - apply the same row mapping to the captured Debug Sample Count buffer
+- Smoking-gun validation:
+  - failing pixel `(1873,127)` was reading the mirrored flat pixel `(1873,952)` before the fix
+  - flat at `(1873,127)`: `rgba=(0.0278625, 0.0278625, 0.0278625, 0.03125)`
+  - mirrored flat at `(1873,952)`: `rgba≈(0.91455, 0.90918, 0.91895, 1.0)`
+  - this exactly explained the old bogus `beauty_a=1` opaque deep result on the edge pixel
+- Important correction:
+  - the earlier save-path Y-flip hypothesis in `IMB_exr_save_deep(...)` was rejected/reverted
+  - current checkpoint should treat the capture-side row-layout fix as the real landed fix
+- Fresh locked-matrix outputs in `C:\tmp\`:
+  - `matrix_cpu_direct_deep_0002.exr`
+  - `matrix_cpu_comp_rgba_deep_0002.exr`
+  - `matrix_optix_direct_deep_0002.exr`
+  - `matrix_optix_comp_rgba_deep_0002.exr`
+- Fresh Nuke previews in `C:\tmp\`:
+  - `matrix_cpu_direct_preview.png`
+  - `matrix_cpu_comp_rgba_preview.png`
+  - `matrix_optix_direct_preview.png`
+  - `matrix_optix_comp_rgba_preview.png`
+- Current verification status on `D:\blender_projects\light-passes-test-v001.blend`:
+  - `check_deep_single_surface_alpha.py`: **pass**
+    - CPU direct / CPU comp RGBA / OptiX direct / OptiX comp RGBA
+  - `check_deep_mixed_surface_volume_case1.py`: **pass**
+    - CPU direct / CPU comp RGBA / OptiX direct / OptiX comp RGBA
+  - `check_deep_flatten_matches_flat.py`:
+    - CPU direct: **fail**, `mean_abs_rgb=(0.0115043, 0.0091180, 0.0136908)`,
+      `pixels_gt_0.05=173970`
+    - CPU comp RGBA: **fail**, `mean_abs_rgb=(0.0115109, 0.0091245, 0.0136974)`,
+      `pixels_gt_0.05=174058`
+    - OptiX direct: **pass**, `mean_abs_rgb=(0.0007401, 0.0006672, 0.0006575)`,
+      `pixels_gt_0.05=916`
+    - OptiX comp RGBA: **pass**, `mean_abs_rgb=(0.0007481, 0.0006748, 0.0006651)`,
+      `pixels_gt_0.05=1038`
+- Current checkpoint read:
+  - the old opaque edge-alpha regression is fixed enough for the single-surface and mixed case-1
+    checks to pass again
+  - OptiX flatten-vs-flat is currently acceptable
+  - the remaining blocker is now a **CPU-only broad flatten-vs-flat RGB mismatch**, strongest in
+    brighter/specular regions, and should be debugged next without reviving the reverted writer-flip
+    idea
