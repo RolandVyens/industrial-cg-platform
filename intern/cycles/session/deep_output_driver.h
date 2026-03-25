@@ -222,6 +222,11 @@ class DeepOutputDriver {
                              float &beauty_r,
                              float &beauty_g,
                              float &beauty_b);
+  bool populate_pure_surface_grouped_samples(size_t global_idx,
+                                             int count,
+                                             const DeepSampleData *sample_data,
+                                             size_t offset,
+                                             float beauty_a);
   bool populate_opaque_surface_prefix_samples(size_t global_idx,
                                               int count,
                                               const DeepSampleData *sample_data,

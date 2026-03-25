@@ -6,6 +6,8 @@
 
 #include <limits>
 
+#include "IMB_deep_sample_merge.hh"
+
 #include "device/device.h"
 #include "kernel/types.h"
 
@@ -16,6 +18,67 @@
 
 #include <cstring>
 
+namespace blender::imbuf::deep_merge {
+
+template<> struct DeepSampleTraits<blender::DeepSample> {
+  static float r(const blender::DeepSample &sample)
+  {
+    return sample.r;
+  }
+
+  static float g(const blender::DeepSample &sample)
+  {
+    return sample.g;
+  }
+
+  static float b(const blender::DeepSample &sample)
+  {
+    return sample.b;
+  }
+
+  static float a(const blender::DeepSample &sample)
+  {
+    return sample.a;
+  }
+
+  static float z(const blender::DeepSample &sample)
+  {
+    return sample.z;
+  }
+
+  static float z_back(const blender::DeepSample &sample)
+  {
+    return sample.z_back;
+  }
+
+  static void set_r(blender::DeepSample &sample, const float value)
+  {
+    sample.r = value;
+  }
+
+  static void set_g(blender::DeepSample &sample, const float value)
+  {
+    sample.g = value;
+  }
+
+  static void set_b(blender::DeepSample &sample, const float value)
+  {
+    sample.b = value;
+  }
+
+  static void set_a(blender::DeepSample &sample, const float value)
+  {
+    sample.a = value;
+  }
+
+  static void set_z_back(blender::DeepSample &sample, const float value)
+  {
+    sample.z_back = value;
+  }
+};
+
+}  // namespace blender::imbuf::deep_merge
+
 CCL_NAMESPACE_BEGIN
 
 namespace {
@@ -23,6 +86,7 @@ constexpr float deep_alpha_epsilon = 1e-6f;
 constexpr float deep_alpha_linear_fallback = 1e-3f;
 constexpr float deep_alpha_log_min_transparency = 1e-5f;
 constexpr float deep_surface_depth_epsilon = 1e-6f;
+constexpr float deep_volume_depth_epsilon = 1e-6f;
 constexpr float deep_opaque_surface_alpha_threshold = 1.0f - 1e-6f;
 constexpr float deep_inactive_sample_epsilon = 1e-8f;
 constexpr float deep_surface_normal_dot_threshold = 0.94f;
@@ -37,6 +101,15 @@ struct OpaqueSurfacePrefixGroup {
   float3 color_sum = make_float3(0.0f, 0.0f, 0.0f);
   float output_z = 0.0f;
   int hit_count = 0;
+};
+
+enum class DeepPixelLayout {
+  empty = 0,
+  pure_volume,
+  pure_surface,
+  safe_surface_front_prefix,
+  volume_front_mixed,
+  unsupported_mixed,
 };
 
 inline bool deep_sample_is_volume(const DeepSampleData &sample)
@@ -152,6 +225,70 @@ bool analyze_opaque_surface_prefix(const DeepSampleData *sample_data,
   return true;
 }
 
+DeepPixelLayout classify_deep_pixel_layout(const DeepSampleData *sample_data,
+                                           const size_t offset,
+                                           const int count)
+{
+  int active_count = 0;
+  int active_surface_count = 0;
+  int active_volume_count = 0;
+  bool saw_surface_after_volume = false;
+  bool saw_volume_after_surface = false;
+
+  for (int s = 0; s < count; s++) {
+    const DeepSampleData &sample = sample_data[offset + s];
+    if (deep_sample_is_inactive(sample)) {
+      continue;
+    }
+
+    const bool is_volume = deep_sample_is_volume(sample);
+    active_count++;
+
+    if (is_volume) {
+      active_volume_count++;
+      if (active_surface_count > 0) {
+        saw_volume_after_surface = true;
+      }
+    }
+    else {
+      active_surface_count++;
+      if (active_volume_count > 0) {
+        saw_surface_after_volume = true;
+      }
+    }
+  }
+
+  if (active_count == 0) {
+    return DeepPixelLayout::empty;
+  }
+  if (active_volume_count == active_count) {
+    return DeepPixelLayout::pure_volume;
+  }
+  if (active_surface_count == active_count) {
+    return DeepPixelLayout::pure_surface;
+  }
+  if (saw_surface_after_volume) {
+    return DeepPixelLayout::volume_front_mixed;
+  }
+
+  OpaqueSurfacePrefixInfo prefix_info;
+  if (!analyze_opaque_surface_prefix(sample_data, offset, count, prefix_info)) {
+    return DeepPixelLayout::unsupported_mixed;
+  }
+
+  for (int s = 0; s < prefix_info.prefix_count; s++) {
+    if (!deep_sample_has_hard_surface_metadata(sample_data[offset + s])) {
+      return DeepPixelLayout::unsupported_mixed;
+    }
+  }
+
+  if (!saw_volume_after_surface) {
+    return DeepPixelLayout::pure_surface;
+  }
+
+  return DeepPixelLayout::safe_surface_front_prefix;
+}
+
 bool build_opaque_surface_prefix_groups(const DeepSampleData *sample_data,
                                         const size_t offset,
                                         const OpaqueSurfacePrefixInfo &info,
@@ -221,6 +358,128 @@ bool build_opaque_surface_prefix_groups(const DeepSampleData *sample_data,
 
   return !groups.empty();
 }
+
+bool build_opaque_surface_groups(const DeepSampleData *sample_data,
+                                 const size_t offset,
+                                 const int count,
+                                 vector<OpaqueSurfacePrefixGroup> &groups,
+                                 int &representative_count,
+                                 int &first_active_index)
+{
+  groups.clear();
+  representative_count = 0;
+  first_active_index = -1;
+
+  uint32_t max_camera_sample = 0;
+  bool have_camera_sample = false;
+  for (int s = 0; s < count; s++) {
+    const DeepSampleData &sample = sample_data[offset + s];
+    if (deep_sample_is_inactive(sample)) {
+      continue;
+    }
+    if (!deep_sample_is_opaque_surface(sample) || !deep_sample_has_hard_surface_metadata(sample)) {
+      groups.clear();
+      return false;
+    }
+
+    const uint32_t camera_sample = deep_sample_camera_sample(sample);
+    if (!have_camera_sample || camera_sample > max_camera_sample) {
+      max_camera_sample = camera_sample;
+      have_camera_sample = true;
+    }
+    if (first_active_index == -1) {
+      first_active_index = s;
+    }
+  }
+
+  if (!have_camera_sample || first_active_index == -1) {
+    return false;
+  }
+
+  vector<uint8_t> camera_sample_seen(static_cast<size_t>(max_camera_sample) + 1, 0);
+
+  for (int s = 0; s < count; s++) {
+    const DeepSampleData &sample = sample_data[offset + s];
+    if (deep_sample_is_inactive(sample)) {
+      continue;
+    }
+
+    const uint32_t camera_sample = deep_sample_camera_sample(sample);
+    if (camera_sample >= camera_sample_seen.size()) {
+      groups.clear();
+      return false;
+    }
+    if (camera_sample_seen[camera_sample]) {
+      continue;
+    }
+    camera_sample_seen[camera_sample] = 1;
+
+    const float3 sample_normal = deep_unpack_packed_geometric_normal(
+        sample.packed_geometric_normal);
+
+    bool merged = false;
+    if (!groups.empty()) {
+      OpaqueSurfacePrefixGroup &group = groups.back();
+      if (deep_surface_key_object_shader_id(group.surface_key) ==
+              deep_surface_key_object_shader_id(sample.surface_key) &&
+          dot(group.normal, sample_normal) >= deep_surface_normal_dot_threshold)
+      {
+        group.hit_count++;
+        group.color_sum += deep_sample_rgb(sample);
+        merged = true;
+      }
+    }
+
+    if (!merged) {
+      OpaqueSurfacePrefixGroup &group = groups.emplace_back();
+      group.surface_key = sample.surface_key;
+      group.normal = sample_normal;
+      group.color_sum = deep_sample_rgb(sample);
+      group.output_z = sample.z;
+      group.hit_count = 1;
+    }
+  }
+
+  for (const OpaqueSurfacePrefixGroup &group : groups) {
+    representative_count += group.hit_count;
+  }
+
+  return !groups.empty() && representative_count > 0;
+}
+
+std::vector<std::vector<blender::DeepSample>> deep_copy_merged_samples(
+    const std::vector<std::vector<blender::DeepSample>> &deep_data,
+    const float merge_threshold,
+    const float alpha_merge_threshold)
+{
+  std::vector<std::vector<blender::DeepSample>> merged_samples = deep_data;
+
+  if (merge_threshold <= 0.0f) {
+    return merged_samples;
+  }
+
+  for (std::vector<blender::DeepSample> &pixel_samples : merged_samples) {
+    if (pixel_samples.size() <= 1) {
+      continue;
+    }
+
+    std::sort(pixel_samples.begin(),
+              pixel_samples.end(),
+              [](const blender::DeepSample &a, const blender::DeepSample &b) {
+                return a.z < b.z;
+              });
+    const size_t merged_count = blender::imbuf::deep_merge::merge_sorted_deep_samples(
+        pixel_samples.data(),
+        pixel_samples.size(),
+        merge_threshold,
+        alpha_merge_threshold,
+        deep_volume_depth_epsilon);
+    pixel_samples.resize(merged_count);
+  }
+
+  return merged_samples;
+}
+
 }  // namespace
 
 struct DeepOutputDriver::DeepBufferSnapshot {
@@ -610,12 +869,20 @@ void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
     return;
   }
 
+  const std::vector<std::vector<blender::DeepSample>> *deep_data_to_write = deep_data;
+  std::vector<std::vector<blender::DeepSample>> merged_samples_storage;
+  if (merge_threshold_ > 0.0f) {
+    merged_samples_storage = deep_copy_merged_samples(
+        *deep_data, merge_threshold_, alpha_merge_threshold_);
+    deep_data_to_write = &merged_samples_storage;
+  }
+
   /* Write using provided callback. */
   if (write_callback_) {
     bool success = write_callback_(
-        *deep_data, width_, height_, filepath, compression_, use_half_float_);
+        *deep_data_to_write, width_, height_, filepath, compression_, use_half_float_);
     if (success) {
-      LOG_INFO << "Deep EXR saved successfully: " << filepath;
+    LOG_INFO << "Deep EXR saved successfully: " << filepath;
     }
     else {
       LOG_ERROR << "Failed to write deep EXR: " << filepath;
@@ -632,6 +899,11 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::get_processed_d
   std::vector<std::vector<blender::DeepSample>> *deep_data = ensure_processed_cache();
   if (!deep_data) {
     return nullptr;
+  }
+
+  if (merge_threshold_ > 0.0f) {
+    return new std::vector<std::vector<blender::DeepSample>>(
+        deep_copy_merged_samples(*deep_data, merge_threshold_, alpha_merge_threshold_));
   }
 
   return processed_cache_.release();
@@ -807,12 +1079,6 @@ bool DeepOutputDriver::process_device_buffers()
 
     /* Sort samples by depth (front to back). */
     slice.buffers->sort_samples_by_depth();
-
-    /* Merge nearby samples based on threshold. */
-    if (merge_threshold_ > 0.0f) {
-      slice.buffers->set_merge_thresholds(merge_threshold_, alpha_merge_threshold_);
-      slice.buffers->merge_nearby_samples();
-    }
 
   }
 
@@ -1053,6 +1319,73 @@ static void deep_assign_single_sample_with_rgb(std::vector<blender::DeepSample> 
   dst.z_back = src.z_back;
 }
 
+bool DeepOutputDriver::populate_pure_surface_grouped_samples(size_t global_idx,
+                                                             int count,
+                                                             const DeepSampleData *sample_data,
+                                                             size_t offset,
+                                                             float beauty_a)
+{
+  if (count <= 0) {
+    return false;
+  }
+
+  vector<OpaqueSurfacePrefixGroup> surface_groups;
+  int representative_count = 0;
+  int first_active_index = -1;
+  if (!build_opaque_surface_groups(
+          sample_data, offset, count, surface_groups, representative_count, first_active_index))
+  {
+    return false;
+  }
+
+  const float target_coverage = clamp(beauty_a, 0.0f, 1.0f);
+  std::vector<blender::DeepSample> &pixel_samples = (*processed_cache_)[global_idx];
+  pixel_samples.clear();
+
+  if (target_coverage <= deep_alpha_epsilon) {
+    return true;
+  }
+
+  if (surface_groups.size() == 1) {
+    const OpaqueSurfacePrefixGroup &group = surface_groups.front();
+    const float3 avg_rgb = (group.hit_count > 0) ? (group.color_sum / float(group.hit_count)) :
+                                                   make_float3(0.0f, 0.0f, 0.0f);
+    deep_assign_single_sample_with_rgb(
+        pixel_samples, sample_data[offset + first_active_index], avg_rgb, target_coverage);
+    return true;
+  }
+
+  pixel_samples.reserve(surface_groups.size());
+
+  float remaining_coverage = target_coverage;
+  for (const OpaqueSurfacePrefixGroup &group : surface_groups) {
+    if (remaining_coverage <= deep_alpha_epsilon) {
+      break;
+    }
+
+    const float coverage_fraction = float(group.hit_count) / float(representative_count);
+    const float group_coverage = clamp(
+        target_coverage * coverage_fraction, 0.0f, remaining_coverage);
+    const float sample_alpha = (remaining_coverage > deep_alpha_epsilon) ?
+                                   clamp(group_coverage / remaining_coverage, 0.0f, 1.0f) :
+                                   0.0f;
+    const float3 avg_rgb = (group.hit_count > 0) ? (group.color_sum / float(group.hit_count)) :
+                                                   make_float3(0.0f, 0.0f, 0.0f);
+
+    blender::DeepSample &dst = pixel_samples.emplace_back();
+    dst.r = avg_rgb.x * sample_alpha;
+    dst.g = avg_rgb.y * sample_alpha;
+    dst.b = avg_rgb.z * sample_alpha;
+    dst.a = sample_alpha;
+    dst.z = group.output_z;
+    dst.z_back = group.output_z;
+
+    remaining_coverage = max(0.0f, remaining_coverage - group_coverage);
+  }
+
+  return !pixel_samples.empty();
+}
+
 bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
                                                               int count,
                                                               const DeepSampleData *sample_data,
@@ -1180,6 +1513,8 @@ void DeepOutputDriver::populate_pixel_samples_with_resolved_beauty(
 {
   vector<float> scaled_alphas;
   if (has_beauty && count > 0) {
+    const DeepPixelLayout pixel_layout = classify_deep_pixel_layout(sample_data, offset, count);
+
     if (count == 1) {
       const DeepSampleData &src = sample_data[offset];
       if (deep_sample_has_hard_surface_metadata(src)) {
@@ -1207,11 +1542,19 @@ void DeepOutputDriver::populate_pixel_samples_with_resolved_beauty(
       return;
     }
 
-    if (populate_opaque_surface_prefix_samples(
+    if (pixel_layout == DeepPixelLayout::pure_surface &&
+        populate_pure_surface_grouped_samples(global_idx, count, sample_data, offset, beauty_a))
+    {
+      return;
+    }
+
+    if (pixel_layout == DeepPixelLayout::safe_surface_front_prefix &&
+        populate_opaque_surface_prefix_samples(
             global_idx, count, sample_data, offset, beauty_r, beauty_g, beauty_b, beauty_a))
     {
       return;
     }
+
     compute_scaled_alphas(sample_data, offset, count, beauty_a, scaled_alphas, beauty_r, beauty_g,
                           beauty_b);
   }
@@ -1267,6 +1610,7 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::ensure_processe
       merge_slice_into_cache(
           slice, track_overlap, pixel_written, overlap_logged, nullptr, 0, 0, 0, 0);
     }
+
   }
 
   return processed_cache_.get();

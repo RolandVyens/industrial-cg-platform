@@ -4,6 +4,18 @@ import sys
 import OpenImageIO as oiio
 
 
+def load_deep(path):
+    image_input = oiio.ImageInput.open(path)
+    if image_input is None:
+        raise RuntimeError(f"Failed to open deep EXR: {path}")
+    try:
+        spec = image_input.spec()
+        deep_data = image_input.read_native_deep_image()
+        return spec, deep_data
+    finally:
+        image_input.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -28,10 +40,8 @@ def main() -> int:
     args = parser.parse_args()
 
     flat = oiio.ImageBuf(args.flat)
-    deep = oiio.ImageBuf(args.deep)
-
     flat_spec = flat.spec()
-    deep_spec = deep.spec()
+    deep_spec, deep_data = load_deep(args.deep)
 
     if deep_spec is None or not deep_spec.deep:
         raise RuntimeError(f"{args.deep} is not a deep image")
@@ -53,11 +63,12 @@ def main() -> int:
         if flat_alpha <= args.tolerance or flat_alpha >= 1.0 - args.tolerance:
           continue
 
-        samples = deep.deep_samples(x, y)
+        pixel_index = y * deep_spec.width + x
+        samples = deep_data.samples(pixel_index)
         if samples != 1:
           continue
 
-        deep_alpha = float(deep.deep_value(x, y, 0, deep_alpha_channel, 0))
+        deep_alpha = float(deep_data.deep_value(pixel_index, deep_alpha_channel, 0))
         checked += 1
         if abs(deep_alpha - flat_alpha) > args.tolerance:
           mismatching += 1

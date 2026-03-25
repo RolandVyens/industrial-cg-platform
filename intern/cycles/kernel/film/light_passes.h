@@ -424,7 +424,7 @@ ccl_device_inline void film_accumulate_deep_surface_rgb_path(KernelGlobals kg,
                                                              ConstIntegratorState state,
                                                              const Spectrum contribution)
 {
-  if (!kernel_data.film.use_deep_output || (INTEGRATOR_STATE(state, path, bounce) != 0)) {
+  if (!kernel_data.film.use_deep_output) {
     return;
   }
 
@@ -447,7 +447,7 @@ ccl_device_inline void film_accumulate_deep_surface_rgb_shadow(KernelGlobals kg,
                                                                ConstIntegratorShadowState state,
                                                                const Spectrum contribution)
 {
-  if (!kernel_data.film.use_deep_output || (INTEGRATOR_STATE(state, shadow_path, bounce) != 0)) {
+  if (!kernel_data.film.use_deep_output) {
     return;
   }
 

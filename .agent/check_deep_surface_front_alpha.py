@@ -24,12 +24,24 @@ def is_surface_sample(z, z_back, depth_epsilon):
     return z_back <= z + depth_epsilon
 
 
-def active_samples(image, x, y, channels, inactive_epsilon):
+def load_deep(path):
+    image_input = oiio.ImageInput.open(path)
+    if image_input is None:
+        raise RuntimeError(f"Failed to open deep EXR: {path}")
+    try:
+        spec = image_input.spec()
+        deep_data = image_input.read_native_deep_image()
+        return spec, deep_data
+    finally:
+        image_input.close()
+
+
+def active_samples(deep_data, pixel_index, channels, inactive_epsilon):
     samples = []
-    for sample_index in range(image.deep_samples(x, y)):
-        alpha = float(image.deep_value(x, y, sample_index, channels["A"], 0))
-        z = float(image.deep_value(x, y, sample_index, channels["Z"], 0))
-        z_back = float(image.deep_value(x, y, sample_index, channels["ZBack"], 0))
+    for sample_index in range(deep_data.samples(pixel_index)):
+        alpha = float(deep_data.deep_value(pixel_index, channels["A"], sample_index))
+        z = float(deep_data.deep_value(pixel_index, channels["Z"], sample_index))
+        z_back = float(deep_data.deep_value(pixel_index, channels["ZBack"], sample_index))
         if is_inactive_sample(alpha, z, z_back, inactive_epsilon):
             continue
         samples.append((alpha, z, z_back))
@@ -111,8 +123,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    image = oiio.ImageBuf(args.deep_path)
-    spec = image.spec()
+    spec, deep_data = load_deep(args.deep_path)
     if spec is None:
         raise RuntimeError(f"Failed to open {args.deep_path}")
     if not spec.deep:
@@ -139,10 +150,12 @@ def main() -> int:
     flat_alpha_checked_pixels = 0
     flat_alpha_mismatching_pixels = 0
     flat_examples = []
+    fractional_front_checked_pixels = 0
 
     for y in range(spec.height):
         for x in range(spec.width):
-            samples = active_samples(image, x, y, channels, args.inactive_epsilon)
+            pixel_index = y * spec.width + x
+            samples = active_samples(deep_data, pixel_index, channels, args.inactive_epsilon)
             if not samples:
                 continue
 
@@ -159,10 +172,6 @@ def main() -> int:
 
             multi_surface_pixels += 1
             front_alpha = surface_groups[0][0][0]
-            if front_alpha >= args.alpha_threshold:
-                violating_front_surface_alpha_pixels += 1
-                if len(front_examples) < args.max_report:
-                    front_examples.append((x, y, len(samples), len(surface_groups), front_alpha))
 
             if flat_alpha is not None:
                 flat_alpha_checked_pixels += 1
@@ -174,14 +183,32 @@ def main() -> int:
                     if len(flat_examples) < args.max_report:
                         flat_examples.append((x, y, flat_pixel_alpha, deep_alpha, diff, len(samples)))
 
+                if args.flat_tolerance < flat_pixel_alpha < 1.0 - args.flat_tolerance:
+                    fractional_front_checked_pixels += 1
+                    if front_alpha >= args.alpha_threshold:
+                        violating_front_surface_alpha_pixels += 1
+                        if len(front_examples) < args.max_report:
+                            front_examples.append(
+                                (x, y, len(samples), len(surface_groups), front_alpha, flat_pixel_alpha)
+                            )
+            elif front_alpha >= args.alpha_threshold:
+                violating_front_surface_alpha_pixels += 1
+                if len(front_examples) < args.max_report:
+                    front_examples.append((x, y, len(samples), len(surface_groups), front_alpha, None))
+
     print(f"active_sample_pixels={active_sample_pixels}")
     print(f"multi_active_sample_pixels={multi_active_sample_pixels}")
     print(f"multi_surface_pixels={multi_surface_pixels}")
+    if flat_alpha is not None:
+        print(f"fractional_front_checked_pixels={fractional_front_checked_pixels}")
     print(f"violating_front_surface_alpha_pixels={violating_front_surface_alpha_pixels}")
-    for x, y, sample_count, surface_groups, alpha in front_examples:
+    for x, y, sample_count, surface_groups, alpha, flat_pixel_alpha in front_examples:
+        extra = ""
+        if flat_pixel_alpha is not None:
+            extra = f" flat_alpha={flat_pixel_alpha:.6f}"
         print(
             f"  front_violation pixel=({x},{y}) active_samples={sample_count} "
-            f"surface_groups={surface_groups} front_alpha={alpha:.6f}"
+            f"surface_groups={surface_groups} front_alpha={alpha:.6f}{extra}"
         )
 
     if flat_alpha is not None:

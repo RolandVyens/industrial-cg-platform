@@ -13,7 +13,7 @@ KERNEL_STRUCT_BEGIN(path)
 KERNEL_STRUCT_MEMBER(path, uint32_t, render_pixel_index, KERNEL_FEATURE_PATH_TRACING)
 /* Current sample number. */
 KERNEL_STRUCT_MEMBER(path, uint32_t, sample, KERNEL_FEATURE_PATH_TRACING)
-/* Active deep hard-surface sample for bounce-0 contribution accumulation. */
+/* Active deep hard-surface sample for primary visibility contribution accumulation. */
 KERNEL_STRUCT_MEMBER(path, uint32_t, deep_surface_sample_idx, KERNEL_FEATURE_PATH_TRACING)
 /* Current ray bounce depth. */
 KERNEL_STRUCT_MEMBER(path, uint16_t, bounce, KERNEL_FEATURE_PATH_TRACING)

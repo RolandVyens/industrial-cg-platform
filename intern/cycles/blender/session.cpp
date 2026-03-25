@@ -718,9 +718,15 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
         deep_driver->finalize_deep_output(deep_filepath);
       }
 
-      if (compositor_needs_deep) {
-        /* Store deep data in RenderResult for compositor access.
-         * The compositor needs access to deep data via RenderResult.deep_data. */
+      const bool render_result_needs_processed_deep = (compositor_needs_deep ||
+                                                       is_deep_exr_format);
+      if (render_result_needs_processed_deep) {
+        /* Store processed deep data in RenderResult.
+         *
+         * The compositor needs access to deep data via RenderResult.deep_data.
+         * Direct scene-output Deep EXR also needs the processed data there so the
+         * regular render-result save path does not write the raw unprocessed deep
+         * buffers instead. */
         blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
         if (render_result) {
           unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_data(
