@@ -419,6 +419,57 @@ ccl_device_inline void film_write_combined_pass(KernelGlobals kg,
 #endif
 }
 
+#ifdef __DEEP_OUTPUT__
+ccl_device_inline void film_accumulate_deep_surface_rgb_path(KernelGlobals kg,
+                                                             ConstIntegratorState state,
+                                                             const Spectrum contribution)
+{
+  if (!kernel_data.film.use_deep_output) {
+    return;
+  }
+
+  const uint32_t sample_idx = INTEGRATOR_STATE(state, path, deep_surface_sample_idx);
+  if (sample_idx == DEEP_INVALID_SAMPLE_INDEX) {
+    return;
+  }
+
+  ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
+                                                  kernel_data.film.deep_samples_ptr;
+  if (deep_samples == nullptr) {
+    return;
+  }
+
+  film_accumulate_deep_surface_rgb(
+      kg, INTEGRATOR_STATE(state, path, render_pixel_index), sample_idx, deep_samples, contribution);
+}
+
+ccl_device_inline void film_accumulate_deep_surface_rgb_shadow(KernelGlobals kg,
+                                                               ConstIntegratorShadowState state,
+                                                               const Spectrum contribution)
+{
+  if (!kernel_data.film.use_deep_output) {
+    return;
+  }
+
+  const uint32_t sample_idx = INTEGRATOR_STATE(state, shadow_path, deep_surface_sample_idx);
+  if (sample_idx == DEEP_INVALID_SAMPLE_INDEX) {
+    return;
+  }
+
+  ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
+                                                  kernel_data.film.deep_samples_ptr;
+  if (deep_samples == nullptr) {
+    return;
+  }
+
+  film_accumulate_deep_surface_rgb(kg,
+                                   INTEGRATOR_STATE(state, shadow_path, render_pixel_index),
+                                   sample_idx,
+                                   deep_samples,
+                                   contribution);
+}
+#endif
+
 /* Write combined pass with transparency. */
 ccl_device_inline void film_write_combined_transparent_pass(KernelGlobals kg,
                                                             const uint32_t path_flag,
@@ -626,12 +677,18 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
       const Spectrum ao_weight = INTEGRATOR_STATE(state, shadow_path, unshadowed_throughput);
       film_write_combined_pass(
           kg, path_flag, sample, contribution * ao_weight, buffer, depth, pixel_index);
+#ifdef __DEEP_OUTPUT__
+      film_accumulate_deep_surface_rgb_shadow(kg, state, contribution * ao_weight);
+#endif
     }
     return;
   }
 
   /* Direct light shadow. */
   film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
+#ifdef __DEEP_OUTPUT__
+  film_accumulate_deep_surface_rgb_shadow(kg, state, contribution);
+#endif
 
 #ifdef __PASSES__
   if (kernel_data.film.light_pass_flag & PASS_ANY) {
@@ -818,6 +875,9 @@ ccl_device_inline void film_write_background(KernelGlobals kg,
   else {
     const int sample = INTEGRATOR_STATE(state, path, sample);
     film_write_combined_transparent_pass(kg, path_flag, sample, contribution, transparent, buffer);
+#ifdef __DEEP_OUTPUT__
+    film_accumulate_deep_surface_rgb_path(kg, state, contribution);
+#endif
   }
   film_write_emission_or_background_pass(kg,
                                          state,
@@ -878,6 +938,9 @@ ccl_device_inline void film_write_surface_emission(KernelGlobals kg,
 #endif
 
   film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
+#ifdef __DEEP_OUTPUT__
+  film_accumulate_deep_surface_rgb_path(kg, state, contribution);
+#endif
   film_write_emission_or_background_pass(
       kg, state, contribution, buffer, kernel_data.film.pass_emission, lightgroup);
 }

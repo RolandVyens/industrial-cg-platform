@@ -51,6 +51,16 @@
 
 CCL_NAMESPACE_BEGIN
 
+namespace {
+
+bool deep_file_debug_enabled()
+{
+  const char *value = std::getenv("CYCLES_DEEP_FILE_DEBUG");
+  return value && value[0] != '\0' && value[0] != '0';
+}
+
+}  // namespace
+
 DeviceTypeMask BlenderSession::device_override = DEVICE_MASK_ALL;
 bool BlenderSession::headless = false;
 bool BlenderSession::print_render_stats = false;
@@ -434,6 +444,15 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                                      evaluated_scene->r.im_format.imtype ==
                                          blender::R_IMF_IMTYPE_DEEP_EXR);
     const bool need_deep_output = is_deep_exr_format || compositor_needs_deep;
+    const bool deep_file_debug = deep_file_debug_enabled();
+
+    if (deep_file_debug) {
+      LOG_DEBUG << "Deep file debug: pre-driver view=" << b_rview_name
+                << " is_deep_exr_format=" << is_deep_exr_format
+                << " compositor_needs_deep=" << compositor_needs_deep
+                << " need_deep_output=" << need_deep_output
+                << " film_use_deep_before=" << scene->film->get_use_deep_output();
+    }
 
     if (is_multi_view && need_deep_output) {
       if (!deep_output_error_reported) {
@@ -451,6 +470,12 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       if (!scene->film->get_use_deep_output()) {
         scene->film->set_use_deep_output(true);
         scene->film->tag_modified();
+      }
+
+      if (deep_file_debug) {
+        LOG_DEBUG << "Deep file debug: post-driver view=" << b_rview_name
+                  << " film_use_deep_after=" << scene->film->get_use_deep_output()
+                  << " deep_driver_exists=" << (session->get_deep_output_driver() != nullptr);
       }
 
       DeepOutputDriver *deep_driver = session->get_deep_output_driver();
@@ -574,6 +599,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                                        blender::R_IMF_IMTYPE_DEEP_EXR);
   const bool finalize_deep = (is_deep_exr_format || compositor_needs_deep) && !deep_output_blocked;
   if (finalize_deep && !session->progress.get_cancel()) {
+    const bool deep_file_debug = deep_file_debug_enabled();
     DeepOutputDriver *deep_driver = session->get_deep_output_driver();
     if (deep_driver && deep_driver->is_enabled()) {
       const float *combined_data = nullptr;
@@ -658,8 +684,10 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       /* Blender's Debug Sample Count pass is normalized by the active render sample limit.
        * Convert it back to absolute per-pixel counts before deep edge reconstruction. */
       const float sample_count_scale = max(float(session->params.samples), 1.0f);
-      deep_driver->set_sample_count_buffer(
-          sample_count_data, sample_count_w, sample_count_h, sample_count_scale);
+      if (sample_count_data) {
+        deep_driver->set_sample_count_buffer(
+            sample_count_data, sample_count_w, sample_count_h, sample_count_scale);
+      }
 
       if (is_deep_exr_format) {
         /* Construct deep output path. */
@@ -676,12 +704,29 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
           deep_filepath += ".exr";
         }
 
+        if (deep_file_debug) {
+          LOG_DEBUG << "Deep file debug: is_deep_exr_format=" << is_deep_exr_format
+                    << " compositor_needs_deep=" << compositor_needs_deep
+                    << " deep_output_blocked=" << deep_output_blocked
+                    << " b_render->pic=" << b_render->pic << " deep_filepath=" << deep_filepath
+                    << " combined_buffer=" << (combined_data != nullptr)
+                    << " sample_count_buffer=" << (sample_count_data != nullptr)
+                    << " driver_size=" << deep_driver->get_width() << "x"
+                    << deep_driver->get_height();
+        }
+
         deep_driver->finalize_deep_output(deep_filepath);
       }
 
-      if (compositor_needs_deep) {
-        /* Store deep data in RenderResult for compositor access.
-         * The compositor needs access to deep data via RenderResult.deep_data. */
+      const bool render_result_needs_processed_deep = (compositor_needs_deep ||
+                                                       is_deep_exr_format);
+      if (render_result_needs_processed_deep) {
+        /* Store processed deep data in RenderResult.
+         *
+         * The compositor needs access to deep data via RenderResult.deep_data.
+         * Direct scene-output Deep EXR also needs the processed data there so the
+         * regular render-result save path does not write the raw unprocessed deep
+         * buffers instead. */
         blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
         if (render_result) {
           unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_data(

@@ -2643,6 +2643,8 @@ ccl_device_forceinline void integrate_volume_direct_light(
       state, path, rng_pixel);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, sample) = INTEGRATOR_STATE(
       state, path, sample);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
+      state, path, deep_surface_sample_idx);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, flag) = shadow_flag;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, bounce) = bounce;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = transparent_bounce;

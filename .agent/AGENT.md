@@ -63,6 +63,9 @@
 
 # Light pass AOV validation scene (environment/lightgroup channels)
 & 'E:\blender_modify\build_lobe_passes\bin\Release\blender.exe' -b "D:\blender_projects\light-passes-test-v001.blend" -f 3
+
+# CUDA flat-hole validation note: under --factory-startup, do NOT enable every device returned by
+# prefs.get_devices(); keep only the CUDA device enabled and disable OPTIX/CPU for this test.
 ```
 
 ---
