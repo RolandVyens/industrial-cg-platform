@@ -2020,3 +2020,24 @@ Old deep EXR development history, utility scripts, code review reports, and impl
   - the previously-blocking CPU broad RGB mismatch is resolved by the `shade_volume.h` fix
   - debug trace instrumentation used to prove the bug has been removed again from the worktree
   - branch is **not committed yet**; only the minimal functional fix remains staged in the source
+
+## 2026-03-26 Deep EXR Surface Metadata Widening / Cleanup
+
+- Follow-up after code review:
+  - widened hard-surface metadata from packed `uint64_t surface_key` to explicit
+    `surface_object`, `surface_prim`, `surface_shader` 32-bit fields
+  - removed the unused `deep_hash_uint32()` helper
+- Important implementation note:
+  - the widened metadata still fits in the existing 48-byte `KernelDeepSample` /
+    `DeepSampleData` layout because the old layout had enough tail padding
+  - result: large-scene object/shader collisions are removed **without increasing per-sample deep
+    memory**
+- Grouping/export behavior remains the same:
+  - export-side opaque hard-surface grouping still merges by **object + shader** continuity plus
+    normal similarity
+  - `surface_prim` is now preserved explicitly for future exact-surface logic, but is not used as
+    the current grouping discriminator
+- Build verification:
+  - `Release|x64` Blender build succeeded in
+    `E:\blender_modify\build_deep_surface_coverage`
+  - CPU/CUDA/OptiX kernel compilation completed successfully as part of that build

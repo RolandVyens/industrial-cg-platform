@@ -1381,3 +1381,33 @@ Current worktree intent after this checkpoint:
 - keep only the minimal `shade_volume.h` fix
 - do not keep the temporary deep trace instrumentation
 - no commit yet until user approval
+
+## 17. 2026-03-26 Hard-Surface Metadata Collision Cleanup
+
+The review note about large-scene `surface_key` truncation has now been addressed.
+
+Implementation:
+
+- replaced packed `uint64_t surface_key` metadata with explicit:
+  - `uint32_t surface_object`
+  - `uint32_t surface_prim`
+  - `uint32_t surface_shader`
+- removed the now-unused `deep_hash_uint32()` helper from `kernel/film/deep_write.h`
+
+Important memory/performance note:
+
+- this change does **not** increase `KernelDeepSample` / `DeepSampleData` size
+- both structures remain **48 bytes**
+- reason: the previous layout already rounded up to 48 bytes because of 16-byte alignment, so the
+  explicit 32/32/32 metadata fits inside the former padding budget
+
+Current grouping policy after the widening:
+
+- hard-surface export grouping still intentionally uses **object + shader** continuity plus normal
+  similarity
+- `surface_prim` is now retained losslessly for future higher-fidelity grouping/debugging work
+
+Verification:
+
+- `Release|x64` build succeeded in `E:\blender_modify\build_deep_surface_coverage`
+- this included rebuilt CPU, CUDA, and OptiX deep-kernel paths

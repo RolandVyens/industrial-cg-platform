@@ -60,12 +60,23 @@ struct alignas(16) DeepSampleData {
   /* Back depth (for volumetric samples, equals z for surfaces). */
   float z_back;
   /* Hard-surface metadata used for export-side compaction. */
-  uint64_t surface_key;
+  uint32_t surface_object;
+  uint32_t surface_prim;
+  uint32_t surface_shader;
   uint32_t packed_geometric_normal;
   uint32_t flags;
 
   DeepSampleData()
-      : r(0), g(0), b(0), a(0), z(0), z_back(0), surface_key(0), packed_geometric_normal(0),
+      : r(0),
+        g(0),
+        b(0),
+        a(0),
+        z(0),
+        z_back(0),
+        surface_object(0),
+        surface_prim(0),
+        surface_shader(0),
+        packed_geometric_normal(0),
         flags(0)
   {
   }
@@ -76,7 +87,9 @@ struct alignas(16) DeepSampleData {
                  float a_,
                  float z_,
                  float z_back_,
-                 uint64_t surface_key_ = 0,
+                 uint32_t surface_object_ = 0,
+                 uint32_t surface_prim_ = 0,
+                 uint32_t surface_shader_ = 0,
                  uint32_t packed_geometric_normal_ = 0,
                  uint32_t flags_ = 0)
       : r(r_),
@@ -85,7 +98,9 @@ struct alignas(16) DeepSampleData {
         a(a_),
         z(z_),
         z_back(z_back_),
-        surface_key(surface_key_),
+        surface_object(surface_object_),
+        surface_prim(surface_prim_),
+        surface_shader(surface_shader_),
         packed_geometric_normal(packed_geometric_normal_),
         flags(flags_)
   {

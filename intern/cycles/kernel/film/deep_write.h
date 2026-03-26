@@ -34,22 +34,25 @@ struct ccl_align(16) KernelDeepSample {
   float r, g, b, a;
   float z;
   float z_back;
-  uint64_t surface_key;
+  uint32_t surface_object;
+  uint32_t surface_prim;
+  uint32_t surface_shader;
   uint32_t packed_geometric_normal;
   uint32_t flags;
 };
 
 static_assert(sizeof(KernelDeepSample) == 48, "KernelDeepSample layout must match host.");
 
-ccl_device_inline uint64_t deep_hash_uint32(const uint64_t seed, const uint32_t value)
+ccl_device_inline void deep_make_surface_key(const int object,
+                                             const int prim,
+                                             const int shader,
+                                             uint32_t &surface_object,
+                                             uint32_t &surface_prim,
+                                             uint32_t &surface_shader)
 {
-  return (seed ^ uint64_t(value)) * 1099511628211ull;
-}
-
-ccl_device_inline uint64_t deep_make_surface_key(const int object, const int prim, const int shader)
-{
-  return (uint64_t(uint32_t(object) & 0xffffu) << 48) |
-         (uint64_t(uint32_t(shader) & 0xffffu) << 32) | uint64_t(uint32_t(prim));
+  surface_object = uint32_t(object);
+  surface_prim = uint32_t(prim);
+  surface_shader = uint32_t(shader);
 }
 
 ccl_device_inline float2 deep_encode_octahedral_normal(const float3 normal)
@@ -94,7 +97,9 @@ ccl_device_inline uint32_t film_write_deep_sample_with_metadata(
     const float alpha,
     const float z,
     const float z_back,
-    const uint64_t surface_key,
+    const uint32_t surface_object,
+    const uint32_t surface_prim,
+    const uint32_t surface_shader,
     const uint32_t packed_geometric_normal,
     const uint32_t sample_info)
 {
@@ -119,7 +124,9 @@ ccl_device_inline uint32_t film_write_deep_sample_with_metadata(
   deep_samples[offset].a = alpha;
   deep_samples[offset].z = z;
   deep_samples[offset].z_back = z_back;
-  deep_samples[offset].surface_key = surface_key;
+  deep_samples[offset].surface_object = surface_object;
+  deep_samples[offset].surface_prim = surface_prim;
+  deep_samples[offset].surface_shader = surface_shader;
   deep_samples[offset].packed_geometric_normal = packed_geometric_normal;
   deep_samples[offset].flags = sample_info;
 
@@ -148,7 +155,7 @@ ccl_device_inline uint32_t film_write_deep_sample(
     const float z_back)
 {
   return film_write_deep_sample_with_metadata(
-      kg, pixel_index, deep_samples, sample_counts, 1.0f, z, z_back, 0, 0, 0);
+      kg, pixel_index, deep_samples, sample_counts, 1.0f, z, z_back, 0, 0, 0, 0, 0);
 }
 
 /**
@@ -166,7 +173,7 @@ ccl_device_inline uint32_t film_write_deep_sample_transparent(
     const float z_back)
 {
   return film_write_deep_sample_with_metadata(
-      kg, pixel_index, deep_samples, sample_counts, alpha, z, z_back, 0, 0, 0);
+      kg, pixel_index, deep_samples, sample_counts, alpha, z, z_back, 0, 0, 0, 0, 0);
 }
 
 ccl_device_inline uint32_t film_write_deep_surface_sample_transparent(
@@ -177,7 +184,9 @@ ccl_device_inline uint32_t film_write_deep_surface_sample_transparent(
     const float alpha,
     const float z,
     const float z_back,
-    const uint64_t surface_key,
+    const uint32_t surface_object,
+    const uint32_t surface_prim,
+    const uint32_t surface_shader,
     const uint32_t packed_geometric_normal,
     const uint32_t camera_sample)
 {
@@ -189,7 +198,9 @@ ccl_device_inline uint32_t film_write_deep_surface_sample_transparent(
       alpha,
       z,
       z_back,
-      surface_key,
+      surface_object,
+      surface_prim,
+      surface_shader,
       packed_geometric_normal,
       deep_pack_sample_info(DEEP_SAMPLE_FLAG_HARD_SURFACE_METADATA, camera_sample));
 }

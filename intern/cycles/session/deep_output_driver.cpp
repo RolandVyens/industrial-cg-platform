@@ -96,7 +96,9 @@ struct OpaqueSurfacePrefixInfo {
 };
 
 struct OpaqueSurfacePrefixGroup {
-  uint64_t surface_key = 0;
+  uint32_t surface_object = 0;
+  uint32_t surface_prim = 0;
+  uint32_t surface_shader = 0;
   float3 normal = make_float3(0.0f, 0.0f, 1.0f);
   float3 color_sum = make_float3(0.0f, 0.0f, 0.0f);
   float output_z = 0.0f;
@@ -139,9 +141,11 @@ inline bool deep_sample_is_inactive(const DeepSampleData &sample)
          fabsf(sample.z_back) <= deep_inactive_sample_epsilon;
 }
 
-inline uint32_t deep_surface_key_object_shader_id(const uint64_t surface_key)
+inline bool deep_surface_same_object_shader(const OpaqueSurfacePrefixGroup &group,
+                                            const DeepSampleData &sample)
 {
-  return uint32_t(surface_key >> 32);
+  return group.surface_object == sample.surface_object &&
+         group.surface_shader == sample.surface_shader;
 }
 
 inline float3 deep_sample_rgb(const DeepSampleData &sample)
@@ -336,8 +340,7 @@ bool build_opaque_surface_prefix_groups(const DeepSampleData *sample_data,
     bool merged = false;
     if (!groups.empty()) {
       OpaqueSurfacePrefixGroup &group = groups.back();
-      if (deep_surface_key_object_shader_id(group.surface_key) ==
-              deep_surface_key_object_shader_id(sample.surface_key) &&
+      if (deep_surface_same_object_shader(group, sample) &&
           dot(group.normal, sample_normal) >= deep_surface_normal_dot_threshold)
       {
         group.hit_count++;
@@ -348,7 +351,9 @@ bool build_opaque_surface_prefix_groups(const DeepSampleData *sample_data,
 
     if (!merged) {
       OpaqueSurfacePrefixGroup &group = groups.emplace_back();
-      group.surface_key = sample.surface_key;
+      group.surface_object = sample.surface_object;
+      group.surface_prim = sample.surface_prim;
+      group.surface_shader = sample.surface_shader;
       group.normal = sample_normal;
       group.color_sum = deep_sample_rgb(sample);
       group.output_z = sample.z;
@@ -420,8 +425,7 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
     bool merged = false;
     if (!groups.empty()) {
       OpaqueSurfacePrefixGroup &group = groups.back();
-      if (deep_surface_key_object_shader_id(group.surface_key) ==
-              deep_surface_key_object_shader_id(sample.surface_key) &&
+      if (deep_surface_same_object_shader(group, sample) &&
           dot(group.normal, sample_normal) >= deep_surface_normal_dot_threshold)
       {
         group.hit_count++;
@@ -432,7 +436,9 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
 
     if (!merged) {
       OpaqueSurfacePrefixGroup &group = groups.emplace_back();
-      group.surface_key = sample.surface_key;
+      group.surface_object = sample.surface_object;
+      group.surface_prim = sample.surface_prim;
+      group.surface_shader = sample.surface_shader;
       group.normal = sample_normal;
       group.color_sum = deep_sample_rgb(sample);
       group.output_z = sample.z;
