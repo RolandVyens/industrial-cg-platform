@@ -1983,3 +1983,40 @@ Old deep EXR development history, utility scripts, code review reports, and impl
   - the remaining blocker is now a **CPU-only broad flatten-vs-flat RGB mismatch**, strongest in
     brighter/specular regions, and should be debugged next without reviving the reverted writer-flip
     idea
+
+## 2026-03-26 Deep EXR CPU Flatten RGB Root Cause / Fix
+
+- Worktree/branch: `E:\blender_modify\blender_deep_surface_coverage` /
+  `feature/deep-exr-surface-coverage`
+- Clean code fix now isolated to:
+  - `intern/cycles/kernel/integrator/shade_volume.h`
+- Confirmed root cause of the CPU-wide flatten-vs-flat RGB mismatch:
+  - deep surface sample indices were copied for surface direct-light shadow paths
+  - but `integrate_volume_direct_light()` did **not** copy `deep_surface_sample_idx` into the
+    spawned shadow path
+  - later direct-light contributions seen through primary-transmit / volume-traversed paths then hit
+    `sample_idx = DEEP_INVALID_SAMPLE_INDEX` and were silently dropped from deep surface RGB
+- Smoking-gun trace result on the known bad compositor-RGBA crop pixel `(1013, 867)`:
+  - before fix: many shadow contributions for the same camera sample arrived with
+    `sample_idx=4294967295`
+  - before fix: traced raw deep sample mean was `(~0.8876, ~0.8761, ~0.8990)`
+  - after the one-line copy fix: invalid shadow events for that pixel dropped to zero
+  - after fix: traced raw deep sample mean became `(~1.7610, ~1.6649, ~1.8544)`, matching the flat
+    pixel and the previously-good OptiX raw mean
+- Fresh full-frame verification on `D:\blender_projects\light-passes-test-v001.blend`:
+  - CPU compositor RGBA deep:
+    - deep: `C:\tmp\matrix_cpu_comp_rgba_deep_fix_0002.exr`
+    - flat ref: `C:\tmp\matrix_cpu_comp_rgba_flat_0002.exr`
+    - `mean_abs_rgb=(0.0007372, 0.0006663, 0.0006554)`
+    - `pixels_gt_0.05=912`
+    - `flatten_matches_flat=1`
+  - OptiX compositor RGBA deep:
+    - deep: `C:\tmp\matrix_optix_comp_rgba_deep_fix_0002.exr`
+    - flat ref: `C:\tmp\matrix_optix_comp_rgba_flat_0002.exr`
+    - `mean_abs_rgb=(0.0007401, 0.0006671, 0.0006574)`
+    - `pixels_gt_0.05=916`
+    - `flatten_matches_flat=1`
+- Current status:
+  - the previously-blocking CPU broad RGB mismatch is resolved by the `shade_volume.h` fix
+  - debug trace instrumentation used to prove the bug has been removed again from the worktree
+  - branch is **not committed yet**; only the minimal functional fix remains staged in the source

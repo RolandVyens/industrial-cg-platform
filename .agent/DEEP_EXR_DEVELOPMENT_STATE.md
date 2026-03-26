@@ -1342,3 +1342,42 @@ Therefore the current accepted blocker is:
 
 The next debugging task should target that systemic CPU RGB/energy mismatch before any new claim of
 matrix completion.
+
+## 16. 2026-03-26 CPU Flatten RGB Root Cause Closed
+
+Root cause was confirmed in the kernel, not in Deep EXR host merge logic:
+
+- `intern/cycles/kernel/integrator/shade_volume.h`
+- function: `integrate_volume_direct_light()`
+- bug: spawned shadow paths copied `render_pixel_index` and `sample`, but **not**
+  `deep_surface_sample_idx`
+- effect: later direct-light contributions on primary-transmit / volume-traversed paths were traced
+  with `sample_idx = 0xffffffff`, so CPU deep surface RGB silently dropped energy that the flat
+  render kept
+
+Evidence:
+
+- traced bad pixel `(1013, 867)` previously showed many invalid shadow events for the same camera
+  sample
+- raw deep sample mean before fix: `(~0.8876, ~0.8761, ~0.8990)`
+- raw deep sample mean after fix: `(~1.7610, ~1.6649, ~1.8544)`
+- the fixed mean matches the flat pixel and the earlier OptiX raw deep mean
+
+Fresh matrix-level verification:
+
+- CPU compositor RGBA deep vs flat: **pass**
+  - deep: `C:\tmp\matrix_cpu_comp_rgba_deep_fix_0002.exr`
+  - flat: `C:\tmp\matrix_cpu_comp_rgba_flat_0002.exr`
+  - `mean_abs_rgb=(0.0007372, 0.0006663, 0.0006554)`
+  - `pixels_gt_0.05=912`
+- OptiX compositor RGBA deep vs flat: **pass**
+  - deep: `C:\tmp\matrix_optix_comp_rgba_deep_fix_0002.exr`
+  - flat: `C:\tmp\matrix_optix_comp_rgba_flat_0002.exr`
+  - `mean_abs_rgb=(0.0007401, 0.0006671, 0.0006574)`
+  - `pixels_gt_0.05=916`
+
+Current worktree intent after this checkpoint:
+
+- keep only the minimal `shade_volume.h` fix
+- do not keep the temporary deep trace instrumentation
+- no commit yet until user approval
