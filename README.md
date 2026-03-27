@@ -5,9 +5,9 @@
 ## Features
 - Deep EXR output for compositing (merged).
 - Per-light and world shadow color in Cycles (tint or remove shadows).
+- Per-lightgroup lobe/light AOVs in Cycles, including combined-only lightgroup support.
 
 ## Roadmap
 1. Indirect-only object toggle (no direct lighting)
 2. Per-collection/object material override
-3. Per-light-group lobe AOVs (LPE foundation)
-4. World environment fog (aiFog-like, direct-light only)
+3. World environment fog (aiFog-like, direct-light only)
