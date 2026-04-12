@@ -11,7 +11,7 @@ SHADER_LIBRARY_CREATE_INFO(eevee_global_ubo)
 SHADER_LIBRARY_CREATE_INFO(eevee_hiz_data)
 
 #include "draw_view_lib.glsl"
-#include "eevee_ray_types_lib.glsl"
+#include "eevee_ray_types_lib.bsl.hh"
 #include "eevee_sampling_lib.glsl"
 #include "eevee_utility_tx_lib.glsl"
 #include "gpu_shader_math_base_lib.glsl"
@@ -173,13 +173,13 @@ OcclusionData ambient_occlusion_search(float3 vP,
 
     ScreenSpaceRay ssray;
 
-    ssray = raytrace_screenspace_ray_create(ray, uniform_buf.ao.pixel_size);
+    ssray = ScreenSpaceRay::create(ray, uniform_buf.ao.pixel_size);
     data.horizons[0 + i * 2] = ambient_ambient_occlusion_search_horizon(
         vI, vP, noise.y, ssray, depth_tx, inverted, radius, dir_sample_count);
 
     ray.direction = -ray.direction;
 
-    ssray = raytrace_screenspace_ray_create(ray, uniform_buf.ao.pixel_size);
+    ssray = ScreenSpaceRay::create(ray, uniform_buf.ao.pixel_size);
     data.horizons[1 + i * 2] = -ambient_ambient_occlusion_search_horizon(
         vI, vP, noise.y, ssray, depth_tx, inverted, radius, dir_sample_count);
 

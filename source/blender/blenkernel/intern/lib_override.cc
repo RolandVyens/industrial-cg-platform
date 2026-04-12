@@ -1554,10 +1554,10 @@ static void lib_override_library_create_post_process(Main *bmain,
   }
 
   if (view_layer != nullptr) {
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   }
   else {
-    BKE_scene_view_layers_synced_ensure(scene);
+    BKE_scene_view_layers_synced_ensure(*bmain, scene);
   }
 
   /* We need to ensure all new overrides of objects are properly instantiated. */
@@ -1575,7 +1575,7 @@ static void lib_override_library_create_post_process(Main *bmain,
       BLI_assert(view_layer);
       /* May have been tagged as dirty again in a previous iteration of this loop, e.g. if adding a
        * liboverride object to a collection. */
-      BKE_view_layer_synced_ensure(scene, view_layer);
+      BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
       Base *basact = BKE_view_layer_base_find(view_layer, ob_new);
       if (basact != nullptr) {
         view_layer->basact = basact;
@@ -1971,7 +1971,7 @@ static void lib_override_library_main_hierarchy_id_root_ensure(
   BLI_assert(ID_IS_OVERRIDE_LIBRARY_REAL(id));
 
   if (id->override_library->flag & LIBOVERRIDE_FLAG_NO_HIERARCHY) {
-    if (id->override_library->hierarchy_root != id) {
+    if (!ELEM(id->override_library->hierarchy_root, id, nullptr)) {
       std::string error_msg = fmt::format(
           "Existing isolated override '{}' has a non-null hierarchy root ('{}'), will be "
           "cleared",
@@ -2261,19 +2261,32 @@ static LibOverrideMissingIDsData lib_override_library_resync_build_missing_ids_d
 }
 
 static ID *lib_override_library_resync_search_missing_ids_data(
-    LibOverrideMissingIDsData &missing_ids, ID *id_override)
+    LibOverrideMissingIDsData &missing_ids, GHash *linkedref_to_old_override, ID *id_override)
 {
   LibOverrideMissingIDsData_Key key = lib_override_library_resync_missing_id_key(id_override);
   const LibOverrideMissingIDsData::iterator value = missing_ids.find(key);
   if (value == missing_ids.end()) {
     return nullptr;
   }
-  if (value->second.empty()) {
-    return nullptr;
+  while (!value->second.empty()) {
+    ID *match_id = value->second.front();
+    value->second.pop_front();
+    /* Never match multiple new liboverrides and their linked reference IDs to a same old one. This
+     * will break many things, including remapping, deletion of old liboverrides, etc.
+     *
+     * This ensures that if the current found 'missing ID match' was a liboverride previously, its
+     * linked reference ID is not already associated to another old liboverride.
+     *
+     * Not a very common situation, but see e.g. #156601 for a reproducible case.
+     */
+    if (ID_IS_OVERRIDE_LIBRARY_REAL(match_id) &&
+        BLI_ghash_haskey(linkedref_to_old_override, match_id->override_library->reference))
+    {
+      continue;
+    }
+    return match_id;
   }
-  ID *match_id = value->second.front();
-  value->second.pop_front();
-  return match_id;
+  return nullptr;
 }
 
 static bool lib_override_library_resync(Main *bmain,
@@ -2295,11 +2308,11 @@ static bool lib_override_library_resync(Main *bmain,
 
   const Object *old_active_object = nullptr;
   if (view_layer) {
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     old_active_object = BKE_view_layer_active_object_get(view_layer);
   }
   else {
-    BKE_scene_view_layers_synced_ensure(scene);
+    BKE_scene_view_layers_synced_ensure(*bmain, scene);
   }
 
   if (id_root_reference->tag & ID_TAG_MISSING) {
@@ -2532,12 +2545,12 @@ static bool lib_override_library_resync(Main *bmain,
 
       /* The old override may have been created as linked data and then referenced by local data
        * during a previous Blender session, in which case it became directly linked and a reference
-       * to it was stored in the local .blend file. however, since that linked liboverride ID does
+       * to it was stored in the local .blend file. However, since that linked liboverride ID does
        * not actually exist in the original library file, on next file read it is lost and marked
        * as missing ID. */
       if (id_override_old == nullptr && (ID_IS_LINKED(id_override_new) || is_relocate)) {
-        id_override_old = lib_override_library_resync_search_missing_ids_data(missing_ids_data,
-                                                                              id_override_new);
+        id_override_old = lib_override_library_resync_search_missing_ids_data(
+            missing_ids_data, linkedref_to_old_override, id_override_new);
         BLI_assert(id_override_old == nullptr || id_override_old->lib == id_override_new->lib);
         if (id_override_old != nullptr) {
           BLI_ghash_insert(linkedref_to_old_override, id_reference_iter, id_override_old);
@@ -2550,7 +2563,8 @@ static bool lib_override_library_resync(Main *bmain,
           }
 
           CLOG_DEBUG(&LOG_RESYNC,
-                     "Found missing linked old override best-match %s for new linked override %s",
+                     "Found missing linked or versioning-generated old override best-match %s for "
+                     "new linked override %s",
                      id_override_old->name,
                      id_override_new->name);
         }
@@ -3906,13 +3920,13 @@ void BKE_lib_override_library_main_resync(
     override_resync_residual_storage->flag |= COLLECTION_HIDE_VIEWPORT | COLLECTION_HIDE_RENDER;
   }
   /* BKE_collection_add above could have tagged the view_layer out of sync. */
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   const Object *old_active_object = BKE_view_layer_active_object_get(view_layer);
 
   /* Necessary to improve performances, and prevent layers matching override sub-collections to be
    * lost when re-syncing the parent override collection.
    * Ref. #73411. */
-  BKE_layer_collection_resync_forbid();
+  BKE_layer_collection_resync_forbid(*bmain);
 
   int library_indirect_level = lib_override_libraries_index_define(bmain);
   while (library_indirect_level >= 0) {
@@ -3955,7 +3969,7 @@ void BKE_lib_override_library_main_resync(
     library_indirect_level--;
   }
 
-  BKE_layer_collection_resync_allow();
+  BKE_layer_collection_resync_allow(*bmain);
 
   /* Essentially ensures that potentially new overrides of new objects will be instantiated. */
   lib_override_library_create_post_process(bmain,
@@ -4867,7 +4881,7 @@ void BKE_lib_override_library_main_operations_create(Main *bmain,
   BLI_assert_msg(resync_success,
                  "Ensuring that all view-layers in Main are synced with their collections failed");
   UNUSED_VARS_NDEBUG(resync_success);
-  BKE_layer_collection_resync_forbid();
+  BKE_layer_collection_resync_forbid(*bmain);
 
   LibOverrideOpCreateData create_pool_data{};
   create_pool_data.bmain = bmain;
@@ -4936,7 +4950,7 @@ void BKE_lib_override_library_main_operations_create(Main *bmain,
 
   BLI_task_pool_free(task_pool);
 
-  BKE_layer_collection_resync_allow();
+  BKE_layer_collection_resync_allow(*bmain);
 
   if (create_pool_data.report_flags & RNA_OVERRIDE_MATCH_RESULT_RESTORE_TAGGED) {
     BKE_lib_override_library_main_operations_restore(
@@ -5210,17 +5224,17 @@ static void lib_override_id_swap(Main *bmain, ID *id_local, ID *id_temp)
   /* Ensure ViewLayers are in sync in case a Scene is being swapped, and prevent any further resync
    * during the swapping itself. */
   if (GS(id_local->name) == ID_SCE) {
-    BKE_scene_view_layers_synced_ensure(reinterpret_cast<Scene *>(id_local));
-    BKE_scene_view_layers_synced_ensure(reinterpret_cast<Scene *>(id_temp));
+    BKE_scene_view_layers_synced_ensure(*bmain, reinterpret_cast<Scene *>(id_local));
+    BKE_scene_view_layers_synced_ensure(*bmain, reinterpret_cast<Scene *>(id_temp));
   }
-  BKE_layer_collection_resync_forbid();
+  BKE_layer_collection_resync_forbid(*bmain);
 
   BKE_lib_id_swap(bmain, id_local, id_temp, true, 0);
   /* We need to keep these tags from temp ID into orig one.
    * ID swap does not swap most of ID data itself. */
   id_local->tag |= (id_temp->tag & ID_TAG_LIBOVERRIDE_NEED_RESYNC);
 
-  BKE_layer_collection_resync_allow();
+  BKE_layer_collection_resync_allow(*bmain);
 }
 
 void BKE_lib_override_library_update(Main *bmain, ID *local)

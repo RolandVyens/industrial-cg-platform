@@ -1,0 +1,10 @@
+commit 527731e93d932f4b41c7e251acf0d0353e9bfbd8
+Author: RolandVyens <leiersai@sina.com>
+Date:   Thu Mar 19 16:28:05 2026 +0800
+
+    Docs: record deep worktree sync verification
+
+ .agent/AGENT.md              |  3 +++
+ .agent/AGENT_HANDOFF.md      | 10 ++++++++++
+ .agent/VFX_RENDERING_PLAN.md |  7 +++++++
+ 3 files changed, 20 insertions(+)

@@ -9,6 +9,7 @@
  * as well as some generic operators and shared operator properties.
  */
 
+#include "UI_interface_c.hh"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -77,6 +78,7 @@
 #include "GPU_matrix.hh"
 #include "GPU_state.hh"
 
+#include "IMB_imbuf.hh"
 #include "IMB_imbuf_types.hh"
 
 #include "ED_fileselect.hh"
@@ -1425,7 +1427,9 @@ static ui::Block *wm_block_create_redo(bContext *C, ARegion *region, void *arg_o
   block_theme_style_set(block, ui::BLOCK_THEME_STYLE_REGULAR);
 
   /* #BLOCK_NUMSELECT for layer buttons. */
-  block_flag_enable(block, ui::BLOCK_NUMSELECT | ui::BLOCK_KEEP_OPEN | ui::BLOCK_MOVEMOUSE_QUIT);
+  block_flag_enable(block,
+                    ui::BLOCK_NUMSELECT | ui::BLOCK_KEEP_OPEN | ui::BLOCK_MOVEMOUSE_QUIT |
+                        ui::BLOCK_POPUP);
 
   /* If register is not enabled, the operator gets freed on #OPERATOR_FINISHED
    * ui_apply_but_funcs_after calls #ED_undo_operator_repeate_cb and crashes. */
@@ -1477,18 +1481,16 @@ struct wmOpPopUp {
 };
 
 /* Only invoked by OK button in popups created with #wm_block_dialog_create(). */
-static void dialog_exec_cb(bContext *C, void *arg1, void *arg2)
+static void dialog_exec_cb(bContext *C, wmOpPopUp *data, ui::Block *block)
 {
   wmOperator *op;
   {
     /* Execute will free the operator.
      * In this case, wm_operator_ui_popup_cancel won't run. */
-    wmOpPopUp *data = static_cast<wmOpPopUp *>(arg1);
     op = data->op;
     MEM_delete(data);
   }
 
-  ui::Block *block = static_cast<ui::Block *>(arg2);
   /* Explicitly set RETURN_OK flag, otherwise the menu might be canceled
    * in case WM_operator_call_ex exits/reloads the current file (#49199). */
 
@@ -1505,10 +1507,9 @@ static void dialog_exec_cb(bContext *C, void *arg1, void *arg2)
 static void wm_operator_ui_popup_cancel(bContext *C, void *user_data);
 
 /* Only invoked by Cancel button in popups created with #wm_block_dialog_create(). */
-static void dialog_cancel_cb(bContext *C, void *arg1, void *arg2)
+static void dialog_cancel_cb(bContext *C, wmOpPopUp *data, ui::Block *block)
 {
-  wm_operator_ui_popup_cancel(C, arg1);
-  ui::Block *block = static_cast<ui::Block *>(arg2);
+  wm_operator_ui_popup_cancel(C, data);
   popup_menu_retval_set(block, ui::RETURN_CANCEL, true);
   wmWindow *win = CTX_wm_window(C);
   popup_block_close(C, win, block);
@@ -1537,7 +1538,7 @@ static ui::Block *wm_block_dialog_create(bContext *C, ARegion *region, void *use
     data->icon = ui::AlertIcon::Question;
   }
 
-  block_flag_enable(block, ui::BLOCK_KEEP_OPEN | ui::BLOCK_NUMSELECT);
+  block_flag_enable(block, ui::BLOCK_KEEP_OPEN | ui::BLOCK_NUMSELECT | ui::BLOCK_POPUP);
 
   ui::fontstyle_set(&style->widget);
   /* Width based on the text lengths. */
@@ -1660,8 +1661,10 @@ static ui::Block *wm_block_dialog_create(bContext *C, ARegion *region, void *use
                              "");
     }
 
-    button_func_set(confirm_but, dialog_exec_cb, data, col_block);
-    button_func_set(cancel_but, dialog_cancel_cb, data, col_block);
+    button_func_set(confirm_but,
+                    [data, col_block](bContext &C) { dialog_exec_cb(&C, data, col_block); });
+    button_func_set(cancel_but,
+                    [data, col_block](bContext &C) { dialog_cancel_cb(&C, data, col_block); });
     button_flag_enable((data->cancel_default) ? cancel_but : confirm_but, ui::BUT_ACTIVE_DEFAULT);
   }
 
@@ -1689,7 +1692,7 @@ static ui::Block *wm_operator_ui_create(bContext *C, ARegion *region, void *user
 
   ui::Block *block = block_begin(C, region, __func__, ui::EmbossType::Emboss);
   block_flag_disable(block, ui::BLOCK_LOOP);
-  block_flag_enable(block, ui::BLOCK_KEEP_OPEN | ui::BLOCK_MOVEMOUSE_QUIT);
+  block_flag_enable(block, ui::BLOCK_KEEP_OPEN | ui::BLOCK_MOVEMOUSE_QUIT | ui::BLOCK_POPUP);
   block_theme_style_set(block, ui::BLOCK_THEME_STYLE_REGULAR);
 
   popup_dummy_panel_set(region, block, op->idname);
@@ -2674,13 +2677,12 @@ static void radial_control_set_tex(RadialControl *rc)
                                             1,
                                             gpu::TextureFormat::UNORM_8,
                                             GPU_TEXTURE_USAGE_SHADER_READ,
-                                            ibuf->float_buffer.data);
+                                            ibuf->float_data());
 
         GPU_texture_filter_mode(rc->texture, true);
         GPU_texture_swizzle_set(rc->texture, "111r");
 
-        MEM_delete(ibuf->float_buffer.data);
-        MEM_delete(ibuf);
+        IMB_freeImBuf(ibuf);
       }
       break;
     default:
@@ -4555,8 +4557,14 @@ static const EnumPropertyItem *rna_id_itemf(bool *r_free,
         item_tmp.identifier = item_tmp.name = id->name + 2;
         item_tmp.value = i++;
 
+        const BIFIconID lib_state_icon = ui::icon_from_library(id);
+        /* Indicate library linking, override or asset state in icon. In enum menus that's the only
+         * way to tell apart linked IDs from their overridden versions. */
+        if (lib_state_icon != ICON_NONE) {
+          item_tmp.icon = lib_state_icon;
+        }
         /* Show collection color tag icons in menus. */
-        if (id_type == ID_GR) {
+        else if (id_type == ID_GR) {
           item_tmp.icon = ui::icon_color_from_collection(reinterpret_cast<Collection *>(id));
         }
 

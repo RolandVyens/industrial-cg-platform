@@ -10,8 +10,8 @@ namespace nodes::node_shader_holdout_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Float>("Weight").available(false);
-  b.add_output<decl::Shader>("Holdout");
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_output<decl::Shader>("Holdout"_ustr);
 }
 
 static int gpu_shader_rgb(GPUMaterial *mat,
@@ -20,6 +20,7 @@ static int gpu_shader_rgb(GPUMaterial *mat,
                           GPUNodeStack *in,
                           GPUNodeStack *out)
 {
+  GPU_material_flag_set(mat, GPU_MATFLAG_HOLDOUT);
   return GPU_stack_link(mat, node, "node_holdout", in, out);
 }
 
@@ -32,7 +33,7 @@ void register_node_type_sh_holdout()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeHoldout", SH_NODE_HOLDOUT);
+  sh_node_type_base(&ntype, "ShaderNodeHoldout"_ustr, SH_NODE_HOLDOUT);
   ntype.ui_name = "Holdout";
   ntype.ui_description =
       "Create a \"hole\" in the image with zero alpha transparency, which is useful for "

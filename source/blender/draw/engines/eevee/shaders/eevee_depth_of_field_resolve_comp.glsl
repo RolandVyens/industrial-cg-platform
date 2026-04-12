@@ -116,9 +116,9 @@ float3 dof_neighborhood_clamp(float2 frag_coord, float3 color, float center_coc,
   /* Progressively apply the clamp to avoid harsh transition. Also mask by weight. */
   float fac = saturate(square(max(0.0f, abs(center_coc) - 0.5f)) * 4.0f) * weight;
   /* Clamp in YCoCg space to avoid too much color drift. */
-  color = colorspace_YCoCg_from_scene_linear(color);
+  color = colorspace::YCoCg_from_scene_linear(color);
   color = mix(color, clamp(color, neighbor_min, neighbor_max), fac);
-  color = colorspace_scene_linear_from_YCoCg(color);
+  color = colorspace::scene_linear_from_YCoCg(color);
   return color;
 }
 
@@ -208,7 +208,7 @@ void main()
   }
 
   if (!no_focus_pass && prediction.do_focus) {
-    layer_color = colorspace_safe_color(textureLod(color_tx, uv, 0.0f));
+    layer_color = colorspace::safe_color(textureLod(color_tx, uv, 0.0f));
     layer_weight = 1.0f;
     if (do_debug_color) {
       layer_color.rgb *= focus_color;

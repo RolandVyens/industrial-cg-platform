@@ -22,9 +22,9 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.allow_any_socket_order();
   b.add_default_layout();
   b.is_function_node();
-  b.add_input<decl::Rotation>("Rotation");
-  b.add_output<decl::Rotation>("Rotation").align_with_previous();
-  b.add_input<decl::Rotation>("Rotate By");
+  b.add_input<decl::Rotation>("Rotation"_ustr);
+  b.add_output<decl::Rotation>("Rotation"_ustr).align_with_previous();
+  b.add_input<decl::Rotation>("Rotate By"_ustr);
 };
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -77,7 +77,7 @@ static void node_rna(StructRNA *srna)
 static void node_register()
 {
   static bke::bNodeType ntype;
-  fn_node_type_base(&ntype, "FunctionNodeRotateRotation", FN_NODE_ROTATE_ROTATION);
+  fn_node_type_base(&ntype, "FunctionNodeRotateRotation"_ustr, FN_NODE_ROTATE_ROTATION);
   ntype.ui_name = "Rotate Rotation";
   ntype.ui_description = "Apply a secondary rotation to a given rotation value";
   ntype.enum_name_legacy = "ROTATE_ROTATION";

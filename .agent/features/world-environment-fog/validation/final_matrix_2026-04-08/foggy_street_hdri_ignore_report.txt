@@ -1,0 +1,24 @@
+﻿World Environment Fog HDRI Ignore Proof
+Date: 2026-04-08
+
+Setup:
+- Validation scene: foggy_street_boxes_test.blend
+- Render path: factory-startup, OPTIX, 8 samples, PNG RGBA
+- All explicit scene lights hidden from render
+- View-layer material override forced to pure black
+- Film transparent enabled
+- Only the world Background node surface color/strength changed between renders
+
+Outputs:
+- E:\blender_modify\blender\.agent\features\world-environment-fog\validation\final_matrix_2026-04-08\foggy_street_hdri_ignore_dark_0001.png
+- E:\blender_modify\blender\.agent\features\world-environment-fog\validation\final_matrix_2026-04-08\foggy_street_hdri_ignore_bright_0001.png
+
+Measured image stats:
+- Dark avg RGBA: 0.022032, 0.022032, 0.022035, 0.908389
+- Bright avg RGBA: 0.022032, 0.022032, 0.022035, 0.908389
+- Average absolute RGB diff: 0.000000
+- Max absolute RGB diff: 0.000000
+
+Practical read:
+- Changing the world background surface alone did not change the rendered fog result in this controlled scene.
+- This matches the intended v1 rule that environment fog ignores LIGHT_BACKGROUND / HDRI contribution.

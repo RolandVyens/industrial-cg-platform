@@ -200,6 +200,9 @@ static bool python_script_exec(
     if (reports) {
       BPy_errors_to_report(reports);
     }
+    else {
+      PyC_Err_CaptureSystemExitCode();
+    }
     if (text) {
       if (do_jump) {
         /* ensure text is valid before use, the script may have freed itself */
@@ -265,7 +268,8 @@ static bool bpy_run_string_impl(bContext *C,
     return ok;
   }
 
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+  bpy_context_set_allow_null(C, &gilstate);
 
   PyObject *main_mod = PyC_MainModule_Backup();
 
@@ -283,6 +287,9 @@ static bool bpy_run_string_impl(bContext *C,
     ok = false;
     if (ReportList *wm_reports = C ? CTX_wm_reports(C) : nullptr) {
       BPy_errors_to_report(wm_reports);
+    }
+    else {
+      PyC_Err_CaptureSystemExitCode();
     }
     PyErr_Print();
   }
@@ -360,7 +367,6 @@ static bool bpy_run_string_exec_with_locals_assume_gil(
   }
 
   /* Clean up references. */
-  Py_DECREF(py_globals);
   Py_DECREF(py_locals);
 
   return ok;
@@ -373,7 +379,9 @@ static bool bpy_run_string_exec_with_locals_acquire_gil(
     FunctionRef<void(PyObject *py_locals)> on_exec_ok)
 {
   PyGILState_STATE gilstate;
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+
+  bpy_context_set_allow_null(C, &gilstate);
 
   PyObject *main_mod_backup = PyC_MainModule_Backup();
 
@@ -381,6 +389,9 @@ static bool bpy_run_string_exec_with_locals_acquire_gil(
   if (!ok) {
     if (ReportList *wm_reports = C ? CTX_wm_reports(C) : nullptr) {
       BPy_errors_to_report(wm_reports);
+    }
+    else {
+      PyC_Err_CaptureSystemExitCode();
     }
     PyErr_Print();
   }
@@ -501,7 +512,8 @@ bool BPY_run_string_as_number(bContext *C,
   }
 
   PyGILState_STATE gilstate;
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+  bpy_context_set_allow_null(C, &gilstate);
 
   ok = PyC_RunString_AsNumber(imports, expr, "<expr as number>", r_value);
 
@@ -529,7 +541,8 @@ bool BPY_run_string_as_string_and_len(bContext *C,
   }
 
   PyGILState_STATE gilstate;
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+  bpy_context_set_allow_null(C, &gilstate);
 
   ok = PyC_RunString_AsStringAndSize(imports, expr, "<expr as str>", r_value, r_value_len);
 
@@ -564,7 +577,8 @@ bool BPY_run_string_as_string_and_len_or_none(bContext *C,
   }
 
   PyGILState_STATE gilstate;
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+  bpy_context_set_allow_null(C, &gilstate);
 
   ok = PyC_RunString_AsStringAndSizeOrNone(
       imports, expr, "<expr as str or none>", r_value, r_value_len);
@@ -600,7 +614,8 @@ bool BPY_run_string_as_intptr(bContext *C,
   }
 
   PyGILState_STATE gilstate;
-  bpy_context_set(C, &gilstate);
+  /* Historically `BPY_run_*` C to be null, risky but not trivial to change. See doc-string. */
+  bpy_context_set_allow_null(C, &gilstate);
 
   ok = PyC_RunString_AsIntPtr(imports, expr, "<expr as intptr>", r_value);
 

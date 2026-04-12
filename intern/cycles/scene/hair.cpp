@@ -308,16 +308,6 @@ void Hair::resize_curves(const int numcurves, const int numkeys)
   attributes.resize();
 }
 
-void Hair::reserve_curves(const int numcurves, const int numkeys)
-{
-  curve_keys.reserve(numkeys);
-  curve_radius.reserve(numkeys);
-  curve_first_key.reserve(numcurves);
-  curve_shader.reserve(numcurves);
-
-  attributes.resize(true);
-}
-
 void Hair::clear(bool preserve_shaders)
 {
   Geometry::clear(preserve_shaders);
@@ -330,39 +320,21 @@ void Hair::clear(bool preserve_shaders)
   attributes.clear();
 }
 
-void Hair::add_curve_key(const float3 co, const float radius)
-{
-  curve_keys.push_back_reserved(co);
-  curve_radius.push_back_reserved(radius);
-
-  tag_curve_keys_modified();
-  tag_curve_radius_modified();
-}
-
-void Hair::add_curve(const int first_key, const int shader)
-{
-  curve_first_key.push_back_reserved(first_key);
-  curve_shader.push_back_reserved(shader);
-
-  tag_curve_first_key_modified();
-  tag_curve_shader_modified();
-}
-
 void Hair::copy_center_to_motion_step(const int motion_step)
 {
   Attribute *attr_mP = attributes.find(ATTR_STD_MOTION_VERTEX_POSITION);
   if (attr_mP) {
     float3 *keys = curve_keys.data();
     const size_t numkeys = curve_keys.size();
-    std::copy_n(keys, numkeys, attr_mP->data_float3() + motion_step * numkeys);
+    std::copy_n(keys, numkeys, attr_mP->data_float3_for_write() + motion_step * numkeys);
   }
 
   Attribute *attr_mvN = attributes.find(ATTR_STD_MOTION_VERTEX_NORMAL);
   Attribute *attr_vN = attributes.find(ATTR_STD_VERTEX_NORMAL);
   if (attr_mvN && attr_vN) {
-    packed_normal *vN = attr_vN->data_normal();
+    const packed_normal *vN = attr_vN->data_normal();
     const size_t numkeys = curve_keys.size();
-    std::copy_n(vN, numkeys, attr_mvN->data_normal() + motion_step * numkeys);
+    std::copy_n(vN, numkeys, attr_mvN->data_normal_for_write() + motion_step * numkeys);
   }
 }
 
@@ -414,7 +386,7 @@ void Hair::compute_bounds()
       const size_t steps_size = curve_keys.size() * (motion_steps - 1);
       // Attribute data is stored as a float4 and is not
       // interchangeable with float3
-      float4 *key_steps = curve_attr->data_float4();
+      const float4 *key_steps = curve_attr->data_float4();
 
       for (size_t i = 0; i < steps_size; i++) {
         bnds.grow(make_float3(key_steps[i]));
@@ -433,7 +405,7 @@ void Hair::compute_bounds()
         const size_t steps_size = curve_keys.size() * (motion_steps - 1);
         // Attribute data is stored as a float4 which is not
         // interchangeable with float4
-        float4 *key_steps = curve_attr->data_float4();
+        const float4 *key_steps = curve_attr->data_float4();
 
         for (size_t i = 0; i < steps_size; i++) {
           bnds.grow_safe(make_float3(key_steps[i]));
@@ -477,7 +449,7 @@ void Hair::apply_transform(const Transform &tfm, const bool apply_to_motion)
     if (curve_attr) {
       /* apply transform to motion curve keys */
       const size_t steps_size = curve_keys.size() * (motion_steps - 1);
-      float4 *key_steps = curve_attr->data_float4();
+      float4 *key_steps = curve_attr->data_float4_for_write();
 
       for (size_t i = 0; i < steps_size; i++) {
         const float3 co = transform_point(&tfm, make_float3(key_steps[i]));
@@ -608,6 +580,10 @@ bool Hair::need_shadow_transparency() const
 
 bool Hair::need_update_shadow_transparency() const
 {
+  if (attributes.find(ATTR_STD_SHADOW_TRANSPARENCY) == nullptr) {
+    return true;
+  }
+
   for (const Node *node : used_shaders) {
     const Shader *shader = static_cast<const Shader *>(node);
     if (shader->need_update_shadow_transparency) {
@@ -645,7 +621,7 @@ bool Hair::update_shadow_transparency(Device *device, Scene *scene, Progress &pr
     attr = attributes.add(ATTR_STD_SHADOW_TRANSPARENCY);
   }
 
-  float *attr_data = attr->data_float();
+  float *attr_data = attr->data_float_for_write();
 
   /* Find object index. */
   size_t object_index = OBJECT_NONE;

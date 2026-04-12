@@ -96,7 +96,6 @@
 #include "readfile.hh"
 
 #include "SEQ_channels.hh"
-#include "SEQ_effects.hh"
 #include "SEQ_iterator.hh"
 #include "SEQ_retiming.hh"
 #include "SEQ_sequencer.hh"
@@ -354,7 +353,7 @@ static void do_versions_idproperty_ui_data(Main *bmain)
     for (ModifierData &md : ob.modifiers) {
       if (md.type == eModifierType_Nodes) {
         NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(&md);
-        version_idproperty_ui_data(nmd->settings.properties);
+        version_idproperty_ui_data(nmd->settings_legacy.properties);
       }
     }
 
@@ -1222,7 +1221,7 @@ void do_versions_after_linking_300(FileData * /*fd*/, Main *bmain)
           continue;
         }
         NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(&md);
-        if (nmd->node_group == nullptr) {
+        if (nmd->node_group == nullptr || ID_MISSING(nmd->node_group)) {
           continue;
         }
 
@@ -1551,17 +1550,17 @@ static void do_version_subsurface_methods(bNode *node)
 
 static void version_geometry_nodes_add_attribute_input_settings(NodesModifierData *nmd)
 {
-  if (nmd->settings.properties == nullptr) {
+  if (nmd->settings_legacy.properties == nullptr) {
     return;
   }
   /* Before versioning the properties, make sure it hasn't been done already. */
-  for (const IDProperty &property : nmd->settings.properties->data.group) {
+  for (const IDProperty &property : nmd->settings_legacy.properties->data.group) {
     if (strstr(property.name, "_use_attribute") || strstr(property.name, "_attribute_name")) {
       return;
     }
   }
 
-  for (IDProperty &property : nmd->settings.properties->data.group.items_mutable()) {
+  for (IDProperty &property : nmd->settings_legacy.properties->data.group.items_mutable()) {
     if (!ELEM(property.type, IDP_FLOAT, IDP_INT, IDP_ARRAY)) {
       continue;
     }
@@ -1574,13 +1573,13 @@ static void version_geometry_nodes_add_attribute_input_settings(NodesModifierDat
     SNPRINTF(use_attribute_prop_name, "%s%s", property.name, "_use_attribute");
 
     IDProperty *use_attribute_prop = bke::idprop::create(use_attribute_prop_name, 0).release();
-    IDP_AddToGroup(nmd->settings.properties, use_attribute_prop);
+    IDP_AddToGroup(nmd->settings_legacy.properties, use_attribute_prop);
 
     char attribute_name_prop_name[MAX_IDPROP_NAME];
     SNPRINTF(attribute_name_prop_name, "%s%s", property.name, "_attribute_name");
 
     IDProperty *attribute_prop = bke::idprop::create(attribute_name_prop_name, "").release();
-    IDP_AddToGroup(nmd->settings.properties, attribute_prop);
+    IDP_AddToGroup(nmd->settings_legacy.properties, attribute_prop);
   }
 }
 
@@ -1707,7 +1706,7 @@ static void version_geometry_nodes_set_position_node_offset(bNodeTree *ntree)
       return;
     }
     /* Change identifier of old socket, so that there is no name collision. */
-    STRNCPY_UTF8(old_offset_socket->identifier, "Offset_old");
+    version_node_socket_identifier_set(*old_offset_socket, "Offset_old");
     bke::node_add_static_socket(
         *ntree, node, SOCK_IN, SOCK_VECTOR, PROP_TRANSLATION, "Offset", "Offset");
   }
@@ -1765,9 +1764,7 @@ static bool version_merge_still_offsets(Strip *strip, void * /*user_data*/)
 
 static bool version_set_seq_single_frame_content(Strip *strip, void * /*user_data*/)
 {
-  if ((strip->len == 1) && (strip->type == STRIP_TYPE_IMAGE ||
-                            (strip->is_effect() && seq::effect_get_num_inputs(strip->type) == 0)))
-  {
+  if ((strip->len == 1) && (strip->type == STRIP_TYPE_IMAGE || !strip->is_effect_with_inputs())) {
     strip->flag |= SEQ_SINGLE_FRAME_CONTENT;
   }
   return true;
@@ -3906,7 +3903,7 @@ void blo_do_versions_300(FileData *fd, Library * /*lib*/, Main *bmain)
           bNodeSocket *curve_socket = bke::node_find_socket(node, SOCK_IN, "Curve");
           BLI_assert(curve_socket != nullptr);
           STRNCPY_UTF8(curve_socket->name, "Curves");
-          STRNCPY_UTF8(curve_socket->identifier, "Curves");
+          version_node_socket_identifier_set(*curve_socket, "Curves");
         }
       }
     }

@@ -58,7 +58,7 @@ template<typename Accessor>
 inline bNode *find_node_by_item(bNodeTree &ntree, const typename Accessor::ItemT &item)
 {
   ntree.ensure_topology_cache();
-  for (bNode *node : ntree.nodes_by_type(Accessor::node_idname)) {
+  for (bNode *node : ntree.nodes_by_type(UString(Accessor::node_idname))) {
     SocketItemsRef array = Accessor::get_items_from_node(*node);
     if (&item >= *array.items && &item < *array.items + *array.items_num) {
       return node;

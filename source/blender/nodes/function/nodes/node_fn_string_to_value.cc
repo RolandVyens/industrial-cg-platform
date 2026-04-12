@@ -21,15 +21,15 @@ namespace blender::nodes::node_fn_string_to_value_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::String>("String").optional_label();
+  b.add_input<decl::String>("String"_ustr).optional_label();
 
   const bNode *node = b.node_or_null();
   if (node != nullptr) {
     const eNodeSocketDatatype data_type = eNodeSocketDatatype(node->custom1);
-    b.add_output(data_type, "Value");
+    b.add_output(data_type, "Value"_ustr);
   }
 
-  b.add_output<decl::Int>("Length");
+  b.add_output<decl::Int>("Length"_ustr);
 }
 
 static const mf::MultiFunction *get_multi_function(const bNode &bnode)
@@ -74,31 +74,31 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
   if (params.in_out() == SOCK_IN) {
     if (socket_type == SOCK_STRING) {
       params.add_item(IFACE_("String"), [](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeStringToValue");
-        params.update_and_connect_available_socket(node, "String");
+        bNode &node = params.add_node("FunctionNodeStringToValue"_ustr);
+        params.update_and_connect_available_socket(node, "String"_ustr);
       });
     }
   }
   else if (params.in_out() == SOCK_OUT) {
     if (ELEM(socket_type, SOCK_INT, SOCK_BOOLEAN)) {
       params.add_item(IFACE_("Value"), [](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeStringToValue");
+        bNode &node = params.add_node("FunctionNodeStringToValue"_ustr);
         node.custom1 = SOCK_INT;
-        params.update_and_connect_available_socket(node, "Value");
+        params.update_and_connect_available_socket(node, "Value"_ustr);
       });
     }
     else if (params.node_tree().typeinfo->validate_link(SOCK_FLOAT, socket_type)) {
       params.add_item(IFACE_("Value"), [](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeStringToValue");
+        bNode &node = params.add_node("FunctionNodeStringToValue"_ustr);
         node.custom1 = SOCK_FLOAT;
-        params.update_and_connect_available_socket(node, "Value");
+        params.update_and_connect_available_socket(node, "Value"_ustr);
       });
     }
 
     if (socket_type == SOCK_INT) {
       params.add_item(IFACE_("Length"), [](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeStringToValue");
-        params.update_and_connect_available_socket(node, "Length");
+        bNode &node = params.add_node("FunctionNodeStringToValue"_ustr);
+        params.update_and_connect_available_socket(node, "Length"_ustr);
       });
     }
   }
@@ -129,7 +129,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeStringToValue");
+  fn_node_type_base(&ntype, "FunctionNodeStringToValue"_ustr);
   ntype.ui_name = "String to Value";
   ntype.ui_description = "Derive a numeric value from a given string representation";
   ntype.nclass = NODE_CLASS_CONVERTER;

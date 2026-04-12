@@ -27,22 +27,22 @@ namespace blender::nodes::node_composite_rgb_curves_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::Color>("Image")
+  b.add_input<decl::Color>("Image"_ustr)
       .default_value({1.0f, 1.0f, 1.0f, 1.0f})
       .description("Image/Color input on which RGB color transformation will be applied");
-  b.add_input<decl::Float>("Factor", "Fac")
+  b.add_input<decl::Float>("Factor"_ustr, "Fac"_ustr)
       .default_value(1.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR)
       .description("Amount of influence the node exerts on the image");
-  b.add_input<decl::Color>("Black Level")
+  b.add_input<decl::Color>("Black Level"_ustr)
       .default_value({0.0f, 0.0f, 0.0f, 1.0f})
       .description("Input color that should be mapped to black");
-  b.add_input<decl::Color>("White Level")
+  b.add_input<decl::Color>("White Level"_ustr)
       .default_value({1.0f, 1.0f, 1.0f, 1.0f})
       .description("Input color that should be mapped to white");
-  b.add_output<decl::Color>("Image");
+  b.add_output<decl::Color>("Image"_ustr);
 }
 
 static void node_init(bNodeTree * /*ntree*/, bNode *node)
@@ -175,7 +175,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  cmp_node_type_base(&ntype, "CompositorNodeCurveRGB", CMP_NODE_CURVE_RGB);
+  cmp_node_type_base(&ntype, "CompositorNodeCurveRGB"_ustr, CMP_NODE_CURVE_RGB);
   ntype.ui_name = "RGB Curves";
   ntype.ui_description = "Perform level adjustments on each color channel of an image";
   ntype.enum_name_legacy = "CURVE_RGB";

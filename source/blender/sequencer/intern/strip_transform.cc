@@ -25,7 +25,6 @@
 #include "SEQ_animation.hh"
 #include "SEQ_channels.hh"
 #include "SEQ_edit.hh"
-#include "SEQ_effects.hh"
 #include "SEQ_iterator.hh"
 #include "SEQ_relations.hh"
 #include "SEQ_sequencer.hh"
@@ -45,7 +44,7 @@ bool transform_single_image_check(const Strip *strip)
 
 bool transform_strip_can_be_translated(const Strip *strip)
 {
-  return !strip->is_effect() || (effect_get_num_inputs(strip->type) == 0);
+  return !strip->is_effect_with_inputs();
 }
 
 bool transform_test_overlap(const Scene *scene, Strip *strip1, Strip *strip2)
@@ -424,16 +423,16 @@ static void strip_transform_handle_overwrite_trim(Scene *scene,
                                                   Strip *target,
                                                   const eOvelapDescrition overlap)
 {
-  VectorSet targets = query_by_reference(target, scene, seqbasep, query_strip_effect_chain);
+  VectorSet targets = query_by_reference(target, seqbasep, query_strip_effect_chain);
 
   /* Expand collection by adding all target's children, effects and their children. */
   if (target->is_effect()) {
-    iterator_set_expand(scene, seqbasep, targets, query_strip_effect_chain);
+    iterator_set_expand(seqbasep, targets, query_strip_effect_chain);
   }
 
   /* Trim all non effects, that have influence on effect length which is overlapping. */
   for (Strip *strip : targets) {
-    if (strip->is_effect() && effect_get_num_inputs(strip->type) > 0) {
+    if (strip->is_effect_with_inputs()) {
       continue;
     }
     if (overlap == STRIP_OVERLAP_LEFT_SIDE) {

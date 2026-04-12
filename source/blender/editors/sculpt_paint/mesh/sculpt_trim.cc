@@ -563,7 +563,7 @@ static void apply_trim(gesture::GestureData &gesture_data)
   op_params.no_self_intersections = true;
   op_params.watertight = false;
   op_params.no_nested_components = true;
-  geometry::boolean::BooleanError error = geometry::boolean::BooleanError::NoError;
+  geometry::boolean::BooleanError error;
   Mesh *result = geometry::boolean::mesh_boolean({&sculpt_mesh, &trim_mesh},
                                                  {float4x4::identity(), float4x4::identity()},
                                                  {Array<short>(), Array<short>()},
@@ -571,21 +571,21 @@ static void apply_trim(gesture::GestureData &gesture_data)
                                                  trim_operation->solver_mode,
                                                  nullptr,
                                                  &error);
-  if (error == geometry::boolean::BooleanError::NonManifold) {
+  if (error.type == geometry::boolean::BooleanErrorType::NonManifold) {
     BKE_report(trim_operation->reports, RPT_ERROR, "Solver requires a manifold mesh");
     return;
   }
-  if (error == geometry::boolean::BooleanError::ResultTooBig) {
+  if (error.type == geometry::boolean::BooleanErrorType::ResultTooBig) {
     BKE_report(
         trim_operation->reports, RPT_ERROR, "Boolean result is too big for solver to handle");
     return;
   }
-  if (error == geometry::boolean::BooleanError::SolverNotAvailable) {
+  if (error.type == geometry::boolean::BooleanErrorType::SolverNotAvailable) {
     BKE_report(
         trim_operation->reports, RPT_ERROR, "Boolean solver not available (compiled without it)");
     return;
   }
-  if (error == geometry::boolean::BooleanError::UnknownError) {
+  if (error.type == geometry::boolean::BooleanErrorType::UnknownError) {
     BKE_report(trim_operation->reports, RPT_ERROR, "Unknown boolean error");
     return;
   }
@@ -720,7 +720,7 @@ static void report_invalid_mode(const bke::pbvh::Type pbvh_type, ReportList &rep
     BKE_report(&reports, RPT_ERROR, "Not supported in dynamic topology mode");
   }
   else if (pbvh_type == bke::pbvh::Type::Grids) {
-    BKE_report(&reports, RPT_ERROR, "Not supported in multiresolution mode");
+    BKE_report(&reports, RPT_ERROR, "Not supported in multi-resolution mode");
   }
   else {
     BLI_assert_unreachable();
@@ -901,7 +901,7 @@ void SCULPT_OT_trim_lasso_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_lasso_modal;
   ot->exec = gesture_lasso_exec;
 
-  ot->poll = SCULPT_mode_poll_view3d;
+  ot->poll = sculpt_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER | OPTYPE_DEPENDS_ON_CURSOR;
 
@@ -923,7 +923,7 @@ void SCULPT_OT_trim_box_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_box_modal;
   ot->exec = gesture_box_exec;
 
-  ot->poll = SCULPT_mode_poll_view3d;
+  ot->poll = sculpt_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -944,7 +944,7 @@ void SCULPT_OT_trim_line_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_straightline_oneshot_modal;
   ot->exec = gesture_line_exec;
 
-  ot->poll = SCULPT_mode_poll_view3d;
+  ot->poll = sculpt_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 
@@ -966,7 +966,7 @@ void SCULPT_OT_trim_polyline_gesture(wmOperatorType *ot)
   ot->modal = WM_gesture_polyline_modal;
   ot->exec = gesture_polyline_exec;
 
-  ot->poll = SCULPT_mode_poll_view3d;
+  ot->poll = sculpt_mode_poll_view3d;
 
   ot->flag = OPTYPE_REGISTER;
 

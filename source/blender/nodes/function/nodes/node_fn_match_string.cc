@@ -37,13 +37,14 @@ const EnumPropertyItem rna_enum_node_match_string_items[] = {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::String>("String").optional_label().is_default_link_socket();
-  b.add_input<decl::Menu>("Operation")
+  b.add_input<decl::String>("String"_ustr).optional_label().is_default_link_socket();
+  b.add_input<decl::Menu>("Operation"_ustr)
       .static_items(rna_enum_node_match_string_items)
       .optional_label();
-  b.add_input<decl::String>("Key").optional_label().description(
-      "The string to find in the input string");
-  b.add_output<decl::Bool>("Result");
+  b.add_input<decl::String>("Key"_ustr)
+      .optional_label()
+      .description("The string to find in the input string");
+  b.add_output<decl::Bool>("Result"_ustr);
 }
 
 static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
@@ -81,8 +82,8 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
         if (item->name != nullptr && item->identifier[0] != '\0') {
           MatchStringOperation operation = MatchStringOperation(item->value);
           params.add_item(IFACE_(item->name), [operation](LinkSearchOpParams &params) {
-            bNode &node = params.add_node("FunctionNodeMatchString");
-            params.update_and_connect_available_socket(node, "String");
+            bNode &node = params.add_node("FunctionNodeMatchString"_ustr);
+            params.update_and_connect_available_socket(node, "String"_ustr);
             bke::node_find_socket(node, SOCK_IN, "Operation")
                 ->default_value_typed<bNodeSocketValueMenu>()
                 ->value = int(operation);
@@ -94,8 +95,8 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
 
   else {
     params.add_item(IFACE_("Result"), [](LinkSearchOpParams &params) {
-      bNode &node = params.add_node("FunctionNodeMatchString");
-      params.update_and_connect_available_socket(node, "Result");
+      bNode &node = params.add_node("FunctionNodeMatchString"_ustr);
+      params.update_and_connect_available_socket(node, "Result"_ustr);
     });
   }
 }
@@ -117,7 +118,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeMatchString");
+  fn_node_type_base(&ntype, "FunctionNodeMatchString"_ustr);
   ntype.ui_name = "Match String";
   ntype.ui_description = "Check if a given string exists within another string";
   ntype.nclass = NODE_CLASS_CONVERTER;

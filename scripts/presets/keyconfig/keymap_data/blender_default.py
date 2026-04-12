@@ -701,10 +701,12 @@ def km_window(params):
             ("wm.open_mainfile", {"type": 'F1', "value": 'PRESS'}, None),
             ("wm.link", {"type": 'O', "value": 'PRESS', "ctrl": True, "alt": True}, None),
             ("wm.append", {"type": 'F1', "value": 'PRESS', "shift": True}, None),
-            ("wm.save_mainfile", {"type": 'W', "value": 'PRESS', "ctrl": True}, None),
-            ("wm.save_as_mainfile", {"type": 'F2', "value": 'PRESS'}, None),
+            ("wm.save_mainfile", {"type": 'W', "value": 'PRESS', "ctrl": True},
+             {"properties": [("show_save_modified_images_dialog", True)]}),
+            ("wm.save_as_mainfile", {"type": 'F2', "value": 'PRESS'},
+             {"properties": [("show_save_modified_images_dialog", True)]}),
             ("wm.save_as_mainfile", {"type": 'S', "value": 'PRESS', "ctrl": True, "alt": True},
-             {"properties": [("copy", True)]}),
+             {"properties": [("copy", True), ("show_save_modified_images_dialog", True)]}),
             ("wm.window_new", {"type": 'W', "value": 'PRESS', "ctrl": True, "alt": True}, None),
             ("wm.window_fullscreen_toggle", {"type": 'F11', "value": 'PRESS', "alt": True}, None),
             ("wm.doc_view_manual_ui_context", {"type": 'F1', "value": 'PRESS', "alt": True}, None),
@@ -718,11 +720,13 @@ def km_window(params):
         op_menu("TOPBAR_MT_file_new", {"type": 'N', "value": 'PRESS', "ctrl": True}),
         op_menu("TOPBAR_MT_file_open_recent", {"type": 'O', "value": 'PRESS', "shift": True, "ctrl": True}),
         ("wm.open_mainfile", {"type": 'O', "value": 'PRESS', "ctrl": True}, None),
-        ("wm.save_mainfile", {"type": 'S', "value": 'PRESS', "ctrl": True}, None),
-        ("wm.save_as_mainfile", {"type": 'S', "value": 'PRESS', "shift": True, "ctrl": True}, None),
+        ("wm.save_mainfile", {"type": 'S', "value": 'PRESS', "ctrl": True},
+         {"properties": [("show_save_modified_images_dialog", True)]}),
+        ("wm.save_as_mainfile", {"type": 'S', "value": 'PRESS', "shift": True, "ctrl": True},
+         {"properties": [("show_save_modified_images_dialog", True)]}),
         ("wm.save_mainfile",
          {"type": 'S', "value": 'PRESS', "ctrl": True, "alt": True},
-         {"properties": [("incremental", True)]}),
+         {"properties": [("incremental", True), ("show_save_modified_images_dialog", True)]}),
         ("wm.quit_blender", {"type": 'Q', "value": 'PRESS', "ctrl": True}, None),
 
         # Quick menu and toolbar
@@ -1134,6 +1138,7 @@ def km_mask_editing(params):
         ("mask.duplicate_move", {"type": 'D', "value": 'PRESS', "shift": True}, None),
         ("mask.copy_splines", {"type": 'C', "value": 'PRESS', "ctrl": True}, None),
         ("mask.paste_splines", {"type": 'V', "value": 'PRESS', "ctrl": True}, None),
+        ("mask.move_to_layer", {"type": 'M', "value": 'PRESS'}, None),
         ("transform.translate", {"type": 'G', "value": 'PRESS'}, None),
         ("transform.translate", {"type": params.select_mouse, "value": 'CLICK_DRAG'}, None),
         ("transform.rotate", {"type": 'R', "value": 'PRESS'}, None),
@@ -1181,6 +1186,16 @@ def km_markers(params):
          {"properties": [("extend", True), ("camera", True)]}),
         ("marker.select_box", {"type": params.select_mouse, "value": 'CLICK_DRAG'},
          {"properties": [("tweak", True)]}),
+        ("marker.select_leftright",
+         {"type": params.select_mouse, "value": 'CLICK', "ctrl": True},
+         {"properties": [("mode", 'CLICK_SIDE'), ("extend", False)]}),
+        ("marker.select_leftright",
+         {"type": params.select_mouse, "value": 'CLICK', "ctrl": True, "shift": True},
+         {"properties": [("mode", 'CLICK_SIDE'), ("extend", True)]}),
+        ("marker.select_leftright", {"type": 'LEFT_BRACKET', "value": 'PRESS'},
+         {"properties": [("mode", 'LEFT'), ("extend", False)]}),
+        ("marker.select_leftright", {"type": 'RIGHT_BRACKET', "value": 'PRESS'},
+         {"properties": [("mode", 'RIGHT'), ("extend", False)]}),
         ("marker.select_box", {"type": params.select_mouse, "value": 'CLICK_DRAG', "shift": True},
          {"properties": [("tweak", True), ("mode", 'ADD')]}),
         ("marker.select_box", {"type": params.select_mouse, "value": 'CLICK_DRAG', "ctrl": True},
@@ -2330,7 +2345,7 @@ def km_node_editor(params):
         op_menu_pie("NODE_MT_view_pie", {"type": 'ACCENT_GRAVE', "value": 'PRESS'}),
         ("node.delete", {"type": 'X', "value": 'PRESS'}, None),
         ("node.delete", {"type": 'DEL', "value": 'PRESS'}, None),
-        ("node.delete_copy_reconnect", {"type": 'X', "value": 'PRESS', "ctrl": True}, None),
+        ("node.delete_reconnect", {"type": 'X', "value": 'PRESS', "ctrl": True}, None),
         ("node.delete_reconnect", {"type": 'DEL', "value": 'PRESS', "ctrl": True}, None),
         *_template_items_select_actions(params, "node.select_all"),
         ("node.select_linked_to", {"type": 'L', "value": 'PRESS', "shift": True}, None),
@@ -3581,7 +3596,7 @@ def km_clip_editor(params):
          {"properties": [("data_path", "space_data.show_disabled")]}),
         ("wm.context_toggle", {"type": 'S', "value": 'PRESS', "alt": True},
          {"properties": [("data_path", "space_data.show_marker_search")]}),
-        ("wm.context_toggle", {"type": 'M', "value": 'PRESS'},
+        ("wm.context_toggle", {"type": 'H', "value": 'PRESS', "ctrl": True},
          {"properties": [("data_path", "space_data.use_mute_footage")]}),
         ("transform.translate", {"type": 'G', "value": 'PRESS'}, None),
         ("transform.translate", {"type": params.select_mouse, "value": 'CLICK_DRAG'}, None),
@@ -4447,9 +4462,9 @@ def km_grease_pencil_fill_tool_modal_map(_params):
         ("CONFIRM", {"type": 'LEFTMOUSE', "value": 'PRESS', "any": True}, None),
         ("EXTENSION_MODE_TOGGLE", {"type": 'S', "value": 'PRESS'}, None),
         ("EXTENSION_LENGTHEN", {"type": 'PAGE_UP', "value": 'PRESS', "repeat": True}, None),
-        ("EXTENSION_LENGTHEN", {"type": 'WHEELUPMOUSE', "value": 'PRESS'}, None),
+        ("EXTENSION_LENGTHEN", {"type": 'WHEELDOWNMOUSE', "value": 'PRESS'}, None),
         ("EXTENSION_SHORTEN", {"type": 'PAGE_DOWN', "value": 'PRESS', "repeat": True}, None),
-        ("EXTENSION_SHORTEN", {"type": 'WHEELDOWNMOUSE', "value": 'PRESS'}, None),
+        ("EXTENSION_SHORTEN", {"type": 'WHEELUPMOUSE', "value": 'PRESS'}, None),
         ("EXTENSION_DRAG", {"type": 'MIDDLEMOUSE', "value": 'PRESS'}, None),
         ("EXTENSION_COLLIDE", {"type": 'D', "value": 'PRESS'}, None),
         ("INVERT", {"type": 'LEFT_CTRL', "value": 'ANY', "any": True}, None),
@@ -5323,6 +5338,9 @@ def km_sculpt(params):
          {"type": 'X', "value": 'PRESS', "shift": True, "ctrl": True},
          {"properties": [("merged", True)]}),
         ("paint.brush_colors_flip", {"type": 'X', "value": 'PRESS', }, None),
+        ("sculpt.color_filter",
+         {"type": 'X', "value": 'PRESS', "ctrl": True},
+         {"properties": [("type", 'FILL'), ("strength", 1.0), ("use_immediate", True)]}),
         # Brush properties
         ("brush.scale_size", {"type": 'LEFT_BRACKET', "value": 'PRESS', "repeat": True},
          {"properties": [("scalar", 0.9)]}),
@@ -6455,6 +6473,29 @@ def km_bevel_modal_map(_params):
         ("PRECISION_OFF", {"type": 'LEFT_SHIFT', "value": 'RELEASE', "any": True}, None),
         ("PRECISION_ON", {"type": 'RIGHT_SHIFT', "value": 'PRESS', "any": True}, None),
         ("PRECISION_OFF", {"type": 'RIGHT_SHIFT', "value": 'RELEASE', "any": True}, None),
+    ])
+
+    return keymap
+
+
+def km_transform_axis_target_modal(_params):
+    items = []
+    keymap = (
+        "Transform Axis Target Modal Map",
+        {"space_type": 'EMPTY', "region_type": 'WINDOW', "modal": True},
+        {"items": items},
+    )
+
+    items.extend([
+        ("CANCEL", {"type": 'RIGHTMOUSE', "value": 'ANY', "any": True}, None),
+        ("CANCEL", {"type": 'ESC', "value": 'PRESS', "any": True}, None),
+        ("CONFIRM", {"type": 'LEFTMOUSE', "value": 'ANY', "any": True}, None),
+        ("CONFIRM", {"type": 'RET', "value": 'PRESS', "any": True}, None),
+        ("CONFIRM", {"type": 'NUMPAD_ENTER', "value": 'PRESS', "any": True}, None),
+        ("TRANSLATE_ENABLE", {"type": 'LEFT_CTRL', "value": 'PRESS', "any": True}, None),
+        ("TRANSLATE_DISABLE", {"type": 'LEFT_CTRL', "value": 'RELEASE', "any": True}, None),
+        ("TRANSLATE_ENABLE", {"type": 'RIGHT_CTRL', "value": 'PRESS', "any": True}, None),
+        ("TRANSLATE_DISABLE", {"type": 'RIGHT_CTRL', "value": 'RELEASE', "any": True}, None),
     ])
 
     return keymap
@@ -8308,7 +8349,10 @@ def km_3d_view_tool_sculpt_color_filter(params):
         "3D View Tool: Sculpt, Color Filter",
         {"space_type": 'VIEW_3D', "region_type": 'WINDOW'},
         {"items": [
-            ("sculpt.color_filter", params.tool_maybe_tweak_event, None)
+            ("sculpt.color_filter", {"type": params.tool_mouse, "value": 'PRESS'}, None),
+            ("sculpt.color_filter",
+             {"type": params.tool_mouse, "value": 'PRESS', "ctrl": True},
+             {"properties": [("use_secondary_color", True)]}),
         ]},
     )
 
@@ -8986,6 +9030,7 @@ def generate_keymaps(params=None):
         km_knife_tool_modal_map(params),
         km_custom_normals_modal_map(params),
         km_bevel_modal_map(params),
+        km_transform_axis_target_modal(params),
         km_view3d_fly_modal(params),
         km_view3d_walk_modal(params),
         km_view3d_rotate_modal(params),

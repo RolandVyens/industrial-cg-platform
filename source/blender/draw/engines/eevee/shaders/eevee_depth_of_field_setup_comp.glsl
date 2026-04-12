@@ -19,9 +19,9 @@
 COMPUTE_SHADER_CREATE_INFO(eevee_depth_of_field_setup)
 
 #include "draw_view_lib.glsl"
-#include "eevee_colorspace_lib.glsl"
+#include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_depth_of_field_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "gpu_shader_math_safe_lib.glsl"
 
 void main()
@@ -36,7 +36,7 @@ void main()
     float2 sample_uv = quad_center + quad_offsets[i] * fullres_texel_size;
     float depth = reverse_z::read(textureLod(depth_tx, sample_uv, 0.0f).r);
     /* NOTE: We use samplers without filtering. */
-    colors[i] = colorspace_safe_color(textureLod(color_tx, sample_uv, 0.0f));
+    colors[i] = colorspace::safe_color(textureLod(color_tx, sample_uv, 0.0f));
     cocs[i] = dof_coc_from_depth(dof_buf, sample_uv, depth);
   }
 

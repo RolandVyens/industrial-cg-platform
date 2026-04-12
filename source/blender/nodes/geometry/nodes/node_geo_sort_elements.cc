@@ -31,11 +31,11 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.use_custom_socket_order();
   b.allow_any_socket_order();
   b.add_default_layout();
-  b.add_input<decl::Geometry>("Geometry").description("Geometry to sort the elements of");
-  b.add_output<decl::Geometry>("Geometry").propagate_all().align_with_previous();
-  b.add_input<decl::Bool>("Selection").default_value(true).field_on_all().hide_value();
-  b.add_input<decl::Int>("Group ID").field_on_all().hide_value();
-  b.add_input<decl::Float>("Sort Weight").field_on_all().hide_value();
+  b.add_input<decl::Geometry>("Geometry"_ustr).description("Geometry to sort the elements of");
+  b.add_output<decl::Geometry>("Geometry"_ustr).propagate_all().align_with_previous();
+  b.add_input<decl::Bool>("Selection"_ustr).default_value(true).field_on_all().hide_value();
+  b.add_input<decl::Int>("Group ID"_ustr).field_on_all().hide_value();
+  b.add_input<decl::Float>("Sort Weight"_ustr).field_on_all().hide_value();
 }
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -74,14 +74,9 @@ static void find_points_by_group_index(const Span<int> indices,
                                        MutableSpan<int> r_offsets,
                                        MutableSpan<int> r_indices)
 {
-  offset_indices::build_reverse_offsets(indices, r_offsets);
-  Array<int> counts(r_offsets.size(), 0);
-
-  for (const int64_t index : indices.index_range()) {
-    const int curve_index = indices[index];
-    r_indices[r_offsets[curve_index] + counts[curve_index]] = int(index);
-    counts[curve_index]++;
-  }
+  const OffsetIndices offsets = offset_indices::build_reverse_offsets(indices, r_offsets);
+  /* Sorting is implemented by the caller. */
+  offset_indices::reverse_indices_in_groups(indices, offsets, r_indices, false);
 }
 
 template<typename T, typename Func>
@@ -184,8 +179,8 @@ static std::optional<Array<int>> sorted_indices(const fn::FieldContext &field_co
   Array<int> indices(domain_size);
 
   array_utils::scatter<int>(gathered_indices, mask, indices);
-  unselected.foreach_index_optimized<int>(GrainSize(2048),
-                                          [&](const int index) { indices[index] = index; });
+  unselected.foreach_index_optimized<int>([&](const int index) { indices[index] = index; },
+                                          exec_mode::grain_size(4096));
 
   if (array_utils::indices_are_range(indices, indices.index_range())) {
     return std::nullopt;
@@ -196,13 +191,13 @@ static std::optional<Array<int>> sorted_indices(const fn::FieldContext &field_co
 
 static void node_geo_exec(GeoNodeExecParams params)
 {
-  GeometrySet geometry_set = params.extract_input<GeometrySet>("Geometry");
-  const Field<bool> selection_field = params.extract_input<Field<bool>>("Selection");
-  const Field<int> group_id_field = params.extract_input<Field<int>>("Group ID");
-  const Field<float> weight_field = params.extract_input<Field<float>>("Sort Weight");
+  GeometrySet geometry_set = params.extract_input<GeometrySet>("Geometry"_ustr);
+  const Field<bool> selection_field = params.extract_input<Field<bool>>("Selection"_ustr);
+  const Field<int> group_id_field = params.extract_input<Field<int>>("Group ID"_ustr);
+  const Field<float> weight_field = params.extract_input<Field<float>>("Sort Weight"_ustr);
   const bke::AttrDomain domain = bke::AttrDomain(params.node().custom1);
 
-  const NodeAttributeFilter attribute_filter = params.get_attribute_filter("Geometry");
+  const NodeAttributeFilter attribute_filter = params.get_attribute_filter("Geometry"_ustr);
 
   GeometryComponentEditData::remember_deformed_positions_if_necessary(geometry_set);
 
@@ -258,7 +253,7 @@ static void node_geo_exec(GeoNodeExecParams params)
                              TIP_("Domain and geometry type combination is unsupported"));
   }
 
-  params.set_output("Geometry", std::move(geometry_set));
+  params.set_output("Geometry"_ustr, std::move(geometry_set));
 }
 
 template<typename T>
@@ -298,7 +293,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  geo_node_type_base(&ntype, "GeometryNodeSortElements", GEO_NODE_SORT_ELEMENTS);
+  geo_node_type_base(&ntype, "GeometryNodeSortElements"_ustr, GEO_NODE_SORT_ELEMENTS);
   ntype.ui_name = "Sort Elements";
   ntype.ui_description = "Rearrange geometry elements, changing their indices";
   ntype.enum_name_legacy = "SORT_ELEMENTS";

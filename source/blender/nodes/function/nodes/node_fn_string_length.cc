@@ -11,8 +11,8 @@ namespace blender::nodes::node_fn_string_length_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::String>("String").optional_label();
-  b.add_output<decl::Int>("Length");
+  b.add_input<decl::String>("String"_ustr).optional_label();
+  b.add_output<decl::Int>("Length"_ustr);
 }
 
 static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
@@ -26,7 +26,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeStringLength", FN_NODE_STRING_LENGTH);
+  fn_node_type_base(&ntype, "FunctionNodeStringLength"_ustr, FN_NODE_STRING_LENGTH);
   ntype.ui_name = "String Length";
   ntype.ui_description = "Output the number of characters in the given string";
   ntype.enum_name_legacy = "STRING_LENGTH";

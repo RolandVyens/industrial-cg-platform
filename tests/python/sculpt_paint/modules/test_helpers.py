@@ -67,6 +67,9 @@ def _get_mesh(backend_type):
 
 
 def get_attribute_data(backend_type, attribute_type):
+    if attribute_type in {AttributeType.COLOR, AttributeType.COLOR_CORNER} and backend_type == BackendType.MULTIRES:
+        raise Exception("Multires does not support color attributes")
+
     import numpy as np
     mesh = _get_mesh(backend_type)
 
@@ -75,40 +78,37 @@ def get_attribute_data(backend_type, attribute_type):
             attribute_name = 'position'
             attribute_domain = 'POINT'
             attribute_size = 3
-            attribute_type = np.float32
+            attribute_data_type = np.float32
             is_color = False
         case AttributeType.MASK:
             attribute_name = '.sculpt_mask'
             attribute_domain = 'POINT'
             attribute_size = 1
-            attribute_type = np.float32
+            attribute_data_type = np.float32
             is_color = False
         case AttributeType.FACE_SET:
             attribute_name = '.sculpt_face_set'
             attribute_domain = 'FACE'
             attribute_size = 1
-            attribute_type = np.int32
+            attribute_data_type = np.int32
             is_color = False
         case AttributeType.COLOR:
             attribute_name = 'Color'
             attribute_domain = 'POINT'
             attribute_size = 4
-            attribute_type = np.float32
+            attribute_data_type = np.float32
             is_color = True
-        case AttributeType.COLOR:
+        case AttributeType.COLOR_CORNER:
             attribute_name = 'Color'
             attribute_domain = 'CORNER'
             attribute_size = 4
-            attribute_type = np.float32
+            attribute_data_type = np.float32
             is_color = True
         case _:
             raise Exception("Invalid type specified")
 
-    if attribute_type == AttributeType.COLOR and backend_type == BackendType.MULTIRES:
-        raise Exception("Multires does not support color attributes")
-
     num_elements = mesh.attributes.domain_size(attribute_domain)
-    attribute_data = np.zeros((num_elements * attribute_size), dtype=attribute_type)
+    attribute_data = np.zeros((num_elements * attribute_size), dtype=attribute_data_type)
 
     attribute = mesh.attributes.get(attribute_name)
     if is_color:
@@ -170,12 +170,11 @@ def generate_monkey(backend):
         bpy.ops.object.subdivision_set(level=2, relative=False, ensure_modifier=True)
 
 
-def generate_stroke(context, start_over_mesh=False):
+def generate_stroke(context, start_percent=(0.0, 0.0), end_percent=(1.0, 1.0)):
     """
     Generate stroke for any of the paint mode operators (e.g. bpy.ops.sculpt.brush_stroke_
 
     The generated stroke coves the full plane diagonal.
-    :param start_over_mesh start the stroke in the center of the screen (over the object)
     """
     import bpy
     from mathutils import Vector
@@ -194,12 +193,9 @@ def generate_stroke(context, start_over_mesh=False):
     }
 
     num_steps = 50
-    if start_over_mesh:
-        start = Vector((context['area'].width // 2, context['area'].height // 2))
-    else:
-        start = Vector((context['area'].width, context['area'].height))
 
-    end = Vector((0, 0))
+    start = Vector((0 * start_percent[0], 0 * start_percent[1]))
+    end = Vector((context['area'].width * end_percent[0], context['area'].height * end_percent[1]))
     delta = (end - start) / (num_steps - 1)
 
     stroke = []

@@ -58,12 +58,36 @@ ResultType socket_data_type_to_result_type(const eNodeSocketDatatype data_type,
           BLI_assert_unreachable();
           return ResultType::Float;
       }
+    case SOCK_INT_VECTOR:
+      switch (dimensions.value_or(2)) {
+        case 2:
+          return ResultType::Int2;
+        case 3:
+          return ResultType::Int3;
+        default:
+          BLI_assert_unreachable();
+          return ResultType::Float;
+      }
     case SOCK_RGBA:
       return ResultType::Color;
+    case SOCK_MATRIX:
+      return ResultType::Float4x4;
     case SOCK_MENU:
       return ResultType::Menu;
     case SOCK_STRING:
       return ResultType::String;
+    case SOCK_OBJECT:
+      return ResultType::Object;
+    case SOCK_IMAGE:
+      return ResultType::Image;
+    case SOCK_FONT:
+      return ResultType::Font;
+    case SOCK_SCENE:
+      return ResultType::Scene;
+    case SOCK_TEXT_ID:
+      return ResultType::Text;
+    case SOCK_MASK:
+      return ResultType::Mask;
     default:
       BLI_assert_unreachable();
       return ResultType::Float;
@@ -82,6 +106,10 @@ ResultType get_node_socket_result_type(const bNodeSocket *socket)
     return socket_data_type_to_result_type(
         socket_type, socket->default_value_typed<bNodeSocketValueVector>()->dimensions);
   }
+  if (socket_type == SOCK_INT_VECTOR) {
+    return socket_data_type_to_result_type(
+        socket_type, socket->default_value_typed<bNodeSocketValueIntVector>()->dimensions);
+  }
 
   return socket_data_type_to_result_type(socket_type);
 }
@@ -92,6 +120,10 @@ ResultType get_node_interface_socket_result_type(const bNodeTreeInterfaceSocket 
   if (socket_type == SOCK_VECTOR) {
     return socket_data_type_to_result_type(
         socket_type, static_cast<bNodeSocketValueVector *>(socket.socket_data)->dimensions);
+  }
+  if (socket_type == SOCK_INT_VECTOR) {
+    return socket_data_type_to_result_type(
+        socket_type, static_cast<bNodeSocketValueIntVector *>(socket.socket_data)->dimensions);
   }
 
   return socket_data_type_to_result_type(socket_type);

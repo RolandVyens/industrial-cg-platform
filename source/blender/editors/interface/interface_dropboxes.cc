@@ -8,6 +8,7 @@
 
 #include <fmt/format.h>
 
+#include "AS_asset_representation.hh"
 #include "AS_remote_library.hh"
 
 #include "BKE_context.hh"
@@ -33,7 +34,7 @@ namespace blender::ui {
 /** \name View Drag/Drop Callbacks
  * \{ */
 
-static bool ui_view_drop_poll(bContext *C, wmDrag *drag, const wmEvent *event)
+static bool view_drop_poll(bContext *C, wmDrag *drag, const wmEvent *event)
 {
   const ARegion *region = CTX_wm_region(C);
 
@@ -52,10 +53,10 @@ static bool ui_view_drop_poll(bContext *C, wmDrag *drag, const wmEvent *event)
   return can_drop;
 }
 
-static std::string ui_view_drop_tooltip(bContext *C,
-                                        wmDrag *drag,
-                                        const int xy[2],
-                                        wmDropBox * /*drop*/)
+static std::string view_drop_tooltip(bContext *C,
+                                     wmDrag *drag,
+                                     const int xy[2],
+                                     wmDropBox * /*drop*/)
 {
   const wmWindow *win = CTX_wm_window(C);
   const ARegion *region = CTX_wm_region(C);
@@ -74,12 +75,12 @@ static std::string ui_view_drop_tooltip(bContext *C,
 /** \name Name Drag/Drop Callbacks
  * \{ */
 
-static bool ui_drop_name_poll(bContext *C, wmDrag *drag, const wmEvent * /*event*/)
+static bool drop_name_poll(bContext *C, wmDrag *drag, const wmEvent * /*event*/)
 {
   return button_active_drop_name(C) && ELEM(drag->type, WM_DRAG_ID, WM_DRAG_ASSET);
 }
 
-static void ui_drop_name_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
+static void drop_name_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
 {
   const ID *id = WM_drag_get_local_ID_or_import_from_asset(C, drag, 0);
   if (id) {
@@ -93,7 +94,7 @@ static void ui_drop_name_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
 /** \name Material Drag/Drop Callbacks
  * \{ */
 
-static bool ui_drop_material_poll(bContext *C, wmDrag *drag, const wmEvent * /*event*/)
+static bool drop_material_poll(bContext *C, wmDrag *drag, const wmEvent * /*event*/)
 {
   PointerRNA mat_slot = CTX_data_pointer_get_type(C, "material_slot", RNA_MaterialSlot);
   if (RNA_pointer_is_null(&mat_slot)) {
@@ -110,7 +111,7 @@ static bool ui_drop_material_poll(bContext *C, wmDrag *drag, const wmEvent * /*e
          !ID_IS_OVERRIDE_LIBRARY(&ob->id);
 }
 
-static void ui_drop_material_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
+static void drop_material_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
 {
   const ID *id = WM_drag_get_local_ID_or_import_from_asset(C, drag, ID_MA);
   if (id) {
@@ -118,10 +119,10 @@ static void ui_drop_material_copy(bContext *C, wmDrag *drag, wmDropBox *drop)
   }
 }
 
-static std::string ui_drop_material_tooltip(bContext *C,
-                                            wmDrag *drag,
-                                            const int /*xy*/[2],
-                                            wmDropBox * /*drop*/)
+static std::string drop_material_tooltip(bContext *C,
+                                         wmDrag *drag,
+                                         const int /*xy*/[2],
+                                         wmDropBox * /*drop*/)
 {
   PointerRNA rna_ptr = CTX_data_pointer_get_type(C, "object", RNA_Object);
   Object *ob = static_cast<Object *>(rna_ptr.data);
@@ -161,10 +162,14 @@ static std::string ui_drop_material_tooltip(bContext *C,
 /** \name Asset Prefetch Callbacks
  * \{ */
 
-static void ui_prefetch_assets(bContext &C, wmDrag &drag)
+static void prefetch_assets(bContext &C, wmDrag &drag)
 {
   BLI_assert(drag.type == WM_DRAG_ASSET);
   wmDragAsset *asset_drag = static_cast<wmDragAsset *>(drag.poin);
+
+  if (!asset_drag->asset->is_online()) {
+    return;
+  }
 
   blender::asset_system::remote_library_request_asset_download(
       C, *asset_drag->asset, CTX_wm_reports(&C));
@@ -180,21 +185,21 @@ void dropboxes_ui()
 {
   ListBaseT<wmDropBox> *lb = WM_dropboxmap_find("User Interface", SPACE_EMPTY, RGN_TYPE_WINDOW);
 
-  WM_dropbox_add(lb, "UI_OT_view_drop", ui_view_drop_poll, nullptr, nullptr, ui_view_drop_tooltip);
+  WM_dropbox_add(lb, "UI_OT_view_drop", view_drop_poll, nullptr, nullptr, view_drop_tooltip);
   WM_dropbox_add(lb,
                  "UI_OT_drop_name",
-                 ui_drop_name_poll,
-                 ui_drop_name_copy,
+                 drop_name_poll,
+                 drop_name_copy,
                  WM_drag_free_imported_drag_ID,
                  nullptr);
   WM_dropbox_add(lb,
                  "UI_OT_drop_material",
-                 ui_drop_material_poll,
-                 ui_drop_material_copy,
+                 drop_material_poll,
+                 drop_material_copy,
                  WM_drag_free_imported_drag_ID,
-                 ui_drop_material_tooltip);
+                 drop_material_tooltip);
 
-  WM_drag_global_prefetch_handler_add(WM_DRAG_ASSET, ui_prefetch_assets);
+  WM_drag_global_prefetch_handler_add(WM_DRAG_ASSET, prefetch_assets);
 }
 
 /** \} */

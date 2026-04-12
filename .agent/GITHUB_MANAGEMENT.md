@@ -1,114 +1,59 @@
-# GitHub Management - vfx-rendering-branch (Agent Guide)
+# GitHub Management
 
-## Latest Verified Release
-- **Tag:** `blender-vfx-5.2-2026-03-04`
-- **URL:** `https://github.com/RolandVyens/blender-vfx/releases/tag/blender-vfx-5.2-2026-03-04`
-- **Asset:** `blender-vfx-5.2-2026-03-04.zip`
-- **SHA256:** `9CD99213DD1E1FA459A4981E6F20BFAE5BC569C3252AD416A95017270E5920F3`
+## Current Release Truth
 
-## Goals
-1. **Primary repo:** `https://github.com/RolandVyens/blender-vfx` (main source of truth).
-2. Publish release zips built from the local workspace.
+- Latest verified tag: `blender-vfx-5.2-2026-03-26`
+- Local release folder: `E:\blender_modify\release\blender-vfx-5.2-2026-03-26`
+- Local release zip: `E:\blender_modify\release\blender-vfx-5.2-2026-03-26.zip`
+- Notes draft: `E:\blender_modify\release\blender-vfx-5.2-2026-03-26-notes.md`
+- Primary repo: `https://github.com/RolandVyens/blender-vfx`
+
+## Branch Roles
+
+- `vfx-rendering-branch-github` is the GitHub-facing mainline in the local main worktree.
+- `vfx-rendering-branch` is the non-GitHub parity branch kept in `E:\blender_modify\blender_vfx_branch_sync`.
 
 ## Release Contents Policy
-- **Include:** install-packaged Blender folder zipped as `E:\blender_modify\release\<tag>.zip`.
-- **Exclude:** build tree binaries, `.pdb`, local test scenes (for example `D:\blender_projects\deep-branch-test.blend`), and temporary debug scripts.
-- **Reason:** keep release artifacts reproducible and small; test projects stay local/internal unless explicitly requested.
 
-## Release Notes Format (Required)
-- Always write release notes in Markdown.
+- Include only the install-packaged Blender folder zipped under `E:\blender_modify\release\`.
+- Exclude build-tree binaries, `.pdb` files, temporary scripts, and local test scenes.
+- Keep release notes in Markdown.
 
-## Constraints (Important)
-- **Blender Projects is not maintained.** Do not push or mirror to `projects.blender.org`.
-- **No force git ops without approval.** Always ask before running `--force`.
-- **Do not modify files outside** `E:\blender_modify\`.
-- **Never delete files** unless the user explicitly approves.
+## Constraints
 
-## Primary Repo Workflow (GitHub)
-Use normal pushes to GitHub for day-to-day work.
+- Do not force-push without explicit user approval.
+- Do not modify files outside `E:\blender_modify\`.
+- Do not delete files unless the user explicitly approves it.
+- `projects.blender.org` is out of scope for this branch workflow.
+
+## Standard Push Flow
 
 ```powershell
-# From repo root: E:\blender_modify\blender
-git status -sb
-git push github <branch>
+git -C 'E:\blender_modify\blender' status -sb
+git -C 'E:\blender_modify\blender' push github vfx-rendering-branch-github
 ```
 
-**Notes**
-- The GitHub default branch should be `vfx-rendering-branch`.
-- If README on GitHub appears cached, update **both** `README.md` and `.github/README.md`.
+## Release Build Flow
 
-## Release Build + Zip (Windows)
-Release packaging should use install + zip (no PDBs):
+Use [workflows/release-build.md](/E:/blender_modify/blender/.agent/workflows/release-build.md) for
+the exact build, install, zip, and checksum commands.
+
+## GitHub Release Publish
+
+### Browser
+
+1. Create a new GitHub release with the tag name equal to the zip name.
+2. Upload the matching zip from `E:\blender_modify\release\`.
+3. Paste release notes from the local notes draft or the final Markdown summary.
+
+### `gh` CLI
 
 ```powershell
-# Release tag (keep zip/folder/release tag exactly the same)
-$tag = "blender-vfx-5.2-YYYY-MM-DD"
+$gh = 'C:\Program Files\GitHub CLI\gh.exe'
+$tag = 'blender-vfx-5.2-YYYY-MM-DD'
+$zip = "E:\blender_modify\release\$tag.zip"
 
-# Build
-& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' `
-  --build 'E:\blender_modify\build_windows_x64_vc17_Release' --target blender --config Release
-
-# Install to release folder
-& 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' `
-  --install 'E:\blender_modify\build_windows_x64_vc17_Release' --config Release `
-  --prefix "E:\blender_modify\release\$tag"
-
-# Remove PDBs (do not delete anything else)
-cmd /c del /f /q "E:\blender_modify\release\$tag\blender.pdb" `
-  "E:\blender_modify\release\$tag\5.2\python\lib\venv\scripts\nt\venvlauncher.pdb" `
-  "E:\blender_modify\release\$tag\5.2\python\lib\venv\scripts\nt\venvwlauncher.pdb"
-
-# Zip
-tar -a -c -f "E:\blender_modify\release\$tag.zip" -C E:\blender_modify\release $tag
-
-# Optional: print checksum for release notes
-Get-FileHash -Algorithm SHA256 "E:\blender_modify\release\$tag.zip"
-```
-
-## Release Publish (Manual UI)
-The Codex environment may block opening URLs, so use a browser manually:
-
-1. Create a new release on GitHub:
-   - Tag name: **use zip name** (e.g., `blender-vfx-5.2-2026-03-04`)
-   - Release title: **same as tag**
-2. Upload the zip:
-   - `E:\blender_modify\release\<tag>.zip`
-
-Example release URL:
-```
-https://github.com/RolandVyens/blender-vfx/releases/new?tag=<tag>&title=<tag>
-```
-
-## Release Publish (CLI via gh)
-Preferred when available. Ensure `gh` is installed and authenticated.
-
-```powershell
-# If gh is not on PATH, use full path
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-# Login (opens browser)
-& $gh auth login -p https -w
-
-# Verify auth
 & $gh auth status
-
-# Markdown release notes
-$notes = @'
-## Release Build
-
-Write the release summary here.
-'@
-
-# Create release + upload zip
-& $gh release create $tag `
-  "E:\blender_modify\release\$tag.zip" `
-  --repo RolandVyens/blender-vfx `
-  --title $tag `
-  --notes $notes
-
-# Update existing release notes in Markdown
-& $gh release edit $tag --repo RolandVyens/blender-vfx --notes $notes
-
-# Post-release verification (required)
-& $gh release view $tag --repo RolandVyens/blender-vfx --json name,tagName,url,assets,body
+& $gh release create $tag $zip --repo RolandVyens/blender-vfx --title $tag --notes-file "E:\blender_modify\release\$tag-notes.md"
+& $gh release view $tag --repo RolandVyens/blender-vfx --json name,tagName,url,assets
 ```

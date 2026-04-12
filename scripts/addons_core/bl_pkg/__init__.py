@@ -486,7 +486,8 @@ def remote_asset_library_sync(
 
 
 def _remote_asset_library_sync_done(downloader: _RemoteAssetListingDownloader) -> None:
-    """Called when the downloading of hte remote asset listing is done.
+    """
+    Called when the downloading of the remote asset listing is done.
 
     Here "done" does not imply "successful", as cancellations, network errors,
     or other issues can cause things to abort. In that case, this function is
@@ -830,7 +831,10 @@ cli_commands = []
 
 
 def register():
-    from bpy.app.translations import pgettext_rpt as rpt_
+    from bpy.app.translations import (
+        pgettext_n as n_,
+        pgettext_rpt as rpt_,
+    )
 
     prefs = bpy.context.preferences
 
@@ -903,10 +907,10 @@ def register():
         items=lambda _, context: [
             # Use `_ALL_` as it's guaranteed never to collide with extension
             # repository module ID's which cannot start with an underscore
-            ('_ALL_', "All Repositories", "Show extensions from all repositories"),
+            ('_ALL_', n_("All Repositories"), n_("Show extensions from all repositories")),
             None,
             *[
-                (repo.module, repo.name, "Only show extensions from this repository")
+                (repo.module, repo.name, n_("Only show extensions from this repository"))
                 for repo in context.preferences.extensions.repos
                 if repo.enabled
             ],

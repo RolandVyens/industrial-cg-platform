@@ -17,28 +17,35 @@ namespace nodes::node_shader_subsurface_scattering_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Color>("Color").default_value({0.8f, 0.8f, 0.8f, 1.0f});
-  b.add_input<decl::Float>("Scale").default_value(0.05f).min(0.0f).max(1000.0f).description(
-      "Scale factor of the subsurface scattering radius");
-  b.add_input<decl::Vector>("Radius")
+  b.add_input<decl::Color>("Color"_ustr).default_value({0.8f, 0.8f, 0.8f, 1.0f});
+  b.add_input<decl::Float>("Scale"_ustr)
+      .default_value(0.05f)
+      .min(0.0f)
+      .max(1000.0f)
+      .description("Scale factor of the subsurface scattering radius");
+  b.add_input<decl::Vector>("Radius"_ustr)
       .default_value({1.0f, 0.2f, 0.1f})
       .min(0.0f)
       .max(100.0f)
       .description("Scattering radius per color channel (RGB), multiplied with Scale");
-  b.add_input<decl::Float>("IOR").default_value(1.4f).min(1.01f).max(3.8f).subtype(PROP_FACTOR);
-  b.add_input<decl::Float>("Roughness")
+  b.add_input<decl::Float>("IOR"_ustr)
+      .default_value(1.4f)
+      .min(1.01f)
+      .max(3.8f)
+      .subtype(PROP_FACTOR);
+  b.add_input<decl::Float>("Roughness"_ustr)
       .default_value(1.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_input<decl::Float>("Anisotropy")
+  b.add_input<decl::Float>("Anisotropy"_ustr)
       .default_value(0.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_input<decl::Vector>("Normal").hide_value();
-  b.add_input<decl::Float>("Weight").available(false);
-  b.add_output<decl::Shader>("BSSRDF");
+  b.add_input<decl::Vector>("Normal"_ustr).hide_value();
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_output<decl::Shader>("BSSRDF"_ustr);
 }
 
 static void node_shader_buts_subsurface(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -119,7 +126,7 @@ void register_node_type_sh_subsurface_scattering()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeSubsurfaceScattering", SH_NODE_SUBSURFACE_SCATTERING);
+  sh_node_type_base(&ntype, "ShaderNodeSubsurfaceScattering"_ustr, SH_NODE_SUBSURFACE_SCATTERING);
   ntype.ui_name = "Subsurface Scattering";
   ntype.ui_description =
       "Subsurface multiple scattering shader to simulate light entering the surface and bouncing "

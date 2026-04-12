@@ -202,7 +202,7 @@ void BKE_id_free_ex(Main *bmain, void *idv, const int flag_orig, const bool use_
    * between the Scene's master collection and its view_layers become invalid
    * (due to remapping). */
   if (bmain && (flag_orig & LIB_ID_FREE_NO_MAIN) == 0) {
-    BKE_layer_collection_resync_forbid();
+    BKE_layer_collection_resync_forbid(*bmain);
   }
 
   const ID_Type id_type = GS(static_cast<ID *>(idv)->name);
@@ -211,7 +211,7 @@ void BKE_id_free_ex(Main *bmain, void *idv, const int flag_orig, const bool use_
 
   if (bmain) {
     if ((flag_orig & LIB_ID_FREE_NO_MAIN) == 0) {
-      BKE_layer_collection_resync_allow();
+      BKE_layer_collection_resync_allow(*bmain);
     }
 
     if ((flag_final & LIB_ID_FREE_NO_MAIN) == 0) {
@@ -258,8 +258,9 @@ void BKE_id_free_us(Main *bmain, void *idv) /* test users */
   }
 }
 
-static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const int extra_remapping_flags)
+static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDeleteOptions &options)
 {
+  const int extra_remapping_flags = options.extra_remapping_flags;
   bool has_deleted_library = false;
 
   /* Used by batch tagged deletion, when we call BKE_id_free then, id is no more in Main database,
@@ -274,7 +275,7 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const int extra_r
   const int base_count = lbarray.size();
 
   BKE_main_lock(bmain);
-  BKE_layer_collection_resync_forbid();
+  BKE_layer_collection_resync_forbid(*bmain);
   IDRemapper id_remapper;
 
   /* Main idea of batch deletion is to remove all IDs to be deleted from Main database.
@@ -372,7 +373,7 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const int extra_r
   }
 
   BKE_main_unlock(bmain);
-  BKE_layer_collection_resync_allow();
+  BKE_layer_collection_resync_allow(*bmain);
   BKE_main_collection_sync_remap(bmain);
 
   if (has_deleted_library) {
@@ -383,21 +384,16 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const int extra_r
   return size_t(ids_to_delete.size());
 }
 
-void BKE_id_delete_ex(Main *bmain, void *idv, const int extra_remapping_flags)
+void BKE_id_delete(Main *bmain, void *idv, const BKEIDDeleteOptions &options)
 {
   ID *id = static_cast<ID *>(idv);
   BLI_assert_msg((id->tag & ID_TAG_NO_MAIN) == 0, "Cannot be used with IDs outside of Main");
 
   Set<ID *> ids_to_delete = {id};
-  id_delete(bmain, ids_to_delete, extra_remapping_flags);
+  id_delete(bmain, ids_to_delete, options);
 }
 
-void BKE_id_delete(Main *bmain, void *idv)
-{
-  BKE_id_delete_ex(bmain, idv, 0);
-}
-
-size_t BKE_id_multi_tagged_delete(Main *bmain)
+size_t BKE_id_multi_tagged_delete(Main *bmain, const BKEIDDeleteOptions &options)
 {
   Set<ID *> ids_to_delete;
   ID *id_iter;
@@ -407,12 +403,14 @@ size_t BKE_id_multi_tagged_delete(Main *bmain)
     }
   }
   FOREACH_MAIN_ID_END;
-  return id_delete(bmain, ids_to_delete, 0);
+  return id_delete(bmain, ids_to_delete, options);
 }
 
-size_t BKE_id_multi_delete(Main *bmain, Set<ID *> &ids_to_delete)
+size_t BKE_id_multi_delete(Main *bmain,
+                           Set<ID *> &ids_to_delete,
+                           const BKEIDDeleteOptions &options)
 {
-  return id_delete(bmain, ids_to_delete, 0);
+  return id_delete(bmain, ids_to_delete, options);
 }
 
 /* -------------------------------------------------------------------- */

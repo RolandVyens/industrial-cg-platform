@@ -1,0 +1,24 @@
+commit e720d4ce200237415095ebf223c0381cb2566b47
+Merge: da0b36c3c14 ea9621c4f95
+Author: RolandVyens <leiersai@sina.com>
+Date:   Tue Mar 17 15:37:44 2026 +0800
+
+    Merge branch 'feature/deep-exr-edge-alpha-fix' into vfx-rendering-branch-github
+
+ .agent/AGENT.md                               |  38 ++-
+ .agent/AGENT_HANDOFF.md                       |  72 +++++-
+ .agent/VFX_RENDERING_PLAN.md                  |  29 ++-
+ intern/cycles/blender/output_driver.cpp       |  35 +++
+ intern/cycles/blender/output_driver.h         |   8 +
+ intern/cycles/blender/session.cpp             |  35 ++-
+ intern/cycles/integrator/path_trace.cpp       |   5 +
+ intern/cycles/integrator/path_trace_tile.cpp  |  23 ++
+ intern/cycles/integrator/path_trace_tile.h    |   2 +
+ intern/cycles/kernel/film/deep_write.h        |   2 +-
+ intern/cycles/session/deep_buffers.cpp        |   8 +-
+ intern/cycles/session/deep_buffers.h          |   4 +-
+ intern/cycles/session/deep_output_driver.cpp  | 344 +++++++++++++++++++++-----
+ intern/cycles/session/deep_output_driver.h    |  43 +++-
+ intern/cycles/session/session.cpp             |   6 +-
+ source/blender/imbuf/IMB_deep_sample_merge.hh |  59 +++--
+ 16 files changed, 581 insertions(+), 132 deletions(-)

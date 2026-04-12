@@ -221,11 +221,11 @@ class MaskFromCavityTest(unittest.TestCase):
             if position_data[i][2] < 0.0:
                 self.assertEqual(
                     mask_data[i],
-                    1.0,
-                    f"Vertex {i} should be fully masked ({position_data[i]}) -> {mask_data[i]}")
+                    0.0,
+                    f"Vertex {i} should not be masked ({position_data[i]}) -> {mask_data[i]}")
             else:
-                self.assertNotEqual(mask_data[i], 1.0,
-                                    f"Vertex {i} should not be fully masked ({position_data[i]}) -> {mask_data[i]}")
+                self.assertNotEqual(mask_data[i], 0.0,
+                                    f"Vertex {i} should be masked ({position_data[i]}) -> {mask_data[i]}")
 
 
 def main():

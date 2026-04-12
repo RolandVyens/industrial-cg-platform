@@ -126,7 +126,8 @@ bool BLF_character_to_curves(int fontid,
                              ListBaseT<Nurb> *nurbsbase,
                              const float scale,
                              bool use_fallback,
-                             float *r_advance);
+                             float *r_advance,
+                             rctf *r_bounds);
 
 /**
  * Check if font supports a particular glyph.

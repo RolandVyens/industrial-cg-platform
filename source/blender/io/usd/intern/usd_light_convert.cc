@@ -472,7 +472,7 @@ void world_material_to_dome_light(const Scene *scene, WorldToDomeLight &res)
   /* Find the world output. */
   scene->world->nodetree->ensure_topology_cache();
   const Span<const bNode *> bsdf_nodes = scene->world->nodetree->nodes_by_type(
-      "ShaderNodeOutputWorld");
+      "ShaderNodeOutputWorld"_ustr);
 
   for (const bNode *node : bsdf_nodes) {
     if (node->flag & NODE_DO_OUTPUT) {

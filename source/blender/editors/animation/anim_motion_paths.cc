@@ -372,8 +372,8 @@ void animviz_motionpath_compute_range(Object *ob, Scene *scene)
   {
     /* Default to the scene (preview) range if there is no animation data to
      * find selected keys in. */
-    avs->path_sf = PSFRA;
-    avs->path_ef = PEFRA;
+    avs->path_sf = scene->playback_start();
+    avs->path_ef = scene->playback_end();
     return;
   }
 

@@ -21,6 +21,7 @@
 
 #include "ED_screen.hh"
 
+#include "UI_resources.hh"
 #include "WM_api.hh"
 
 #include "UI_interface_c.hh"
@@ -44,7 +45,7 @@ static std::string progress_tooltip_func(bContext * /*C*/, void *argN, const Str
 
   /* create tooltip text and associate it with the job */
   char elapsed_str[32];
-  char remaining_str[32] = "Unknown";
+  char remaining_str[32];
   const double elapsed = BLI_time_now_seconds() - WM_jobs_starttime(wm, owner);
   BLI_timecode_string_from_time_simple(elapsed_str, sizeof(elapsed_str), elapsed);
 
@@ -53,11 +54,10 @@ static std::string progress_tooltip_func(bContext * /*C*/, void *argN, const Str
     BLI_timecode_string_from_time_simple(remaining_str, sizeof(remaining_str), remaining);
   }
 
-  return fmt::format(
-      "Time Remaining: {}\n"
-      "Time Elapsed: {}",
-      remaining_str,
-      elapsed_str);
+  return fmt::format(fmt::runtime(TIP_("Time Remaining: {}\n"
+                                       "Time Elapsed: {}")),
+                     progress ? remaining_str : TIP_("Unknown"),
+                     elapsed_str);
 }
 
 static void cancel_all_scene_jobs(bContext &C)
@@ -180,6 +180,11 @@ void template_running_jobs(Layout *layout, bContext *C)
       icon = ICON_MOD_OCEAN;
       break;
     }
+    if (WM_jobs_test(wm, &scene, WM_JOB_TYPE_SOUND_MIXDOWN)) {
+      cancel_fn = set_global_break;
+      icon = ICON_FILE_SOUND;
+      break;
+    }
   }
   if (!owner) {
     for (wmWindow &win : wm->windows) {
@@ -210,6 +215,15 @@ void template_running_jobs(Layout *layout, bContext *C)
       if (owner) {
         break;
       }
+    }
+  }
+
+  /* Blend file wide jobs. */
+  if (owner == nullptr) {
+    if (WM_jobs_test(wm, bmain, WM_JOB_TYPE_GENERATE_TEXTURE_CACHE)) {
+      owner = bmain;
+      cancel_fn = set_global_break;
+      icon = ICON_TEXTURE;
     }
   }
 

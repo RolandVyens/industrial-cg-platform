@@ -578,6 +578,25 @@ static void rna_def_material_greasepencil(BlenderRNA *brna)
       {0, nullptr, 0, nullptr, nullptr},
   };
 
+  static EnumPropertyItem placement_mode_items[] = {
+      {GP_MATERIAL_PLACEMENT_COUNT,
+       "COUNT",
+       0,
+       "Count",
+       "Place dots evenly along each segment of the stroke"},
+      {GP_MATERIAL_PLACEMENT_RADIUS,
+       "RADIUS",
+       0,
+       "Radius",
+       "Place dots evenly with respect to radius"},
+      {GP_MATERIAL_PLACEMENT_DENSITY,
+       "DENSITY",
+       0,
+       "Density",
+       "Place dots evenly along the length of the stroke"},
+      {0, nullptr, 0, nullptr, nullptr},
+  };
+
   srna = RNA_def_struct(brna, "MaterialGPencilStyle", nullptr);
   RNA_def_struct_sdna(srna, "MaterialGPencilStyle");
   RNA_def_struct_ui_text(srna, "Grease Pencil Color", "");
@@ -730,6 +749,40 @@ static void rna_def_material_greasepencil(BlenderRNA *brna)
                            "Rotation",
                            "Additional rotation applied to dots and square texture of strokes. "
                            "Only applies in texture shading mode.");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
+
+  /* Placement mode for Dots and Squares. */
+  prop = RNA_def_property(srna, "placement_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, nullptr, "placement_mode");
+  RNA_def_property_enum_items(prop, placement_mode_items);
+  RNA_def_property_enum_default(prop, GP_MATERIAL_PLACEMENT_RADIUS);
+  RNA_def_property_ui_text(
+      prop, "Placement", "Defines how Dots or Squares are placed along strokes");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
+
+  /* Placement count. */
+  prop = RNA_def_property(srna, "placement_count", PROP_INT, PROP_NONE);
+  RNA_def_property_int_sdna(prop, nullptr, "placement_count");
+  RNA_def_property_range(prop, 1, INT_MAX);
+  RNA_def_property_ui_text(prop, "Count", "Number of dots placed per segment");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
+
+  /* Placement radius factor. */
+  prop = RNA_def_property(srna, "placement_radius_spacing", PROP_FLOAT, PROP_PERCENTAGE);
+  RNA_def_property_float_sdna(prop, nullptr, "placement_radius_spacing");
+  RNA_def_property_float_default(prop, 100.0f);
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
+  RNA_def_property_ui_range(prop, 1.0f, 200.0f, 10, 0);
+  RNA_def_property_ui_text(
+      prop, "Spacing", "Spacing between dots as a percentage of the diameter");
+  RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
+
+  /* Placement density. */
+  prop = RNA_def_property(srna, "placement_density", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_float_sdna(prop, nullptr, "placement_density");
+  RNA_def_property_float_default(prop, 10.0f);
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
+  RNA_def_property_ui_text(prop, "Density", "Density of dots along the stroke");
   RNA_def_property_update(prop, NC_GPENCIL | ND_SHADING, "rna_MaterialGpencil_update");
 
   /* pass index for future compositing and editing tools */

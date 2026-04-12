@@ -95,7 +95,7 @@ void register_node_type_tex_hue_sat()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeHueSaturation", TEX_NODE_HUE_SAT);
+  tex_node_type_base(&ntype, "TextureNodeHueSaturation"_ustr, TEX_NODE_HUE_SAT);
   ntype.ui_name = "Hue/Saturation/Value";
   ntype.enum_name_legacy = "HUE_SAT";
   ntype.nclass = NODE_CLASS_OP_COLOR;

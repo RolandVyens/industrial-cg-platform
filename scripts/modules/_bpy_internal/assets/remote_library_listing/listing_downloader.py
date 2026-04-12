@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-from __future__ import annotations
+from __future__ import absolute_import, annotations
 
 __all__ = (
     'RemoteAssetListingLocator',
@@ -17,7 +17,7 @@ import functools
 import logging
 import unicodedata
 import urllib.parse
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PurePath, PureWindowsPath
 from typing import Callable, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -50,6 +50,14 @@ logger = logging.getLogger(__name__)
 # the number below. So every HTTP_CACHEBUST_RESOLUTION_SEC seconds, a new stamp
 # is used.
 HTTP_CACHEBUST_RESOLUTION_SEC = 60
+
+# JSON files that are larger than this size will not be parsed. This prevents a
+# malicious server from effectively DOSsing Blender by sending it a huge JSON file.
+#
+# This is the size in MiB. The largest files in the remote asset listing are the
+# `assets-{number}.json` files. The server determines how large they are, but
+# typically they are in the order of 1 MB.
+MAX_JSON_FILE_SIZE_MB = 64
 
 
 class RemoteAssetListingLocator:
@@ -264,6 +272,7 @@ class RemoteAssetListingDownloader:
                     'X-Blender': "{:d}.{:d}".format(*bpy.app.version),
                 },
                 timeout=300,
+                max_size_bytes=MAX_JSON_FILE_SIZE_MB * 1024 * 1024,
             ),
             on_callback_error=self._on_callback_error,
         )
@@ -390,7 +399,7 @@ class RemoteAssetListingDownloader:
         self._num_asset_pages_pending = len(pages)
         for page_index, page_url_w_hash in enumerate(pages):
             # These URLs may be absolute or they may be relative. In any case,
-            # do not assume that they can be used direclty as local filesystem path.
+            # do not assume that they can be used directly as local filesystem path.
             local_path = listing_common.api_versioned(f"assets-{page_index:05}.json")
             download_to = self._queue_download(
                 page_url_w_hash,
@@ -419,7 +428,8 @@ class RemoteAssetListingDownloader:
                                  http_req_descr: http_dl.RequestDescription,
                                  unsafe_local_file: Path,
                                  ) -> None:
-        _, used_unsafe_file = self._parse_api_model(unsafe_local_file, api_models.AssetLibraryIndexPageV1)
+        asset_page, used_unsafe_file = self._parse_api_model(unsafe_local_file, api_models.AssetLibraryIndexPageV1)
+        self._sanitize_asset_page(asset_page, unsafe_local_file)
 
         # The file passed validation, so can be marked safe.
         if used_unsafe_file:
@@ -454,7 +464,7 @@ class RemoteAssetListingDownloader:
 
         self.report({'INFO'}, "Asset library index downloaded")
 
-        # Update the mtime of the top metadata file, so that that can be used as
+        # Update the mtime of the top metadata file, so that it can be used as
         # an indicator of how new the files are. This is only done after the
         # last page has been downloaded.
         #
@@ -464,6 +474,69 @@ class RemoteAssetListingDownloader:
         top_metadata.touch()
 
         self._shutdown_if_done()
+
+    def _sanitize_asset_page(self, asset_page: api_models.AssetLibraryIndexPageV1, json_path: Path) -> None:
+        """Perform cleanup beyond the validation that cattrs can do.
+
+        - Ensure asset/file counts are correct.
+        - Ensure file paths are relative.
+        """
+
+        # TODO: include contact info of the asset library here.
+        report = "Please report this to the author of the asset library."
+
+        badness_found = False
+
+        # Ensure counts are correct. These can be corrected, and are merely there as a sanity check.
+        if asset_page.asset_count != len(asset_page.assets):
+            badness_found = True
+            print(("Warning: asset count in {json_path!s} incorrect (file has {filecount:d}, "
+                   "should be {realcount:d}. {report!s}").format(
+                json_path=json_path, filecount=asset_page.asset_count, realcount=len(asset_page.assets), report=report))
+            asset_page.asset_count = len(asset_page.assets)
+        if asset_page.file_count != len(asset_page.files):
+            badness_found = True
+            print(("Warning: file count in {json_path!s} incorrect (file has {filecount:d}, "
+                   "should be {realcount:d}. {report!s}").format(
+                json_path=json_path, filecount=asset_page.file_count, realcount=len(asset_page.files), report=report))
+            asset_page.file_count = len(asset_page.files)
+
+        # File paths should always be relative to the asset library; allowing absolute paths may cause Blender to
+        # overwrite arbitrary local files. Keep track of the changed paths, because assets that reference to them also
+        # need updating.
+        bad_to_good_paths: dict[str, str] = {}
+        for file in asset_page.files:
+            file_path = _str_to_path_multiplatform(file.path)
+            sanitized_path = _path_make_relative_safe(file_path)
+
+            if file_path == sanitized_path:
+                continue
+
+            print((
+                "Warning: file in {json_path!s} tries to escape the asset library ({file_path!s}). {report!s}"
+            ).format(
+                json_path=json_path, file_path=file_path, report=report,
+            ))
+
+            bad_path = file.path
+            file.path = sanitized_path.as_posix()
+            bad_to_good_paths[bad_path] = file.path
+
+        # If any of the file paths were found to be bad, assets referencing them also need updating.
+        if bad_to_good_paths:
+            badness_found = True
+            for asset in asset_page.assets:
+                asset.files = [
+                    bad_to_good_paths.get(path, path) for path in asset.files
+                ]
+
+        if not badness_found:
+            return
+
+        # Badness was found. Rewrite the JSON with the corrected info.
+        parser = json_parsing.ValidatingParser()
+        json_data = parser.dumps(asset_page)
+        json_path.write_text(json_data)
 
     def _shutdown_if_done(self) -> None:
         if self._num_asset_pages_pending == 0 and self._bg_downloader.all_downloads_done:
@@ -524,6 +597,11 @@ class RemoteAssetListingDownloader:
             used_unsafe_file = False
 
         logger.info("Validating %s", path_to_load)
+
+        if path_to_load.stat().st_size > MAX_JSON_FILE_SIZE_MB * 1024 * 1024:
+            raise ValueError("{!s} is larger than {!d} MiB, rejecting the file to prevent memory issues".format(
+                path_to_load, MAX_JSON_FILE_SIZE_MB))
+
         json_data = path_to_load.read_bytes()
         parsed_data = self._parser.parse_and_validate(api_model, json_data)
 
@@ -692,53 +770,36 @@ class RemoteAssetListingDownloader:
         logger.info("Download finished: %s", http_req_descr)
 
 
-def _sanitize_path_from_url(urlpath: PurePosixPath | str) -> PurePosixPath:
+def _sanitize_path_from_url(urlpath: PurePath | str) -> PurePosixPath:
     """Safely convert some path (assumed from a URL) to a relative path.
 
+    URL-unquoting and unicode normalization is only done when ``urlpath`` is a ``str``.
+
     Directory up-references ('/../') are removed.
-
-    >>> _sanitize_path_from_url(PurePosixPath('/normal/path/as/expected.blend'))
-    PurePosixPath('normal/path/as/expected.blend')
-
-    >>> _sanitize_path_from_url(PurePosixPath(''))
-    PurePosixPath('.')
-
-    >>> _sanitize_path_from_url(PurePosixPath('/path/sub/../filename.blend'))
-    PurePosixPath('path/filename.blend')
-
-    >>> _sanitize_path_from_url('/path/sub%2F%2E%2e/filename.blend')
-    PurePosixPath('path/filename.blend')
-
-    >>> _sanitize_path_from_url('path/filename.blend')
-    PurePosixPath('path/filename.blend')
-
-    >>> _sanitize_path_from_url(PurePosixPath('/longer/faster/path/../../filename.blend'))
-    PurePosixPath('longer/filename.blend')
-
-    >>> _sanitize_path_from_url(PurePosixPath('/faster/path/../../filename.blend'))
-    PurePosixPath('filename.blend')
-
-    >>> _sanitize_path_from_url('/faster/path/../../filename.blend')
-    PurePosixPath('filename.blend')
-
-    >>> _sanitize_path_from_url(PurePosixPath('/../../../../../etc/passwd'))
-    PurePosixPath('etc/passwd')
     """
 
     if isinstance(urlpath, str):
-        # Assumption: this string comes directly from urllib.parse.urlsplit(url).path
+        # Assumption: this string either comes directly from urllib.parse.urlsplit(url).path,
+        # or comes from file paths in the asset listing json.
+        if '\\' in urlpath:
+            # Convert backslashes (from Windows) to forward slashes, as this
+            # function only deals with POSIX style paths.
+            urlpath = urlpath.replace('\\', '/')
+
         unquoted = urllib.parse.unquote(urlpath)
         normalized = unicodedata.normalize('NFKC', unquoted)
         urlpath = PurePosixPath(normalized)
 
     # The URL could have entries like `..` in there, which should be removed.
-    # However, PurePosixPath does not have functionality for this (for good
-    # reason), but since this is about URL paths and not real filesystem paths
-    # (yet) we can just go ahead and do this ourselves.
+    return PurePosixPath(*_path_make_relative_safe(urlpath).parts)
 
-    parts = list(urlpath.parts)
 
-    if urlpath.is_absolute():
+def _path_make_relative_safe(some_path: PurePath) -> PurePath:
+    """Remove the root/anchor from the path, and remove '..' entries."""
+
+    parts = list(some_path.parts)
+
+    if some_path.is_absolute():
         parts = parts[1:]
 
     i = 0
@@ -754,7 +815,27 @@ def _sanitize_path_from_url(urlpath: PurePosixPath | str) -> PurePosixPath:
         parts = parts[:i - 1] + parts[i + 1:]
         i -= 1
 
-    return PurePosixPath(*parts)
+    # some_path.with_segments() ensures that the returned path is of the same type as 'some_path'.
+    return some_path.with_segments(*parts)
+
+
+def _str_to_path_multiplatform(as_str: str) -> PurePath:
+    """Convert the given string to a pure path.
+
+    Some heuristics are used to determine whether to return a PureWindowsPath, a
+    PurePosixPath, or a PurePath (which will be either of the two, depending on
+    the local platform).
+    """
+
+    # Guess which platform the path is from. The listing generator always writes POSIX
+    # style paths, but a malicious server may try and use something else.
+    if '\\' in as_str or (len(as_str) >= 2 and as_str[1] == ':'):
+        return PureWindowsPath(as_str)
+
+    if '/' in as_str:
+        return PurePosixPath(as_str)
+
+    return PurePath(as_str)
 
 
 def is_more_recent_than(library_path: Path, max_age_sec: float | int) -> bool:

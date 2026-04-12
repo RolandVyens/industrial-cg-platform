@@ -880,17 +880,17 @@ static PyObject *bpy_batch_remove(PyObject *self, PyObject *args, PyObject *kwds
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_orphans_purge_doc,
-    ".. method:: orphans_purge()\n"
+    ".. method:: orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=False)\n"
     "\n"
     "   Remove (delete) all IDs with no user.\n"
     "\n"
     "   :param do_local_ids: Include unused local IDs in the deletion, defaults to True\n"
-    "   :type do_local_ids: bool, optional\n"
+    "   :type do_local_ids: bool\n"
     "   :param do_linked_ids: Include unused linked IDs in the deletion, defaults to True\n"
-    "   :type do_linked_ids: bool, optional\n"
+    "   :type do_linked_ids: bool\n"
     "   :param do_recursive: Recursively check for unused IDs, ensuring no orphaned one "
     "remain after a single run of that function, defaults to False\n"
-    "   :type do_recursive: bool, optional\n"
+    "   :type do_recursive: bool\n"
     "   :return: The number of deleted IDs.\n"
     "   :rtype: int\n");
 static PyObject *bpy_orphans_purge(PyObject *self, PyObject *args, PyObject *kwds)

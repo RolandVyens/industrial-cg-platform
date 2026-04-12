@@ -16,6 +16,7 @@
 
 #include "BKE_attribute.h"
 #include "BKE_attribute.hh"
+#include "BKE_attribute_storage.hh"
 #include "BKE_context.hh"
 #include "BKE_customdata.hh"
 #include "BKE_editmesh.hh"
@@ -500,6 +501,60 @@ static wmOperatorStatus mesh_customdata_mask_clear_exec(bContext *C, wmOperator 
   return OPERATOR_FINISHED;
 }
 
+static bool mesh_customdata_face_sets_clear_poll(bContext *C)
+{
+  Object *object = ed::object::context_object(C);
+  if (!object || object->type != OB_MESH) {
+    return false;
+  }
+
+  Mesh *mesh = id_cast<Mesh *>(object->data);
+  if (!ID_IS_EDITABLE(mesh) || ID_IS_OVERRIDE_LIBRARY(mesh)) {
+    return false;
+  }
+
+  if (BMEditMesh *em = mesh->runtime->edit_mesh.get()) {
+    return CustomData_has_layer_named(&em->bm->pdata, CD_PROP_INT32, ".sculpt_face_set");
+  }
+
+  return mesh->attributes().contains(".sculpt_face_set");
+}
+
+static wmOperatorStatus mesh_customdata_face_sets_clear_exec(bContext *C, wmOperator * /*op*/)
+{
+  Object *object = ed::object::context_object(C);
+  Mesh *mesh = id_cast<Mesh *>(object->data);
+
+  bool changed = false;
+  if (BMEditMesh *em = mesh->runtime->edit_mesh.get()) {
+    changed = CustomData_free_layer_named(&em->bm->pdata, ".sculpt_face_set");
+  }
+  else {
+    changed = mesh->attributes_for_write().remove(".sculpt_face_set");
+  }
+
+  if (!changed) {
+    return OPERATOR_CANCELLED;
+  }
+
+  DEG_id_tag_update(&mesh->id, ID_RECALC_GEOMETRY);
+  WM_event_add_notifier(C, NC_GEOM | ND_DATA, mesh);
+
+  return OPERATOR_FINISHED;
+}
+
+void MESH_OT_customdata_face_sets_clear(wmOperatorType *ot)
+{
+  ot->name = "Clear Sculpt Face Sets";
+  ot->idname = "MESH_OT_customdata_face_sets_clear";
+  ot->description = "Clear sculpt face set data from the mesh";
+
+  ot->exec = mesh_customdata_face_sets_clear_exec;
+  ot->poll = mesh_customdata_face_sets_clear_poll;
+
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+}
+
 void MESH_OT_customdata_mask_clear(wmOperatorType *ot)
 {
   ot->name = "Clear Sculpt Mask Data";
@@ -686,7 +741,8 @@ static void mesh_add_verts(Mesh *mesh, int len)
     return;
   }
 
-  int totvert = mesh->verts_num + len;
+  const int old_size = mesh->verts_num;
+  const int totvert = old_size + len;
   mesh->attribute_storage.wrap().resize(bke::AttrDomain::Point, totvert);
   CustomData_realloc(&mesh->vert_data, mesh->verts_num, totvert, CD_SET_DEFAULT);
 
@@ -695,6 +751,8 @@ static void mesh_add_verts(Mesh *mesh, int len)
   mesh->verts_num = totvert;
 
   bke::MutableAttributeAccessor attributes = mesh->attributes_for_write();
+  bke::fill_attribute_range_default(
+      attributes, bke::AttrDomain::Point, {}, IndexRange::from_begin_size(old_size, len));
   bke::SpanAttributeWriter<bool> select_vert = attributes.lookup_or_add_for_write_span<bool>(
       ".select_vert", bke::AttrDomain::Point);
   select_vert.span.take_back(len).fill(true);
@@ -704,14 +762,12 @@ static void mesh_add_verts(Mesh *mesh, int len)
 
 static void mesh_add_edges(Mesh *mesh, int len)
 {
-  int totedge;
-
   if (len == 0) {
     return;
   }
 
-  totedge = mesh->edges_num + len;
-
+  const int old_size = mesh->edges_num;
+  const int totedge = old_size + len;
   mesh->attribute_storage.wrap().resize(bke::AttrDomain::Edge, totedge);
   CustomData_realloc(&mesh->edge_data, mesh->edges_num, totedge, CD_SET_DEFAULT);
 
@@ -720,6 +776,8 @@ static void mesh_add_edges(Mesh *mesh, int len)
   mesh->edges_num = totedge;
 
   bke::MutableAttributeAccessor attributes = mesh->attributes_for_write();
+  bke::fill_attribute_range_default(
+      attributes, bke::AttrDomain::Edge, {}, IndexRange::from_begin_end(old_size, len));
   bke::SpanAttributeWriter<bool> select_edge = attributes.lookup_or_add_for_write_span<bool>(
       ".select_edge", bke::AttrDomain::Edge);
   select_edge.span.take_back(len).fill(true);
@@ -729,14 +787,12 @@ static void mesh_add_edges(Mesh *mesh, int len)
 
 static void mesh_add_loops(Mesh *mesh, int len)
 {
-  int totloop;
-
   if (len == 0) {
     return;
   }
 
-  totloop = mesh->corners_num + len; /* new face count */
-
+  const int old_size = mesh->corners_num;
+  const int totloop = old_size + len;
   mesh->attribute_storage.wrap().resize(bke::AttrDomain::Corner, totloop);
   CustomData_realloc(&mesh->corner_data, mesh->corners_num, totloop, CD_SET_DEFAULT);
 
@@ -745,6 +801,8 @@ static void mesh_add_loops(Mesh *mesh, int len)
   mesh->corners_num = totloop;
 
   bke::MutableAttributeAccessor attributes = mesh->attributes_for_write();
+  bke::fill_attribute_range_default(
+      attributes, bke::AttrDomain::Corner, {}, IndexRange::from_begin_end(old_size, len));
   attributes.add<int>(".corner_vert", bke::AttrDomain::Corner, bke::AttributeInitDefaultValue());
   attributes.add<int>(".corner_edge", bke::AttrDomain::Corner, bke::AttributeInitDefaultValue());
 
@@ -757,14 +815,12 @@ static void mesh_add_loops(Mesh *mesh, int len)
 
 static void mesh_add_faces(Mesh *mesh, int len)
 {
-  int faces_num;
-
   if (len == 0) {
     return;
   }
 
-  faces_num = mesh->faces_num + len; /* new face count */
-
+  const int old_size = mesh->faces_num;
+  const int faces_num = old_size + len;
   mesh->attribute_storage.wrap().resize(bke::AttrDomain::Face, faces_num);
   CustomData_realloc(&mesh->face_data, mesh->faces_num, faces_num, CD_SET_DEFAULT);
 
@@ -781,6 +837,8 @@ static void mesh_add_faces(Mesh *mesh, int len)
   mesh->faces_num = faces_num;
 
   bke::MutableAttributeAccessor attributes = mesh->attributes_for_write();
+  bke::fill_attribute_range_default(
+      attributes, bke::AttrDomain::Face, {}, IndexRange::from_begin_end(old_size, len));
   bke::SpanAttributeWriter<bool> select_poly = attributes.lookup_or_add_for_write_span<bool>(
       ".select_poly", bke::AttrDomain::Face);
   select_poly.span.take_back(len).fill(true);

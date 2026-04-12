@@ -706,10 +706,10 @@ static void sequencer_draw_scopes(Scene *scene,
   GPU_debug_group_begin(get_scope_debug_name(eSpaceSeq_RegionType(space_sequencer.mainb)));
 
   gpu::Texture *input_texture = seq::preview_cache_get_gpu_display_texture(
-      scene, timeline_frame, 0);
+      scene, timeline_frame, 0, image_width, image_height);
   if (input_texture == nullptr) {
     input_texture = seq::preview_cache_get_gpu_texture(
-        scene, timeline_frame, space_sequencer.chanshown);
+        scene, timeline_frame, space_sequencer.chanshown, image_width, image_height);
   }
 
   SeqQuadsBatch quads;
@@ -773,6 +773,10 @@ static void sequencer_draw_scopes(Scene *scene,
       GPU_viewport_size_get_i(viewport_size_i);
       const int2 viewport_size = int2(viewport_size_i[2], viewport_size_i[3]);
       const int2 image_size = int2(image_width, image_height);
+      const eSpaceSeq_Proxy_RenderSize render_size_mode = eSpaceSeq_Proxy_RenderSize(
+          space_sequencer.render_size);
+      const float render_scale = seq::get_render_scale_factor(render_size_mode, scene->r.size);
+
       gpu::StorageBuf *raster_ssbo = GPU_storagebuf_create_ex(viewport_size.x * viewport_size.y *
                                                                   sizeof(SeqScopeRasterData),
                                                               nullptr,
@@ -798,6 +802,7 @@ static void sequencer_draw_scopes(Scene *scene,
         GPU_shader_uniform_1i(shader, "image_width", image_width);
         GPU_shader_uniform_1i(shader, "image_height", image_height);
         GPU_shader_uniform_1i(shader, "scope_mode", space_sequencer.mainb);
+        GPU_shader_uniform_1f(shader, "inv_render_scale", 1.0f / render_scale);
 
         const int2 groups_to_dispatch = math::divide_ceil(image_size, int2(16));
         GPU_compute_dispatch(shader, groups_to_dispatch.x, groups_to_dispatch.y, 1);
@@ -886,15 +891,15 @@ static void update_gpu_scopes(const ImBuf *input_ibuf,
   }
 
   /* Display space GPU texture is already calculated. */
+  const int width = GPU_texture_width(input_texture);
+  const int height = GPU_texture_height(input_texture);
   gpu::Texture *display_texture = seq::preview_cache_get_gpu_display_texture(
-      scene, timeline_frame, space_sequencer.chanshown);
+      scene, timeline_frame, space_sequencer.chanshown, width, height);
   if (display_texture != nullptr) {
     return;
   }
 
   /* Create GPU texture. */
-  const int width = GPU_texture_width(input_texture);
-  const int height = GPU_texture_height(input_texture);
   const eGPUTextureUsage usage = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_ATTACHMENT;
   const gpu::TextureFormat format = gpu::TextureFormat::SFLOAT_16_16_16_16;
   display_texture = GPU_texture_create_2d(
@@ -919,10 +924,10 @@ static void update_gpu_scopes(const ImBuf *input_ibuf,
   const uint tex_coord = GPU_vertformat_attr_add(
       imm_format, "texCoord", gpu::VertAttrType::SFLOAT_32_32);
 
-  const ColorSpace *input_colorspace = input_ibuf->float_buffer.data ?
+  const ColorSpace *input_colorspace = input_ibuf->float_data() ?
                                            input_ibuf->float_buffer.colorspace :
                                            input_ibuf->byte_buffer.colorspace;
-  const bool predivide = input_ibuf->float_buffer.data != nullptr;
+  const bool predivide = input_ibuf->float_data() != nullptr;
   if (IMB_colormanagement_setup_glsl_draw_from_space(
           &view_settings, &display_settings, input_colorspace, 0.0f, predivide, false))
   {
@@ -966,9 +971,7 @@ static void update_cpu_scopes(const SpaceSeq &space_sequencer,
 
 static bool sequencer_draw_get_transform_preview(const SpaceSeq &sseq, const Scene &scene)
 {
-  if ((scene.ed->runtime.flag & SEQ_SHOW_TRANSFORM_PREVIEW) &&
-      (sseq.draw_flag & SEQ_DRAW_TRANSFORM_PREVIEW))
-  {
+  if (scene.ed->runtime->show_transform_preview && (sseq.draw_flag & SEQ_DRAW_TRANSFORM_PREVIEW)) {
     return true;
   }
 
@@ -986,8 +989,8 @@ static int sequencer_draw_get_transform_preview_frame(const Scene *scene)
 {
   int preview_frame;
 
-  if (scene->ed->runtime.flag & SEQ_SHOW_TRANSFORM_PREVIEW) {
-    preview_frame = scene->ed->runtime.transform_preview_frame;
+  if (scene->ed->runtime->show_transform_preview) {
+    preview_frame = scene->ed->runtime->transform_preview_frame;
     return preview_frame;
   }
 
@@ -1064,7 +1067,7 @@ static void strip_draw_image_origin_and_outline(const bContext *C,
 static void text_selection_draw(const bContext *C, const Strip *strip, uint pos)
 {
   const TextVars *data = static_cast<TextVars *>(strip->effectdata);
-  const seq::TextVarsRuntime *text = data->runtime;
+  const seq::TextVarsRuntime *runtime = data->runtime;
   const Scene *scene = CTX_data_sequencer_scene(C);
 
   if (data->selection_start_offset == -1 || strip_text_selection_range_get(data).is_empty()) {
@@ -1072,13 +1075,13 @@ static void text_selection_draw(const bContext *C, const Strip *strip, uint pos)
   }
 
   const IndexRange sel_range = strip_text_selection_range_get(data);
-  const int2 selection_start = strip_text_cursor_offset_to_position(text, sel_range.first());
-  const int2 selection_end = strip_text_cursor_offset_to_position(text, sel_range.last());
+  const int2 selection_start = strip_text_cursor_offset_to_position(runtime, sel_range.first());
+  const int2 selection_end = strip_text_cursor_offset_to_position(runtime, sel_range.last());
   const int line_start = selection_start.y;
   const int line_end = selection_end.y;
 
   for (int line_index = line_start; line_index <= line_end; line_index++) {
-    const seq::LineInfo line = text->lines[line_index];
+    const seq::LineInfo line = runtime->lines[line_index];
     seq::CharInfo character_start = line.characters.first();
     seq::CharInfo character_end = line.characters.last();
 
@@ -1089,15 +1092,15 @@ static void text_selection_draw(const bContext *C, const Strip *strip, uint pos)
       character_end = line.characters[selection_end.x];
     }
 
-    const float line_y = character_start.position.y + text->font_descender;
+    const float line_y = character_start.position.y + runtime->font_descender;
 
     const float2 view_offs{-scene->r.xsch / 2.0f, -scene->r.ysch / 2.0f};
     const float view_aspect = scene->r.xasp / scene->r.yasp;
     float3x3 transform_mat = seq::image_transform_matrix_get(scene, strip);
     float2 selection_quad[4] = {
         {character_start.position.x, line_y},
-        {character_start.position.x, line_y + text->line_height},
-        {character_end.position.x + character_end.advance_x, line_y + text->line_height},
+        {character_start.position.x, line_y + runtime->line_height},
+        {character_end.position.x + character_end.advance_x, line_y + runtime->line_height},
         {character_end.position.x + character_end.advance_x, line_y},
     };
 
@@ -1132,19 +1135,19 @@ static float2 coords_region_view_align(const View2D *v2d, const float2 coords)
 static void text_edit_draw_cursor(const bContext *C, const Strip *strip, uint pos)
 {
   const TextVars *data = static_cast<TextVars *>(strip->effectdata);
-  const seq::TextVarsRuntime *text = data->runtime;
+  const seq::TextVarsRuntime *runtime = data->runtime;
   const Scene *scene = CTX_data_sequencer_scene(C);
 
   const float2 view_offs{-scene->r.xsch / 2.0f, -scene->r.ysch / 2.0f};
   const float view_aspect = scene->r.xasp / scene->r.yasp;
   float3x3 transform_mat = seq::image_transform_matrix_get(scene, strip);
-  const int2 cursor_position = strip_text_cursor_offset_to_position(text, data->cursor_offset);
+  const int2 cursor_position = strip_text_cursor_offset_to_position(runtime, data->cursor_offset);
   const float cursor_width = 10;
-  float2 cursor_coords = text->lines[cursor_position.y].characters[cursor_position.x].position;
+  float2 cursor_coords = runtime->lines[cursor_position.y].characters[cursor_position.x].position;
   /* Clamp cursor coords to be inside of text boundbox. Compensate for cursor width, but also line
    * width hardcoded in shader. */
-  const float bound_left = float(text->text_boundbox.xmin) + U.pixelsize;
-  const float bound_right = float(text->text_boundbox.xmax) - (cursor_width + U.pixelsize);
+  const float bound_left = float(runtime->text_boundbox.xmin) + U.pixelsize;
+  const float bound_right = float(runtime->text_boundbox.xmax) - (cursor_width + U.pixelsize);
   /* Note: do not use std::clamp since due to math above left can become larger than right. */
   cursor_coords.x = std::max(cursor_coords.x, bound_left);
   cursor_coords.x = std::min(cursor_coords.x, bound_right);
@@ -1153,11 +1156,11 @@ static void text_edit_draw_cursor(const bContext *C, const Strip *strip, uint po
 
   float2 cursor_quad[4] = {
       {cursor_coords.x, cursor_coords.y},
-      {cursor_coords.x, cursor_coords.y + text->line_height},
-      {cursor_coords.x + cursor_width, cursor_coords.y + text->line_height},
+      {cursor_coords.x, cursor_coords.y + runtime->line_height},
+      {cursor_coords.x + cursor_width, cursor_coords.y + runtime->line_height},
       {cursor_coords.x + cursor_width, cursor_coords.y},
   };
-  const float2 descender_offs{0.0f, float(text->font_descender)};
+  const float2 descender_offs{0.0f, float(runtime->font_descender)};
 
   immBegin(GPU_PRIM_TRIS, 6);
   immUniformThemeColor(TH_SEQ_TEXT_CURSOR);
@@ -1267,8 +1270,7 @@ static void preview_draw_color_render_begin(ARegion &region)
   gpu::FrameBuffer *render_fb = GPU_viewport_framebuffer_render_get(viewport);
   GPU_framebuffer_bind(render_fb);
 
-  float col[4] = {0, 0, 0, 0};
-  GPU_framebuffer_clear_color(render_fb, col);
+  GPU_framebuffer_clear_color(render_fb, double4(0.0));
 }
 
 /* Configure current GPU state to draw on the overlay frame-buffer of the viewport. */
@@ -1505,7 +1507,7 @@ static gpu::Texture *create_texture(const ImBuf &ibuf)
 
   gpu::Texture *texture = nullptr;
 
-  if (ibuf.float_buffer.data) {
+  if (ibuf.float_data()) {
     gpu::TextureFormat texture_format;
     switch (ibuf.channels) {
       case 1:
@@ -1525,10 +1527,10 @@ static gpu::Texture *create_texture(const ImBuf &ibuf)
     texture = GPU_texture_create_2d(
         "seq_display_buf", ibuf.x, ibuf.y, 1, texture_format, texture_usage, nullptr);
     if (texture) {
-      GPU_texture_update(texture, GPU_DATA_FLOAT, ibuf.float_buffer.data);
+      GPU_texture_update(texture, GPU_DATA_FLOAT, ibuf.float_data());
     }
   }
-  else if (ibuf.byte_buffer.data) {
+  else if (ibuf.byte_data()) {
     texture = GPU_texture_create_2d("seq_display_buf",
                                     ibuf.x,
                                     ibuf.y,
@@ -1537,7 +1539,7 @@ static gpu::Texture *create_texture(const ImBuf &ibuf)
                                     texture_usage,
                                     nullptr);
     if (texture) {
-      GPU_texture_update(texture, GPU_DATA_UBYTE, ibuf.byte_buffer.data);
+      GPU_texture_update(texture, GPU_DATA_UBYTE, ibuf.byte_data());
     }
   }
 
@@ -1557,18 +1559,12 @@ static gpu::Texture *create_texture(const ImBuf &ibuf)
  * If there are no buffers at all scene linear space is returned. */
 static const char *get_texture_colorspace_name(const ImBuf &ibuf)
 {
-  if (ibuf.float_buffer.data) {
-    if (ibuf.float_buffer.colorspace) {
-      return IMB_colormanagement_colorspace_get_name(ibuf.float_buffer.colorspace);
-    }
-    return IMB_colormanagement_role_colorspace_name_get(COLOR_ROLE_SCENE_LINEAR);
+  if (ibuf.float_data()) {
+    return IMB_colormanagement_get_float_colorspace(&ibuf);
   }
 
-  if (ibuf.byte_buffer.data) {
-    if (ibuf.byte_buffer.colorspace) {
-      return IMB_colormanagement_colorspace_get_name(ibuf.byte_buffer.colorspace);
-    }
-    return IMB_colormanagement_role_colorspace_name_get(COLOR_ROLE_DEFAULT_BYTE);
+  if (ibuf.byte_data()) {
+    return IMB_colormanagement_get_byte_colorspace(&ibuf);
   }
 
   /* Fail-safe fallback. */
@@ -1592,7 +1588,7 @@ static void sequencer_preview_draw_color_render(const SpaceSeq &space_sequencer,
     const rctf position = preview_get_full_position(region);
     const rctf texture_coord = preview_get_full_texture_coord();
     const char *texture_colorspace = get_texture_colorspace_name(*current_ibuf);
-    const bool predivide = (current_ibuf->float_buffer.data != nullptr);
+    const bool predivide = (current_ibuf->float_data() != nullptr);
     preview_draw_texture_to_linear(
         *current_texture, texture_colorspace, predivide, position, texture_coord);
   }
@@ -1602,7 +1598,7 @@ static void sequencer_preview_draw_color_render(const SpaceSeq &space_sequencer,
     const rctf position = preview_get_reference_position(space_sequencer, editing, region);
     const rctf texture_coord = preview_get_reference_texture_coord(space_sequencer, editing);
     const char *texture_colorspace = get_texture_colorspace_name(*reference_ibuf);
-    const bool predivide = (reference_ibuf->float_buffer.data != nullptr);
+    const bool predivide = (reference_ibuf->float_data() != nullptr);
     preview_draw_texture_to_linear(
         *reference_texture, texture_colorspace, predivide, position, texture_coord);
   }
@@ -1654,7 +1650,7 @@ static void sequencer_preview_draw_overlays(const bContext *C,
 
   /* Update scopes before starting regular draw (GPU scopes update changes framebuffer, etc.). */
   space_sequencer.runtime->scopes.last_ibuf_float = input_ibuf &&
-                                                    input_ibuf->float_buffer.data != nullptr;
+                                                    input_ibuf->float_data() != nullptr;
   if (has_cpu_scope) {
     update_cpu_scopes(
         space_sequencer, view_settings, display_settings, *input_ibuf, timeline_frame);
@@ -1679,7 +1675,7 @@ static void sequencer_preview_draw_overlays(const bContext *C,
                           timeline_frame,
                           input_ibuf->x,
                           input_ibuf->y,
-                          input_ibuf->float_buffer.data != nullptr);
+                          input_ibuf->float_data() != nullptr);
   }
   else if (space_sequencer.flag & SEQ_USE_ALPHA) {
     /* Draw checked-board. */
@@ -1851,7 +1847,7 @@ void sequencer_preview_region_draw(const bContext *C, ARegion *region)
         C, timeline_frame, view_names[space_sequencer.multiview_eye]);
     if (use_gpu_texture && current_ibuf) {
       current_texture = seq::preview_cache_get_gpu_texture(
-          scene, timeline_frame, space_sequencer.chanshown);
+          scene, timeline_frame, space_sequencer.chanshown, current_ibuf->x, current_ibuf->y);
       if (current_texture == nullptr) {
         current_texture = create_texture(*current_ibuf);
         seq::preview_cache_set_gpu_texture(

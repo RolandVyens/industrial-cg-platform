@@ -103,7 +103,9 @@ void TreeViewItemContainer::sort_alpha()
   std::ranges::sort(children_,
                     [](const std::unique_ptr<AbstractTreeViewItem> &a,
                        const std::unique_ptr<AbstractTreeViewItem> &b) {
-                      return a.get()->label() < b.get()->label();
+                      StringRefNull a_name = a.get()->label();
+                      StringRefNull b_name = b.get()->label();
+                      return BLI_strcasecmp_natural(a_name.c_str(), b_name.c_str()) < 0;
                     });
 
   for (std::unique_ptr<AbstractTreeViewItem> &item : children_) {
@@ -130,25 +132,6 @@ void AbstractTreeView::foreach_root_item(ItemIterFn iter_fn) const
   for (const auto &child : children_) {
     iter_fn(*child);
   }
-}
-
-AbstractTreeViewItem *AbstractTreeView::find_hovered(const ARegion &region, const int2 &xy)
-{
-  AbstractTreeViewItem *hovered_item = nullptr;
-  this->foreach_item_recursive(
-      [&](AbstractTreeViewItem &item) {
-        if (hovered_item) {
-          return;
-        }
-
-        std::optional<rctf> win_rect = item.get_win_rect(region);
-        if (win_rect && BLI_rctf_isect_y(&*win_rect, xy[1])) {
-          hovered_item = &item;
-        }
-      },
-      IterOptions::SkipCollapsed | IterOptions::SkipFiltered);
-
-  return hovered_item;
 }
 
 void AbstractTreeView::set_default_rows(int default_rows)
@@ -431,21 +414,21 @@ void AbstractTreeView::scroll_active_into_view()
     return;
   }
 
-  if (scroll_active_into_view_on_draw_) {
-    if (!scroll_value_) {
-      scroll_value_ = std::make_unique<int>(0);
-    }
-    foreach_item(
-        [&, this](AbstractTreeViewItem &item) {
-          if (item.is_active_) {
-            *scroll_value_ = std::max(0, index - *visible_row_count + 1);
-            return;
-          }
-          index++;
-        },
-        AbstractTreeView::IterOptions::SkipCollapsed |
-            AbstractTreeView::IterOptions::SkipFiltered);
+  if (!scroll_value_) {
+    scroll_value_ = std::make_unique<int>(0);
   }
+  foreach_item(
+      [&, this](AbstractTreeViewItem &item) {
+        if (item.is_active_) {
+          /* Don't scroll the list when active item is already in view. */
+          if ((index < *scroll_value_) || (index >= *scroll_value_ + *visible_row_count)) {
+            *scroll_value_ = std::max(0, index - *visible_row_count + 1);
+          }
+          return;
+        }
+        index++;
+      },
+      AbstractTreeView::IterOptions::SkipCollapsed | AbstractTreeView::IterOptions::SkipFiltered);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -699,20 +682,6 @@ bool AbstractTreeViewItem::set_state_active()
   return false;
 }
 
-bool AbstractTreeViewItem::is_hovered() const
-{
-  BLI_assert_msg(get_tree_view().is_reconstructed(),
-                 "State cannot be queried until reconstruction is completed");
-  BLI_assert_msg(view_item_but_ != nullptr,
-                 "Hovered state cannot be queried before the tree row is being built");
-
-  /* The new layout hasn't finished construction yet, so the final state of the button is unknown.
-   * Get the matching button from the previous redraw instead. */
-  ButtonViewItem *old_item_but = block_view_find_matching_view_item_but_in_old_block(
-      *view_item_but_->block, *this);
-  return old_item_but && (old_item_but->flag & UI_HOVER);
-}
-
 bool AbstractTreeViewItem::is_collapsed() const
 {
   BLI_assert_msg(get_tree_view().is_reconstructed(),
@@ -895,29 +864,24 @@ void TreeViewLayoutBuilder::build_from_tree(AbstractTreeView &tree_view)
         *tree_view.scroll_value_, 0, tot_items - *visible_row_count);
   }
 
+  if (tree_view.scroll_active_into_view_on_draw_) {
+    tree_view.scroll_active_into_view();
+  }
+
   const int first_visible_index = tree_view.scroll_value_ ? *tree_view.scroll_value_ : 0;
   const int max_visible_index = visible_row_count ? first_visible_index + *visible_row_count - 1 :
                                                     std::numeric_limits<int>::max();
   int index = 0;
-  bool is_active_visible = false;
   tree_view.foreach_item(
       [&, this](AbstractTreeViewItem &item) {
         if ((index >= first_visible_index) && (index <= max_visible_index)) {
           if (item.is_filtered_visible()) {
             this->build_row(item);
-            is_active_visible |= item.is_active_;
           }
         }
         index++;
       },
       AbstractTreeView::IterOptions::SkipCollapsed | AbstractTreeView::IterOptions::SkipFiltered);
-
-  if (tree_view.scroll_active_into_view_on_draw_) {
-    if (!is_active_visible) {
-      /* Don't scroll the list when active item is already in view. */
-      tree_view.scroll_active_into_view();
-    }
-  }
 
   if (tree_view.custom_height_) {
 

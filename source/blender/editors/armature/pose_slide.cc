@@ -188,6 +188,22 @@ static const EnumPropertyItem prop_axis_lock_types[] = {
 
 /* ------------------------------------ */
 
+/**
+ * Returns a subset of the given curves where the rna_path matches the given path.
+ */
+static Vector<FCurve *> fcurves_filtered_by_path(const Span<FCurve *> input_fcurves,
+                                                 const StringRef path)
+{
+  Vector<FCurve *> fcurves;
+  for (FCurve *fcurve : input_fcurves) {
+    if (StringRefNull(fcurve->rna_path) != path) {
+      continue;
+    }
+    fcurves.append(fcurve);
+  }
+  return fcurves;
+}
+
 /** Operator custom-data initialization. */
 static int pose_slide_init(bContext *C, wmOperator *op, ePoseSlide_Modes mode)
 {
@@ -220,8 +236,9 @@ static int pose_slide_init(bContext *C, wmOperator *op, ePoseSlide_Modes mode)
   params.object_mode = OB_MODE_POSE;
   /* Explicitly setting this to false because we *do* want this to work for armature instances. */
   params.no_dup_data = false;
+  const Main *bmain = CTX_data_main(C);
   const Vector<Object *> objects = BKE_view_layer_array_from_objects_in_mode_params(
-      CTX_data_scene(C), CTX_data_view_layer(C), CTX_wm_view3d(C), &params);
+      *bmain, CTX_data_scene(C), CTX_data_view_layer(C), CTX_wm_view3d(C), &params);
   pso->ob_data_array.reinitialize(objects.size());
 
   for (const int ob_index : objects.index_range()) {
@@ -241,11 +258,6 @@ static int pose_slide_init(bContext *C, wmOperator *op, ePoseSlide_Modes mode)
         ob_data->ob->adt, pso->prev_frame, NLATIME_CONVERT_UNMAP);
     ob_data->next_frame = BKE_nla_tweakedit_remap(
         ob_data->ob->adt, pso->next_frame, NLATIME_CONVERT_UNMAP);
-
-    /* Set depsgraph flags. */
-    /* Make sure the lock is set OK, unlock can be accidentally saved? */
-    ob_data->ob->pose->flag |= POSE_LOCKED;
-    ob_data->ob->pose->flag &= ~POSE_DO_UNLOCK;
   }
 
   /* Do basic initialize of RB-BST used for finding keyframes, but leave the filling of it up
@@ -421,26 +433,25 @@ static void pose_slide_apply_vec3(tPoseSlideOp *pso,
                                   float vec[3],
                                   const char propName[])
 {
-  LinkData *ld = nullptr;
   char *path = nullptr;
 
   /* Get the path to use. */
   path = BLI_sprintfN("%s.%s", pfl->pchan_path, propName);
 
   /* Using this path, find each matching F-Curve for the variables we're interested in. */
-  while ((ld = poseAnim_mapping_getNextFCurve(&pfl->fcurves, ld, path))) {
-    FCurve *fcu = static_cast<FCurve *>(ld->data);
-    const int idx = fcu->array_index;
+  const Vector<FCurve *> fcurves = fcurves_filtered_by_path(pfl->fcurves, path);
+  for (FCurve *fcurve : fcurves) {
+    const int idx = fcurve->array_index;
     const int lock = pso->axislock;
 
     /* Check if this F-Curve is ok given the current axis locks. */
-    BLI_assert(fcu->array_index < 3);
+    BLI_assert(fcurve->array_index < 3);
 
     if ((lock == 0) || ((lock & PS_LOCK_X) && (idx == 0)) || ((lock & PS_LOCK_Y) && (idx == 1)) ||
         ((lock & PS_LOCK_Z) && (idx == 2)))
     {
       /* Just work on these channels one by one... there's no interaction between values. */
-      pose_slide_apply_val(pso, fcu, pfl->ob, &vec[fcu->array_index]);
+      pose_slide_apply_val(pso, fcurve, pfl->ob, &vec[fcurve->array_index]);
     }
   }
 
@@ -465,8 +476,7 @@ static void pose_slide_apply_props(tPoseSlideOp *pso,
    * - bbone properties are similar, but they always start with a prefix "bbone_*",
    *   so a similar method should work here for those too
    */
-  for (LinkData &ld : pfl->fcurves) {
-    FCurve *fcu = static_cast<FCurve *>(ld.data);
+  for (FCurve *fcu : pfl->fcurves) {
     const char *bPtr, *pPtr;
 
     if (fcu->rna_path == nullptr) {
@@ -583,7 +593,6 @@ static void pose_slide_apply_quat(tPoseSlideOp *pso, tPChanFCurveLink *pfl)
 {
   const FCurve *fcu_w = nullptr, *fcu_x = nullptr, *fcu_y = nullptr, *fcu_z = nullptr;
   bPoseChannel *pchan = pfl->pchan;
-  LinkData *ld = nullptr;
   char *path = nullptr;
   float prev_frame, next_frame;
 
@@ -600,8 +609,8 @@ static void pose_slide_apply_quat(tPoseSlideOp *pso, tPChanFCurveLink *pfl)
   const float factor = ED_slider_factor_get(pso->slider);
 
   /* Using this path, find each matching F-Curve for the variables we're interested in. */
-  while ((ld = poseAnim_mapping_getNextFCurve(&pfl->fcurves, ld, path))) {
-    FCurve *fcu = static_cast<FCurve *>(ld->data);
+  const Vector<FCurve *> fcurves = fcurves_filtered_by_path(pfl->fcurves, path);
+  for (FCurve *fcu : fcurves) {
 
     /* Assign this F-Curve to one of the relevant pointers. */
     switch (fcu->array_index) {
@@ -746,17 +755,17 @@ static void pose_slide_rest_pose_apply(bContext *C, tPoseSlideOp *pso)
      */
     bPoseChannel *pchan = pfl.pchan;
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_LOC) && (pchan->flag & POSE_LOC)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_LOC) && (pfl.transform_flag & ACT_TRANS_LOC)) {
       /* Calculate these for the 'location' vector, and use location curves. */
       pose_slide_rest_pose_apply_vec3(pso, pchan->loc, 0.0f);
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_SCALE) && (pchan->flag & POSE_SCALE)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_SCALE) && (pfl.transform_flag & ACT_TRANS_SCALE)) {
       /* Calculate these for the 'scale' vector, and use scale curves. */
       pose_slide_rest_pose_apply_vec3(pso, pchan->scale, 1.0f);
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_ROT) && (pchan->flag & POSE_ROT)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_ROT) && (pfl.transform_flag & ACT_TRANS_ROT)) {
       /* Everything depends on the rotation mode. */
       if (pchan->rotmode > 0) {
         /* Eulers - so calculate these for the 'eul' vector, and use euler_rotation curves. */
@@ -771,7 +780,9 @@ static void pose_slide_rest_pose_apply(bContext *C, tPoseSlideOp *pso)
       }
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_BBONE_SHAPE) && (pchan->flag & POSE_BBONE_SHAPE)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_BBONE_SHAPE) &&
+        (pfl.transform_flag & ACT_TRANS_BBONE))
+    {
       /* Bbone properties - they all start a "bbone_" prefix. */
       /* TODO: Not implemented. */
       // pose_slide_apply_props(pso, pfl, "bbone_");
@@ -822,17 +833,17 @@ static void pose_slide_apply(bContext *C, tPoseSlideOp *pso)
      */
     bPoseChannel *pchan = pfl.pchan;
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_LOC) && (pchan->flag & POSE_LOC)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_LOC) && (pfl.transform_flag & ACT_TRANS_LOC)) {
       /* Calculate these for the 'location' vector, and use location curves. */
       pose_slide_apply_vec3(pso, &pfl, pchan->loc, "location");
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_SCALE) && (pchan->flag & POSE_SCALE)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_SCALE) && (pfl.transform_flag & ACT_TRANS_SCALE)) {
       /* Calculate these for the 'scale' vector, and use scale curves. */
       pose_slide_apply_vec3(pso, &pfl, pchan->scale, "scale");
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_ROT) && (pchan->flag & POSE_ROT)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_ROT) && (pfl.transform_flag & ACT_TRANS_ROT)) {
       /* Everything depends on the rotation mode. */
       if (pchan->rotmode > 0) {
         /* Eulers - so calculate these for the 'eul' vector, and use euler_rotation curves. */
@@ -847,7 +858,9 @@ static void pose_slide_apply(bContext *C, tPoseSlideOp *pso)
       }
     }
 
-    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_BBONE_SHAPE) && (pchan->flag & POSE_BBONE_SHAPE)) {
+    if (ELEM(pso->channels, PS_TFM_ALL, PS_TFM_BBONE_SHAPE) &&
+        (pfl.transform_flag & ACT_TRANS_BBONE))
+    {
       /* Bbone properties - they all start a "bbone_" prefix. */
       pose_slide_apply_props(pso, &pfl, "bbone_");
     }
@@ -982,9 +995,8 @@ static wmOperatorStatus pose_slide_invoke_common(bContext *C, wmOperator *op, co
   /* For each link, add all its keyframes to the search tree. */
   for (tPChanFCurveLink &pfl : pso->pfLinks) {
     /* Do this for each F-Curve. */
-    for (LinkData &ld : pfl.fcurves) {
+    for (FCurve *fcu : pfl.fcurves) {
       AnimData *adt = pfl.ob->adt;
-      FCurve *fcu = static_cast<FCurve *>(ld.data);
       fcurve_to_keylist(adt, fcu, pso->keylist, 0, {-FLT_MAX, FLT_MAX}, adt != nullptr);
     }
   }
@@ -1706,8 +1718,7 @@ static void propagate_curve_values(ListBaseT<tPChanFCurveLink> *pflinks,
   using namespace blender::animrig;
   const KeyframeSettings settings = get_keyframe_settings(true);
   for (tPChanFCurveLink &pfl : *pflinks) {
-    for (LinkData &ld : pfl.fcurves) {
-      FCurve *fcu = static_cast<FCurve *>(ld.data);
+    for (FCurve *fcu : pfl.fcurves) {
       if (!fcu->bezt) {
         continue;
       }
@@ -1724,8 +1735,7 @@ static float find_next_key(ListBaseT<tPChanFCurveLink> *pflinks, const float sta
 {
   float target_frame = FLT_MAX;
   for (tPChanFCurveLink &pfl : *pflinks) {
-    for (LinkData &ld : pfl.fcurves) {
-      FCurve *fcu = static_cast<FCurve *>(ld.data);
+    for (const FCurve *fcu : pfl.fcurves) {
       if (!fcu->bezt) {
         continue;
       }
@@ -1747,8 +1757,7 @@ static float find_last_key(ListBaseT<tPChanFCurveLink> *pflinks)
 {
   float target_frame = FLT_MIN;
   for (tPChanFCurveLink &pfl : *pflinks) {
-    for (LinkData &ld : pfl.fcurves) {
-      const FCurve *fcu = static_cast<const FCurve *>(ld.data);
+    for (const FCurve *fcu : pfl.fcurves) {
       if (!fcu->bezt) {
         continue;
       }
@@ -1778,8 +1787,7 @@ static void get_keyed_frames_in_range(ListBaseT<tPChanFCurveLink> *pflinks,
 {
   AnimKeylist *keylist = ED_keylist_create();
   for (tPChanFCurveLink &pfl : *pflinks) {
-    for (LinkData &ld : pfl.fcurves) {
-      FCurve *fcu = static_cast<FCurve *>(ld.data);
+    for (FCurve *fcu : pfl.fcurves) {
       fcurve_to_keylist(nullptr, fcu, keylist, 0, {start_frame, end_frame}, false);
     }
   }
@@ -1802,8 +1810,7 @@ static void get_selected_frames(ListBaseT<tPChanFCurveLink> *pflinks,
 {
   AnimKeylist *keylist = ED_keylist_create();
   for (tPChanFCurveLink &pfl : *pflinks) {
-    for (LinkData &ld : pfl.fcurves) {
-      FCurve *fcu = static_cast<FCurve *>(ld.data);
+    for (FCurve *fcu : pfl.fcurves) {
       fcurve_to_keylist(nullptr, fcu, keylist, 0, {-FLT_MAX, FLT_MAX}, false);
     }
   }
@@ -1822,6 +1829,7 @@ static void get_selected_frames(ListBaseT<tPChanFCurveLink> *pflinks,
 
 static wmOperatorStatus pose_propagate_exec(bContext *C, wmOperator *op)
 {
+  const Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
@@ -1894,7 +1902,7 @@ static wmOperatorStatus pose_propagate_exec(bContext *C, wmOperator *op)
   poseAnim_mapping_free(&pflinks);
 
   /* Updates + notifiers. */
-  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
+  FOREACH_OBJECT_IN_MODE_BEGIN (bmain, scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
     poseAnim_mapping_refresh(C, scene, ob);
   }
   FOREACH_OBJECT_IN_MODE_END;

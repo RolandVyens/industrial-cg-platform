@@ -189,7 +189,7 @@ class Context : public compositor::Context {
         float *data = MEM_new_array_uninitialized<float>(
             4 * size_t(render_result->rectx) * size_t(render_result->recty), __func__);
         IMB_assign_float_buffer(image_buffer, data, IB_TAKE_OWNERSHIP);
-        std::memcpy(image_buffer->float_buffer.data,
+        std::memcpy(image_buffer->float_data_for_write(),
                     result.cpu_data().data(),
                     render_result->rectx * render_result->recty * 4 * sizeof(float));
       }
@@ -227,7 +227,7 @@ class Context : public compositor::Context {
     BLI_thread_lock(LOCK_DRAW_IMAGE);
 
     void *lock;
-    ImBuf *image_buffer = BKE_image_acquire_ibuf(image, &image_user, &lock);
+    ImBuf *image_buffer = BKE_image_acquire_ibuf_gpu(image, &image_user, &lock);
 
     const int2 size = viewer_result.is_single_value() ? this->get_render_size() :
                                                         viewer_result.domain().data_size;
@@ -242,14 +242,12 @@ class Context : public compositor::Context {
       image_buffer->y = size.y;
     }
 
-    /* Allocate a float buffer if it does not exist. */
-    if (!image_buffer->float_buffer.data) {
-      IMB_alloc_float_pixels(image_buffer, 4, false);
-    }
-
-    /* Allocate a GPU texture if using GPU and no texture exists or one exists but with a different
-     * format. */
     if (this->use_gpu()) {
+      /* If using GPU, free any potential previous CPU data. */
+      IMB_free_float_pixels(image_buffer);
+
+      /* Allocate a GPU texture if using GPU and no texture exists or one exists but with a
+       * different format. */
       if (!image_buffer->gpu.texture ||
           GPU_texture_format(image_buffer->gpu.texture) != viewer_result.get_gpu_texture_format())
       {
@@ -262,6 +260,11 @@ class Context : public compositor::Context {
     else {
       /* If not using GPU, free any potential previous GPU data. */
       IMB_free_gpu_textures(image_buffer);
+
+      /* Allocate float buffer if not using GPU and no float buffer exists. */
+      if (!image_buffer->float_data()) {
+        IMB_alloc_float_pixels(image_buffer, 4, false);
+      }
     }
 
     if (this->use_gpu()) {
@@ -273,24 +276,19 @@ class Context : public compositor::Context {
       else {
         GPU_texture_copy(image_buffer->gpu.texture, viewer_result);
       }
-
-      GPU_memory_barrier(GPU_BARRIER_TEXTURE_UPDATE);
-      float *output_buffer = static_cast<float *>(
-          GPU_texture_read(image_buffer->gpu.texture, GPU_DATA_FLOAT, 0));
-      IMB_assign_float_buffer(image_buffer, output_buffer, IB_TAKE_OWNERSHIP);
+      image_buffer->userflags |= IB_HOST_BUFFER_INVALID;
     }
     else {
       if (viewer_result.is_single_value()) {
         IMB_rectfill(image_buffer, viewer_result.get_single_value<compositor::Color>());
       }
       else {
-        std::memcpy(image_buffer->float_buffer.data,
+        std::memcpy(image_buffer->float_data_for_write(),
                     viewer_result.cpu_data().data(),
                     size.x * size.y * 4 * sizeof(float));
       }
+      image_buffer->userflags |= IB_DISPLAY_BUFFER_INVALID;
     }
-
-    image_buffer->userflags |= IB_DISPLAY_BUFFER_INVALID;
 
     if (!viewer_result.is_single_value()) {
       image_buffer->flags |= IB_has_display_window;
@@ -435,7 +433,7 @@ class Context : public compositor::Context {
       return this->get_invalid_pass();
     }
 
-    if (!render_pass || !render_pass->ibuf || !render_pass->ibuf->float_buffer.data) {
+    if (!render_pass || !render_pass->ibuf || !render_pass->ibuf->float_data()) {
       return this->get_invalid_pass();
     }
 
@@ -452,7 +450,7 @@ class Context : public compositor::Context {
     else {
       /* Don't assume render will keep pass data stored, add our own reference. */
       IMB_refImBuf(render_pass->ibuf);
-      pass_data.wrap_external(render_pass->ibuf->float_buffer.data,
+      pass_data.wrap_external(render_pass->ibuf->float_data_for_write(),
                               int2(render_pass->ibuf->x, render_pass->ibuf->y));
       cached_cpu_passes_.append(render_pass->ibuf);
     }
@@ -470,7 +468,7 @@ class Context : public compositor::Context {
     }
 
     /* We assume the given pass is a Cryptomatte pass and retrieve its layer name. If it wasn't a
-     * Cryptomatte pass, the checks below will fail anyways. */
+     * Cryptomatte pass, the checks below will fail anyway. */
     const std::string combined_pass_name = std::string(view_layer->name) + "." + pass_name;
     StringRef cryptomatte_layer_name = bke::cryptomatte::BKE_cryptomatte_extract_layer_name(
         combined_pass_name);
@@ -581,7 +579,7 @@ class Context : public compositor::Context {
   {
     switch (input_data_.scene->r.compositor_precision) {
       case SCE_COMPOSITOR_PRECISION_AUTO:
-        /* Auto uses full precision for final renders and half procession otherwise. */
+        /* Auto uses full precision for final renders and half precision otherwise. */
         if (this->render_context()) {
           return compositor::ResultPrecision::Full;
         }
@@ -644,12 +642,15 @@ class Context : public compositor::Context {
 
     /* Set the reference count for the outputs, only the first color output is actually needed,
      * while the rest are ignored. */
+    const bool is_group_output_needed = flag_is_set(needed_outputs,
+                                                    NodeGroupOutputTypes::GroupOutputNode);
     node_group.ensure_interface_cache();
     for (const bNodeTreeInterfaceSocket *output_socket : node_group.interface_outputs()) {
-      const bool is_fisrt_output = output_socket == node_group.interface_outputs().first();
+      const bool is_first_output = output_socket == node_group.interface_outputs().first();
       Result &output_result = node_group_operation.get_result(output_socket->identifier);
       const bool is_color = output_result.type() == ResultType::Color;
-      output_result.set_reference_count(is_fisrt_output && is_color ? 1 : 0);
+      const bool is_needed = is_group_output_needed && is_first_output && is_color;
+      output_result.set_reference_count(is_needed ? 1 : 0);
     }
 
     /* Map the inputs to the operation. */

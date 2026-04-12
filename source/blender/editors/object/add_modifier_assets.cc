@@ -209,7 +209,14 @@ static void root_catalogs_draw(const bContext *C, Menu *menu)
     if (ELEM(object->type, OB_MESH, OB_CURVES_LEGACY, OB_FONT, OB_SURF, OB_LATTICE)) {
       menus.add_new("Edit");
     }
-    if (ELEM(object->type, OB_MESH, OB_CURVES_LEGACY, OB_FONT, OB_SURF, OB_VOLUME)) {
+    if (ELEM(object->type,
+             OB_MESH,
+             OB_CURVES_LEGACY,
+             OB_FONT,
+             OB_SURF,
+             OB_VOLUME,
+             OB_GREASE_PENCIL))
+    {
       menus.add_new("Generate");
     }
     if (ELEM(object->type, OB_MESH, OB_CURVES_LEGACY, OB_FONT, OB_SURF, OB_LATTICE, OB_VOLUME)) {
@@ -259,7 +266,7 @@ static bNodeTree *get_asset_or_local_node_group(const bContext &C,
 static bNodeTree *get_node_group(const bContext &C, PointerRNA &ptr, ReportList *reports)
 {
   bNodeTree *node_group = get_asset_or_local_node_group(C, ptr, reports);
-  if (!node_group) {
+  if (!node_group || ID_MISSING(node_group)) {
     return nullptr;
   }
   if (node_group->type != NTREE_GEOMETRY) {

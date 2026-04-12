@@ -46,7 +46,6 @@ DeviceScene::DeviceScene(Device *device)
       light_tree_nodes(device, "light_tree_nodes", MEM_GLOBAL),
       light_tree_emitters(device, "light_tree_emitters", MEM_GLOBAL),
       light_to_tree(device, "light_to_tree", MEM_GLOBAL),
-      object_to_tree(device, "object_to_tree", MEM_GLOBAL),
       object_lookup_offset(device, "object_lookup_offset", MEM_GLOBAL),
       triangle_to_tree(device, "triangle_to_tree", MEM_GLOBAL),
       particles(device, "particles", MEM_GLOBAL),
@@ -58,7 +57,11 @@ DeviceScene::DeviceScene(Device *device)
       volume_tree_nodes(device, "volume_tree_nodes", MEM_GLOBAL),
       volume_tree_roots(device, "volume_tree_roots", MEM_GLOBAL),
       volume_tree_root_ids(device, "volume_tree_root_ids", MEM_GLOBAL),
-      volume_step_size(device, "volume_step_size", MEM_GLOBAL)
+      volume_step_size(device, "volume_step_size", MEM_GLOBAL),
+      image_textures(device, "image_textures", MEM_GLOBAL),
+      image_texture_tile_descriptors(device, "image_texture_tile_descriptors", MEM_GLOBAL),
+      image_texture_tile_request_mask(device, "image_texture_tile_request_mask", MEM_GLOBAL),
+      image_texture_udims(device, "image_texture_udims", MEM_GLOBAL)
 {
   memset((void *)&data, 0, sizeof(data));
 }

@@ -39,13 +39,22 @@ bool IMB_save_image(ImBuf *ibuf, const char *filepath, const int flags)
     return false;
   }
 
+  if (flags & IB_mem) {
+    BLI_assert((type->capability_write & eImFileTypeCapability::Memory) !=
+               eImFileTypeCapability::Zero);
+  }
+  else {
+    BLI_assert((type->capability_write & eImFileTypeCapability::File) !=
+               eImFileTypeCapability::Zero);
+  }
+
   /* If writing byte image from float buffer, create a byte buffer for writing.
    *
    * For color managed image writing, IMB_colormanagement_imbuf_for_write should
    * have already created this byte buffer. This is a basic fallback for other
    * cases where we do not have a specific desired output colorspace. */
   if (!(type->flag & IM_FTYPE_FLOAT)) {
-    if (ibuf->byte_buffer.data == nullptr && ibuf->float_buffer.data) {
+    if (ibuf->byte_data() == nullptr && ibuf->float_data()) {
       ibuf->byte_buffer.colorspace = colormanage_colorspace_get_roled(COLOR_ROLE_DEFAULT_BYTE);
       IMB_byte_from_float(ibuf);
     }

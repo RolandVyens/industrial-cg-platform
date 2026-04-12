@@ -7,7 +7,10 @@
 
 #include "BLI_hash.h"
 
+#include "RNA_access.hh"
 #include "RNA_prototypes.hh"
+
+#include "BKE_context.hh"
 
 #include "UI_interface_layout.hh"
 #include "UI_resources.hh"
@@ -18,8 +21,8 @@ namespace nodes::node_shader_output_aov_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Color>("Color").default_value({0.0f, 0.0f, 0.0f, 1.0f});
-  b.add_input<decl::Float>("Value").default_value(0.0f).min(0.0f).max(1.0f);
+  b.add_input<decl::Color>("Color"_ustr).default_value({0.0f, 0.0f, 0.0f, 1.0f});
+  b.add_input<decl::Float>("Value"_ustr).default_value(0.0f).min(0.0f).max(1.0f);
 }
 
 static BIFIconID aov_icon(const ViewLayer *view_layer, PointerRNA *ptr)
@@ -96,7 +99,7 @@ void register_node_type_sh_output_aov()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeOutputAOV", SH_NODE_OUTPUT_AOV);
+  sh_node_type_base(&ntype, "ShaderNodeOutputAOV"_ustr, SH_NODE_OUTPUT_AOV);
   ntype.ui_name = "AOV Output";
   ntype.ui_description =
       "Arbitrary Output Variables.\nProvide custom render passes for arbitrary shader node "

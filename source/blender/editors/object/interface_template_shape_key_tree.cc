@@ -23,6 +23,7 @@
 
 #include "DEG_depsgraph.hh"
 
+#include "DEG_depsgraph_build.hh"
 #include "DNA_key_types.h"
 
 #include "WM_api.hh"
@@ -82,7 +83,6 @@ class ShapeKeyDragController : public ui::AbstractViewItemDragController {
                                                                  "Selected Key Blocks");
 
     selected_count = 0;
-
     for (const auto [index, kb] : drag_key_.key->block.enumerate()) {
       if (index == 0) {
         /* Prevent basis shape key from dragging. */
@@ -213,6 +213,7 @@ class ShapeKeyItem : public ui::AbstractTreeViewItem {
   {
     uiItemL_ex(&row, this->label_, ICON_SHAPEKEY_DATA, false, false);
     ui::Layout &sub = row.row(true);
+    sub.alignment_set(ui::LayoutAlign::Right);
     sub.use_property_decorate_set(false);
     PointerRNA shapekey_ptr = RNA_pointer_create_discrete(
         &shape_key_.key->id, RNA_ShapeKey, shape_key_.kb);
@@ -269,7 +270,9 @@ class ShapeKeyItem : public ui::AbstractTreeViewItem {
   {
     PointerRNA shapekey_ptr = RNA_pointer_create_discrete(
         &shape_key_.key->id, RNA_ShapeKey, shape_key_.kb);
-    RNA_string_set(&shapekey_ptr, "name", new_name.c_str());
+    PropertyRNA *prop = RNA_struct_find_property(&shapekey_ptr, "name");
+    RNA_property_string_set(&shapekey_ptr, prop, new_name.c_str());
+    RNA_property_update(&const_cast<bContext &>(C), &shapekey_ptr, prop);
     ED_undo_push(const_cast<bContext *>(&C), "Rename shape key");
     return true;
   }
@@ -284,6 +287,7 @@ class ShapeKeyItem : public ui::AbstractTreeViewItem {
     Main *bmain = CTX_data_main(C);
     BKE_object_shapekey_remove(bmain, shape_key_.object, shape_key_.kb);
     DEG_id_tag_update(&shape_key_.object->id, ID_RECALC_GEOMETRY);
+    DEG_relations_tag_update(CTX_data_main(C));
     WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, nullptr);
     ED_undo_grouped_push(C, "Delete Shape Key");
   }

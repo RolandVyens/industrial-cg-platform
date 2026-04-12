@@ -15,6 +15,7 @@
 
 #include <optional>
 
+#include "BLI_index_mask_fwd.hh"
 #include "BLI_math_vector_types.hh"
 #include "BLI_memory_counter_fwd.hh"
 #include "BLI_vector_set.hh"
@@ -35,8 +36,6 @@ struct BVHTreeFromMesh;
 struct MeshRuntime;
 class AttributeAccessor;
 class MutableAttributeAccessor;
-struct LooseVertCache;
-struct LooseEdgeCache;
 enum class MeshNormalDomain : int8_t;
 }  // namespace bke
 
@@ -402,6 +401,8 @@ struct Mesh {
   StringRefNull active_uv_map_name() const;
   /** The name of the default UV map (e.g. for rendering) attribute, if any. */
   StringRefNull default_uv_map_name() const;
+  /** The active UV map name, falling back to the default if no active map is set. */
+  StringRefNull active_or_default_uv_map_name() const;
 
   void uv_maps_active_set(StringRef name);
   void uv_maps_default_set(StringRef name);
@@ -458,15 +459,15 @@ struct Mesh {
   /**
    * Cached information about loose edges, calculated lazily when necessary.
    */
-  const bke::LooseEdgeCache &loose_edges() const;
+  const IndexMask &loose_edges() const;
   /**
    * Cached information about vertices that aren't used by any edges.
    */
-  const bke::LooseVertCache &loose_verts() const;
+  const IndexMask &loose_verts() const;
   /**
    * Cached information about vertices that aren't used by faces (but may be used by loose edges).
    */
-  const bke::LooseVertCache &verts_no_face() const;
+  const IndexMask &verts_no_face() const;
   /**
    * True if the mesh has no faces or edges "inside" of other faces. Those edges or faces would
    * reuse a subset of the vertices of a face. Knowing the mesh is "clean" or "good" can mean

@@ -10,7 +10,7 @@
 
 FRAGMENT_SHADER_CREATE_INFO(eevee_volume_occupancy_convert)
 
-#include "eevee_occupancy_lib.glsl"
+#include "eevee_occupancy_lib.bsl.hh"
 
 bool is_front_face_hit(float stored_hit_depth)
 {

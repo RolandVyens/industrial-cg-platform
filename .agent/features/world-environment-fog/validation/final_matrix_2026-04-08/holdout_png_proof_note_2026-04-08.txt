@@ -1,0 +1,15 @@
+﻿Holdout PNG Proof Note
+Date: 2026-04-08
+
+A direct holdout-image proof was attempted with:
+- holdout shader on a camera-facing plane in the fog build
+- Object.is_holdout on a camera-facing plane in the fog build
+- Object.is_holdout on the same setup in the installed March 26 release build
+
+Observed result:
+- The saved PNG combined output and average alpha remained effectively unchanged in all cases.
+
+Practical conclusion:
+- This does not currently look like a world-environment-fog-only regression.
+- The current CLI PNG path is not a reliable standalone proof vehicle for holdout compositing behavior.
+- For this close-out pass, camera-hit clipping is validated explicitly; holdout-specific compositing should be revisited later with a pass/compositor-focused validation path if needed.

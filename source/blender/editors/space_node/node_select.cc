@@ -1481,7 +1481,7 @@ static void node_find_update_fn(const bContext *C,
     const StringRef name = scope.add_value(node_find_create_node_label(ntree, *node));
     search.add(name, &scope.construct<Item>(Item{node, name}));
 
-    if (node->is_type("FunctionNodeInputString")) {
+    if (node->is_type("FunctionNodeInputString"_ustr)) {
       const auto *storage = static_cast<const NodeInputString *>(node->storage);
       const StringRef value_str = storage->string;
       if (!value_str.is_empty()) {

@@ -311,8 +311,7 @@ static bool sequencer_swap_inputs_poll(bContext *C)
   }
   Scene *scene = CTX_data_sequencer_scene(C);
   Strip *active_strip = seq::select_active_get(scene);
-
-  if (sequencer_effect_poll(C) && seq::effect_get_num_inputs(active_strip->type) == 2) {
+  if (active_strip && active_strip->effect_num_inputs_get() == 2) {
     return true;
   }
 
@@ -446,7 +445,7 @@ void sync_active_scene_and_time_with_scene_strip(bContext &C)
   /* Compute the scene time based on the scene strip. */
   const float frame_index = seq::give_frame_index(
                                 sequencer_scene, scene_strip, sequencer_scene->r.cfra) +
-                            active_scene->r.sfra;
+                            active_scene->r.sfra + scene_strip->anim_startofs;
   if (active_scene->r.flag & SCER_SHOW_SUBFRAME) {
     active_scene->r.cfra = int(frame_index);
     active_scene->r.subframe = frame_index - int(frame_index);
@@ -1607,18 +1606,18 @@ void SEQUENCER_OT_refresh_all(wmOperatorType *ot)
 /** \name Reassign Inputs Operator
  * \{ */
 
-StringRef effect_inputs_validate(const VectorSet<Strip *> &inputs, int num_inputs)
+const char *effect_inputs_validate(int have_inputs, int num_inputs)
 {
-  if (inputs.size() > 2) {
+  if (have_inputs > 2) {
     return "Cannot apply effect to more than 2 strips with video content";
   }
-  if (num_inputs == 2 && inputs.size() != 2) {
+  if (num_inputs == 2 && have_inputs != 2) {
     return "Exactly 2 selected strips with video content are needed";
   }
-  if (num_inputs == 1 && inputs.size() != 1) {
+  if (num_inputs == 1 && have_inputs != 1) {
     return "Exactly one selected strip with video content is needed";
   }
-  return "";
+  return nullptr;
 }
 
 VectorSet<Strip *> strip_effect_get_new_inputs(const Scene *scene,
@@ -1657,7 +1656,7 @@ static wmOperatorStatus sequencer_reassign_inputs_exec(bContext *C, wmOperator *
 {
   Scene *scene = CTX_data_sequencer_scene(C);
   Strip *active_strip = seq::select_active_get(scene);
-  const int num_inputs = seq::effect_get_num_inputs(active_strip->type);
+  const int num_inputs = active_strip->effect_num_inputs_get();
 
   if (num_inputs == 0) {
     BKE_report(op->reports, RPT_ERROR, "Cannot reassign inputs: strip has no inputs");
@@ -1665,7 +1664,7 @@ static wmOperatorStatus sequencer_reassign_inputs_exec(bContext *C, wmOperator *
   }
 
   VectorSet<Strip *> inputs = strip_effect_get_new_inputs(scene, num_inputs, true);
-  StringRef error_msg = effect_inputs_validate(inputs, num_inputs);
+  StringRef error_msg = effect_inputs_validate(inputs.size(), num_inputs);
 
   if (!error_msg.is_empty()) {
     BKE_report(op->reports, RPT_ERROR, error_msg.data());
@@ -1739,7 +1738,7 @@ static wmOperatorStatus sequencer_swap_inputs_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  if (seq::effect_get_num_inputs(active_strip->type) != 2 || active_strip->input1 == nullptr ||
+  if (active_strip->effect_num_inputs_get() != 2 || active_strip->input1 == nullptr ||
       active_strip->input2 == nullptr)
   {
     BKE_report(op->reports, RPT_ERROR, "Strip needs two inputs to swap");
@@ -2050,7 +2049,7 @@ static wmOperatorStatus sequencer_box_blade_exec(bContext *C, wmOperator *op)
   Editing *ed = seq::editing_get(scene);
   ListBaseT<SeqTimelineChannel> *channels = seq::channels_displayed_get(ed);
 
-  scene->ed->runtime.flag &= ~SEQ_SHOW_TRANSFORM_PREVIEW;
+  scene->ed->runtime->show_transform_preview = false;
 
   View2D *v2d = ui::view2d_fromcontext(C);
   rctf box_rect;
@@ -2182,10 +2181,10 @@ static wmOperatorStatus sequencer_box_blade_exec(bContext *C, wmOperator *op)
           (strip->left_handle() > rect_frames[0]))
       {
         if (ignore_connections) {
-          seq::query_strip_effect_chain(scene, strip, &ed->seqbase, to_offset);
+          seq::query_strip_effect_chain(strip, &ed->seqbase, to_offset);
         }
         else {
-          seq::query_strip_connected_and_effect_chain(scene, strip, &ed->seqbase, to_offset);
+          seq::query_strip_connected_and_effect_chain(strip, &ed->seqbase, to_offset);
         }
       }
     }
@@ -2225,13 +2224,13 @@ static wmOperatorStatus sequencer_box_blade_modal(bContext *C,
 
   View2D *v2d = ui::view2d_fromcontext(C);
   int mouse_frame = ui::view2d_region_to_view_x(v2d, event->mval[0]);
-  scene->ed->runtime.flag |= SEQ_SHOW_TRANSFORM_PREVIEW;
-  scene->ed->runtime.transform_preview_frame = mouse_frame;
+  scene->ed->runtime->show_transform_preview = true;
+  scene->ed->runtime->transform_preview_frame = mouse_frame;
 
   WM_event_add_notifier(C, NC_SCENE | ND_SEQUENCER, scene);
   wmOperatorStatus gesture_return = WM_gesture_box_modal(C, op, event);
   if (OPERATOR_CANCELLED == gesture_return) {
-    scene->ed->runtime.flag &= ~SEQ_SHOW_TRANSFORM_PREVIEW;
+    scene->ed->runtime->show_transform_preview = false;
   }
 
   wmGesture *gesture = static_cast<wmGesture *>(op->customdata);
@@ -2241,9 +2240,9 @@ static wmOperatorStatus sequencer_box_blade_modal(bContext *C,
     rctf box_rect;
     WM_operator_properties_border_to_rctf(op, &box_rect);
     ui::view2d_region_to_view_rctf(v2d, &box_rect, &box_rect);
-    scene->ed->runtime.transform_preview_frame = (mouse_frame == int(box_rect.xmin)) ?
-                                                     int(box_rect.xmax) :
-                                                     int(box_rect.xmin);
+    scene->ed->runtime->transform_preview_frame = (mouse_frame == int(box_rect.xmin)) ?
+                                                      int(box_rect.xmax) :
+                                                      int(box_rect.xmin);
   }
 
   return gesture_return;
@@ -2840,7 +2839,7 @@ static wmOperatorStatus sequencer_meta_make_exec(bContext *C, wmOperator * /*op*
   VectorSet<Strip *> strips_to_move;
   strips_to_move.add_multiple(selected);
   seq::iterator_set_expand(
-      scene, active_seqbase, strips_to_move, seq::query_strip_connected_and_effect_chain);
+      active_seqbase, strips_to_move, seq::query_strip_connected_and_effect_chain);
 
   for (Strip *strip : strips_to_move) {
     seq::relations_invalidate_cache(scene, strip);
@@ -3125,12 +3124,10 @@ static wmOperatorStatus sequencer_swap_exec(bContext *C, wmOperator *op)
   if (strip) {
 
     /* Disallow effect strips. */
-    if (seq::effect_get_num_inputs(strip->type) >= 1 &&
-        (strip->effectdata || strip->input1 || strip->input2))
-    {
+    if (strip->is_effect_with_inputs() && (strip->effectdata || strip->input1 || strip->input2)) {
       return OPERATOR_CANCELLED;
     }
-    if ((seq::effect_get_num_inputs(active_strip->type) >= 1) &&
+    if (active_strip->is_effect_with_inputs() &&
         (active_strip->effectdata || active_strip->input1 || active_strip->input2))
     {
       return OPERATOR_CANCELLED;
@@ -3393,6 +3390,7 @@ const EnumPropertyItem sequencer_prop_effect_types[] = {
     {STRIP_TYPE_GAUSSIAN_BLUR, "GAUSSIAN_BLUR", 0, "Gaussian Blur", "Soften details along axes"},
     {STRIP_TYPE_TEXT, "TEXT", 0, "Text", "Add a simple text strip"},
     {STRIP_TYPE_COLORMIX, "COLORMIX", 0, "Color Mix", "Combine two strips using blend modes"},
+    {STRIP_TYPE_COMPOSITOR, "COMPOSITOR", 0, "Compositor", "Compositor based effect"},
     {0, nullptr, 0, nullptr, nullptr},
 };
 
@@ -3400,16 +3398,20 @@ static wmOperatorStatus sequencer_change_effect_type_exec(bContext *C, wmOperato
 {
   Scene *scene = CTX_data_sequencer_scene(C);
   Strip *strip = seq::select_active_get(scene);
-  const int old_type = strip->type;
-  const int new_type = RNA_enum_get(op->ptr, "type");
+  const StripType old_type = StripType(strip->type);
+  const int have_inputs = strip->effect_num_inputs_get();
+  const StripType new_type = StripType(RNA_enum_get(op->ptr, "type"));
 
   if (!strip->is_effect()) {
     return OPERATOR_CANCELLED;
   }
 
-  if (seq::effect_get_num_inputs(strip->type) != seq::effect_get_num_inputs(new_type)) {
-    BKE_report(op->reports, RPT_ERROR, "New effect takes less or more inputs");
-    return OPERATOR_CANCELLED;
+  /* Note: allow changing to compositor effect; it can have any number of inputs. */
+  if (new_type != STRIP_TYPE_COMPOSITOR) {
+    if (have_inputs != seq::effect_type_get_min_num_inputs(new_type)) {
+      BKE_report(op->reports, RPT_ERROR, "New effect takes less or more inputs");
+      return OPERATOR_CANCELLED;
+    }
   }
 
   /* Free previous effect. */

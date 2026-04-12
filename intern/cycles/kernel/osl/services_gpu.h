@@ -241,7 +241,7 @@ ccl_device_extern bool osl_get_attribute(ccl_private ShaderGlobals *sg,
   KernelGlobals kg = nullptr;
   ccl_private ShaderData *const sd = sg->sd;
 
-  if (sd == nullptr) {
+  if (sd->shader == SHADER_NONE) {
     /* Camera shader. */
     return osl_shared_get_camera_attribute(kg, sg, name, type, derivatives, res);
   }
@@ -260,6 +260,8 @@ ccl_device_extern bool osl_get_attribute(ccl_private ShaderGlobals *sg,
   return osl_shared_get_object_standard_attribute(kg, sg, sd, name, type, derivatives, res);
 }
 
+/* Renderer services */
+
 ccl_device_extern bool rend_get_userdata(RSDeviceString name,
                                          ccl_private void *data,
                                          int data_size,
@@ -268,6 +270,8 @@ ccl_device_extern bool rend_get_userdata(RSDeviceString name,
 {
   if (type.basetype == TypeDesc::PTR) {
     kernel_assert(data_size == sizeof(void *));
+    (void)data_size;
+
     ccl_private void **ptr_data = (ccl_private void **)data;
 
     if (name.val == DeviceStrings::u_colorsystem) {
@@ -283,53 +287,25 @@ ccl_device_extern bool rend_get_userdata(RSDeviceString name,
   return false;
 }
 
-ccl_device_extern bool rs_texture(ccl_private ShaderGlobals * /*sg*/,
+ccl_device_extern bool rs_texture(ccl_private ShaderGlobals *sg,
                                   RSDeviceString /*filename*/,
                                   ccl_private void *texture_handle,
                                   ccl_private void * /*texture_thread_info*/,
-                                  ccl_private OSLTextureOptions * /*opt*/,
+                                  ccl_private OSLTextureOptions *opt,
                                   const float s,
                                   const float t,
-                                  const float /*dsdx*/,
-                                  const float /*dtdx*/,
-                                  const float /*dsdy*/,
-                                  const float /*dtdy*/,
+                                  const float dsdx,
+                                  const float dtdx,
+                                  const float dsdy,
+                                  const float dtdy,
                                   const int nchannels,
                                   ccl_private float *result,
                                   ccl_private float * /*dresultds*/,
                                   ccl_private float * /*dresultdt*/,
                                   ccl_private void * /*errormessage*/)
 {
-  const unsigned int type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
-  const unsigned int slot = OSL_TEXTURE_HANDLE_SLOT(texture_handle);
-
-  switch (type) {
-    case OSL_TEXTURE_HANDLE_TYPE_SVM: {
-      const float4 rgba = kernel_image_interp(nullptr, slot, s, 1.0f - t);
-      if (nchannels > 0) {
-        result[0] = rgba.x;
-      }
-      if (nchannels > 1) {
-        result[1] = rgba.y;
-      }
-      if (nchannels > 2) {
-        result[2] = rgba.z;
-      }
-      if (nchannels > 3) {
-        result[3] = rgba.w;
-      }
-      return true;
-    }
-    case OSL_TEXTURE_HANDLE_TYPE_IES: {
-      if (nchannels > 0) {
-        result[0] = kernel_ies_interp(nullptr, slot, s, t);
-      }
-      return true;
-    }
-    default: {
-      return false;
-    }
-  }
+  return osl_shared_texture(
+      nullptr, sg, texture_handle, opt, s, t, dsdx, dtdx, dsdy, dtdy, nchannels, result);
 }
 
 ccl_device_extern bool rs_texture3d(ccl_private ShaderGlobals *sg,
@@ -338,9 +314,9 @@ ccl_device_extern bool rs_texture3d(ccl_private ShaderGlobals *sg,
                                     ccl_private void * /*texture_thread_info*/,
                                     ccl_private OSLTextureOptions * /*opt*/,
                                     const ccl_private float3 *P,
-                                    const ccl_private float3 * /*dPdx*/,
-                                    const ccl_private float3 * /*dPdy*/,
-                                    const ccl_private float3 * /*dPdz*/,
+                                    const ccl_private float3 *dPdx,
+                                    const ccl_private float3 *dPdy,
+                                    const ccl_private float3 *dPdz,
                                     const int nchannels,
                                     ccl_private float *result,
                                     ccl_private float * /*dresultds*/,
@@ -348,77 +324,55 @@ ccl_device_extern bool rs_texture3d(ccl_private ShaderGlobals *sg,
                                     ccl_private float * /*dresultdr*/,
                                     ccl_private void * /*errormessage*/)
 {
-  const unsigned int type = OSL_TEXTURE_HANDLE_TYPE(texture_handle);
-  const unsigned int slot = OSL_TEXTURE_HANDLE_SLOT(texture_handle);
-
-  switch (type) {
-    case OSL_TEXTURE_HANDLE_TYPE_SVM: {
-      const float4 rgba = kernel_image_interp_3d(
-          nullptr, sg->sd, slot, *P, INTERPOLATION_NONE, false);
-      if (nchannels > 0) {
-        result[0] = rgba.x;
-      }
-      if (nchannels > 1) {
-        result[1] = rgba.y;
-      }
-      if (nchannels > 2) {
-        result[2] = rgba.z;
-      }
-      if (nchannels > 3) {
-        result[3] = rgba.w;
-      }
-      return true;
-    }
-    default: {
-      return false;
-    }
-  }
+  return osl_shared_texture3d(
+      nullptr, sg, texture_handle, *P, *dPdx, *dPdy, *dPdz, nchannels, result);
 }
 
-ccl_device_extern bool rs_environment(ccl_private ShaderGlobals * /*sg*/,
+ccl_device_extern bool rs_environment(ccl_private ShaderGlobals *sg,
                                       RSDeviceString /*filename*/,
-                                      ccl_private void * /*texture_handle */,
+                                      ccl_private void *texture_handle,
                                       ccl_private void * /*texture_thread_info*/,
                                       ccl_private OSLTextureOptions * /*opt*/,
-                                      const ccl_private float3 * /*R*/,
-                                      const ccl_private float3 * /*dRdx*/,
-                                      const ccl_private float3 * /*dRdy*/,
+                                      const ccl_private float3 *R,
+                                      const ccl_private float3 *dRdx,
+                                      const ccl_private float3 *dRdy,
                                       const int nchannels,
                                       ccl_private float *result,
                                       ccl_private float * /*dresultds*/,
                                       ccl_private float * /*dresultdt*/,
                                       ccl_private void * /*errormessage*/)
 {
-  rgba_to_nchannels(IMAGE_MISSING_RGBA, nchannels, result);
-  return false;
+  return osl_shared_environment(nullptr, sg, texture_handle, *R, *dRdx, *dRdy, nchannels, result);
 }
 
 ccl_device_extern bool rs_get_texture_info(ccl_private ShaderGlobals * /*sg*/,
                                            RSDeviceString /*filename*/,
-                                           ccl_private void * /*texture_handle*/,
+                                           ccl_private void *texture_handle,
                                            ccl_private void * /*texture_thread_info*/,
                                            int /*subimage*/,
-                                           RSDeviceString /*dataname*/,
-                                           TypeDesc /* datatype*/,
-                                           ccl_private void * /*data*/,
+                                           RSDeviceString dataname,
+                                           TypeDesc datatype,
+                                           ccl_private void *data,
                                            ccl_private void * /*errormessage*/)
 {
-  return false;
+  return osl_shared_get_texture_info(
+      nullptr, texture_handle, zero_float2(), false, dataname.val, datatype, data);
 }
 
 ccl_device_extern bool rs_get_texture_info_st(ccl_private ShaderGlobals * /*sg*/,
                                               RSDeviceString /*filename*/,
-                                              ccl_private void * /*texture_handle*/,
-                                              const float /*s*/,
-                                              const float /*t*/,
+                                              ccl_private void *texture_handle,
+                                              const float s,
+                                              const float t,
                                               ccl_private void * /*texture_thread_info*/,
                                               int /*subimage*/,
-                                              RSDeviceString /*dataname*/,
-                                              TypeDesc /*datatype*/,
-                                              ccl_private void * /*data*/,
+                                              RSDeviceString dataname,
+                                              TypeDesc datatype,
+                                              ccl_private void *data,
                                               ccl_private void * /*errormessage*/)
 {
-  return false;
+  return osl_shared_get_texture_info(
+      nullptr, texture_handle, make_float2(s, t), true, dataname.val, datatype, data);
 }
 
 ccl_device_extern int rs_pointcloud_search(ccl_private ShaderGlobals * /*sg*/,

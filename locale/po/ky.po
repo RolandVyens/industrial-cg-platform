@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-07-23 15:20+0000\n"
 "Last-Translator: Anonymous <noreply@weblate.org>\n"
 "Language-Team: Kyrgyz <https://translate.blender.org/projects/blender-ui/ui/ky/>\n"
@@ -442,34 +442,6 @@ msgid "View"
 msgstr "Көрүнүш"
 
 
-msgid "Mix"
-msgstr "Аралаш"
-
-
-msgid "Darken"
-msgstr "Караңгы кылуу"
-
-
-msgid "Lighten"
-msgstr "Жарык кылуу"
-
-
-msgid "Screen"
-msgstr "Экран"
-
-
-msgid "Overlay"
-msgstr "Үстүнөн коюу"
-
-
-msgid "Difference"
-msgstr "Айырма"
-
-
-msgid "Divide"
-msgstr "Бөлүү"
-
-
 msgid "RGB"
 msgstr "RGB"
 
@@ -868,6 +840,10 @@ msgid "Blend Mode"
 msgstr "Аралаштыруу режими"
 
 
+msgid "Divide"
+msgstr "Бөлүү"
+
+
 msgid "Red"
 msgstr "Кызыл"
 
@@ -1113,6 +1089,10 @@ msgid "Display Settings"
 msgstr "Көрсөтүү ырастоолору"
 
 
+msgid "Restore Frame"
+msgstr "Кадрды калыбына келтирүү"
+
+
 msgid "Sync Mode"
 msgstr "Синхрондоштуруу режими"
 
@@ -1286,6 +1266,30 @@ msgid "Text Input"
 msgstr "Текстти киргизүү"
 
 
+msgid "Mix"
+msgstr "Аралаш"
+
+
+msgid "Difference"
+msgstr "Айырма"
+
+
+msgid "Darken"
+msgstr "Караңгы кылуу"
+
+
+msgid "Lighten"
+msgstr "Жарык кылуу"
+
+
+msgid "Screen"
+msgstr "Экран"
+
+
+msgid "Overlay"
+msgstr "Үстүнөн коюу"
+
+
 msgid "Circles"
 msgstr "Тегеректер"
 
@@ -1298,20 +1302,20 @@ msgid "Mirror"
 msgstr "Чагылтуу"
 
 
-msgid "Tracking"
-msgstr "Трекинг"
-
-
-msgid "Apply"
-msgstr "Колдонуу"
-
-
 msgid "Import"
 msgstr "Импорттоо"
 
 
 msgid "UV"
 msgstr "UV"
+
+
+msgid "Apply"
+msgstr "Колдонуу"
+
+
+msgid "Tracking"
+msgstr "Трекинг"
 
 
 msgctxt "MovieClip"
@@ -2226,10 +2230,6 @@ msgstr "Толук көчүрмө"
 msgctxt "Operator"
 msgid "Cancel Animation"
 msgstr "Анимацияны жокко чыгаруу"
-
-
-msgid "Restore Frame"
-msgstr "Кадрды калыбына келтирүү"
 
 
 msgctxt "Operator"
@@ -3168,13 +3168,13 @@ msgstr "Астынан"
 
 
 msgctxt "Operator"
-msgid "Quit"
-msgstr "Чыгуу"
+msgid "Save Copy..."
+msgstr "Көчүрмөсүн сактоо..."
 
 
 msgctxt "Operator"
-msgid "Save Copy..."
-msgstr "Көчүрмөсүн сактоо..."
+msgid "Quit"
+msgstr "Чыгуу"
 
 
 msgctxt "Operator"
@@ -3313,10 +3313,6 @@ msgstr "Бет"
 
 msgid "%s: %s"
 msgstr "%s: %s"
-
-
-msgid "Value:"
-msgstr "Мааниси:"
 
 
 msgid "Hex"
@@ -3570,6 +3566,10 @@ msgstr "Файлга жол"
 
 msgid "File name"
 msgstr "Файл аты"
+
+
+msgid "Value:"
+msgstr "Мааниси:"
 
 
 msgid "<No ID>"

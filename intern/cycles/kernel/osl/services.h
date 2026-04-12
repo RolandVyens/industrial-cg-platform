@@ -18,6 +18,8 @@
 
 #include <OpenImageIO/unordered_map_concurrent.h>
 
+#include "util/concurrent_set.h"
+
 #include "scene/image.h"
 
 #include "kernel/osl/compat.h"
@@ -41,32 +43,22 @@ struct ThreadKernelGlobalsCPU;
  * These are stored in a concurrent hash map, because OSL can compile multiple
  * shaders in parallel.
  *
- * NOTE: The svm_slots array contains a compressed mapping of tile to svm_slot pairs
- * stored as follows: x:tile_a, y:svm_slot_a, z:tile_b, w:svm_slot_b etc. */
+ * NOTE: The svm_image_texture_ids array contains a compressed mapping of tile to
+ * svm_image_texture_ids pairs stored as follows: x:tile_a,
+ * y:svm_image_texture_ids_a, z:tile_b, w:svm_image_texture_ids_b etc. */
 
 struct OSLTextureHandle {
-  enum Type { OIIO, SVM, IES, BEVEL, AO };
+  OSLTextureHandle(const OSLTextureHandleType type, const int id = -1) : type(type), id(id) {}
 
-  OSLTextureHandle(Type type, const vector<int4> &svm_slots) : type(type), svm_slots(svm_slots) {}
+  OSLTextureHandle(const ImageHandle &handle) : id(handle.kernel_id()), handle(handle) {}
 
-  OSLTextureHandle(Type type = OIIO, const int svm_slot = -1)
-      : OSLTextureHandle(type, {make_int4(0, svm_slot, -1, -1)})
-  {
-  }
-
-  OSLTextureHandle(const ImageHandle &handle)
-      : type(SVM), svm_slots(handle.get_svm_slots()), handle(handle)
-  {
-  }
-
-  Type type;
-  vector<int4> svm_slots;
-  OSL::TextureSystem::TextureHandle *oiio_handle = nullptr;
-  ColorSpaceProcessor *processor = nullptr;
+  OSLTextureHandleType type = OSLTextureHandleType::IMAGE;
+  int id = -1;
   ImageHandle handle;
 };
 
 using OSLTextureHandleMap = OIIO::unordered_map_concurrent<OSLUStringHash, OSLTextureHandle>;
+using OSLTextureFilenameMap = concurrent_set<OSLUStringHash>;
 
 /* OSL Render Services
  *
@@ -74,7 +66,7 @@ using OSLTextureHandleMap = OIIO::unordered_map_concurrent<OSLUStringHash, OSLTe
 
 class OSLRenderServices : public OSL::RendererServices {
  public:
-  OSLRenderServices(OSL::TextureSystem *texture_system, const int device_type);
+  OSLRenderServices(const int device_type);
   ~OSLRenderServices() override;
 
   static void register_closures(OSL::ShadingSystem *ss);
@@ -190,6 +182,7 @@ class OSLRenderServices : public OSL::RendererServices {
                                                         const OSL::TextureOpt *options) override;
 
   bool good(OSL::TextureSystem::TextureHandle *texture_handle) override;
+  bool is_udim(OSL::TextureSystem::TextureHandle *texture_handle) override;
 
   bool texture(OSLUStringHash filename,
                OSL::TextureSystem::TextureHandle *texture_handle,
@@ -248,6 +241,18 @@ class OSLRenderServices : public OSL::RendererServices {
                         void *data,
                         OSLUStringHash *errormessage) override;
 
+  bool get_texture_info(OSLUStringHash filename,
+                        TextureHandle *texture_handle,
+                        float s,
+                        float t,
+                        TexturePerthread *texture_thread_info,
+                        OSL::ShaderGlobals *sg,
+                        const int subimage,
+                        OSLUStringHash dataname,
+                        const TypeDesc datatype,
+                        void *data,
+                        OSLUStringHash *errormessage) override;
+
   static bool get_attribute(ShaderGlobals *globals,
                             ShaderData *sd,
                             bool derivatives,
@@ -281,6 +286,13 @@ class OSLRenderServices : public OSL::RendererServices {
 
  private:
   int device_type_;
+
+  /* We don't support lookup by filename without a handle, which is required anyway
+   * for GPU, and simplifies the implementation on CPU. This keeps track of the
+   * ones we have seen to emit a warning only once. */
+  OSLTextureFilenameMap texture_filenames_seen_;
+
+  thread_mutex textures_mutex;
 };
 
 CCL_NAMESPACE_END

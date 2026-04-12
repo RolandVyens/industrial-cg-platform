@@ -29,6 +29,14 @@ float ior_from_F0(float F0)
   return (-f - 1.0f) / (f - 1.0f);
 }
 
+/* Given the transmittance through a slab at normal incidence, compute the transmittance at a
+ * certain incident angle, based on Beer-Lambert law. */
+float3 slab_transmittance_at_angle(float3 color, float cos_theta_i, float ior)
+{
+  const float inv_cos_theta_t = ior * inversesqrt(square(ior) - (1.0f - square(cos_theta_i)));
+  return pow(color, float3(inv_cos_theta_t));
+}
+
 [[node]]
 void node_bsdf_principled(float4 base_color,
                           float metallic,
@@ -132,11 +140,9 @@ void node_bsdf_principled(float4 base_color,
     weight *= max((1.0f - reflectance * coat_weight), 0.0f);
 
     if (!all(equal(coat_tint.rgb, float3(1.0f)))) {
-      float coat_neta = 1.0f / coat_ior;
-      float NT = sqrt_fast(1.0f - coat_neta * coat_neta * (1 - NV * NV));
       /* Tint lower layers. */
-      coat_tint.rgb = mix(
-          float3(1.0f), pow(coat_tint.rgb, float3(1.0f / NT)), saturate(coat_weight));
+      const float3 tint = slab_transmittance_at_angle(coat_tint.rgb, NV, coat_ior);
+      coat_tint.rgb = mix(float3(1.0f), tint, saturate(coat_weight));
     }
   }
   else {

@@ -91,8 +91,6 @@ void BKE_brush_init_curves_sculpt_settings(Brush *brush);
  */
 void BKE_brush_tag_unsaved_changes(Brush *brush);
 
-Brush *BKE_brush_first_search(Main *bmain, eObjectMode ob_mode);
-
 float2 BKE_brush_jitter_pos(const Paint &paint, const Brush &brush, const float2 &pos);
 void BKE_brush_randomize_texture_coords(Paint *paint, bool mask);
 
@@ -230,6 +228,10 @@ void BKE_brush_scale_size(int *r_brush_size,
  * (often presented to the user as a square) tip inside a specific paint mode.
  */
 bool BKE_brush_has_cube_tip(const Brush *brush, PaintMode paint_mode);
+
+namespace bke::brush {
+float normal_weight_get(const Brush &brush, bool invert);
+}
 
 /* debugging only */
 void BKE_brush_debug_print_state(Brush *br);

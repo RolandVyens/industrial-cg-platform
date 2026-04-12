@@ -21,6 +21,7 @@ set(INC_SYS
 
 set(SRC
   brush_asset_ops.cc
+  palette.cc
   paint_cursor.cc
   paint_curve.cc
   paint_curve_undo.cc
@@ -51,6 +52,7 @@ set(SRC
   grease_pencil/interpolate.cc
   grease_pencil/paint.cc
   grease_pencil/paint_common.cc
+  grease_pencil/paint_cursor.cc
   grease_pencil/sculpt_clone.cc
   grease_pencil/sculpt_grab.cc
   grease_pencil/sculpt_pinch.cc
@@ -74,6 +76,7 @@ set(SRC
   grease_pencil/weight_smear.cc
 
   mesh/paint_canvas.cc
+  mesh/paint_cursor.cc
   mesh/paint_hide.cc
   mesh/paint_image.cc
   mesh/paint_image_2d.cc
@@ -113,6 +116,7 @@ set(SRC
   mesh/sculpt_trim.cc
   mesh/sculpt_undo.cc
 
+  paint_cursor.hh
   paint_intern.hh
 
   curves/sculpt_intern.hh
@@ -164,6 +168,7 @@ set(SRC
   mesh/brushes/plane.cc
   mesh/brushes/relax.cc
   mesh/brushes/rotate.cc
+  mesh/brushes/scene_project.cc
   mesh/brushes/smooth.cc
   mesh/brushes/smooth_mask.cc
   mesh/brushes/snake_hook.cc

@@ -11,7 +11,7 @@
 
 COMPUTE_SHADER_CREATE_INFO(gpu_shader_test)
 
-#include "eevee_occupancy_lib.glsl"
+#include "eevee_occupancy_lib.bsl.hh"
 #include "gpu_shader_test_lib.glsl"
 
 #define TEST(a, b) if (true)

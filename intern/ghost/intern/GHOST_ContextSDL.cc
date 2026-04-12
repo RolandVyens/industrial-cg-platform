@@ -74,7 +74,7 @@ GHOST_TSuccess GHOST_ContextSDL::activateDrawingContext()
     return GHOST_kFailure;
   }
   active_context_ = this;
-  return SDL_GL_MakeCurrent(window_, context_) ? GHOST_kSuccess : GHOST_kFailure;
+  return (SDL_GL_MakeCurrent(window_, context_) == 0) ? GHOST_kSuccess : GHOST_kFailure;
 }
 
 GHOST_TSuccess GHOST_ContextSDL::releaseDrawingContext()
@@ -84,7 +84,7 @@ GHOST_TSuccess GHOST_ContextSDL::releaseDrawingContext()
   }
   active_context_ = nullptr;
   /* Untested, may not work. */
-  return SDL_GL_MakeCurrent(nullptr, nullptr) ? GHOST_kSuccess : GHOST_kFailure;
+  return (SDL_GL_MakeCurrent(nullptr, nullptr) == 0) ? GHOST_kSuccess : GHOST_kFailure;
 }
 
 GHOST_TSuccess GHOST_ContextSDL::initializeDrawingContext()
@@ -132,7 +132,7 @@ GHOST_TSuccess GHOST_ContextSDL::initializeDrawingContext()
     }
     s_sharedCount++;
 
-    success = (SDL_GL_MakeCurrent(window_, context_) < 0) ? GHOST_kFailure : GHOST_kSuccess;
+    success = (SDL_GL_MakeCurrent(window_, context_) == 0) ? GHOST_kSuccess : GHOST_kFailure;
 
     {
       const GHOST_TVSyncModes vsync = getVSync();

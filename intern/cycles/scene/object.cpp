@@ -19,6 +19,7 @@
 #include "scene/stats.h"
 #include "scene/volume.h"
 
+#include "util/hash.h"
 #include "util/log.h"
 #include "util/map.h"
 #include "util/murmurhash.h"
@@ -231,7 +232,7 @@ void Object::tag_update(Scene *scene)
     if (tfm_is_modified() || motion_is_modified()) {
       flag |= ObjectManager::TRANSFORM_MODIFIED;
       if (geometry->has_volume) {
-        scene->volume_manager->tag_update(this, flag);
+        scene->volume_manager->tag_update({this}, flag);
       }
     }
 
@@ -293,11 +294,11 @@ uint Object::visibility_for_tracing() const
   return SHADOW_CATCHER_OBJECT_VISIBILITY(is_shadow_catcher, visibility & PATH_RAY_ALL_VISIBILITY);
 }
 
-float Object::compute_volume_step_size() const
+float Object::compute_volume_step_size(Progress &progress) const
 {
   if (geometry->is_light()) {
     /* World volume. */
-    assert(static_cast<const Light *>(geometry)->get_light_type() == LIGHT_BACKGROUND);
+    assert(static_cast<const Light *>(geometry)->is_background_light());
     for (const Node *node : geometry->get_used_shaders()) {
       const Shader *shader = static_cast<const Shader *>(node);
       if (shader->has_volume) {
@@ -342,8 +343,8 @@ float Object::compute_volume_step_size() const
 
     for (Attribute &attr : volume->attributes.attributes) {
       if (attr.element == ATTR_ELEMENT_VOXEL) {
-        ImageHandle &handle = attr.data_voxel();
-        const ImageMetaData &metadata = handle.metadata();
+        ImageHandle &handle = attr.data_voxel_for_write();
+        const ImageMetaData &metadata = handle.metadata(progress);
         if (metadata.nanovdb_byte_size == 0) {
           continue;
         }
@@ -445,7 +446,7 @@ bool Object::has_shadow_linking() const
   return false;
 }
 
-void Object::set_tfm(Transform tfm)
+void Object::adjust_volume_tfm(Transform &tfm)
 {
   if (geometry) {
     if (geometry->is_volume()) {
@@ -453,14 +454,36 @@ void Object::set_tfm(Transform tfm)
        * meshes. The proper solution would be to improve intersection in the kernel to support
        * robust handling of multiple overlapping faces or use an all-hit intersection similar to
        * shadows. */
-      const float3 offset = transform_direction(
-          &tfm, make_float3(hash_uint_to_float(hash_string(name.c_str())) * 0.001f));
+      const uint name_hash = hash_string(name.c_str());
+      const float3 offset = transform_direction(&tfm,
+                                                make_float3(hash_uint2_to_float(name_hash, 0),
+                                                            hash_uint2_to_float(name_hash, 1),
+                                                            hash_uint2_to_float(name_hash, 2)) *
+                                                    0.001f);
       transform_translate(tfm, offset);
     }
   }
+}
 
+void Object::set_tfm(Transform tfm)
+{
+  adjust_volume_tfm(tfm);
   const SocketType *socket = get_tfm_socket();
   set(*socket, tfm);
+}
+
+bool Object::tfm_equals(Transform tfm)
+{
+  adjust_volume_tfm(tfm);
+  return tfm == get_tfm();
+}
+
+void Object::set_motion_tfm(Transform tfm, const int step_index)
+{
+  adjust_volume_tfm(tfm);
+  array<Transform> motion = get_motion();
+  motion[step_index] = tfm;
+  set_motion(motion);
 }
 
 /* Object Manager */
@@ -622,7 +645,7 @@ void ObjectManager::device_update_object_transform(UpdateObjectTransformState *s
   kobject.dupli_generated[2] = ob->dupli_generated[2];
   kobject.dupli_uv[0] = ob->dupli_uv[0];
   kobject.dupli_uv[1] = ob->dupli_uv[1];
-  kobject.num_geom_steps = (geom->get_motion_steps() - 1) / 2;
+  kobject.num_geom_steps = geom->get_motion_steps();
   kobject.num_tfm_steps = ob->motion.size();
   kobject.numverts = object_num_motion_verts(geom);
   kobject.numprims = (geom->is_mesh() || geom->is_volume()) ?
@@ -860,7 +883,7 @@ void ObjectManager::device_update(Device *device,
       }
 
       const Light *light = static_cast<const Light *>(object->get_geometry());
-      if (light->get_light_type() == LIGHT_BACKGROUND) {
+      if (light->is_background_light()) {
         dscene->data.background.object_index = object->index;
       }
     }

@@ -51,7 +51,7 @@ void register_node_type_tex_valtorgb()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeValToRGB", TEX_NODE_VALTORGB);
+  tex_node_type_base(&ntype, "TextureNodeValToRGB"_ustr, TEX_NODE_VALTORGB);
   ntype.ui_name = "Color Ramp";
   ntype.enum_name_legacy = "VALTORGB";
   ntype.nclass = NODE_CLASS_CONVERTER;
@@ -97,7 +97,7 @@ void register_node_type_tex_rgbtobw()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeRGBToBW", TEX_NODE_RGBTOBW);
+  tex_node_type_base(&ntype, "TextureNodeRGBToBW"_ustr, TEX_NODE_RGBTOBW);
   ntype.ui_name = "RGB to BW";
   ntype.enum_name_legacy = "RGBTOBW";
   ntype.nclass = NODE_CLASS_CONVERTER;

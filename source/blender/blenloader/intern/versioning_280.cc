@@ -98,6 +98,8 @@
 
 #include "NOD_shader.h"
 
+#include "ANIM_versioning.hh"
+
 #include "IMB_colormanagement.hh"
 #include "IMB_imbuf.hh"
 
@@ -312,7 +314,7 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
   const bool need_default_renderlayer = scene->r.layers.first == nullptr;
 
   for (SceneRenderLayer &srl : scene->r.layers) {
-    ViewLayer *view_layer = BKE_view_layer_add(scene, srl.name, nullptr, VIEWLAYER_ADD_NEW);
+    ViewLayer *view_layer = BKE_view_layer_add(bmain, scene, srl.name, nullptr, VIEWLAYER_ADD_NEW);
 
     if (srl.layflag & SCE_LAY_DISABLE) {
       view_layer->flag &= ~VIEW_LAYER_RENDER;
@@ -362,7 +364,7 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
       }
     }
 
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     /* for convenience set the same active object in all the layers */
     if (scene->basact) {
       view_layer->basact = BKE_view_layer_base_find(view_layer, scene->basact->object);
@@ -380,7 +382,8 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
   /* If render layers included overrides, or there are no render layers,
    * we also create a vanilla viewport layer. */
   if (have_override || need_default_renderlayer) {
-    ViewLayer *view_layer = BKE_view_layer_add(scene, "Viewport", nullptr, VIEWLAYER_ADD_NEW);
+    ViewLayer *view_layer = BKE_view_layer_add(
+        bmain, scene, "Viewport", nullptr, VIEWLAYER_ADD_NEW);
 
     /* If we ported all the original render layers,
      * we don't need to make the viewport layer renderable. */
@@ -388,7 +391,7 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
       view_layer->flag &= ~VIEW_LAYER_RENDER;
     }
 
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     /* convert active base */
     if (scene->basact) {
       view_layer->basact = BKE_view_layer_base_find(view_layer, scene->basact->object);
@@ -1829,7 +1832,7 @@ static void update_mapping_node_inputs_and_properties(bNodeTree *ntree)
       BLI_str_escape(node_name_esc, node.name, sizeof(node_name_esc));
 
       char *nodePath = BLI_sprintfN("nodes[\"%s\"]", node_name_esc);
-      BKE_fcurves_id_cb(&ntree->id, [&](ID * /*id*/, FCurve *fcu) {
+      animrig::versioning::fcurves_id_cb(&ntree->id, [&](ID * /*id*/, FCurve *fcu) {
         update_mapping_node_fcurve_rna_path_callback(fcu, nodePath, minimumNode, maximumNode);
       });
       MEM_delete(nodePath);
@@ -1910,7 +1913,7 @@ static void update_voronoi_node_fac_output(bNodeTree *ntree)
   for (bNode &node : ntree->nodes) {
     if (node.type_legacy == SH_NODE_TEX_VORONOI) {
       bNodeSocket *facOutput = static_cast<bNodeSocket *>(BLI_findlink(&node.outputs, 1));
-      STRNCPY_UTF8(facOutput->identifier, "Distance");
+      version_node_socket_identifier_set(*facOutput, "Distance");
       STRNCPY_UTF8(facOutput->name, "Distance");
     }
   }
@@ -2907,7 +2910,7 @@ void do_versions_after_linking_280(FileData *fd, Main *bmain)
     /* During development of Blender 2.80 the "Object.hide" property was
      * removed, and reintroduced in 5e968a996a53 as "Object.hide_viewport". */
     for (Object &ob : bmain->objects) {
-      BKE_fcurves_id_cb(&ob.id, [&](ID * /*id*/, FCurve *fcu) {
+      animrig::versioning::fcurves_id_cb(&ob.id, [&](ID * /*id*/, FCurve *fcu) {
         if (fcu->rna_path == nullptr || !STREQ(fcu->rna_path, "hide")) {
           return;
         }

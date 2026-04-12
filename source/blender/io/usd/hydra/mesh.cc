@@ -107,15 +107,6 @@ pxr::VtValue MeshData::get_data(pxr::SdfPath const &id, pxr::TfToken const &key)
   return get_data(key);
 }
 
-pxr::SdfPath MeshData::material_id(pxr::SdfPath const &id) const
-{
-  const SubMesh &sm = submesh(id);
-  if (!sm.mat_data) {
-    return pxr::SdfPath();
-  }
-  return sm.mat_data->prim_id;
-}
-
 void MeshData::available_materials(Set<pxr::SdfPath> &paths) const
 {
   for (const auto &sm : submeshes_) {
@@ -154,22 +145,9 @@ pxr::HdPrimvarDescriptorVector MeshData::primvar_descriptors(
   return primvars;
 }
 
-pxr::HdCullStyle MeshData::cull_style(pxr::SdfPath const &id) const
+MaterialData *MeshData::get_material_data(pxr::SdfPath const &id) const
 {
-  const SubMesh &sm = submesh(id);
-  if (sm.mat_data) {
-    return sm.mat_data->cull_style();
-  }
-  return pxr::HdCullStyle::HdCullStyleNothing;
-}
-
-bool MeshData::double_sided(pxr::SdfPath const &id) const
-{
-  const SubMesh &sm = submesh(id);
-  if (sm.mat_data) {
-    return sm.mat_data->double_sided;
-  }
-  return true;
+  return submesh(id).mat_data;
 }
 
 void MeshData::update_double_sided(MaterialData *mat_data)
@@ -259,28 +237,19 @@ void gather_vert_data(const Span<int> verts,
 }
 
 template<typename T>
-void gather_face_data(const Span<int> tri_faces,
-                      const IndexMask &triangles,
-                      const Span<T> src_data,
-                      MutableSpan<T> dst_data)
-{
-  triangles.foreach_index_optimized<int>(GrainSize(1024), [&](const int src, const int dst) {
-    dst_data[dst] = src_data[tri_faces[src]];
-  });
-}
-
-template<typename T>
 void gather_corner_data(const Span<int3> corner_tris,
                         const IndexMask &triangles,
                         const Span<T> src_data,
                         MutableSpan<T> dst_data)
 {
-  triangles.foreach_index_optimized<int>(GrainSize(1024), [&](const int src, const int dst) {
-    const int3 &tri = corner_tris[src];
-    dst_data[dst * 3 + 0] = src_data[tri[0]];
-    dst_data[dst * 3 + 1] = src_data[tri[1]];
-    dst_data[dst * 3 + 2] = src_data[tri[2]];
-  });
+  triangles.foreach_index_optimized<int>(
+      [&](const int src, const int dst) {
+        const int3 &tri = corner_tris[src];
+        dst_data[dst * 3 + 0] = src_data[tri[0]];
+        dst_data[dst * 3 + 1] = src_data[tri[1]];
+        dst_data[dst * 3 + 2] = src_data[tri[2]];
+      },
+      exec_mode::grain_size(4096));
 }
 
 static void copy_submesh(const Mesh &mesh,
@@ -298,7 +267,7 @@ static void copy_submesh(const Mesh &mesh,
   /* If all triangles are part of this submesh and there are no loose vertices that shouldn't be
    * copied (Hydra will warn about this), vertex index compression can be completely skipped. */
   const bool copy_all_verts = triangles.size() == corner_tris.size() &&
-                              mesh.verts_no_face().count == 0;
+                              mesh.verts_no_face().is_empty();
 
   int dst_verts_num;
   VectorSet<int> verts;
@@ -336,17 +305,21 @@ static void copy_submesh(const Mesh &mesh,
   MutableSpan dst_normals = MutableSpan(sm.normals.data(), sm.normals.size()).cast<float3>();
   switch (normals.first) {
     case bke::MeshNormalDomain::Face:
-      triangles.foreach_index(GrainSize(1024), [&](const int src, const int dst) {
-        std::fill_n(&dst_normals[dst * 3], 3, src_normals[tri_faces[src]]);
-      });
+      triangles.foreach_index(
+          [&](const int src, const int dst) {
+            std::fill_n(&dst_normals[dst * 3], 3, src_normals[tri_faces[src]]);
+          },
+          exec_mode::grain_size(1024));
       break;
     case bke::MeshNormalDomain::Point:
-      triangles.foreach_index(GrainSize(1024), [&](const int src, const int dst) {
-        const int3 &tri = corner_tris[src];
-        dst_normals[dst * 3 + 0] = src_normals[corner_verts[tri[0]]];
-        dst_normals[dst * 3 + 1] = src_normals[corner_verts[tri[1]]];
-        dst_normals[dst * 3 + 2] = src_normals[corner_verts[tri[2]]];
-      });
+      triangles.foreach_index(
+          [&](const int src, const int dst) {
+            const int3 &tri = corner_tris[src];
+            dst_normals[dst * 3 + 0] = src_normals[corner_verts[tri[0]]];
+            dst_normals[dst * 3 + 1] = src_normals[corner_verts[tri[1]]];
+            dst_normals[dst * 3 + 2] = src_normals[corner_verts[tri[2]]];
+          },
+          exec_mode::grain_size(1024));
       break;
     case bke::MeshNormalDomain::Corner:
       gather_corner_data(corner_tris, triangles, src_normals, dst_normals);

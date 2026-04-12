@@ -79,7 +79,7 @@ void node_tree_shader_default(const bContext *C, Main *bmain, ID *id)
     }
     else {
       ntree = bke::node_tree_add_tree_embedded(
-          nullptr, id, "Shader Nodetree", ntreeType_Shader->idname);
+          nullptr, id, "Shader Nodetree", ntreeType_Shader->idname.ref());
       shader = bke::node_add_static_node(nullptr, *ntree, SH_NODE_EMISSION);
       output = bke::node_add_static_node(nullptr, *ntree, SH_NODE_OUTPUT_LIGHT);
       bke::node_add_link(*ntree,
@@ -115,7 +115,7 @@ void node_tree_composit_default(const bContext *C, Scene *sce)
   }
 
   sce->compositing_node_group = bke::node_tree_add_tree(
-      bmain, DATA_("Compositor Nodes"), ntreeType_Composite->idname);
+      bmain, DATA_("Compositor Nodes"), ntreeType_Composite->idname.ref());
 
   node_tree_composit_default_init(C, sce->compositing_node_group);
 
@@ -132,7 +132,7 @@ void node_tree_composit_default_init(const bContext *C, bNodeTree *ntree)
   ntree->tree_interface.add_socket(
       DATA_("Image"), "", "NodeSocketColor", NODE_INTERFACE_SOCKET_OUTPUT, nullptr);
 
-  bNode *composite = bke::node_add_node(C, *ntree, "NodeGroupOutput");
+  bNode *composite = bke::node_add_node(C, *ntree, "NodeGroupOutput"_ustr);
   composite->location[0] = 200.0f;
   /* The asset shelf is visible by default, so add a small offset to keep nodes centered in the
    * visible area.*/

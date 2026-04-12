@@ -14,6 +14,7 @@
 #include "BKE_preferences.h"
 #include "BKE_preview_image.hh"
 
+#include "BLI_assert.h"
 #include "BLI_listbase.h"
 #include "BLI_path_utils.hh"
 
@@ -81,7 +82,7 @@ void asset_tooltip(const asset_system::AssetRepresentation &asset,
 BIFIconID asset_preview_icon_id(const asset_system::AssetRepresentation &asset)
 {
   if (const PreviewImage *preview = asset.get_preview()) {
-    if (!BKE_previewimg_is_invalid(preview)) {
+    if (!BKE_previewimg_is_invalid(preview, ICON_SIZE_ICON)) {
       return preview->runtime->icon_id;
     }
   }
@@ -116,14 +117,13 @@ AssetLibraryReference get_asset_library_ref_from_opptr(PointerRNA &ptr)
 std::optional<AssetLibraryReference> get_user_library_ref_for_save(
     const asset_system::AssetLibrary *preferred_library)
 {
-  std::optional<AssetLibraryReference> preferred_library_ref =
-      preferred_library ? preferred_library->library_reference() : std::nullopt;
-  BLI_assert(bool(preferred_library_ref));
-
-  if (preferred_library_ref &&
-      !ELEM(preferred_library_ref->type, ASSET_LIBRARY_ALL, ASSET_LIBRARY_ESSENTIALS))
-  {
-    return preferred_library_ref;
+  if (preferred_library && !preferred_library->is_read_only()) {
+    if (std::optional<AssetLibraryReference> preferred_library_ref =
+            preferred_library->library_reference())
+    {
+      return preferred_library_ref;
+    }
+    BLI_assert_unreachable();
   }
 
   /* Fallback to the first enabled user library. */

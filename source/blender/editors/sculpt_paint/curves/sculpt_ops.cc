@@ -260,7 +260,7 @@ static wmOperatorStatus sculpt_curves_stroke_invoke(bContext *C,
 
   if (retval == OPERATOR_FINISHED) {
     if (op->customdata != nullptr) {
-      op_data->free(C, op);
+      op_data->finish(C);
       MEM_delete(op_data);
     }
     return OPERATOR_FINISHED;
@@ -287,7 +287,7 @@ static void sculpt_curves_stroke_cancel(bContext *C, wmOperator *op)
 {
   if (op->customdata != nullptr) {
     SculptCurvesBrushStroke *op_data = static_cast<SculptCurvesBrushStroke *>(op->customdata);
-    op_data->cancel(C, op);
+    op_data->cancel(C);
     MEM_delete(op_data);
   }
 }
@@ -578,23 +578,25 @@ static void update_points_selection(const GrowOperatorDataPerCurve &data,
 {
   if (distance > 0.0f) {
     data.unselected_points.foreach_index(
-        GrainSize(256), [&](const int point_i, const int index_pos) {
+        [&](const int point_i, const int index_pos) {
           const float distance_to_selected = data.distances_to_selected[index_pos];
           const float selection = distance_to_selected <= distance ? 1.0f : 0.0f;
           points_selection[point_i] = selection;
-        });
+        },
+        exec_mode::grain_size(256));
     data.selected_points.foreach_index(
-        GrainSize(512), [&](const int point_i) { points_selection[point_i] = 1.0f; });
+        [&](const int point_i) { points_selection[point_i] = 1.0f; }, exec_mode::grain_size(512));
   }
   else {
     data.selected_points.foreach_index(
-        GrainSize(256), [&](const int point_i, const int index_pos) {
+        [&](const int point_i, const int index_pos) {
           const float distance_to_unselected = data.distances_to_unselected[index_pos];
           const float selection = distance_to_unselected <= -distance ? 0.0f : 1.0f;
           points_selection[point_i] = selection;
-        });
+        },
+        exec_mode::grain_size(256));
     data.unselected_points.foreach_index(
-        GrainSize(512), [&](const int point_i) { points_selection[point_i] = 0.0f; });
+        [&](const int point_i) { points_selection[point_i] = 0.0f; }, exec_mode::grain_size(512));
   }
 }
 

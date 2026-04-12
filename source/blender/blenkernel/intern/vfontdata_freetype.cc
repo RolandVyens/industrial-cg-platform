@@ -129,7 +129,8 @@ VChar *BKE_vfontdata_char_from_freetypefont(VFont *vfont, uint character)
                                &che->nurbsbase,
                                vfont->data->metrics.scale,
                                use_fallback,
-                               &che->width))
+                               &che->width,
+                               &che->bounds))
   {
     /* Free but add to the character cache to prevent future lookups
      * from attempting to load the font again. */

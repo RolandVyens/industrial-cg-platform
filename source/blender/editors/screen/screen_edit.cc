@@ -983,7 +983,7 @@ void ED_screen_exit(bContext *C, wmWindow *window, bScreen *screen)
   /* mark it available for use for other windows */
   screen->winid = 0;
 
-  if (!WM_window_is_temp_screen(prevwin)) {
+  if (prevwin && !WM_window_is_temp_screen(prevwin)) {
     /* use previous window if possible */
     CTX_wm_window_set(C, prevwin);
   }
@@ -1285,12 +1285,14 @@ static int screen_global_header_size()
 
 static void screen_global_topbar_area_refresh(wmWindow *win, bScreen *screen)
 {
-  const int2 win_size = WM_window_native_pixel_size(win);
   const short size = screen_global_header_size();
   rcti rect;
 
-  BLI_rcti_init(&rect, 0, win_size[0] - 1, 0, win_size[1] - 1);
-  rect.ymin = rect.ymax - size;
+  /* Use content rect to account for CSD, converted to inclusive bounds for area geometry. */
+  WM_window_rect_calc(win, &rect);
+  rect.xmax -= 1;
+  rect.ymin = (rect.ymax - 1) - size;
+  rect.ymax -= 1;
 
   screen_global_area_refresh(
       win, screen, SPACE_TOPBAR, GLOBAL_AREA_ALIGN_TOP, &rect, size, size, size);
@@ -1298,13 +1300,14 @@ static void screen_global_topbar_area_refresh(wmWindow *win, bScreen *screen)
 
 static void screen_global_statusbar_area_refresh(wmWindow *win, bScreen *screen)
 {
-  const int2 win_size = WM_window_native_pixel_size(win);
   const short size_min = 1;
   const short size_max = 0.85f * screen_global_header_size();
   const short size = (screen->flag & SCREEN_COLLAPSE_STATUSBAR) ? size_min : size_max;
   rcti rect;
 
-  BLI_rcti_init(&rect, 0, win_size[0] - 1, 0, win_size[1] - 1);
+  /* Use content rect to account for CSD, converted to inclusive bounds for area geometry. */
+  WM_window_rect_calc(win, &rect);
+  rect.xmax -= 1;
   rect.ymax = rect.ymin + size_max;
 
   screen_global_area_refresh(
@@ -1427,17 +1430,15 @@ bool ED_screen_change(bContext *C, bScreen *screen)
   return false;
 }
 
-static void screen_set_3dview_camera(Scene *scene,
-                                     ViewLayer *view_layer,
-                                     ScrArea *area,
-                                     View3D *v3d)
+static void screen_set_3dview_camera(
+    const Main &bmain, Scene *scene, ViewLayer *view_layer, ScrArea *area, View3D *v3d)
 {
   /* Fix any cameras that are used in the 3d view but not in the scene. */
   BKE_screen_view3d_sync(v3d, scene);
 
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(bmain, scene, view_layer);
   if (!v3d->camera || !BKE_view_layer_base_find(view_layer, v3d->camera)) {
-    v3d->camera = BKE_view_layer_camera_find(scene, view_layer);
+    v3d->camera = BKE_view_layer_camera_find(bmain, scene, view_layer);
   }
   ListBaseT<ARegion> *regionbase;
 
@@ -1502,18 +1503,19 @@ void ED_screen_scene_change(bContext *C,
 #endif
 
   /* Update 3D view cameras. */
+  const Main *bmain = CTX_data_main(C);
   const bScreen *screen = WM_window_get_active_screen(win);
   for (ScrArea &area : screen->areabase) {
     for (SpaceLink &sl : area.spacedata) {
       if (sl.spacetype == SPACE_VIEW3D) {
         View3D *v3d = reinterpret_cast<View3D *>(&sl);
-        screen_set_3dview_camera(scene, view_layer, &area, v3d);
+        screen_set_3dview_camera(*bmain, scene, view_layer, &area, v3d);
       }
     }
   }
 
   if (refresh_toolsystem) {
-    WM_toolsystem_refresh_screen_window(win);
+    WM_toolsystem_refresh_screen_window(*bmain, win);
   }
 }
 
@@ -1672,8 +1674,7 @@ static bScreen *screen_state_to_nonnormal(bContext *C,
                RGN_TYPE_TOOLS,
                RGN_TYPE_NAV_BAR,
                RGN_TYPE_EXECUTE,
-               RGN_TYPE_ASSET_SHELF,
-               RGN_TYPE_ASSET_SHELF_HEADER))
+               RGN_TYPE_ASSET_SHELF))
       {
         region.flag |= RGN_FLAG_HIDDEN;
       }
@@ -1953,7 +1954,7 @@ void ED_screen_animation_timer(
 
     sad->sfra = scene->r.cfra;
     /* Make sure that were are inside the scene or preview frame range. */
-    CLAMP(scene->r.cfra, PSFRA, PEFRA);
+    BKE_scene_frame_clamp_for_playback(scene, enable > 0);
     if (scene->r.cfra != sad->sfra) {
       sad->flag |= ANIMPLAY_FLAG_JUMPED;
     }

@@ -9,8 +9,7 @@
 SHADER_LIBRARY_CREATE_INFO(draw_view)
 
 #if !defined(DRAW_VIEW_CREATE_INFO) && !defined(GLSL_CPP_STUBS)
-#  error Missing draw_view additional create info on shader create info
-#endif
+#else
 
 /* Returns the current active view. */
 ViewMatrices drw_view()
@@ -210,3 +209,4 @@ float drw_depth_screen_to_view(float ss_depth)
 }
 
 /** \} */
+#endif

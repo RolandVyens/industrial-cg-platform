@@ -22,10 +22,11 @@ namespace nodes::node_shader_tex_gradient_cc {
 static void sh_node_tex_gradient_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::Vector>("Vector").hide_value().implicit_field(
-      NODE_DEFAULT_INPUT_POSITION_FIELD);
-  b.add_output<decl::Color>("Color").no_muted_links();
-  b.add_output<decl::Float>("Factor", "Fac").no_muted_links();
+  b.add_input<decl::Vector>("Vector"_ustr)
+      .hide_value()
+      .implicit_field(NODE_DEFAULT_INPUT_POSITION_FIELD);
+  b.add_output<decl::Color>("Color"_ustr).no_muted_links();
+  b.add_output<decl::Float>("Factor"_ustr, "Fac"_ustr).no_muted_links();
 }
 
 static void node_shader_buts_tex_gradient(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -205,7 +206,7 @@ void register_node_type_sh_tex_gradient()
 
   static bke::bNodeType ntype;
 
-  common_node_type_base(&ntype, "ShaderNodeTexGradient", SH_NODE_TEX_GRADIENT);
+  common_node_type_base(&ntype, "ShaderNodeTexGradient"_ustr, SH_NODE_TEX_GRADIENT);
   ntype.ui_name = "Gradient Texture";
   ntype.ui_description =
       "Generate interpolated color and intensity values based on the input vector";

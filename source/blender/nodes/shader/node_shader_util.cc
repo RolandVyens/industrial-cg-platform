@@ -63,7 +63,7 @@ static bool common_poll_default(const bke::bNodeType * /*ntype*/,
 }
 
 void sh_node_type_base(bke::bNodeType *ntype,
-                       std::string idname,
+                       UString idname,
                        const std::optional<int16_t> legacy_type)
 {
   bke::node_type_base(*ntype, idname, legacy_type);
@@ -74,7 +74,7 @@ void sh_node_type_base(bke::bNodeType *ntype,
 }
 
 void sh_geo_node_type_base(bke::bNodeType *ntype,
-                           std::string idname,
+                           UString idname,
                            const std::optional<int16_t> legacy_type)
 {
   bke::node_type_base(*ntype, idname, legacy_type);
@@ -85,7 +85,7 @@ void sh_geo_node_type_base(bke::bNodeType *ntype,
 }
 
 void common_node_type_base(bke::bNodeType *ntype,
-                           std::string idname,
+                           UString idname,
                            const std::optional<int16_t> legacy_type)
 {
   sh_node_type_base(ntype, idname, legacy_type);
@@ -457,22 +457,9 @@ void get_XYZ_to_RGB_for_gpu(XYZ_to_RGB *data)
   data->b[2] = xyz_to_rgb[2][2];
 }
 
-bool node_socket_not_zero(const GPUNodeStack &socket)
-{
-  return socket.link || socket.vec[0] > 1e-5f;
-}
-bool node_socket_not_white(const GPUNodeStack &socket)
-{
-  return socket.link || socket.vec[0] < 1.0f || socket.vec[1] < 1.0f || socket.vec[2] < 1.0f;
-}
-bool node_socket_not_black(const GPUNodeStack &socket)
-{
-  return socket.link || socket.vec[0] > 1e-5f || socket.vec[1] > 1e-5f || socket.vec[2] > 1e-5f;
-}
-
 void search_link_ops_for_shader_bsdf_node(nodes::GatherLinkSearchOpParams &params)
 {
-  static Set<std::string> skip_socket_identifiers = {"Weight"};
+  static Set<UString> skip_socket_identifiers = {"Weight"_ustr};
   nodes::search_filtered_link_ops_for_basic_node(params, skip_socket_identifiers);
 }
 

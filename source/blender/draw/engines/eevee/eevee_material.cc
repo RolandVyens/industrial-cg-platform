@@ -171,6 +171,10 @@ void MaterialModule::end_sync()
     BKE_image_tag_time(tex->ima);
   }
 
+  /* Avoid any leftover bind before BKE_image_get_gpu_material_texture which could cause assert
+   * about missing specialization constants. */
+  GPU_shader_unbind();
+
   /* Upload to the GPU (create gpu::Texture). This part still requires a valid GPU context and
    * is not easily parallelized. */
   for (GPUMaterialTexture *tex : texture_loading_queue_) {
@@ -282,7 +286,8 @@ MaterialPass MaterialModule::material_pass_get(Object *ob,
     if (shader_sub != nullptr) {
       /* Create a sub for this material as `shader_sub` is for sharing shader between materials. */
       matpass.sub_pass = &shader_sub->sub(GPU_material_get_name(matpass.gpumat));
-      matpass.sub_pass->material_set(*inst_.manager, matpass.gpumat, true);
+      matpass.sub_pass->material_set(
+          *inst_.manager, matpass.gpumat, true, inst_.anisotropic_filtering);
     }
     else {
       matpass.sub_pass = nullptr;

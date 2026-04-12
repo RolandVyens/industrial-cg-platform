@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+tmp/
+features/*/validation/**/*.png
+features/*/validation/**/*.exr
+features/*/validation/**/*.blend
+features/*/validation/**/*.blend1
+features/*/validation/**/*.log
+archive/deep-exr/surface-coverage-worktree-2026-04-02/**
+!archive/deep-exr/surface-coverage-worktree-2026-04-02/README.md
+archive/deep-exr/helper-worktrees-2026-04-02/tmp_deep_render_log_from_blender_deep_exr_fix.txt
+archive/backups/last_render_log.txt

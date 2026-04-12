@@ -14,16 +14,12 @@
 # limitations under the License.
 ################################################################################
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.21)
 include(CMakeDependentOption)
-
-if(POLICY CMP0054)
-	cmake_policy(SET CMP0054 NEW)
-endif()
 
 project(audaspace)
 
-set(AUDASPACE_VERSION 1.8)
+set(AUDASPACE_VERSION 1.9)
 set(AUDASPACE_LONG_VERSION ${AUDASPACE_VERSION}.0)
 
 if(DEFINED AUDASPACE_CMAKE_CFG)
@@ -146,6 +142,7 @@ set(PUBLIC_HDR
 	include/devices/DeviceManager.h
 	include/devices/I3DDevice.h
 	include/devices/I3DHandle.h
+	include/devices/ICaptureDeviceFactory.h
 	include/devices/IDeviceFactory.h
 	include/devices/IDevice.h
 	include/devices/IHandle.h

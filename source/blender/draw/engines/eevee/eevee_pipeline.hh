@@ -169,8 +169,15 @@ class ForwardPipeline {
   Prepass prepass_ps_ = {"Prepass"};
 
   PassMain opaque_ps_ = {"Shading"};
-  PassMain::Sub *opaque_single_sided_ps_ = nullptr;
-  PassMain::Sub *opaque_double_sided_ps_ = nullptr;
+  PassMain::Sub *opaque_subpasses_[2 /*Raycast*/][2 /*Double-Sided*/] = {{nullptr}};
+
+  PassMain::Sub *get_opaque_subpass(blender::Material *blender_mat, GPUMaterial *gpumat)
+  {
+    const bool has_raycast = GPU_material_flag_get(gpumat, GPU_MATFLAG_RAYCAST);
+    const bool double_sided = !(blender_mat->blend_flag & MA_BL_CULL_BACKFACE);
+
+    return opaque_subpasses_[has_raycast][double_sided];
+  }
 
   PassSortable transparent_ps_ = {"Forward.Transparent"};
   float3 camera_forward_;
@@ -237,12 +244,17 @@ struct DeferredLayerBase {
   Prepass prepass_ps_ = {"Prepass"};
 
   PassMain gbuffer_ps_ = {"Shading"};
-  /* Shaders that use the ClosureToRGBA node needs to be rendered first.
-   * Consider they hybrid forward and deferred. */
-  PassMain::Sub *gbuffer_single_sided_hybrid_ps_ = nullptr;
-  PassMain::Sub *gbuffer_double_sided_hybrid_ps_ = nullptr;
-  PassMain::Sub *gbuffer_single_sided_ps_ = nullptr;
-  PassMain::Sub *gbuffer_double_sided_ps_ = nullptr;
+  PassMain::Sub *gbuffer_subpasses_[2 /*Hybrid*/][2 /*Raycast*/][2 /*Double-Sided*/] = {
+      {{nullptr}}};
+
+  PassMain::Sub *get_gbuffer_subpass(blender::Material *blender_mat, GPUMaterial *gpumat)
+  {
+    const bool has_shader_to_rgba = GPU_material_flag_get(gpumat, GPU_MATFLAG_SHADER_TO_RGBA);
+    const bool has_raycast = GPU_material_flag_get(gpumat, GPU_MATFLAG_RAYCAST);
+    const bool double_sided = !(blender_mat->blend_flag & MA_BL_CULL_BACKFACE);
+
+    return gbuffer_subpasses_[has_shader_to_rgba][has_raycast][double_sided];
+  }
 
   gpu::Texture *radiance_behind_tx_ = nullptr;
 
@@ -706,7 +718,7 @@ class UtilityTexture : public Texture {
 
   static constexpr int lut_size = UTIL_TEX_SIZE;
   static constexpr int lut_size_sqr = lut_size * lut_size;
-  static constexpr int layer_count = UTIL_BTDF_LAYER + UTIL_BTDF_LAYER_COUNT;
+  static constexpr int layer_count = UTIL_BSDF_LAYER + UTIL_BSDF_LAYER_COUNT;
 
  public:
   UtilityTexture()
@@ -740,7 +752,7 @@ class UtilityTexture : public Texture {
       memcpy(layer.data, lut::ltc_mat_ggx, sizeof(layer));
     }
     {
-      Layer &layer = data[UTIL_BSDF_LAYER];
+      Layer &layer = data[UTIL_BRDF_LAYER];
       for (auto x : IndexRange(lut_size)) {
         for (auto y : IndexRange(lut_size)) {
           layer.data[y][x][0] = lut::brdf_ggx[y][x][0];
@@ -752,7 +764,7 @@ class UtilityTexture : public Texture {
     }
     {
       for (auto layer_id : IndexRange(16)) {
-        Layer &layer = data[UTIL_BTDF_LAYER + layer_id];
+        Layer &layer = data[UTIL_BSDF_LAYER + layer_id];
         for (auto x : IndexRange(lut_size)) {
           for (auto y : IndexRange(lut_size)) {
             layer.data[y][x][0] = lut::bsdf_ggx[layer_id][y][x][0];

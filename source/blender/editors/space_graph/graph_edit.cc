@@ -985,8 +985,6 @@ static void convert_keys_to_samples(bAnimContext *ac, int start, int end)
 static wmOperatorStatus graphkeys_keys_to_samples_exec(bContext *C, wmOperator * /*op*/)
 {
   bAnimContext ac;
-  Scene *scene = nullptr;
-  int start, end;
 
   /* Get editor data. */
   if (ANIM_animdata_get_context(C, &ac) == 0) {
@@ -995,12 +993,10 @@ static wmOperatorStatus graphkeys_keys_to_samples_exec(bContext *C, wmOperator *
 
   /* For now, init start/end from preview-range extents. */
   /* TODO: add properties for this. (Joshua Leung 2009) */
-  scene = ac.scene;
-  start = PSFRA;
-  end = PEFRA;
+  const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(ac.scene);
 
   /* Sample keyframes. */
-  convert_keys_to_samples(&ac, start, end);
+  convert_keys_to_samples(&ac, playback_range.start_frame, playback_range.end_frame);
 
   /* Set notifier that keyframes have changed. */
   /* NOTE: some distinction between order/number of keyframes and type should be made? */
@@ -1064,19 +1060,14 @@ static void convert_samples_to_keys(bAnimContext *ac, int start, int end)
 static wmOperatorStatus graphkeys_samples_to_keys_exec(bContext *C, wmOperator * /*op*/)
 {
   bAnimContext ac;
-  Scene *scene = nullptr;
-  int start, end;
 
   /* Get editor data. */
   if (ANIM_animdata_get_context(C, &ac) == 0) {
     return OPERATOR_CANCELLED;
   }
 
-  scene = ac.scene;
-  start = PSFRA;
-  end = PEFRA;
-
-  convert_samples_to_keys(&ac, start, end);
+  const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(ac.scene);
+  convert_samples_to_keys(&ac, playback_range.start_frame, playback_range.end_frame);
 
   /* Set notifier that keyframes have changed. */
   /* NOTE: some distinction between order/number of keyframes and type should be made? */

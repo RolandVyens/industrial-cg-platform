@@ -165,9 +165,6 @@ Camera::Camera() : Node(get_node_type())
 {
   shutter_table_offset = TABLE_OFFSET_INVALID;
 
-  width = 1024;
-  height = 512;
-
   use_perspective_motion = false;
 
   shutter_curve.resize(RAMP_TABLE_SIZE);
@@ -380,15 +377,24 @@ void Camera::update(Scene *scene)
         /* Note the values for perspective_pre/perspective_post calculated for MOTION_PASS are
          * different to those calculated for MOTION_BLUR below, so the code has not been combined.
          */
-        const ProjectionTransform cameratoscreen_pre = projection_perspective(
-            fov_pre, nearclip, farclip);
-        const ProjectionTransform cameratoscreen_post = projection_perspective(
-            fov_post, nearclip, farclip);
+        ProjectionTransform cameratoscreen_pre = cameratoscreen;
+        ProjectionTransform cameratoscreen_post = cameratoscreen;
+        if (camera_type == CAMERA_PERSPECTIVE) {
+          cameratoscreen_pre = projection_perspective(fov_pre, nearclip, farclip);
+          cameratoscreen_post = projection_perspective(fov_post, nearclip, farclip);
+        }
+
         const ProjectionTransform cameratoraster_pre = screentoraster * cameratoscreen_pre;
         const ProjectionTransform cameratoraster_post = screentoraster * cameratoscreen_post;
-        kcam->perspective_pre = cameratoraster_pre * transform_inverse(motion[0]);
-        kcam->perspective_post = cameratoraster_post *
-                                 transform_inverse(motion[motion.size() - 1]);
+        if (have_motion) {
+          kcam->perspective_pre = cameratoraster_pre * transform_inverse(motion[0]);
+          kcam->perspective_post = cameratoraster_post *
+                                   transform_inverse(motion[motion.size() - 1]);
+        }
+        else {
+          kcam->perspective_pre = cameratoraster_pre * worldtocamera;
+          kcam->perspective_post = cameratoraster_post * worldtocamera;
+        }
       }
       else {
         kcam->perspective_pre = worldtoraster;
@@ -482,6 +488,10 @@ void Camera::update(Scene *scene)
   /* store differentials */
   kcam->dx = make_float4(dx);
   kcam->dy = make_float4(dy);
+
+  /* Compensation for progressive rendering, so we use the same texture cache tiles
+   * as for the full render resolution rather. */
+  kcam->differential_scale = 0.5f * (width / float(full_width) + height / float(full_height));
 
   /* clipping */
   kcam->nearclip = nearclip;
@@ -818,12 +828,14 @@ float Camera::world_to_raster_size(const float3 P)
      * may be a better way to do this, but calculating differentials from the
      * point directly ahead seems to produce good enough results. */
     if (camera_type == CAMERA_CUSTOM) {
+      int cache_miss = 0;
       camera_sample_custom(nullptr,
                            &kernel_camera,
                            kernel_camera_motion.data(),
                            0.5f * make_float2(full_width, full_height),
                            zero_float2(),
-                           &ray);
+                           &ray,
+                           cache_miss);
     }
     else {
 #if 0
@@ -862,7 +874,7 @@ bool Camera::use_motion() const
   return motion.size() > 1;
 }
 
-bool Camera::set_screen_size(const int width_, int height_)
+bool Camera::set_screen_size(const int width_, const int height_)
 {
   if (width_ != width || height_ != height) {
     width = width_;

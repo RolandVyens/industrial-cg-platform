@@ -203,6 +203,8 @@ class AbstractViewItem {
   ui::ButtonViewItem *view_item_but_ = nullptr;
   bool is_activatable_ = true;
   bool is_interactive_ = true;
+  /** See #is_hovered(). */
+  bool is_hovered_ = false;
   bool is_active_ = false;
   /** Only change using #set_selected() so overrides can sync changes to data. */
   bool is_selected_ = false;
@@ -349,6 +351,12 @@ class AbstractViewItem {
    */
   void activate_for_context_menu(bContext &C);
   void deactivate();
+  /**
+   * Is the item currently hovered by the mouse cursor? Can be used in the #build_
+   * Requires the view to have completed reconstruction, see #is_reconstructed(). Otherwise we
+   * can't be sure about the item state.
+   */
+  bool is_hovered() const;
   /**
    * Requires the view to have completed reconstruction, see #is_reconstructed(). Otherwise we
    * can't be sure about the item state.

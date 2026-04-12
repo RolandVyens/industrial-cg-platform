@@ -19,25 +19,25 @@ NODE_STORAGE_FUNCS(NodeRandomValue)
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::Vector>("Min");
-  b.add_input<decl::Vector>("Max").default_value({1.0f, 1.0f, 1.0f});
-  b.add_input<decl::Float>("Min", "Min_001");
-  b.add_input<decl::Float>("Max", "Max_001").default_value(1.0f);
-  b.add_input<decl::Int>("Min", "Min_002").min(-100000).max(100000);
-  b.add_input<decl::Int>("Max", "Max_002").default_value(100).min(-100000).max(100000);
-  b.add_input<decl::Float>("Probability")
+  b.add_input<decl::Vector>("Min"_ustr);
+  b.add_input<decl::Vector>("Max"_ustr).default_value({1.0f, 1.0f, 1.0f});
+  b.add_input<decl::Float>("Min"_ustr, "Min_001"_ustr);
+  b.add_input<decl::Float>("Max"_ustr, "Max_001"_ustr).default_value(1.0f);
+  b.add_input<decl::Int>("Min"_ustr, "Min_002"_ustr).min(-100000).max(100000);
+  b.add_input<decl::Int>("Max"_ustr, "Max_002"_ustr).default_value(100).min(-100000).max(100000);
+  b.add_input<decl::Float>("Probability"_ustr)
       .min(0.0f)
       .max(1.0f)
       .default_value(0.5f)
       .subtype(PROP_FACTOR)
       .make_available([](bNode &node) { node_storage(node).data_type = CD_PROP_BOOL; });
-  b.add_input<decl::Int>("ID").implicit_field(NODE_DEFAULT_INPUT_ID_INDEX_FIELD);
-  b.add_input<decl::Int>("Seed").default_value(0).min(-10000).max(10000);
+  b.add_input<decl::Int>("ID"_ustr).implicit_field(NODE_DEFAULT_INPUT_ID_INDEX_FIELD);
+  b.add_input<decl::Int>("Seed"_ustr).default_value(0).min(-10000).max(10000);
 
-  b.add_output<decl::Vector>("Value");
-  b.add_output<decl::Float>("Value", "Value_001");
-  b.add_output<decl::Int>("Value", "Value_002");
-  b.add_output<decl::Bool>("Value", "Value_003");
+  b.add_output<decl::Vector>("Value"_ustr);
+  b.add_output<decl::Float>("Value"_ustr, "Value_001"_ustr);
+  b.add_output<decl::Int>("Value"_ustr, "Value_002"_ustr);
+  b.add_output<decl::Bool>("Value"_ustr, "Value_003"_ustr);
 }
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -112,23 +112,23 @@ static void node_gather_link_search_ops(GatherLinkSearchOpParams &params)
   if (params.in_out() == SOCK_IN) {
     if (ELEM(*type, CD_PROP_INT32, CD_PROP_FLOAT3, CD_PROP_FLOAT)) {
       params.add_item(IFACE_("Min"), [type](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeRandomValue");
+        bNode &node = params.add_node("FunctionNodeRandomValue"_ustr);
         node_storage(node).data_type = *type;
-        params.update_and_connect_available_socket(node, "Min");
+        params.update_and_connect_available_socket(node, "Min"_ustr);
       });
       params.add_item(IFACE_("Max"), [type](LinkSearchOpParams &params) {
-        bNode &node = params.add_node("FunctionNodeRandomValue");
+        bNode &node = params.add_node("FunctionNodeRandomValue"_ustr);
         node_storage(node).data_type = *type;
-        params.update_and_connect_available_socket(node, "Max");
+        params.update_and_connect_available_socket(node, "Max"_ustr);
       });
     }
     search_link_ops_for_declarations(params, declaration.inputs.as_span().take_back(3));
   }
   else {
     params.add_item(IFACE_("Value"), [type](LinkSearchOpParams &params) {
-      bNode &node = params.add_node("FunctionNodeRandomValue");
+      bNode &node = params.add_node("FunctionNodeRandomValue"_ustr);
       node_storage(node).data_type = *type;
-      params.update_and_connect_available_socket(node, "Value");
+      params.update_and_connect_available_socket(node, "Value"_ustr);
     });
   }
 }
@@ -171,7 +171,15 @@ static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
               std::swap(min_value, max_value);
             }
             const uint32_t hash = noise::hash(id, seed);
-            return min_value + hash % (max_value - min_value + 1);
+
+            /* Calculate range using unsigned types to fit the entire 32-bit space. */
+            const uint32_t range = uint32_t(max_value) - uint32_t(min_value) + 1;
+
+            /* Range wraps around to 0 when min_value is INT_MIN and max_value is INT_MAX.
+             * so the modulo is unnecessary and would cause a division by zero. */
+            const uint32_t modulo_result = (range == 0) ? hash : (hash % range);
+
+            return int(uint32_t(min_value) + modulo_result);
           },
           mf::build::exec_presets::SomeSpanOrSingle<2>());
       builder.set_matching_fn(fn);
@@ -198,7 +206,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeRandomValue", FN_NODE_RANDOM_VALUE);
+  fn_node_type_base(&ntype, "FunctionNodeRandomValue"_ustr, FN_NODE_RANDOM_VALUE);
   ntype.ui_name = "Random Value";
   ntype.ui_description = "Output a randomized value";
   ntype.enum_name_legacy = "RANDOM_VALUE";

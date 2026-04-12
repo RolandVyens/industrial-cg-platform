@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "eevee_shadow_tilemap_lib.glsl"
+#include "eevee_shadow_tilemap_lib.bsl.hh"
 #include "gpu_shader_utildefines_lib.glsl"
 
 #define EEVEE_SHADOW_LIB

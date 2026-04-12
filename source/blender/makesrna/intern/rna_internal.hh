@@ -26,6 +26,8 @@ enum class AttributeOwnerType;
 enum AttrDomainMask : uint8_t;
 using eCustomDataMask = uint64_t;
 
+struct ColorManagedColorspaceSettings;
+struct Editing;
 struct FreestyleSettings;
 struct ID;
 struct IDProperty;
@@ -38,6 +40,7 @@ struct Object;
 struct PropertyDefRNA;
 struct ReportList;
 struct SDNA;
+struct Strip;
 struct ViewLayer;
 
 /* Data structures used during define */
@@ -237,6 +240,7 @@ void rna_def_attributes_common(StructRNA *srna, AttributeOwnerType type);
 
 void rna_Attribute_data_begin(CollectionPropertyIterator *iter, PointerRNA *ptr);
 int rna_Attribute_data_length(PointerRNA *ptr);
+bool rna_Attribute_data_lookup_int(PointerRNA *ptr, int index, PointerRNA *r_ptr);
 
 StringRefNull rna_Attribute_name_get(const PointerRNA &ptr);
 void rna_Attribute_name_get(PointerRNA *ptr, char *value);
@@ -419,8 +423,7 @@ bool rna_GPencil_datablocks_annotations_poll(PointerRNA *ptr, const PointerRNA v
 bool rna_GPencil_datablocks_obdata_poll(PointerRNA *ptr, const PointerRNA value);
 
 /* Only the Image Editor and Camera Background images support "Render Result" or Viewer Node"
- * images. Note: UI template #id_search_allows_id() also handles this more generally for cases
- * where this poll is not defined. */
+ * images. */
 bool rna_Image_no_renderresult_or_viewer_poll(PointerRNA *ptr, const PointerRNA value);
 
 std::optional<std::string> rna_TextureSlot_path(const PointerRNA *ptr);
@@ -428,6 +431,8 @@ std::optional<std::string> rna_Node_ImageUser_path(const PointerRNA *ptr);
 std::optional<std::string> rna_CameraBackgroundImage_image_or_movieclip_user_path(
     const PointerRNA *ptr);
 
+Strip *rna_strip_find_by_colorspace_settings(
+    Editing *ed, const ColorManagedColorspaceSettings *colorspace_settings);
 std::optional<std::string> rna_ColorManagedDisplaySettings_path(const PointerRNA *ptr);
 std::optional<std::string> rna_ColorManagedViewSettings_path(const PointerRNA *ptr);
 std::optional<std::string> rna_ColorManagedInputColorspaceSettings_path(const PointerRNA *ptr);
@@ -480,6 +485,7 @@ void RNA_api_grease_pencil_frames(StructRNA *srna);
 void RNA_api_grease_pencil_layer(StructRNA *srna);
 void RNA_api_grease_pencil_layers(StructRNA *srna);
 void RNA_api_grease_pencil_layer_groups(StructRNA *srna);
+void RNA_api_grease_pencil_layer_masks(StructRNA *srna);
 void RNA_api_keyconfig(StructRNA *srna);
 void RNA_api_keyconfigs(StructRNA *srna);
 void RNA_api_keyingset(StructRNA *srna);
@@ -625,7 +631,7 @@ void rna_iterator_array_end(CollectionPropertyIterator *iter);
 PointerRNA rna_array_lookup_int(
     PointerRNA *ptr, StructRNA *type, void *data, size_t itemsize, int64_t length, int64_t index);
 
-/* Duplicated code since we can't link in blenlib */
+/* Duplicated code since we can't link in `blenlib`. */
 
 #ifndef RNA_RUNTIME
 void *rna_alloc_from_buffer(const char *buffer, int buffer_size);

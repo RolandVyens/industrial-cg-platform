@@ -25,8 +25,9 @@ FRAGMENT_SHADER_CREATE_INFO(eevee_cryptomatte_out)
 #include "eevee_nodetree_frag_lib.glsl"
 #include "eevee_sampling_lib.glsl"
 #include "eevee_surf_lib.glsl"
+#include "eevee_thickness_lib.bsl.hh"
 
-float4 closure_to_rgba(Closure cl)
+float4 closure_to_rgba(Closure /*cl*/)
 {
   float4 out_color;
   out_color.rgb = g_emission;
@@ -75,7 +76,7 @@ void main()
 
   g_holdout = saturate(g_holdout);
 
-  float thickness = nodetree_thickness() * thickness_mode;
+  Thickness thickness = Thickness::from(nodetree_thickness(), thickness_mode);
 
   /** Transparency weight is already applied through dithering, remove it from other closures. */
   float alpha = 1.0f - average(g_transmittance);

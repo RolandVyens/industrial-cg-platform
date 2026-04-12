@@ -9,6 +9,7 @@
 #include "BKE_attribute.hh"
 #include "BKE_context.hh"
 #include "BKE_curves.hh"
+#include "BKE_curves_utils.hh"
 #include "BKE_grease_pencil.hh"
 #include "BKE_grease_pencil_fills.hh"
 #include "BKE_object.hh"
@@ -115,7 +116,6 @@ bool apply_mask_as_selection(bke::CurvesGeometry &curves,
                              const IndexMask &selection_mask,
                              const bke::AttrDomain selection_domain,
                              const StringRef attribute_name,
-                             const GrainSize grain_size,
                              const eSelectOp sel_op)
 {
   if (selection_mask.is_empty()) {
@@ -125,9 +125,11 @@ bool apply_mask_as_selection(bke::CurvesGeometry &curves,
   bke::GSpanAttributeWriter writer = ed::curves::ensure_selection_attribute(
       curves, selection_domain, bke::AttrType::Bool, attribute_name);
 
-  selection_mask.foreach_index(grain_size, [&](const int64_t element_i) {
-    ed::curves::apply_selection_operation_at_index(writer.span, element_i, sel_op);
-  });
+  selection_mask.foreach_index(
+      [&](const int64_t element_i) {
+        ed::curves::apply_selection_operation_at_index(writer.span, element_i, sel_op);
+      },
+      exec_mode::grain_size(4096));
 
   writer.finish();
 
@@ -139,13 +141,12 @@ bool apply_mask_as_segment_selection(bke::CurvesGeometry &curves,
                                      const StringRef attribute_name,
                                      const Curves2DBVHTree &tree_data,
                                      const IndexRange tree_data_range,
-                                     const GrainSize grain_size,
                                      const eSelectOp sel_op)
 {
   /* Use regular selection for anything other than the ".selection" attribute. */
   if (attribute_name != ".selection") {
     return apply_mask_as_selection(
-        curves, point_selection_mask, bke::AttrDomain::Point, attribute_name, grain_size, sel_op);
+        curves, point_selection_mask, bke::AttrDomain::Point, attribute_name, sel_op);
   }
 
   if (point_selection_mask.is_empty()) {
@@ -153,10 +154,10 @@ bool apply_mask_as_segment_selection(bke::CurvesGeometry &curves,
   }
   IndexMaskMemory memory;
 
-  const IndexMask changed_curve_mask = ed::curves::curve_mask_from_points(
-      curves, point_selection_mask, GrainSize(512), memory);
-
   const OffsetIndices points_by_curve = curves.points_by_curve();
+  const IndexMask changed_curve_mask = bke::curves::point_to_curve_selection(
+      points_by_curve, point_selection_mask, memory);
+
   const Span<float2> screen_space_positions = tree_data.start_positions.as_span().slice(
       tree_data_range);
 
@@ -185,27 +186,26 @@ bool apply_mask_as_segment_selection(bke::CurvesGeometry &curves,
     }
   };
 
-  threading::parallel_for(
-      segments_by_curve.index_range(), grain_size.value, [&](const IndexRange range) {
-        for (const int curve_i : range) {
-          const IndexRange points = points_by_curve[curve_i];
+  threading::parallel_for(segments_by_curve.index_range(), 2048, [&](const IndexRange range) {
+    for (const int curve_i : range) {
+      const IndexRange points = points_by_curve[curve_i];
 
-          const int num_segments = foreach_curve_segment(
-              segment_data,
-              curve_i,
-              points,
-              [&](const int /*segment_i*/, const IndexRange points1, const IndexRange points2) {
-                if (test_points_range(points1) || test_points_range(points2)) {
-                  update_points_range(points1);
-                  update_points_range(points2);
-                }
-              });
-          if (num_segments == 0 && test_points_range(points)) {
-            /* Cyclic curve without cuts, select all. */
-            update_points_range(points);
-          }
-        }
-      });
+      const int num_segments = foreach_curve_segment(
+          segment_data,
+          curve_i,
+          points,
+          [&](const int /*segment_i*/, const IndexRange points1, const IndexRange points2) {
+            if (test_points_range(points1) || test_points_range(points2)) {
+              update_points_range(points1);
+              update_points_range(points2);
+            }
+          });
+      if (num_segments == 0 && test_points_range(points)) {
+        /* Cyclic curve without cuts, select all. */
+        update_points_range(points);
+      }
+    }
+  });
 
   attribute_writer.finish();
   return true;
@@ -287,21 +287,12 @@ bool selection_update(const ViewContext *vc,
           /* Range of points in tree data matching this curve, for re-using screen space
            * positions. */
           const IndexRange tree_data_range = tree_data_by_drawing[i_drawing];
-          changed |= ed::greasepencil::apply_mask_as_segment_selection(curves,
-                                                                       changed_element_mask,
-                                                                       attribute_name,
-                                                                       tree_data,
-                                                                       tree_data_range,
-                                                                       GrainSize(4096),
-                                                                       sel_op);
+          changed |= ed::greasepencil::apply_mask_as_segment_selection(
+              curves, changed_element_mask, attribute_name, tree_data, tree_data_range, sel_op);
         }
         else {
-          changed |= ed::greasepencil::apply_mask_as_selection(curves,
-                                                               changed_element_mask,
-                                                               selection_domain,
-                                                               attribute_name,
-                                                               GrainSize(4096),
-                                                               sel_op);
+          changed |= ed::greasepencil::apply_mask_as_selection(
+              curves, changed_element_mask, selection_domain, attribute_name, sel_op);
         }
       }
     }
@@ -609,19 +600,23 @@ void insert_selected_values(Object *object,
   if (domain == bke::AttrDomain::Point) {
     const IndexMask points = ed::greasepencil::retrieve_editable_and_all_selected_points(
         *object, info.drawing, info.layer_index, handle_display, memory);
-    points.foreach_index(GrainSize(1024), [&](const int index) {
-      Set<T> &local_value_set = value_set_by_thread.local();
-      local_value_set.add(values[index]);
-    });
+    points.foreach_index(
+        [&](const int index) {
+          Set<T> &local_value_set = value_set_by_thread.local();
+          local_value_set.add(values[index]);
+        },
+        exec_mode::grain_size(1024));
   }
   else if (domain == bke::AttrDomain::Curve) {
     const IndexMask strokes = ed::greasepencil::retrieve_editable_and_selected_strokes(
         *object, info.drawing, info.layer_index, memory);
 
-    strokes.foreach_index(GrainSize(1024), [&](const int index) {
-      Set<T> &local_value_set = value_set_by_thread.local();
-      local_value_set.add(values[index]);
-    });
+    strokes.foreach_index(
+        [&](const int index) {
+          Set<T> &local_value_set = value_set_by_thread.local();
+          local_value_set.add(values[index]);
+        },
+        exec_mode::grain_size(1024));
   }
   else {
     BLI_assert_unreachable();
@@ -672,16 +667,18 @@ static void select_similar_by_value(Scene *scene,
           curves, selection_domain, bke::AttrType::Bool, selection_attribute_names[i]);
       MutableSpan<bool> selection = selection_writer.span.typed<bool>();
 
-      elements.foreach_index(GrainSize(1024), [&](const int index) {
-        if (selection[index]) {
-          return;
-        }
-        for (const T &test_value : selected_values) {
-          if (distance_fn(values[index], test_value) <= threshold) {
-            selection[index] = true;
-          }
-        }
-      });
+      elements.foreach_index(
+          [&](const int index) {
+            if (selection[index]) {
+              return;
+            }
+            for (const T &test_value : selected_values) {
+              if (distance_fn(values[index], test_value) <= threshold) {
+                selection[index] = true;
+              }
+            }
+          },
+          exec_mode::grain_size(1024));
 
       selection_writer.finish();
     }
@@ -912,7 +909,7 @@ static wmOperatorStatus select_fill_exec(bContext *C, wmOperator * /*op*/)
     selected_strokes.to_bools(selected_curves);
 
     const IndexMask strokes = IndexMask::from_predicate(
-        curves.curves_range(), GrainSize(4096), memory, [&](const int64_t curve_i) {
+        curves.curves_range(), memory, [&](const int64_t curve_i) {
           const int fill_id = fill_ids[curve_i];
           if (fill_id == 0) {
             return selected_curves[curve_i];
@@ -933,10 +930,12 @@ static wmOperatorStatus select_fill_exec(bContext *C, wmOperator * /*op*/)
           break;
         }
         case bke::AttrDomain::Point: {
-          strokes.foreach_index(GrainSize(512), [&](const int curve) {
-            const IndexRange points = points_by_curve[curve];
-            ed::curves::fill_selection_true(selection.span.slice(points));
-          });
+          strokes.foreach_index(
+              [&](const int curve) {
+                const IndexRange points = points_by_curve[curve];
+                ed::curves::fill_selection_true(selection.span.slice(points));
+              },
+              exec_mode::grain_size(512));
           break;
         }
         default:
@@ -991,6 +990,12 @@ bool ensure_selection_domain(ToolSettings *ts, Object *object)
     const std::optional<bke::AttributeMetaData> meta_data = attributes.lookup_meta_data(
         ".selection");
 
+    /* Skip curve when the selection domain already matches, or when there is no selection
+     * attribute (all/none selected). */
+    if ((!meta_data) || (meta_data->domain == domain)) {
+      continue;
+    }
+
     /* When the selection domain is 'curve', ensure all *fills* with a point selection
      * are selected. */
     if (domain == bke::AttrDomain::Curve) {
@@ -1029,12 +1034,6 @@ bool ensure_selection_domain(ToolSettings *ts, Object *object)
       }
 
       changed |= true;
-    }
-
-    /* Skip curve when the selection domain already matches, or when there is no selection
-     * at all. */
-    if ((!meta_data) || (meta_data->domain == domain)) {
-      continue;
     }
 
     /* Convert selection domain. */
@@ -1224,10 +1223,7 @@ static wmOperatorStatus grease_pencil_select_by_stroke_type_exec(bContext *C, wm
       if (const VArray<bool> hide_stroke = *curves.attributes().lookup<bool>(
               "hide_stroke", bke::AttrDomain::Curve))
       {
-        IndexMask mask = IndexMask::from_predicate(
-            selectable_strokes, GrainSize(1024), memory, [&](const int index) {
-              return !hide_stroke[index];
-            });
+        IndexMask mask = IndexMask::from_bools_inverse(selectable_strokes, hide_stroke, memory);
         if (selection_domain == bke::AttrDomain::Point) {
           mask = IndexMask::from_ranges(curves.points_by_curve(), mask, memory);
         }
@@ -1243,9 +1239,7 @@ static wmOperatorStatus grease_pencil_select_by_stroke_type_exec(bContext *C, wm
                                                                        bke::AttrDomain::Curve))
       {
         IndexMask mask = IndexMask::from_predicate(
-            selectable_strokes, GrainSize(1024), memory, [&](const int index) {
-              return fill_id[index] != 0;
-            });
+            selectable_strokes, memory, [&](const int index) { return fill_id[index] != 0; });
         if (selection_domain == bke::AttrDomain::Point) {
           mask = IndexMask::from_ranges(curves.points_by_curve(), mask, memory);
         }

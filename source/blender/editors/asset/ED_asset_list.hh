@@ -9,6 +9,7 @@
 #pragma once
 
 #include "BLI_function_ref.hh"
+#include "BLI_string_ref.hh"
 
 namespace blender {
 
@@ -18,6 +19,7 @@ struct ID;
 struct ImBuf;
 struct wmNotifier;
 struct wmRegionListenerParams;
+struct wmWindowManager;
 namespace asset_system {
 class AssetLibrary;
 class AssetRepresentation;
@@ -70,6 +72,7 @@ void clear(const AssetLibraryReference *library_reference, const bContext *C);
  * reload is necessary.
  */
 void clear_all_library(const bContext *C);
+void on_remote_assets_downloaded(wmWindowManager &wm, StringRef library_url);
 /**
  * Returns if the given asset library in global asset list storage.
  */

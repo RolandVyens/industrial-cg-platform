@@ -18,7 +18,7 @@
 #include "DNA_space_types.h"
 #include "DNA_userdef_types.h"
 
-#include "BLI_color.hh"
+#include "BLI_color_types.hh"
 #include "BLI_listbase.h"
 #include "BLI_math_color.h"
 #include "BLI_math_vector.h"
@@ -66,56 +66,56 @@ namespace blender::ui {
 
 /* visual types for drawing */
 /* for time being separated from functional types */
-enum WidgetTypeEnum {
+enum class WidgetStyle {
   /* default */
-  UI_WTYPE_REGULAR,
+  Regular,
 
   /* standard set */
-  UI_WTYPE_LABEL,
-  UI_WTYPE_TOGGLE,
-  UI_WTYPE_CHECKBOX,
-  UI_WTYPE_RADIO,
-  UI_WTYPE_NUMBER,
-  UI_WTYPE_SLIDER,
-  UI_WTYPE_EXEC,
-  UI_WTYPE_TOOLBAR_ITEM,
-  UI_WTYPE_TAB,
-  UI_WTYPE_TOOLTIP,
+  Label,
+  Toggle,
+  Checkbox,
+  Radio,
+  Number,
+  Slider,
+  Exec,
+  ToolbarItem,
+  Tab,
+  Tooltip,
 
   /* strings */
-  UI_WTYPE_NAME,
-  UI_WTYPE_NAME_LINK,
-  UI_WTYPE_POINTER_LINK,
-  UI_WTYPE_FILENAME,
+  Name,
+  NameLink,
+  PointerLink,
+  Filename,
 
   /* menus */
-  UI_WTYPE_MENU_RADIO,
-  UI_WTYPE_MENU_ICON_RADIO,
-  UI_WTYPE_MENU_POINTER_LINK,
-  UI_WTYPE_MENU_NODE_LINK,
+  MenuRadio,
+  MenuIconRadio,
+  MenuPointerLink,
+  MenuNodeLink,
 
-  UI_WTYPE_PULLDOWN,
-  UI_WTYPE_MENU_ITEM,
-  /* Same as #UI_WTYPE_MENU_ITEM, but doesn't add padding to sides for text & icon inside the
+  Pulldown,
+  MenuItem,
+  /* Same as #WidgetStyle::MenuItem, but doesn't add padding to sides for text & icon inside the
    * widget. To be used when multiple menu items should be displayed close to each other
    * horizontally. */
-  UI_WTYPE_MENU_ITEM_UNPADDED,
-  UI_WTYPE_MENU_ITEM_PIE,
-  UI_WTYPE_MENU_BACK,
+  MenuItemUnpadded,
+  MenuItemPie,
+  MenuBack,
 
   /* specials */
-  UI_WTYPE_ICON,
-  UI_WTYPE_ICON_LABEL,
-  UI_WTYPE_PREVIEW_TILE,
-  UI_WTYPE_SWATCH,
-  UI_WTYPE_RGB_PICKER,
-  UI_WTYPE_UNITVEC,
-  UI_WTYPE_BOX,
-  UI_WTYPE_SCROLL,
-  UI_WTYPE_LISTITEM,
-  UI_WTYPE_PROGRESS,
-  UI_WTYPE_NODESOCKET,
-  UI_WTYPE_VIEW_ITEM,
+  Icon,
+  IconLabel,
+  PreviewTile,
+  Swatch,
+  RGBPicker,
+  Unitvec,
+  Box,
+  Scroll,
+  ListItem,
+  Progress,
+  NodeSocket,
+  ViewItem,
 };
 
 /**
@@ -128,6 +128,9 @@ struct WidgetStateInfo {
   int but_drawflag;
   /** Copy of #Button.emboss. */
   EmbossType emboss;
+
+  /** Copy of #ButtonPush::draw_as_link. */
+  bool draw_as_link : 1;
 
   /** Show that holding the button opens a menu. */
   bool has_hold_action : 1;
@@ -555,11 +558,11 @@ static void draw_anti_tria(
   GPU_blend(GPU_BLEND_NONE);
 }
 
-void draw_icon_tri(float x, float y, char dir, const float color[4])
+void draw_icon_tri(float x, float y, char dir, const float color[4], float aspect)
 {
-  const float f3 = 0.05 * U.widget_unit;
-  const float f5 = 0.15 * U.widget_unit;
-  const float f7 = 0.25 * U.widget_unit;
+  const float f3 = 0.05 * U.widget_unit / aspect;
+  const float f5 = 0.15 * U.widget_unit / aspect;
+  const float f7 = 0.25 * U.widget_unit / aspect;
 
   if (dir == 'h') {
     draw_anti_tria(x - f3, y - f5, x - f3, y + f5, x + f7, y, color);
@@ -1321,7 +1324,7 @@ static void widget_draw_preview_icon(BIFIconID icon,
   }
 }
 
-static int ui_but_draw_menu_icon(const Button *but)
+static int but_draw_menu_icon(const Button *but)
 {
   return (but->flag & BUT_ICON_SUBMENU) && (but->emboss == EmbossType::Pulldown);
 }
@@ -1479,7 +1482,7 @@ static void widget_draw_submenu_tria(const Button *but,
   draw_anti_tria_rect(&tria_rect, 'h', col);
 }
 
-static void ui_text_clip_give_prev_off(Button *but, const char *str)
+static void text_clip_give_prev_off(Button *but, const char *str)
 {
   const char *prev_utf8 = BLI_str_find_prev_char_utf8(str + but->ofs, str);
   const int bytes = str + but->ofs - prev_utf8;
@@ -1487,7 +1490,7 @@ static void ui_text_clip_give_prev_off(Button *but, const char *str)
   but->ofs -= bytes;
 }
 
-static void ui_text_clip_give_next_off(Button *but, const char *str, const char *str_end)
+static void text_clip_give_next_off(Button *but, const char *str, const char *str_end)
 {
   const char *next_utf8 = BLI_str_find_next_char_utf8(str + but->ofs, str_end);
   const int bytes = next_utf8 - (str + but->ofs);
@@ -1500,14 +1503,14 @@ static void ui_text_clip_give_next_off(Button *but, const char *str, const char 
  * This func assumes things like kerning handling have already been handled!
  * Return the length of modified (right-clipped + ellipsis) string.
  */
-static void ui_text_clip_right_ex(const uiFontStyle *fstyle,
-                                  char *str,
-                                  const size_t max_len,
-                                  const float okwidth,
-                                  const char *sep,
-                                  const int sep_len,
-                                  const float sep_strwidth,
-                                  size_t *r_final_len)
+static void text_clip_right_ex(const uiFontStyle *fstyle,
+                               char *str,
+                               const size_t max_len,
+                               const float okwidth,
+                               const char *sep,
+                               const int sep_len,
+                               const float sep_strwidth,
+                               size_t *r_final_len)
 {
   BLI_assert(str[0]);
 
@@ -1593,7 +1596,7 @@ float text_clip_middle_ex(const uiFontStyle *fstyle,
       /* If we really have no place, or we would clip a very small piece of string in the middle,
        * only show start of string.
        */
-      ui_text_clip_right_ex(
+      text_clip_right_ex(
           fstyle, str, max_len, okwidth, sep, sep_len, sep_strwidth, &final_lpart_len);
     }
     else {
@@ -1609,7 +1612,7 @@ float text_clip_middle_ex(const uiFontStyle *fstyle,
          * NOTE: with a single-char ellipsis, this should never happen! But better be safe
          * here...
          */
-        ui_text_clip_right_ex(
+        text_clip_right_ex(
             fstyle, str, max_len, okwidth, sep, sep_len, sep_strwidth, &final_lpart_len);
       }
       else {
@@ -1657,13 +1660,19 @@ float text_clip_middle_ex(const uiFontStyle *fstyle,
   return strwidth;
 }
 
+bool button_draw_as_link(const Button *button)
+{
+  return button->type == ButtonType::But && static_cast<const ButtonPush *>(button)->draw_as_link;
+}
+
 /**
  * Wrapper around text_clip_middle_ex.
  */
-static void ui_text_clip_middle(const uiFontStyle *fstyle, Button *but, const rcti *rect)
+static void text_clip_middle(const uiFontStyle *fstyle, Button *but, const rcti *rect)
 {
   /* No margin for labels! */
-  const int border = ELEM(but->type, ButtonType::Label, ButtonType::Menu, ButtonType::Popover) ?
+  const int border = (ELEM(but->type, ButtonType::Label, ButtonType::Menu, ButtonType::Popover) ||
+                      (button_draw_as_link(but) && !(but->flag & UI_HAS_ICON))) ?
                          0 :
                          int(UI_TEXT_CLIP_MARGIN + 0.5f);
   const float okwidth = float(max_ii(BLI_rcti_size_x(rect) - border, 0));
@@ -1678,18 +1687,19 @@ static void ui_text_clip_middle(const uiFontStyle *fstyle, Button *but, const rc
 }
 
 /**
- * Like #ui_text_clip_middle(), but protect/preserve at all cost
+ * Like #text_clip_middle(), but protect/preserve at all cost
  * the right part of the string after sep.
  * Useful for strings with shortcuts
  * (like 'AVeryLongFooBarLabelForMenuEntry|Ctrl O' -> 'AVeryLong...MenuEntry|Ctrl O').
  */
-static void ui_text_clip_middle_protect_right(const uiFontStyle *fstyle,
-                                              Button *but,
-                                              const rcti *rect,
-                                              const char rsep)
+static void text_clip_middle_protect_right(const uiFontStyle *fstyle,
+                                           Button *but,
+                                           const rcti *rect,
+                                           const char rsep)
 {
   /* No margin for labels! */
-  const int border = ELEM(but->type, ButtonType::Label, ButtonType::Menu, ButtonType::Popover) ?
+  const int border = (ELEM(but->type, ButtonType::Label, ButtonType::Menu, ButtonType::Popover) ||
+                      (button_draw_as_link(but) && !(but->flag & UI_HAS_ICON))) ?
                          0 :
                          int(UI_TEXT_CLIP_MARGIN + 0.5f);
   const float okwidth = float(max_ii(BLI_rcti_size_x(rect) - border, 0));
@@ -1794,7 +1804,7 @@ Vector<StringRef> text_clip_multiline_middle(const uiFontStyle *fstyle,
 /**
  * Cut off the text, taking into account the cursor location (text display while editing).
  */
-static void ui_text_clip_cursor(const uiFontStyle *fstyle, Button *but, const rcti *rect)
+static void text_clip_cursor(const uiFontStyle *fstyle, Button *but, const rcti *rect)
 {
   const int border = int(UI_TEXT_CLIP_MARGIN + 0.5f);
   const int okwidth = max_ii(BLI_rcti_size_x(rect) - border, 0);
@@ -1825,12 +1835,12 @@ static void ui_text_clip_cursor(const uiFontStyle *fstyle, Button *but, const rc
 
       /* if cursor is at 20 pixels of right side button we clip left */
       if (width > okwidth - 20) {
-        ui_text_clip_give_next_off(but, but->editstr, but->editstr + editstr_len);
+        text_clip_give_next_off(but, but->editstr, but->editstr + editstr_len);
       }
       else {
         /* shift string to the left */
         if (width < 20 && but->ofs > 0) {
-          ui_text_clip_give_prev_off(but, but->editstr);
+          text_clip_give_prev_off(but, but->editstr);
         }
         len -= BLI_str_utf8_size_safe(
             BLI_str_find_prev_char_utf8(but->editstr + len, but->editstr));
@@ -1850,7 +1860,7 @@ static void ui_text_clip_cursor(const uiFontStyle *fstyle, Button *but, const rc
  *
  * \note deals with ': ' especially for number buttons
  */
-static void ui_text_clip_right_label(const uiFontStyle *fstyle, Button *but, const rcti *rect)
+static void text_clip_right_label(const uiFontStyle *fstyle, Button *but, const rcti *rect)
 {
   const int border = UI_TEXT_CLIP_MARGIN + 1;
   const int okwidth = max_ii(BLI_rcti_size_x(rect) - border, 0);
@@ -1915,7 +1925,7 @@ static void ui_text_clip_right_label(const uiFontStyle *fstyle, Button *but, con
 
     /* after the leading text is gone, chop off the : and following space, with ofs */
     while ((but->strwidth > okwidth) && (but->ofs < 2)) {
-      ui_text_clip_give_next_off(but, new_drawstr, new_drawstr + drawstr_len);
+      text_clip_give_next_off(but, new_drawstr, new_drawstr + drawstr_len);
       but->strwidth = BLF_width(
           fstyle->uifont_id, new_drawstr + but->ofs, sizeof(new_drawstr) - but->ofs);
       if (but->strwidth < 10) {
@@ -2194,8 +2204,8 @@ static void widget_draw_text(const uiFontStyle *fstyle,
   }
 
 #if 0
-  ui_rasterpos_safe(x, y, but->aspect);
-  transopts = ui_translate_buttons();
+  rasterpos_safe(x, y, but->aspect);
+  transopts = translate_buttons();
 #endif
 
   bool use_drawstr_right_as_hint = false;
@@ -2232,7 +2242,21 @@ static void widget_draw_text(const uiFontStyle *fstyle,
     }
   }
 #endif
-
+  /* Draw text underline when the link button is active. */
+  if (button_draw_as_link(but) && but->active) {
+    float4 color;
+    rgba_uchar_to_float(color, wcol->text);
+    int width = BLF_width(fstyle->uifont_id, drawstr, drawstr_left_len);
+    int xmin = rect->xmin;
+    if (align == UI_STYLE_TEXT_RIGHT) {
+      xmin = rect->xmax - width;
+    }
+    else if (align == UI_STYLE_TEXT_CENTER) {
+      const int rect_width = BLI_rcti_size_x(rect);
+      xmin = rect->xmin + std::round(float(rect_width - width + 1) / 2.0f);
+    }
+    draw_text_underline(xmin, rect->ymin + 6 * U.pixelsize, width, 1, color);
+  }
   if (!use_right_only) {
     /* for underline drawing */
     int font_xofs, font_yofs;
@@ -2328,7 +2352,7 @@ static void widget_draw_extra_icons(const uiWidgetColors *wcol,
   const float icon_size = ICON_SIZE_FROM_BUTRECT(rect);
 
   /* Offset of icons from the right edge. Keep in sync
-   * with 'ui_but_extra_operator_icon_mouse_over_get'. */
+   * with 'but_extra_operator_icon_mouse_over_get'. */
   if (!BLI_listbase_is_empty(&but->extra_op_icons)) {
     /* Eyeballed. */
     rect->xmax -= 0.2 * icon_size;
@@ -2389,7 +2413,7 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
                                   Button *but,
                                   rcti *rect)
 {
-  const bool show_menu_icon = ui_but_draw_menu_icon(but);
+  const bool show_menu_icon = but_draw_menu_icon(but);
   const float alpha = float(wcol->text[3]) / 255.0f;
   std::string password_str;
   bool no_text_padding = but->drawflag & BUT_NO_TEXT_PADDING;
@@ -2549,7 +2573,7 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
 
   /* clip but->drawstr to fit in available space */
   if (but->editstr && but->pos >= 0) {
-    ui_text_clip_cursor(fstyle, but, rect);
+    text_clip_cursor(fstyle, but, rect);
   }
   else if (but->drawstr[0] == '\0') {
     /* bypass text clipping on icon buttons */
@@ -2557,14 +2581,14 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
     but->strwidth = 0;
   }
   else if (ELEM(but->type, ButtonType::Num, ButtonType::NumSlider)) {
-    ui_text_clip_right_label(fstyle, but, rect);
+    text_clip_right_label(fstyle, but, rect);
   }
   else if (but->flag & BUT_HAS_SEP_CHAR) {
     /* Clip middle, but protect in all case right part containing the shortcut, if any. */
-    ui_text_clip_middle_protect_right(fstyle, but, rect, UI_SEP_CHAR);
+    text_clip_middle_protect_right(fstyle, but, rect, UI_SEP_CHAR);
   }
   else {
-    ui_text_clip_middle(fstyle, but, rect);
+    text_clip_middle(fstyle, but, rect);
   }
 
   /* Always draw text for text-button cursor. */
@@ -2587,7 +2611,7 @@ static void widget_draw_text_icon(const uiFontStyle *fstyle,
  * \{ */
 
 /* put all widget colors on half alpha, use local storage */
-static void ui_widget_color_disabled(WidgetType *wt, const WidgetStateInfo *state)
+static void widget_color_disabled(WidgetType *wt, const WidgetStateInfo *state)
 {
   static uiWidgetColors wcol_theme_s;
 
@@ -2654,12 +2678,15 @@ static void widget_state(WidgetType *wt, const WidgetStateInfo *state, EmbossTyp
     wt->wcol_theme = &btheme->tui.wcol_list_item;
 
     if (state->but_flag & (BUT_DISABLED | BUT_INACTIVE | UI_SEARCH_FILTER_NO_MATCH)) {
-      ui_widget_color_disabled(wt, state);
+      widget_color_disabled(wt, state);
     }
   }
 
   wt->wcol = *(wt->wcol_theme);
-
+  if (state->draw_as_link) {
+    theme::get_color_4ubv(TH_LINK, wt->wcol.text);
+    theme::get_color_4ubv(TH_LINK, wt->wcol.text_sel);
+  }
   const uchar *color_blend = widget_color_blend_from_flags(wcol_state, state, emboss);
 
   if (state->but_flag & UI_SELECT) {
@@ -2986,12 +3013,12 @@ static void widget_menu_back(uiWidgetColors *wcol,
   GPU_blend(GPU_BLEND_NONE);
 }
 
-static void ui_hsv_cursor(const float x,
-                          const float y,
-                          const float zoom,
-                          const float rgb[3],
-                          const float hsv[3],
-                          const bool is_active)
+static void hsv_cursor(const float x,
+                       const float y,
+                       const float zoom,
+                       const float rgb[3],
+                       const float hsv[3],
+                       const bool is_active)
 {
   /* Draw the circle larger while the mouse button is pressed down. */
   const float radius = zoom * (((is_active ? 20.0f : 12.0f) * UI_SCALE_FAC) + U.pixelsize);
@@ -3062,7 +3089,7 @@ void hsvcircle_pos_from_vals(
   *r_ypos = centy + sinf(-ang) * rad;
 }
 
-static void ui_draw_but_HSVCIRCLE(Button *but, const uiWidgetColors *wcol, const rcti *rect)
+static void draw_but_HSVCIRCLE(Button *but, const uiWidgetColors *wcol, const rcti *rect)
 {
   /* TODO(merwin): reimplement as shader for pixel-perfect colors */
 
@@ -3168,7 +3195,7 @@ static void ui_draw_but_HSVCIRCLE(Button *but, const uiWidgetColors *wcol, const
   float xpos, ypos;
   hsvcircle_pos_from_vals(cpicker, rect, hsv, &xpos, &ypos);
   const float zoom = 1.0f / but->block->aspect;
-  ui_hsv_cursor(xpos, ypos, zoom, rgb, hsv, but->flag & UI_SELECT);
+  hsv_cursor(xpos, ypos, zoom, rgb, hsv, but->flag & UI_SELECT);
 }
 
 /** \} */
@@ -3177,7 +3204,7 @@ static void ui_draw_but_HSVCIRCLE(Button *but, const uiWidgetColors *wcol, const
 /** \name Draw Custom Buttons
  * \{ */
 
-static void ui_draw_gradient_hsv_to_rgb(
+static void draw_gradient_hsv_to_rgb(
     const ColorManagedDisplay *display, float h, float s, float v, float rgb[3])
 {
   hsv_to_rgb(h, s, v, rgb, rgb + 1, rgb + 2);
@@ -3207,44 +3234,44 @@ void draw_gradient(const rcti *rect,
 
   switch (type) {
     case GRAD_SV:
-      ui_draw_gradient_hsv_to_rgb(display, h, 0.0, 0.0, col1[0]);
-      ui_draw_gradient_hsv_to_rgb(display, h, 0.0, 0.333, col1[1]);
-      ui_draw_gradient_hsv_to_rgb(display, h, 0.0, 0.666, col1[2]);
-      ui_draw_gradient_hsv_to_rgb(display, h, 0.0, 1.0, col1[3]);
+      draw_gradient_hsv_to_rgb(display, h, 0.0, 0.0, col1[0]);
+      draw_gradient_hsv_to_rgb(display, h, 0.0, 0.333, col1[1]);
+      draw_gradient_hsv_to_rgb(display, h, 0.0, 0.666, col1[2]);
+      draw_gradient_hsv_to_rgb(display, h, 0.0, 1.0, col1[3]);
       break;
     case GRAD_HV:
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, s, 0.0, col1[0]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, s, 0.333, col1[1]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, s, 0.666, col1[2]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, s, 1.0, col1[3]);
+      draw_gradient_hsv_to_rgb(display, 0.0, s, 0.0, col1[0]);
+      draw_gradient_hsv_to_rgb(display, 0.0, s, 0.333, col1[1]);
+      draw_gradient_hsv_to_rgb(display, 0.0, s, 0.666, col1[2]);
+      draw_gradient_hsv_to_rgb(display, 0.0, s, 1.0, col1[3]);
       break;
     case GRAD_HS:
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, 0.0, v, col1[0]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, 0.333, v, col1[1]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, 0.666, v, col1[2]);
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, 1.0, v, col1[3]);
+      draw_gradient_hsv_to_rgb(display, 0.0, 0.0, v, col1[0]);
+      draw_gradient_hsv_to_rgb(display, 0.0, 0.333, v, col1[1]);
+      draw_gradient_hsv_to_rgb(display, 0.0, 0.666, v, col1[2]);
+      draw_gradient_hsv_to_rgb(display, 0.0, 1.0, v, col1[3]);
       break;
     case GRAD_H:
-      ui_draw_gradient_hsv_to_rgb(display, 0.0, 1.0, 1.0, col1[0]);
+      draw_gradient_hsv_to_rgb(display, 0.0, 1.0, 1.0, col1[0]);
       copy_v3_v3(col1[1], col1[0]);
       copy_v3_v3(col1[2], col1[0]);
       copy_v3_v3(col1[3], col1[0]);
       break;
     case GRAD_S:
-      ui_draw_gradient_hsv_to_rgb(display, 1.0, 0.0, 1.0, col1[1]);
+      draw_gradient_hsv_to_rgb(display, 1.0, 0.0, 1.0, col1[1]);
       copy_v3_v3(col1[0], col1[1]);
       copy_v3_v3(col1[2], col1[1]);
       copy_v3_v3(col1[3], col1[1]);
       break;
     case GRAD_V:
-      ui_draw_gradient_hsv_to_rgb(display, 1.0, 1.0, 0.0, col1[2]);
+      draw_gradient_hsv_to_rgb(display, 1.0, 1.0, 0.0, col1[2]);
       copy_v3_v3(col1[0], col1[2]);
       copy_v3_v3(col1[1], col1[2]);
       copy_v3_v3(col1[3], col1[2]);
       break;
     default:
       BLI_assert_msg(0, "invalid 'type' argument");
-      ui_draw_gradient_hsv_to_rgb(display, 1.0, 1.0, 1.0, col1[2]);
+      draw_gradient_hsv_to_rgb(display, 1.0, 1.0, 1.0, col1[2]);
       copy_v3_v3(col1[0], col1[2]);
       copy_v3_v3(col1[1], col1[2]);
       copy_v3_v3(col1[3], col1[2]);
@@ -3272,39 +3299,39 @@ void draw_gradient(const rcti *rect,
     /* new color */
     switch (type) {
       case GRAD_SV:
-        ui_draw_gradient_hsv_to_rgb(display, h, dx, 0.0, col1[0]);
-        ui_draw_gradient_hsv_to_rgb(display, h, dx, 0.333, col1[1]);
-        ui_draw_gradient_hsv_to_rgb(display, h, dx, 0.666, col1[2]);
-        ui_draw_gradient_hsv_to_rgb(display, h, dx, 1.0, col1[3]);
+        draw_gradient_hsv_to_rgb(display, h, dx, 0.0, col1[0]);
+        draw_gradient_hsv_to_rgb(display, h, dx, 0.333, col1[1]);
+        draw_gradient_hsv_to_rgb(display, h, dx, 0.666, col1[2]);
+        draw_gradient_hsv_to_rgb(display, h, dx, 1.0, col1[3]);
         break;
       case GRAD_HV:
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, s, 0.0, col1[0]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, s, 0.333, col1[1]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, s, 0.666, col1[2]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, s, 1.0, col1[3]);
+        draw_gradient_hsv_to_rgb(display, dx_next, s, 0.0, col1[0]);
+        draw_gradient_hsv_to_rgb(display, dx_next, s, 0.333, col1[1]);
+        draw_gradient_hsv_to_rgb(display, dx_next, s, 0.666, col1[2]);
+        draw_gradient_hsv_to_rgb(display, dx_next, s, 1.0, col1[3]);
         break;
       case GRAD_HS:
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, 0.0, v, col1[0]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, 0.333, v, col1[1]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, 0.666, v, col1[2]);
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, 1.0, v, col1[3]);
+        draw_gradient_hsv_to_rgb(display, dx_next, 0.0, v, col1[0]);
+        draw_gradient_hsv_to_rgb(display, dx_next, 0.333, v, col1[1]);
+        draw_gradient_hsv_to_rgb(display, dx_next, 0.666, v, col1[2]);
+        draw_gradient_hsv_to_rgb(display, dx_next, 1.0, v, col1[3]);
         break;
       case GRAD_H:
         /* annoying but without this the color shifts - could be solved some other way
          * - campbell */
-        ui_draw_gradient_hsv_to_rgb(display, dx_next, 1.0, 1.0, col1[0]);
+        draw_gradient_hsv_to_rgb(display, dx_next, 1.0, 1.0, col1[0]);
         copy_v3_v3(col1[1], col1[0]);
         copy_v3_v3(col1[2], col1[0]);
         copy_v3_v3(col1[3], col1[0]);
         break;
       case GRAD_S:
-        ui_draw_gradient_hsv_to_rgb(display, h, dx, 1.0, col1[1]);
+        draw_gradient_hsv_to_rgb(display, h, dx, 1.0, col1[1]);
         copy_v3_v3(col1[0], col1[1]);
         copy_v3_v3(col1[2], col1[1]);
         copy_v3_v3(col1[3], col1[1]);
         break;
       case GRAD_V:
-        ui_draw_gradient_hsv_to_rgb(display, h, 1.0, dx, col1[2]);
+        draw_gradient_hsv_to_rgb(display, h, 1.0, dx, col1[2]);
         copy_v3_v3(col1[0], col1[2]);
         copy_v3_v3(col1[1], col1[2]);
         copy_v3_v3(col1[3], col1[2]);
@@ -3393,7 +3420,7 @@ void hsvcube_pos_from_vals(
   *r_yp = rect->ymin + y * BLI_rcti_size_y(rect);
 }
 
-static void ui_draw_but_HSVCUBE(Button *but, const rcti *rect)
+static void draw_but_HSVCUBE(Button *but, const rcti *rect)
 {
   const ButtonHSVCube *hsv_but = static_cast<ButtonHSVCube *>(but);
   float rgb[3], rgb_perceptual[3];
@@ -3437,7 +3464,7 @@ static void ui_draw_but_HSVCUBE(Button *but, const rcti *rect)
     float margin = (4.0f * UI_SCALE_FAC);
     CLAMP(x, rect->xmin + margin, rect->xmax - margin);
     CLAMP(y, rect->ymin + margin, rect->ymax - margin);
-    ui_hsv_cursor(x, y, zoom, rgb, hsv, but->flag & UI_SELECT);
+    hsv_cursor(x, y, zoom, rgb, hsv, but->flag & UI_SELECT);
   }
   else {
     /* Square indicator in the narrow area. */
@@ -3471,7 +3498,7 @@ static void ui_draw_but_HSVCUBE(Button *but, const rcti *rect)
 }
 
 /* vertical 'value' slider, using new widget code */
-static void ui_draw_but_HSV_v(Button *but, const rcti *rect)
+static void draw_but_HSV_v(Button *but, const rcti *rect)
 {
   const ButtonHSVCube *hsv_but = static_cast<ButtonHSVCube *>(but);
   float rgb[3], hsv[3], v;
@@ -3528,7 +3555,7 @@ static void ui_draw_but_HSV_v(Button *but, const rcti *rect)
 }
 
 /** Separator line. */
-static void ui_draw_separator(const uiWidgetColors *wcol, Button *but, const rcti *rect)
+static void draw_separator(const uiWidgetColors *wcol, Button *but, const rcti *rect)
 {
   const ButtonSeparatorLine *but_line = static_cast<ButtonSeparatorLine *>(but);
   const bool vertical = but_line->is_vertical;
@@ -4073,12 +4100,7 @@ static void widget_numslider(Button *but,
 
     switch (scale_type) {
       case PROP_SCALE_LINEAR: {
-        if (but->rnaprop && (RNA_property_subtype(but->rnaprop) == PROP_PERCENTAGE)) {
-          factor = value / softmax;
-        }
-        else {
-          factor = (value - softmin) / softrange;
-        }
+        factor = (value - softmin) / softrange;
         break;
       }
       case PROP_SCALE_LOG: {
@@ -4206,7 +4228,7 @@ static void widget_swatch(Button *but,
   /* Now we reduce alpha of the inner color (i.e. the color shown)
    * so that this setting can look grayed out, while retaining
    * the checkerboard (for transparent values). This is needed
-   * here as the effects of ui_widget_color_disabled() are overwritten. */
+   * here as the effects of widget_color_disabled() are overwritten. */
   col[3] *= widget_alpha_factor(state);
 
   widgetbase_draw_color(&wtb, wcol, col, show_alpha_checkers);
@@ -4396,7 +4418,7 @@ static void widget_menu_pie_itembut(Button *but,
                                     int /*roundboxalign*/,
                                     const float zoom)
 {
-  const float fac = but->block->pie_data.alphafac;
+  const float fac = but->block->pie_data ? but->block->pie_data->alphafac : 1.0f;
 
   WidgetBase wtb;
   widget_init(&wtb);
@@ -4712,7 +4734,7 @@ static void widget_tab(Button *but,
 
 #ifdef USE_TAB_SHADED_HIGHLIGHT
   /* draw outline (3d look) */
-  ui_draw_but_TAB_outline(rect, rad, theme_col_tab_highlight, wcol->inner);
+  draw_but_TAB_outline(rect, rad, theme_col_tab_highlight, wcol->inner);
 #endif
 
 #ifndef USE_TAB_SHADED_HIGHLIGHT
@@ -4758,7 +4780,7 @@ static void widget_draw_extra_mask(const bContext *C, Button *but, WidgetType *w
   widgetbase_draw(&wtb, &wt->wcol);
 }
 
-static WidgetType *widget_type(WidgetTypeEnum type)
+static WidgetType *widget_type(WidgetStyle type)
 {
   bTheme *btheme = theme::theme_get();
 
@@ -4772,127 +4794,127 @@ static WidgetType *widget_type(WidgetTypeEnum type)
   wt.text = widget_draw_text_icon;
 
   switch (type) {
-    case UI_WTYPE_REGULAR:
+    case WidgetStyle::Regular:
       break;
 
-    case UI_WTYPE_LABEL:
+    case WidgetStyle::Label:
       wt.draw = nullptr;
       wt.state = widget_state_label;
       break;
 
-    case UI_WTYPE_TOGGLE:
+    case WidgetStyle::Toggle:
       wt.wcol_theme = &btheme->tui.wcol_toggle;
       break;
 
-    case UI_WTYPE_CHECKBOX:
+    case WidgetStyle::Checkbox:
       wt.wcol_theme = &btheme->tui.wcol_option;
       wt.draw = widget_optionbut;
       break;
 
-    case UI_WTYPE_RADIO:
+    case WidgetStyle::Radio:
       wt.wcol_theme = &btheme->tui.wcol_radio;
       wt.draw = widget_radiobut;
       break;
 
-    case UI_WTYPE_NUMBER:
+    case WidgetStyle::Number:
       wt.wcol_theme = &btheme->tui.wcol_num;
       wt.custom = widget_numbut;
       break;
 
-    case UI_WTYPE_SLIDER:
+    case WidgetStyle::Slider:
       wt.wcol_theme = &btheme->tui.wcol_numslider;
       wt.custom = widget_numslider;
       wt.state = widget_state_numslider;
       break;
 
-    case UI_WTYPE_EXEC:
+    case WidgetStyle::Exec:
       wt.wcol_theme = &btheme->tui.wcol_tool;
       wt.custom = widget_roundbut_exec;
       break;
 
-    case UI_WTYPE_TOOLBAR_ITEM:
+    case WidgetStyle::ToolbarItem:
       wt.wcol_theme = &btheme->tui.wcol_toolbar_item;
       wt.custom = widget_roundbut_exec;
       break;
 
-    case UI_WTYPE_TAB:
+    case WidgetStyle::Tab:
       wt.wcol_theme = &btheme->tui.wcol_tab;
       wt.custom = widget_tab;
       break;
 
-    case UI_WTYPE_TOOLTIP:
+    case WidgetStyle::Tooltip:
       wt.wcol_theme = &btheme->tui.wcol_tooltip;
       wt.draw_block = widget_menu_back;
       break;
 
     /* strings */
-    case UI_WTYPE_NAME:
+    case WidgetStyle::Name:
       wt.wcol_theme = &btheme->tui.wcol_text;
       wt.draw = widget_textbut;
       break;
 
-    case UI_WTYPE_NAME_LINK:
+    case WidgetStyle::NameLink:
       break;
 
-    case UI_WTYPE_POINTER_LINK:
+    case WidgetStyle::PointerLink:
       break;
 
-    case UI_WTYPE_FILENAME:
+    case WidgetStyle::Filename:
       break;
 
     /* start menus */
-    case UI_WTYPE_MENU_RADIO:
+    case WidgetStyle::MenuRadio:
       wt.wcol_theme = &btheme->tui.wcol_menu;
       wt.draw = widget_menubut;
       break;
 
-    case UI_WTYPE_MENU_ICON_RADIO:
-    case UI_WTYPE_MENU_NODE_LINK:
+    case WidgetStyle::MenuIconRadio:
+    case WidgetStyle::MenuNodeLink:
       wt.wcol_theme = &btheme->tui.wcol_menu;
       wt.draw = widget_menuiconbut;
       break;
 
-    case UI_WTYPE_MENU_POINTER_LINK:
+    case WidgetStyle::MenuPointerLink:
       wt.wcol_theme = &btheme->tui.wcol_menu;
       wt.draw = widget_menubut;
       break;
 
-    case UI_WTYPE_PULLDOWN:
+    case WidgetStyle::Pulldown:
       wt.wcol_theme = &btheme->tui.wcol_pulldown;
       wt.draw = widget_pulldownbut;
       wt.state = widget_state_pulldown;
       break;
 
     /* in menus */
-    case UI_WTYPE_MENU_ITEM:
+    case WidgetStyle::MenuItem:
       wt.wcol_theme = &btheme->tui.wcol_menu_item;
       wt.draw = widget_menu_itembut;
       wt.state = widget_state_menu_item;
       break;
 
-    case UI_WTYPE_MENU_ITEM_UNPADDED:
+    case WidgetStyle::MenuItemUnpadded:
       wt.wcol_theme = &btheme->tui.wcol_menu_item;
       wt.draw = widget_menu_itembut_unpadded;
       wt.state = widget_state_menu_item;
       break;
 
-    case UI_WTYPE_MENU_BACK:
+    case WidgetStyle::MenuBack:
       wt.wcol_theme = &btheme->tui.wcol_menu_back;
       wt.draw_block = widget_menu_back;
       break;
 
     /* specials */
-    case UI_WTYPE_ICON:
+    case WidgetStyle::Icon:
       wt.custom = widget_icon_has_anim;
       break;
 
-    case UI_WTYPE_ICON_LABEL:
+    case WidgetStyle::IconLabel:
       /* behave like regular labels (this is simply a label with an icon) */
       wt.state = widget_state_label;
       wt.custom = widget_icon_has_anim;
       break;
 
-    case UI_WTYPE_PREVIEW_TILE:
+    case WidgetStyle::PreviewTile:
       wt.draw = nullptr;
       /* Drawn via the `custom` callback. */
       wt.text = nullptr;
@@ -4902,44 +4924,44 @@ static WidgetType *widget_type(WidgetTypeEnum type)
       wt.wcol_theme = &btheme->tui.wcol_list_item;
       break;
 
-    case UI_WTYPE_SWATCH:
+    case WidgetStyle::Swatch:
       wt.custom = widget_swatch;
       break;
 
-    case UI_WTYPE_BOX:
+    case WidgetStyle::Box:
       wt.custom = widget_box;
       wt.wcol_theme = &btheme->tui.wcol_box;
       break;
 
-    case UI_WTYPE_RGB_PICKER:
+    case WidgetStyle::RGBPicker:
       break;
 
-    case UI_WTYPE_UNITVEC:
+    case WidgetStyle::Unitvec:
       wt.custom = widget_unitvec;
       break;
 
-    case UI_WTYPE_SCROLL:
+    case WidgetStyle::Scroll:
       wt.wcol_theme = &btheme->tui.wcol_scroll;
       wt.state = widget_state_nothing;
       wt.custom = widget_scroll;
       break;
 
-    case UI_WTYPE_LISTITEM:
-    case UI_WTYPE_VIEW_ITEM:
+    case WidgetStyle::ListItem:
+    case WidgetStyle::ViewItem:
       wt.wcol_theme = &btheme->tui.wcol_list_item;
       wt.custom = widget_list_itembut;
       break;
 
-    case UI_WTYPE_PROGRESS:
+    case WidgetStyle::Progress:
       wt.wcol_theme = &btheme->tui.wcol_progress;
       wt.custom = widget_progress_indicator;
       break;
 
-    case UI_WTYPE_NODESOCKET:
+    case WidgetStyle::NodeSocket:
       wt.custom = widget_nodesocket;
       break;
 
-    case UI_WTYPE_MENU_ITEM_PIE:
+    case WidgetStyle::MenuItemPie:
       wt.wcol_theme = &btheme->tui.wcol_pie_menu;
       wt.custom = widget_menu_pie_itembut;
       wt.state = widget_state_pie_menu_item;
@@ -4956,7 +4978,7 @@ static int widget_roundbox_set(Button *but, rcti *rect)
   /* alignment */
   if ((but->drawflag & BUT_ALIGN) && but->type != ButtonType::Pulldown) {
 
-    /* ui_popup_block_position has this correction too, keep in sync */
+    /* popup_block_position has this correction too, keep in sync */
     if (but->drawflag & (BUT_ALIGN_TOP | BUT_ALIGN_STITCH_TOP)) {
       rect->ymax += U.pixelsize;
     }
@@ -5026,11 +5048,11 @@ static WidgetType *popover_widget_type(Button *but, rcti *rect)
       (but->flag & BUT_ICON_PREVIEW))
   {
     /* No arrows. */
-    return widget_type(UI_WTYPE_MENU_ICON_RADIO);
+    return widget_type(WidgetStyle::MenuIconRadio);
   }
 
   /* With menu arrows. */
-  return widget_type(UI_WTYPE_MENU_RADIO);
+  return widget_type(WidgetStyle::MenuRadio);
 }
 
 /** \} */
@@ -5050,7 +5072,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   if (but->emboss == EmbossType::Pulldown) {
     switch (but->type) {
       case ButtonType::Color:
-        wt = widget_type(UI_WTYPE_SWATCH);
+        wt = widget_type(WidgetStyle::Swatch);
         break;
       case ButtonType::Label:
         widget_draw_text_icon(&style->widget, &tui->wcol_menu_back, but, rect);
@@ -5060,12 +5082,12 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
       case ButtonType::SeprLine:
         /* Add horizontal padding between the line and menu sides. */
         BLI_rcti_pad(rect, int(-7.0f * UI_SCALE_FAC), 0);
-        ui_draw_separator(&tui->wcol_menu_item, but, rect);
+        draw_separator(&tui->wcol_menu_item, but, rect);
         break;
       default: {
         const bool use_unpadded = (but->flag & BUT_ICON_PREVIEW) ||
                                   ((but->flag & UI_HAS_ICON) && !but->drawstr[0]);
-        wt = widget_type(use_unpadded ? UI_WTYPE_MENU_ITEM_UNPADDED : UI_WTYPE_MENU_ITEM);
+        wt = widget_type(use_unpadded ? WidgetStyle::MenuItemUnpadded : WidgetStyle::MenuItem);
         break;
       }
     }
@@ -5076,39 +5098,39 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
     switch (but->type) {
       case ButtonType::Label:
       case ButtonType::Text:
-        wt = widget_type(UI_WTYPE_ICON_LABEL);
+        wt = widget_type(WidgetStyle::IconLabel);
         if (!(but->flag & UI_HAS_ICON)) {
           but->drawflag |= BUT_NO_TEXT_PADDING;
         }
         break;
       case ButtonType::PreviewTile:
-        wt = widget_type(UI_WTYPE_PREVIEW_TILE);
+        wt = widget_type(WidgetStyle::PreviewTile);
         break;
       case ButtonType::Popover:
         if (but->icon == 0) {
           wt = popover_widget_type(but, rect);
         }
         else { /* Currently used for presets. */
-          wt = widget_type(UI_WTYPE_ICON);
+          wt = widget_type(WidgetStyle::Icon);
         }
         break;
       case ButtonType::NodeSocket:
-        wt = widget_type(UI_WTYPE_NODESOCKET);
+        wt = widget_type(WidgetStyle::NodeSocket);
         break;
       default:
-        wt = widget_type(UI_WTYPE_ICON);
+        wt = widget_type(WidgetStyle::Icon);
         break;
     }
   }
   else if (but->emboss == EmbossType::PieMenu) {
-    wt = widget_type(UI_WTYPE_MENU_ITEM_PIE);
+    wt = widget_type(WidgetStyle::MenuItemPie);
   }
   else {
     BLI_assert(but->emboss == EmbossType::Emboss);
 
     switch (but->type) {
       case ButtonType::Label:
-        wt = widget_type(UI_WTYPE_LABEL);
+        wt = widget_type(WidgetStyle::Label);
         if (but->drawflag & BUT_BOX_ITEM) {
           wt->wcol_theme = &tui->wcol_box;
           wt->state = widget_state;
@@ -5126,61 +5148,68 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
       case ButtonType::SeprSpacer:
         break;
       case ButtonType::SeprLine:
-        ui_draw_separator(&tui->wcol_menu_item, but, rect);
+        draw_separator(&tui->wcol_menu_item, but, rect);
         break;
 
       case ButtonType::But:
       case ButtonType::Decorator:
 #ifdef USE_UI_TOOLBAR_HACK
         if ((but->icon != ICON_NONE) && but_is_tool(but)) {
-          wt = widget_type(UI_WTYPE_TOOLBAR_ITEM);
+          wt = widget_type(WidgetStyle::ToolbarItem);
         }
         else {
-          wt = widget_type(UI_WTYPE_EXEC);
+          wt = widget_type(WidgetStyle::Exec);
         }
 #else
-        wt = widget_type(UI_WTYPE_EXEC);
+        wt = widget_type(WidgetStyle::Exec);
 #endif
+        if (button_draw_as_link(but)) {
+          wt->draw = nullptr;
+          wt->custom = nullptr;
+          if (!(but->flag & UI_HAS_ICON)) {
+            but->drawflag |= BUT_NO_TEXT_PADDING;
+          }
+        }
         break;
 
       case ButtonType::Num:
-        wt = widget_type(UI_WTYPE_NUMBER);
+        wt = widget_type(WidgetStyle::Number);
         break;
 
       case ButtonType::NumSlider:
-        wt = widget_type(UI_WTYPE_SLIDER);
+        wt = widget_type(WidgetStyle::Slider);
         break;
 
       case ButtonType::Row:
-        wt = widget_type(UI_WTYPE_RADIO);
+        wt = widget_type(WidgetStyle::Radio);
         break;
 
       case ButtonType::ListRow:
-        wt = widget_type(UI_WTYPE_LISTITEM);
+        wt = widget_type(WidgetStyle::ListItem);
         break;
 
       case ButtonType::Text:
-        wt = widget_type(UI_WTYPE_NAME);
+        wt = widget_type(WidgetStyle::Name);
         break;
 
       case ButtonType::SearchMenu:
-        wt = widget_type(UI_WTYPE_NAME);
+        wt = widget_type(WidgetStyle::Name);
         break;
 
       case ButtonType::Tab:
-        wt = widget_type(UI_WTYPE_TAB);
+        wt = widget_type(WidgetStyle::Tab);
         break;
 
       case ButtonType::ButToggle:
       case ButtonType::Toggle:
       case ButtonType::ToggleN:
-        wt = widget_type(UI_WTYPE_TOGGLE);
+        wt = widget_type(WidgetStyle::Toggle);
         break;
 
       case ButtonType::Checkbox:
       case ButtonType::CheckboxN:
         if (!(but->flag & UI_HAS_ICON)) {
-          wt = widget_type(UI_WTYPE_CHECKBOX);
+          wt = widget_type(WidgetStyle::Checkbox);
 
           if ((but->drawflag & (BUT_TEXT_LEFT | BUT_TEXT_RIGHT)) == 0) {
             but->drawflag |= BUT_TEXT_LEFT;
@@ -5191,7 +5220,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
           but->drawflag |= BUT_NO_TEXT_PADDING;
         }
         else {
-          wt = widget_type(UI_WTYPE_TOGGLE);
+          wt = widget_type(WidgetStyle::Toggle);
         }
 
         /* option buttons have strings outside, on menus use different colors */
@@ -5205,7 +5234,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
       case ButtonType::Popover:
         if (but->flag & BUT_NODE_LINK) {
           /* new node-link button, not active yet XXX */
-          wt = widget_type(UI_WTYPE_MENU_NODE_LINK);
+          wt = widget_type(WidgetStyle::MenuNodeLink);
         }
         else {
           /* Popover button. */
@@ -5214,28 +5243,28 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
         break;
 
       case ButtonType::Pulldown:
-        wt = widget_type(UI_WTYPE_PULLDOWN);
+        wt = widget_type(WidgetStyle::Pulldown);
         break;
 
       case ButtonType::ButMenu:
-        wt = widget_type(UI_WTYPE_MENU_ITEM);
+        wt = widget_type(WidgetStyle::MenuItem);
         break;
 
       case ButtonType::Color:
-        wt = widget_type(UI_WTYPE_SWATCH);
+        wt = widget_type(WidgetStyle::Swatch);
         break;
 
       case ButtonType::Roundbox:
       case ButtonType::ListBox:
-        wt = widget_type(UI_WTYPE_BOX);
+        wt = widget_type(WidgetStyle::Box);
         break;
 
       case ButtonType::PreviewTile:
-        wt = widget_type(UI_WTYPE_PREVIEW_TILE);
+        wt = widget_type(WidgetStyle::PreviewTile);
         break;
 
       case ButtonType::Extra:
-        widget_draw_extra_mask(C, but, widget_type(UI_WTYPE_BOX), rect);
+        widget_draw_extra_mask(C, but, widget_type(WidgetStyle::Box), rect);
         break;
 
       case ButtonType::HsvCube: {
@@ -5243,16 +5272,16 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
 
         if (ELEM(hsv_but->gradient_type, GRAD_V_ALT, GRAD_L_ALT)) {
           /* vertical V slider, uses new widget draw now */
-          ui_draw_but_HSV_v(but, rect);
+          draw_but_HSV_v(but, rect);
         }
         else { /* other HSV pickers... */
-          ui_draw_but_HSVCUBE(but, rect);
+          draw_but_HSVCUBE(but, rect);
         }
         break;
       }
 
       case ButtonType::HsvCircle:
-        ui_draw_but_HSVCIRCLE(but, &tui->wcol_regular, rect);
+        draw_but_HSVCIRCLE(but, &tui->wcol_regular, rect);
         break;
 
       case ButtonType::ColorBand: {
@@ -5265,7 +5294,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
       }
 
       case ButtonType::Unitvec:
-        wt = widget_type(UI_WTYPE_UNITVEC);
+        wt = widget_type(WidgetStyle::Unitvec);
         break;
 
       case ButtonType::Image:
@@ -5293,19 +5322,19 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
         break;
 
       case ButtonType::Progress:
-        wt = widget_type(UI_WTYPE_PROGRESS);
+        wt = widget_type(WidgetStyle::Progress);
         break;
 
       case ButtonType::ViewItem:
-        wt = widget_type(UI_WTYPE_VIEW_ITEM);
+        wt = widget_type(WidgetStyle::ViewItem);
         break;
 
       case ButtonType::Scroll:
-        wt = widget_type(UI_WTYPE_SCROLL);
+        wt = widget_type(WidgetStyle::Scroll);
         break;
 
       case ButtonType::Grip:
-        wt = widget_type(UI_WTYPE_ICON);
+        wt = widget_type(WidgetStyle::Icon);
         break;
 
       case ButtonType::TrackPreview:
@@ -5313,11 +5342,11 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
         break;
 
       case ButtonType::NodeSocket:
-        wt = widget_type(UI_WTYPE_NODESOCKET);
+        wt = widget_type(WidgetStyle::NodeSocket);
         break;
 
       default:
-        wt = widget_type(UI_WTYPE_REGULAR);
+        wt = widget_type(WidgetStyle::Regular);
         break;
     }
   }
@@ -5334,6 +5363,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   state.but_flag = but->flag;
   state.but_drawflag = but->drawflag;
   state.emboss = but->emboss;
+  state.draw_as_link = button_draw_as_link(but);
 
   /* Override selected flag for drawing. */
   if (but->flag & UI_SELECT_DRAW) {
@@ -5353,7 +5383,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   if (but->emboss != EmbossType::Pulldown) {
     if (but->flag & (BUT_DISABLED | BUT_INACTIVE | UI_SEARCH_FILTER_NO_MATCH)) {
       use_alpha_blend = true;
-      ui_widget_color_disabled(wt, &state);
+      widget_color_disabled(wt, &state);
     }
   }
 
@@ -5399,7 +5429,7 @@ void draw_button(const bContext *C, ARegion *region, uiStyle *style, Button *but
   }
 }
 
-static void ui_draw_clip_tri(Block *block, const rcti *rect, WidgetType *wt)
+static void draw_clip_tri(Block *block, const rcti *rect, WidgetType *wt)
 {
   if (block) {
     float draw_color[4];
@@ -5411,17 +5441,23 @@ static void ui_draw_clip_tri(Block *block, const rcti *rect, WidgetType *wt)
     draw_color[3] = 1.0f;
 
     if (block->flag & BLOCK_CLIPTOP) {
-      /* XXX no scaling for UI here yet */
-      draw_icon_tri(BLI_rcti_cent_x(rect), rect->ymax - 6 * UI_SCALE_FAC, 't', draw_color);
+      draw_icon_tri(BLI_rcti_cent_x(rect),
+                    rect->ymax - (6 * UI_SCALE_FAC) / block->aspect,
+                    't',
+                    draw_color,
+                    block->aspect);
     }
     if (block->flag & BLOCK_CLIPBOTTOM) {
-      /* XXX no scaling for UI here yet */
-      draw_icon_tri(BLI_rcti_cent_x(rect), rect->ymin + 10 * UI_SCALE_FAC, 'v', draw_color);
+      draw_icon_tri(BLI_rcti_cent_x(rect),
+                    rect->ymin + (10 * UI_SCALE_FAC) / block->aspect,
+                    'v',
+                    draw_color,
+                    block->aspect);
     }
   }
 }
 
-static void ui_draw_dialog_alert(Block *block, const rcti *rect)
+static void draw_dialog_alert(Block *block, const rcti *rect)
 {
   if (block->alert_level != BlockAlertLevel::Error) {
     return;
@@ -5457,7 +5493,7 @@ static void ui_draw_dialog_alert(Block *block, const rcti *rect)
 
 void draw_menu_back(uiStyle * /*style*/, Block *block, const rcti *rect)
 {
-  WidgetType *wt = widget_type(UI_WTYPE_MENU_BACK);
+  WidgetType *wt = widget_type(WidgetStyle::MenuBack);
 
   wt->state(wt, &STATE_INFO_NULL, EmbossType::Undefined);
   if (block) {
@@ -5469,25 +5505,25 @@ void draw_menu_back(uiStyle * /*style*/, Block *block, const rcti *rect)
                                                                  char(UI_DIR_DOWN),
                    zoom);
     if (block->alert_level != BlockAlertLevel::None) {
-      ui_draw_dialog_alert(block, rect);
+      draw_dialog_alert(block, rect);
     }
   }
   else {
     wt->draw_block(&wt->wcol, rect, 0, 0, 1.0f);
   }
 
-  ui_draw_clip_tri(block, rect, wt);
+  draw_clip_tri(block, rect, wt);
 }
 
 /**
  * Similar to 'widget_menu_back', however we can't use the widget preset system
  * because we need to pass in the original location so we know where to show the arrow.
  */
-static void ui_draw_popover_back_impl(const uiWidgetColors *wcol,
-                                      const rcti *rect,
-                                      int direction,
-                                      const float unit_size,
-                                      const float mval_origin[2])
+static void draw_popover_back_impl(const uiWidgetColors *wcol,
+                                   const rcti *rect,
+                                   int direction,
+                                   const float unit_size,
+                                   const float mval_origin[2])
 {
   /* Alas, this isn't nice. */
   const float unit_half = unit_size / 2;
@@ -5555,14 +5591,14 @@ static void ui_draw_popover_back_impl(const uiWidgetColors *wcol,
 
 void draw_popover_back(ARegion *region, uiStyle * /*style*/, Block *block, const rcti *rect)
 {
-  WidgetType *wt = widget_type(UI_WTYPE_MENU_BACK);
+  WidgetType *wt = widget_type(WidgetStyle::MenuBack);
 
   float mval_origin[2] = {float(block->bounds_offset[0]), float(block->bounds_offset[1])};
   window_to_block_fl(region, block, &mval_origin[0], &mval_origin[1]);
-  ui_draw_popover_back_impl(
+  draw_popover_back_impl(
       wt->wcol_theme, rect, block->direction, U.widget_unit / block->aspect, mval_origin);
 
-  ui_draw_clip_tri(block, rect, wt);
+  draw_clip_tri(block, rect, wt);
 }
 
 static void draw_disk_shaded(float start,
@@ -5624,10 +5660,10 @@ static void draw_disk_shaded(float start,
 void draw_pie_center(Block *block)
 {
   bTheme *btheme = theme::theme_get();
-  const float cx = block->pie_data.pie_center_spawned[0];
-  const float cy = block->pie_data.pie_center_spawned[1];
+  const float cx = block->pie_data->pie_center_spawned[0];
+  const float cy = block->pie_data->pie_center_spawned[1];
 
-  const float *pie_dir = block->pie_data.pie_dir;
+  const float *pie_dir = block->pie_data->pie_dir;
 
   const float pie_radius_internal = UI_SCALE_FAC * U.pie_menu_threshold;
   const float pie_radius_external = UI_SCALE_FAC * (U.pie_menu_threshold + 7.0f);
@@ -5636,8 +5672,8 @@ void draw_pie_center(Block *block)
 
   const float angle = atan2f(pie_dir[1], pie_dir[0]);
   /* Use a smaller range if there are both axis aligned & diagonal buttons. */
-  const bool has_aligned = (block->pie_data.pie_dir_mask & UI_RADIAL_MASK_ALL_AXIS_ALIGNED) != 0;
-  const bool has_diagonal = (block->pie_data.pie_dir_mask & UI_RADIAL_MASK_ALL_DIAGONAL) != 0;
+  const bool has_aligned = (block->pie_data->pie_dir_mask & UI_RADIAL_MASK_ALL_AXIS_ALIGNED) != 0;
+  const bool has_diagonal = (block->pie_data->pie_dir_mask & UI_RADIAL_MASK_ALL_DIAGONAL) != 0;
   const float range = (has_aligned && has_diagonal) ? M_PI_4 : M_PI_2;
 
   GPU_matrix_push();
@@ -5665,7 +5701,7 @@ void draw_pie_center(Block *block)
                      false);
   }
 
-  if (!(block->pie_data.flags & PIE_INVALID_DIR)) {
+  if (!(block->pie_data->flags & PIE_INVALID_DIR)) {
     if (btheme->tui.wcol_pie_menu.shaded) {
       uchar col1[4], col2[4];
       shadecolors4(btheme->tui.wcol_pie_menu.inner_sel,
@@ -5704,7 +5740,7 @@ void draw_pie_center(Block *block)
 
   immUnbindProgram();
 
-  if (U.pie_menu_confirm > 0 && !(block->pie_data.flags & (PIE_INVALID_DIR | PIE_CLICK_STYLE))) {
+  if (U.pie_menu_confirm > 0 && !(block->pie_data->flags & (PIE_INVALID_DIR | PIE_CLICK_STYLE))) {
     const float pie_confirm_radius = UI_SCALE_FAC * (pie_radius_internal + U.pie_menu_confirm);
     const float pie_confirm_external = UI_SCALE_FAC *
                                        (pie_radius_internal + U.pie_menu_confirm + 7.0f);
@@ -5726,17 +5762,17 @@ void draw_pie_center(Block *block)
 
 const uiWidgetColors *tooltip_get_theme()
 {
-  WidgetType *wt = widget_type(UI_WTYPE_TOOLTIP);
+  WidgetType *wt = widget_type(WidgetStyle::Tooltip);
   return wt->wcol_theme;
 }
 
 /**
  * Generic drawing for background.
  */
-static void ui_draw_widget_back_color(WidgetTypeEnum type,
-                                      bool use_shadow,
-                                      const rcti *rect,
-                                      const float color[4])
+static void draw_widget_back_color(WidgetStyle type,
+                                   bool use_shadow,
+                                   const rcti *rect,
+                                   const float color[4])
 {
   WidgetType *wt = widget_type(type);
 
@@ -5762,17 +5798,17 @@ static void ui_draw_widget_back_color(WidgetTypeEnum type,
 }
 void draw_widget_menu_back_color(const rcti *rect, bool use_shadow, const float color[4])
 {
-  ui_draw_widget_back_color(UI_WTYPE_MENU_BACK, use_shadow, rect, color);
+  draw_widget_back_color(WidgetStyle::MenuBack, use_shadow, rect, color);
 }
 
 void draw_widget_menu_back(const rcti *rect, bool use_shadow)
 {
-  ui_draw_widget_back_color(UI_WTYPE_MENU_BACK, use_shadow, rect, nullptr);
+  draw_widget_back_color(WidgetStyle::MenuBack, use_shadow, rect, nullptr);
 }
 
 void draw_tooltip_background(const uiStyle * /*style*/, Block * /*block*/, const rcti *rect)
 {
-  WidgetType *wt = widget_type(UI_WTYPE_TOOLTIP);
+  WidgetType *wt = widget_type(WidgetStyle::Tooltip);
   wt->state(wt, &STATE_INFO_NULL, EmbossType::Undefined);
   /* wt->draw_block ends up using same function to draw the tooltip as menu_back */
   wt->draw_block(&wt->wcol, rect, 0, 0, 1.0f);
@@ -5789,7 +5825,8 @@ void draw_menu_item(const uiFontStyle *fstyle,
                     MenuItemSeparatorType separator_type,
                     int *r_xmax)
 {
-  WidgetType *wt = widget_type(use_unpadded ? UI_WTYPE_MENU_ITEM_UNPADDED : UI_WTYPE_MENU_ITEM);
+  WidgetType *wt = widget_type(use_unpadded ? WidgetStyle::MenuItemUnpadded :
+                                              WidgetStyle::MenuItem);
   const rcti _rect = *rect;
   const int row_height = BLI_rcti_size_y(rect);
   int max_hint_width = INT_MAX;
@@ -5974,7 +6011,7 @@ void draw_preview_item(const uiFontStyle *fstyle,
                        int but_flag,
                        FontStyleAlign text_align)
 {
-  WidgetType *wt = widget_type(UI_WTYPE_MENU_ITEM_UNPADDED);
+  WidgetType *wt = widget_type(WidgetStyle::MenuItemUnpadded);
 
   WidgetStateInfo state = {0};
   state.but_flag = but_flag;

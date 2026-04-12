@@ -11,11 +11,11 @@ namespace blender::nodes::node_fn_quaternion_to_rotation_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::Float>("W").default_value(1.0f);
-  b.add_input<decl::Float>("X").default_value(0.0f);
-  b.add_input<decl::Float>("Y").default_value(0.0f);
-  b.add_input<decl::Float>("Z").default_value(0.0f);
-  b.add_output<decl::Rotation>("Rotation");
+  b.add_input<decl::Float>("W"_ustr).default_value(1.0f);
+  b.add_input<decl::Float>("X"_ustr).default_value(0.0f);
+  b.add_input<decl::Float>("Y"_ustr).default_value(0.0f);
+  b.add_input<decl::Float>("Z"_ustr).default_value(0.0f);
+  b.add_output<decl::Rotation>("Rotation"_ustr);
 };
 
 static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
@@ -31,7 +31,8 @@ static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
 static void node_register()
 {
   static bke::bNodeType ntype;
-  fn_node_type_base(&ntype, "FunctionNodeQuaternionToRotation", FN_NODE_QUATERNION_TO_ROTATION);
+  fn_node_type_base(
+      &ntype, "FunctionNodeQuaternionToRotation"_ustr, FN_NODE_QUATERNION_TO_ROTATION);
   ntype.ui_name = "Quaternion to Rotation";
   ntype.ui_description = "Build a rotation from quaternion components";
   ntype.enum_name_legacy = "QUATERNION_TO_ROTATION";

@@ -6,6 +6,8 @@
  * \ingroup asset_system
  */
 
+#include <memory>
+
 #include "BKE_blender.hh"
 #include "BKE_preferences.h"
 
@@ -141,10 +143,7 @@ AssetLibrary *AssetLibraryService::get_remote_asset_library(
   }
 
   std::unique_ptr<RemoteAssetLibrary> lib_uptr = std::make_unique<RemoteAssetLibrary>(
-      remote_url,
-      custom_library.name,
-      /* Constructor normalizes the path. */
-      custom_library.dirpath);
+      custom_library);
   AssetLibrary *lib = lib_uptr.get();
   lib->load_or_reload_catalogs();
 
@@ -160,42 +159,46 @@ AssetLibrary *AssetLibraryService::get_asset_library_on_disk(
     const bool load_catalogs,
     bUserAssetLibrary *preferences_library)
 {
-  if (OnDiskAssetLibrary *lib = this->lookup_on_disk_library(library_type, root_path)) {
-    CLOG_DEBUG(&LOG, "get \"%s\" (cached)", root_path.c_str());
+  const std::string normalized_root_path = utils::normalize_directory_path(root_path);
+
+  if (OnDiskAssetLibrary *lib = this->lookup_on_disk_library(library_type, normalized_root_path)) {
+    CLOG_DEBUG(&LOG, "get \"%s\" (cached)", normalized_root_path.c_str());
     if (load_catalogs) {
       lib->load_or_reload_catalogs();
     }
     return lib;
   }
 
-  const std::string normalized_root_path = utils::normalize_directory_path(root_path);
-
   std::unique_ptr<OnDiskAssetLibrary> lib_uptr;
   switch (library_type) {
     case ASSET_LIBRARY_CUSTOM:
       if (preferences_library) {
-        lib_uptr = std::make_unique<PreferencesOnDiskAssetLibrary>(name, normalized_root_path);
+        lib_uptr = std::make_unique<PreferencesOnDiskAssetLibrary>(*preferences_library);
       }
       else {
-        lib_uptr = std::make_unique<OnDiskAssetLibrary>(library_type, name, normalized_root_path);
+        /* Only used by unit tests. */
+        lib_uptr = std::make_unique<OnDiskAssetLibrary>(
+            library_type, name, normalized_root_path, /*is_read_only=*/false);
       }
       break;
     case ASSET_LIBRARY_ESSENTIALS:
       lib_uptr = std::make_unique<EssentialsAssetLibrary>();
       break;
     default:
-      lib_uptr = std::make_unique<OnDiskAssetLibrary>(library_type, name, normalized_root_path);
+      lib_uptr = std::make_unique<OnDiskAssetLibrary>(
+          library_type, name, normalized_root_path, /*is_read_only=*/true);
       break;
-  }
-
-  if (load_catalogs) {
-    lib_uptr->load_or_reload_catalogs();
   }
 
   /* Get underlying pointer before moving. */
   AssetLibrary *lib = lib_uptr.get();
   on_disk_libraries_.add_new({library_type, normalized_root_path}, std::move(lib_uptr));
   CLOG_DEBUG(&LOG, "get \"%s\" (loaded)", normalized_root_path.c_str());
+
+  if (load_catalogs) {
+    lib->load_or_reload_catalogs();
+  }
+
   return lib;
 }
 
@@ -646,7 +649,26 @@ void AssetLibraryService::foreach_loaded_asset_library(FunctionRef<void(AssetLib
     fn(*current_file_library_);
   }
 
+  /* Do essentials library first. Plenty of general features use the essentials, these features
+   * should be available as soon as possible. Not only after other, potentially big libraries are
+   * loaded. */
   for (const auto &asset_lib_uptr : on_disk_libraries_.values()) {
+    if (asset_lib_uptr->library_type() != ASSET_LIBRARY_ESSENTIALS) {
+      continue;
+    }
+
+    if (asset_lib_uptr->is_enabled()) {
+      fn(*asset_lib_uptr);
+    }
+    break;
+  }
+
+  for (const auto &asset_lib_uptr : on_disk_libraries_.values()) {
+    /* Already handled above. */
+    if (asset_lib_uptr->library_type() == ASSET_LIBRARY_ESSENTIALS) {
+      continue;
+    }
+
     if (asset_lib_uptr->is_enabled()) {
       fn(*asset_lib_uptr);
     }

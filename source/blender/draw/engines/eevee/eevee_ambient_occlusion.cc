@@ -43,7 +43,8 @@ void AmbientOcclusion::init()
   data_.gi_distance = (sce_eevee.fast_gi_distance > 0.0f) ? sce_eevee.fast_gi_distance : 1e16f;
   /* AO node uses its own number of samples. */
   data_.lod_factor_ao = 1.0f / (1.0f + sce_eevee.fast_gi_quality * 4.0f);
-  data_.lod_factor = (4.0f / sce_eevee.fast_gi_step_count) /
+  /* Scale up to LOD 5 at the end of the ray. */
+  data_.lod_factor = (5.0f / sce_eevee.fast_gi_step_count) /
                      (1.0f + sce_eevee.fast_gi_quality * 4.0f);
   data_.angle_bias = 1.0 / max_ff(1e-8f, 1.0 - sce_eevee.fast_gi_bias);
   data_.thickness_near = sce_eevee.fast_gi_thickness_near;
@@ -53,6 +54,8 @@ void AmbientOcclusion::init()
 
   ray_count_ = sce_eevee.fast_gi_ray_count;
   step_count_ = sce_eevee.fast_gi_step_count;
+
+  dummy_tx_.ensure_2d(gpu::TextureFormat::SFLOAT_16, int2(1), GPU_TEXTURE_USAGE_SHADER_READ);
 }
 
 void AmbientOcclusion::sync()
@@ -72,6 +75,7 @@ void AmbientOcclusion::sync()
   render_pass_ps_.bind_resources(inst_.sampling);
   render_pass_ps_.bind_resources(inst_.hiz_buffer.front);
 
+  render_pass_ps_.bind_texture("dummy_tx", &dummy_tx_);
   render_pass_ps_.bind_image("in_normal_img", &inst_.render_buffers.rp_color_tx);
   render_pass_ps_.push_constant("in_normal_img_layer_index", &inst_.render_buffers.data.normal_id);
   render_pass_ps_.bind_image("out_ao_img", &inst_.render_buffers.rp_value_tx);

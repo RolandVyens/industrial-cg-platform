@@ -12,6 +12,7 @@
 #include "BLI_math_rotation.h"
 #include "BLI_math_vector.h"
 #include "BLI_string.h"
+#include "BLI_vector.hh"
 
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
@@ -57,26 +58,9 @@ namespace blender {
 /* *********************************************** */
 /* FCurves <-> PoseChannels Links */
 
-/**
- * Types of transforms applied to the given item:
- * - these are the return flags for get_item_transform_flags()
- */
-enum eAction_TransformFlags {
-  ACT_TRANS_LOC = (1 << 0),
-  ACT_TRANS_ROT = (1 << 1),
-  ACT_TRANS_SCALE = (1 << 2),
-
-  /* BBone shape - for all the parameters, provided one is set. */
-  ACT_TRANS_BBONE = (1 << 3),
-  ACT_TRANS_PROP = (1 << 4),
-
-  ACT_TRANS_ONLY = (ACT_TRANS_LOC | ACT_TRANS_ROT | ACT_TRANS_SCALE),
-  ACT_TRANS_ALL = (ACT_TRANS_ONLY | ACT_TRANS_PROP),
-};
-
 static eAction_TransformFlags get_item_transform_flags_and_fcurves(Object &ob,
                                                                    bPoseChannel &pchan,
-                                                                   ListBaseT<LinkData> &r_curves)
+                                                                   Vector<FCurve *> &r_curves)
 {
   if (!ob.adt || !ob.adt->action) {
     return eAction_TransformFlags(0);
@@ -122,32 +106,28 @@ static eAction_TransformFlags get_item_transform_flags_and_fcurves(Object &ob,
     pPtr = strstr(bPtr, "location");
     if (pPtr) {
       flags |= ACT_TRANS_LOC;
-
-      BLI_addtail(&r_curves, BLI_genericNodeN(&fcurve));
+      r_curves.append(&fcurve);
       return;
     }
 
     pPtr = strstr(bPtr, "scale");
     if (pPtr) {
       flags |= ACT_TRANS_SCALE;
-
-      BLI_addtail(&r_curves, BLI_genericNodeN(&fcurve));
+      r_curves.append(&fcurve);
       return;
     }
 
     pPtr = strstr(bPtr, "rotation");
     if (pPtr) {
       flags |= ACT_TRANS_ROT;
-
-      BLI_addtail(&r_curves, BLI_genericNodeN(&fcurve));
+      r_curves.append(&fcurve);
       return;
     }
 
     pPtr = strstr(bPtr, "bbone_");
     if (pPtr) {
       flags |= ACT_TRANS_BBONE;
-
-      BLI_addtail(&r_curves, BLI_genericNodeN(&fcurve));
+      r_curves.append(&fcurve);
       return;
     }
 
@@ -155,8 +135,7 @@ static eAction_TransformFlags get_item_transform_flags_and_fcurves(Object &ob,
     pPtr = strstr(bPtr, "[\"");
     if (pPtr) {
       flags |= ACT_TRANS_PROP;
-
-      BLI_addtail(&r_curves, BLI_genericNodeN(&fcurve));
+      r_curves.append(&fcurve);
       return;
     }
   });
@@ -170,17 +149,15 @@ static void fcurves_to_pchan_links_get(ListBaseT<tPChanFCurveLink> &pfLinks,
                                        Object &ob,
                                        bPoseChannel &pchan)
 {
-  ListBaseT<LinkData> curves = {nullptr, nullptr};
+  Vector<FCurve *> curves;
   const eAction_TransformFlags transFlags = get_item_transform_flags_and_fcurves(
       ob, pchan, curves);
-
-  pchan.flag &= ~(POSE_LOC | POSE_ROT | POSE_SCALE | POSE_BBONE_SHAPE);
 
   if (!transFlags) {
     return;
   }
 
-  tPChanFCurveLink *pfl = MEM_new_zeroed<tPChanFCurveLink>("tPChanFCurveLink");
+  tPChanFCurveLink *pfl = MEM_new<tPChanFCurveLink>("tPChanFCurveLink");
 
   pfl->ob = &ob;
   pfl->fcurves = curves;
@@ -193,18 +170,7 @@ static void fcurves_to_pchan_links_get(ListBaseT<tPChanFCurveLink> &pfLinks,
   BLI_addtail(&pfLinks, pfl);
 
   /* Set pchan's transform flags. */
-  if (transFlags & ACT_TRANS_LOC) {
-    pchan.flag |= POSE_LOC;
-  }
-  if (transFlags & ACT_TRANS_ROT) {
-    pchan.flag |= POSE_ROT;
-  }
-  if (transFlags & ACT_TRANS_SCALE) {
-    pchan.flag |= POSE_SCALE;
-  }
-  if (transFlags & ACT_TRANS_BBONE) {
-    pchan.flag |= POSE_BBONE_SHAPE;
-  }
+  pfl->transform_flag = transFlags;
 
   copy_v3_v3(pfl->oldloc, pchan.loc);
   copy_v3_v3(pfl->oldrot, pchan.eul);
@@ -315,14 +281,13 @@ void poseAnim_mapping_free(ListBaseT<tPChanFCurveLink> *pfLinks)
       IDP_FreeProperty(pfl->oldprops);
     }
 
-    /* free list of F-Curve reference links */
-    BLI_freelistN(&pfl->fcurves);
-
     /* free pchan RNA Path */
     MEM_delete(pfl->pchan_path);
 
-    /* free link itself */
-    BLI_freelinkN(pfLinks, pfl);
+    /* We cannot use BLI_freelinkN because that casts the TransformableFCurveLink to a C-style
+     * struct causing MEM_delete to do a C-style delete and not deallocate the Vector. */
+    BLI_remlink(pfLinks, pfl);
+    MEM_delete(pfl);
   }
 }
 
@@ -381,11 +346,12 @@ void poseAnim_mapping_autoKeyframe(bContext *C,
                                    ListBaseT<tPChanFCurveLink> *pfLinks,
                                    float cframe)
 {
+  const Main *bmain = CTX_data_main(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
   bool skip = true;
 
-  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
+  FOREACH_OBJECT_IN_MODE_BEGIN (bmain, scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
     ob->id.tag &= ~ID_TAG_DOIT;
     ob = poseAnim_object_get(ob);
 
@@ -431,7 +397,7 @@ void poseAnim_mapping_autoKeyframe(bContext *C,
    * - only do this if keyframes should have been added
    * - do not calculate unless there are paths already to update...
    */
-  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
+  FOREACH_OBJECT_IN_MODE_BEGIN (bmain, scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
     if (ob->id.tag & ID_TAG_DOIT) {
       if (ob->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS) {
         // ED_pose_clear_paths(C, ob); /* XXX for now, don't need to clear. */
@@ -441,31 +407,6 @@ void poseAnim_mapping_autoKeyframe(bContext *C,
     }
   }
   FOREACH_OBJECT_IN_MODE_END;
-}
-
-/* ------------------------- */
-
-LinkData *poseAnim_mapping_getNextFCurve(ListBaseT<LinkData> *fcuLinks,
-                                         LinkData *prev,
-                                         const char *path)
-{
-  LinkData *first = static_cast<LinkData *>((prev)     ? prev->next :
-                                            (fcuLinks) ? fcuLinks->first :
-                                                         nullptr);
-  LinkData *ld;
-
-  /* check each link to see if the linked F-Curve has a matching path */
-  for (ld = first; ld; ld = ld->next) {
-    const FCurve *fcu = static_cast<const FCurve *>(ld->data);
-
-    /* check if paths match */
-    if (STREQ(path, fcu->rna_path)) {
-      return ld;
-    }
-  }
-
-  /* none found */
-  return nullptr;
 }
 
 /* *********************************************** */

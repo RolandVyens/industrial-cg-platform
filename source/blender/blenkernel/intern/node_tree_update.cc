@@ -33,10 +33,11 @@
 
 #include "MOD_nodes.hh"
 
+#include "NOD_dependencies.hh"
 #include "NOD_geo_viewer.hh"
-#include "NOD_geometry_nodes_dependencies.hh"
 #include "NOD_geometry_nodes_gizmos.hh"
 #include "NOD_geometry_nodes_lazy_function.hh"
+#include "NOD_geometry_nodes_srna.hh"
 #include "NOD_node_declaration.hh"
 #include "NOD_socket.hh"
 #include "NOD_socket_declarations.hh"
@@ -46,6 +47,9 @@
 #include "DEG_depsgraph_build.hh"
 
 #include "BLT_translation.hh"
+
+#include "RNA_access.hh"
+#include "RNA_define.hh"
 
 namespace blender {
 
@@ -277,7 +281,7 @@ struct NodeTreeRelations {
       for (ModifierData &md : object.modifiers) {
         if (md.type == eModifierType_Nodes) {
           NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(&md);
-          if (nmd->node_group != nullptr) {
+          if (nmd->node_group && !ID_MISSING(nmd->node_group)) {
             modifiers_users_->add(nmd->node_group, {&object, &md});
           }
         }
@@ -559,7 +563,7 @@ class NodeTreeMainUpdater {
       this->update_socket_shapes(ntree);
     }
 
-    if (ntree.type == NTREE_GEOMETRY) {
+    if (ELEM(ntree.type, NTREE_GEOMETRY, NTREE_COMPOSIT)) {
       this->update_eval_dependencies(ntree);
     }
 
@@ -578,6 +582,13 @@ class NodeTreeMainUpdater {
 
     if (ntree.tree_interface.requires_dependent_tree_updates()) {
       result.interface_changed = true;
+    }
+
+    if (result.interface_changed) {
+      if (ntree.type == NTREE_GEOMETRY) {
+        ntree.runtime->geometry_nodes_srna_data = nodes::create_geometry_nodes_rna_for_modifier(
+            ntree);
+      }
     }
 
 #ifndef NDEBUG
@@ -694,7 +705,7 @@ class NodeTreeMainUpdater {
         continue;
       }
       const std::string identifier_str = GeoViewerItemsAccessor::socket_identifier_for_item(item);
-      const bNodeSocket *socket = viewer_node.input_by_identifier(identifier_str.c_str());
+      const bNodeSocket *socket = viewer_node.input_by_identifier(UString(identifier_str));
       if (!socket) {
         continue;
       }
@@ -889,7 +900,7 @@ class NodeTreeMainUpdater {
 
     if (ntree.type == NTREE_SHADER) {
       /* Check if the tree itself has an animated image. */
-      for (const StringRefNull idname : {"ShaderNodeTexImage", "ShaderNodeTexEnvironment"}) {
+      for (const UString idname : {"ShaderNodeTexImage"_ustr, "ShaderNodeTexEnvironment"_ustr}) {
         for (const bNode *node : ntree.nodes_by_type(idname)) {
           Image *image = reinterpret_cast<Image *>(node->id);
           if (image != nullptr && BKE_image_is_animated(image)) {
@@ -899,10 +910,10 @@ class NodeTreeMainUpdater {
         }
       }
       /* Check if the tree has a material output. */
-      for (const StringRefNull idname : {"ShaderNodeOutputMaterial",
-                                         "ShaderNodeOutputLight",
-                                         "ShaderNodeOutputWorld",
-                                         "ShaderNodeOutputAOV"})
+      for (const UString idname : {"ShaderNodeOutputMaterial"_ustr,
+                                   "ShaderNodeOutputLight"_ustr,
+                                   "ShaderNodeOutputWorld"_ustr,
+                                   "ShaderNodeOutputAOV"_ustr})
       {
         const Span<const bNode *> nodes = ntree.nodes_by_type(idname);
         if (!nodes.is_empty()) {
@@ -913,7 +924,7 @@ class NodeTreeMainUpdater {
     }
     if (ntree.type == NTREE_GEOMETRY) {
       /* Check if there is a simulation zone. */
-      if (!ntree.nodes_by_type("GeometryNodeSimulationOutput").is_empty()) {
+      if (!ntree.nodes_by_type("GeometryNodeSimulationOutput"_ustr).is_empty()) {
         ntree.runtime->runtime_flag |= NTREE_RUNTIME_FLAG_HAS_SIMULATION_ZONE;
       }
     }
@@ -924,7 +935,7 @@ class NodeTreeMainUpdater {
     /* Automatically tag a bake item as attribute when the input is a field. The flag should not be
      * removed automatically even when the field input is disconnected because the baked data may
      * still contain attribute data instead of a single value. */
-    for (bNode *node : ntree.nodes_by_type("GeometryNodeBake")) {
+    for (bNode *node : ntree.nodes_by_type("GeometryNodeBake"_ustr)) {
       NodeGeometryBake &storage = *static_cast<NodeGeometryBake *>(node->storage);
       for (const int i : IndexRange(storage.items_num)) {
         const bNodeSocket &socket = node->input_socket(i);
@@ -1060,14 +1071,14 @@ class NodeTreeMainUpdater {
             socket->display_shape = get_socket_shape(*socket);
           }
 
-          if (node->is_type("NodeGetBundleItem")) {
-            bNodeSocket &socket = *node->output_by_identifier("Item");
+          if (node->is_type("NodeGetBundleItem"_ustr)) {
+            bNodeSocket &socket = *node->output_by_identifier("Item"_ustr);
             const auto &storage = *static_cast<const NodeGetBundleItem *>(node->storage);
             socket.display_shape = get_socket_shape(
                 socket, storage.structure_type == NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO);
           }
-          else if (node->is_type("NodeStoreBundleItem")) {
-            bNodeSocket &socket = *node->input_by_identifier("Item");
+          else if (node->is_type("NodeStoreBundleItem"_ustr)) {
+            bNodeSocket &socket = *node->input_by_identifier("Item"_ustr);
             const auto &storage = *static_cast<const NodeStoreBundleItem *>(node->storage);
             socket.display_shape = get_socket_shape(
                 socket, storage.structure_type == NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO);
@@ -1081,16 +1092,13 @@ class NodeTreeMainUpdater {
   void update_eval_dependencies(bNodeTree &ntree)
   {
     ntree.ensure_topology_cache();
-    nodes::GeometryNodesEvalDependencies new_deps =
-        nodes::gather_geometry_nodes_eval_dependencies_with_cache(ntree);
+    nodes::EvalDependencies new_deps = nodes::gather_eval_dependencies_with_cache(ntree);
 
     /* Check if the dependencies have changed. */
-    if (!ntree.runtime->geometry_nodes_eval_dependencies ||
-        new_deps != *ntree.runtime->geometry_nodes_eval_dependencies)
-    {
+    if (!ntree.runtime->eval_dependencies || new_deps != *ntree.runtime->eval_dependencies) {
       needs_relations_update_ = true;
-      ntree.runtime->geometry_nodes_eval_dependencies =
-          std::make_unique<nodes::GeometryNodesEvalDependencies>(std::move(new_deps));
+      ntree.runtime->eval_dependencies = std::make_unique<nodes::EvalDependencies>(
+          std::move(new_deps));
     }
   }
 
@@ -1104,7 +1112,7 @@ class NodeTreeMainUpdater {
       const bool node_updated = this->should_update_individual_node(ntree, *node);
 
       Vector<bNodeSocket *> locally_defined_enums;
-      if (node->is_type("GeometryNodeMenuSwitch")) {
+      if (node->is_type("GeometryNodeMenuSwitch"_ustr)) {
         bNodeSocket &enum_input = node->input_socket(0);
         BLI_assert(enum_input.is_available() && enum_input.type == SOCK_MENU);
         /* Generate new enum items when the node has changed, otherwise keep existing items. */
@@ -1187,7 +1195,7 @@ class NodeTreeMainUpdater {
           }
         }
       }
-      else if (node->is_type("GeometryNodeMenuSwitch")) {
+      else if (node->is_type("GeometryNodeMenuSwitch"_ustr)) {
         /* First input is always the node's own menu, propagate only to the enum case inputs. */
         const bNodeSocket *output = node->output_sockets().first();
         for (bNodeSocket *input : node->input_sockets().drop_front(1)) {
@@ -1198,7 +1206,7 @@ class NodeTreeMainUpdater {
           }
         }
       }
-      else if (node->is_type("GeometryNodeForeachGeometryElementInput")) {
+      else if (node->is_type("GeometryNodeForeachGeometryElementInput"_ustr)) {
         /* Propagate menu from element inputs to field inputs. */
         BLI_assert(node->input_sockets().size() == node->output_sockets().size());
         /* Inputs Geometry, Selection and outputs Index, Element are ignored. */
@@ -1614,7 +1622,7 @@ class NodeTreeMainUpdater {
     if (node.is_group_output()) {
       return true;
     }
-    if (node.is_type("GeometryNodeWarning")) {
+    if (node.is_type("GeometryNodeWarning"_ustr)) {
       return true;
     }
     if (nodes::gizmos::is_builtin_gizmo_node(node)) {
@@ -1747,12 +1755,7 @@ class NodeTreeMainUpdater {
             socket_hash = get_socket_ptr_hash(socket);
           }
           else {
-            if (internal_input->type == socket.type) {
-              socket_hash = *hash_by_socket_id[internal_input->index_in_tree()];
-            }
-            else {
-              socket_hash = get_socket_ptr_hash(socket);
-            }
+            socket_hash = *hash_by_socket_id[internal_input->index_in_tree()];
           }
         }
         else {
@@ -1766,7 +1769,7 @@ class NodeTreeMainUpdater {
 
           /* The Image Texture node has a special case. The behavior of the color output changes
            * depending on whether the Alpha output is linked. */
-          if (node.is_type("ShaderNodeTexImage") && socket.index() == 0) {
+          if (node.is_type("ShaderNodeTexImage"_ustr) && socket.index() == 0) {
             BLI_assert(STREQ(socket.name, "Color"));
             const bNodeSocket &alpha_socket = node.output_socket(1);
             BLI_assert(STREQ(alpha_socket.name, "Alpha"));
@@ -1869,7 +1872,7 @@ class NodeTreeMainUpdater {
         }
         /* The Normal node has a special case, because the value stored in the first output
          * socket is used as input in the node. */
-        if ((node.is_type("ShaderNodeNormal") || node.is_type("CompositorNodeNormal")) &&
+        if ((node.is_type("ShaderNodeNormal"_ustr) || node.is_type("CompositorNodeNormal"_ustr)) &&
             socket.index() == 1)
         {
           BLI_assert(STREQ(socket.name, "Dot"));
@@ -1916,7 +1919,7 @@ class NodeTreeMainUpdater {
     if (ntree.type == NTREE_GEOMETRY) {
       /* Create references for simulations and bake nodes in geometry nodes.
        * Those are the nodes that we want to store settings for at a higher level. */
-      for (StringRefNull idname : {"GeometryNodeSimulationOutput", "GeometryNodeBake"}) {
+      for (const UString idname : {"GeometryNodeSimulationOutput"_ustr, "GeometryNodeBake"_ustr}) {
         for (const bNode *node : ntree.nodes_by_type(idname)) {
           nested_node_paths.append({node->identifier, -1});
         }

@@ -45,9 +45,10 @@ static void geometry_node_tree_get_from_context(const bContext *C,
     return;
   }
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   if (ob == nullptr) {
@@ -62,7 +63,7 @@ static void geometry_node_tree_get_from_context(const bContext *C,
 
   if (md->type == eModifierType_Nodes) {
     const NodesModifierData *nmd = reinterpret_cast<const NodesModifierData *>(md);
-    if (nmd->node_group != nullptr) {
+    if (nmd->node_group != nullptr && !ID_MISSING(nmd->node_group)) {
       *r_from = &ob->id;
       *r_id = &ob->id;
       *r_ntree = nmd->node_group;
@@ -145,8 +146,8 @@ void register_node_tree_type_geo()
 {
   bke::bNodeTreeType *tt = ntreeType_Geometry = MEM_new<bke::bNodeTreeType>(__func__);
   tt->type = NTREE_GEOMETRY;
-  tt->idname = "GeometryNodeTree";
-  tt->group_idname = "GeometryNodeGroup";
+  tt->idname = "GeometryNodeTree"_ustr;
+  tt->group_idname = "GeometryNodeGroup"_ustr;
   tt->ui_name = N_("Geometry Node Editor");
   tt->ui_icon = ICON_GEOMETRY_NODES;
   tt->ui_description = N_("Advanced geometry editing and tools creation using nodes");

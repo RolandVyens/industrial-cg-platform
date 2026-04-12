@@ -350,7 +350,7 @@ static bool versioning_eevee_material_blend_mode_settings(bNodeTree *ntree, floa
       bNodeSocket *from_socket = alpha.socket->link->fromsock;
       bke::node_remove_link(ntree, *alpha.socket->link);
 
-      bNode *math_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeMath");
+      bNode *math_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeMath"_ustr);
       math_node->custom1 = NODE_MATH_GREATER_THAN;
       math_node->flag |= NODE_COLLAPSED;
       math_node->parent = to_node->parent;
@@ -417,7 +417,7 @@ static void versioning_eevee_material_shadow_none(Material *material)
     /* We do not want to affect Cycles. So we split the output into two specific outputs. */
     output_node->custom1 = SHD_OUTPUT_CYCLES;
 
-    bNode *new_output = bke::node_add_node(nullptr, *ntree, "ShaderNodeOutputMaterial");
+    bNode *new_output = bke::node_add_node(nullptr, *ntree, "ShaderNodeOutputMaterial"_ustr);
     new_output->custom1 = SHD_OUTPUT_EEVEE;
     new_output->parent = output_node->parent;
     new_output->locx_legacy = output_node->locx_legacy;
@@ -444,7 +444,7 @@ static void versioning_eevee_material_shadow_none(Material *material)
   bNodeSocket *old_out_sock = bke::node_find_socket(*old_output_node, SOCK_IN, "Surface");
 
   /* Add mix node for mixing between original material, and transparent BSDF for shadows */
-  bNode *mix_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeMixShader");
+  bNode *mix_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeMixShader"_ustr);
   STRNCPY(mix_node->label, "Disable Shadow");
   mix_node->flag |= NODE_COLLAPSED;
   mix_node->parent = output_node->parent;
@@ -467,7 +467,7 @@ static void versioning_eevee_material_shadow_none(Material *material)
   bke::node_add_link(*ntree, *mix_node, *mix_out, *output_node, *out_sock);
 
   /* Add light path node to control shadow visibility */
-  bNode *lp_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeLightPath");
+  bNode *lp_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeLightPath"_ustr);
   lp_node->flag |= NODE_COLLAPSED;
   lp_node->parent = output_node->parent;
   lp_node->locx_legacy = output_node->locx_legacy;
@@ -482,7 +482,7 @@ static void versioning_eevee_material_shadow_none(Material *material)
   }
 
   /* Add transparent BSDF to make shadows transparent. */
-  bNode *bsdf_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeBsdfTransparent");
+  bNode *bsdf_node = bke::node_add_node(nullptr, *ntree, "ShaderNodeBsdfTransparent"_ustr);
   bsdf_node->flag |= NODE_COLLAPSED;
   bsdf_node->parent = output_node->parent;
   bsdf_node->locx_legacy = output_node->locx_legacy;

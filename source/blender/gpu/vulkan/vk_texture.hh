@@ -92,9 +92,9 @@ class VKTexture : public Texture {
   virtual ~VKTexture() override;
 
   void generate_mipmap() override;
-  void copy_to(Texture *tex) override;
-  void copy_to(VKTexture &dst_texture, VkImageAspectFlags vk_image_aspect);
-  void clear(eGPUDataFormat format, const void *data) override;
+  void copy_to(Texture *texture, IndexRange mip_levels) override;
+  void copy_to(VKTexture &dst_texture, IndexRange mip_levels, VkImageAspectFlags vk_image_aspect);
+  void clear(const double4 data) override;
   void clear_depth_stencil(const GPUFrameBufferBits buffer,
                            float clear_depth,
                            uint clear_stencil,
@@ -201,9 +201,9 @@ class VKTexture : public Texture {
   /** \} */
 };
 
-BLI_INLINE VKTexture *unwrap(Texture *tex)
+BLI_INLINE VKTexture *unwrap(Texture *texture)
 {
-  return static_cast<VKTexture *>(tex);
+  return static_cast<VKTexture *>(texture);
 }
 
 BLI_INLINE Texture *wrap(VKTexture *texture)

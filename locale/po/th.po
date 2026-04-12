@@ -1,10 +1,10 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
-"PO-Revision-Date: 2026-02-01 08:12+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
+"PO-Revision-Date: 2026-03-19 12:41+0000\n"
 "Last-Translator: Banditer1483 <pleum.wongvarit@gmail.com>\n"
 "Language-Team: Thai <https://translate.blender.org/projects/blender-ui/ui/th/>\n"
 "Language: th\n"
@@ -12,7 +12,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 5.14.3"
+"X-Generator: Weblate 5.16.2"
 
 
 msgid "Shader AOV"
@@ -668,22 +668,6 @@ msgstr "ด้านล่าง"
 
 msgid "Place the Mix node at the same height as the lowest node"
 msgstr "วางโหนดผสมไว้ที่ความสูงเดียวกับโหนดที่อยู่ต่ำที่สุด"
-
-
-msgid "Show Hotkey List"
-msgstr "แสดงรายการปุ่มลัด"
-
-
-msgid "Expand this box into a list of all the hotkeys for functions in this addon"
-msgstr "ขยายกล่องนี้เพื่อแสดงรายการปุ่มลัดทั้งหมดสำหรับฟังก์ชันต่างๆ ในส่วนเสริมนี้"
-
-
-msgid "Show Principled Naming Tags"
-msgstr "แสดงป้ายระบุการตั้งชื่อตามหลักการ"
-
-
-msgid "Expand this box into a list of all naming tags for Principled Texture setup"
-msgstr "ขยายกล่องนี้ให้เป็นรายการป้ายระบุชื่อทั้งหมดสำหรับการตั้งค่าพื้นผิวตามหลักการ"
 
 
 msgid "Fribidi Library"
@@ -3706,6 +3690,10 @@ msgid "Options for this blendfile import operation"
 msgstr "ตัวเลือกสำหรับการนำเข้าไฟล์ Blendfile นี้"
 
 
+msgid "Only link data, instead of appending it"
+msgstr "เพียงแค่เชื่อมโยงข้อมูล ไม่ใช่เพิ่มข้อมูลต่อท้าย"
+
+
 msgid "Speed"
 msgstr "ความเร็ว"
 
@@ -3833,18 +3821,6 @@ msgstr "เส้นโค้ง"
 
 msgid "View"
 msgstr "มุมมอง"
-
-
-msgid "Mix"
-msgstr "ผสม"
-
-
-msgid "Screen"
-msgstr "จอภาพ"
-
-
-msgid "Difference"
-msgstr "แตกต่าง"
 
 
 msgid "Brightness"
@@ -4328,10 +4304,6 @@ msgid "Layers"
 msgstr "ชั้น"
 
 
-msgid "Add Alpha"
-msgstr "เพิ่มแอลฟา"
-
-
 msgid "Local"
 msgstr "โดยท้องถิ่น"
 
@@ -4746,6 +4718,10 @@ msgid "Final frame of the playback/rendering range"
 msgstr "เฟรมสุดท้ายของความยาวการเล่น/เรนเดอร์"
 
 
+msgid "Restore Frame"
+msgstr "คืนค่าเฟรม"
+
+
 msgid "Render Data"
 msgstr "เรนเดอร์ข้อมูล"
 
@@ -4925,6 +4901,18 @@ msgid "Rotation & Scale"
 msgstr "หมุน และ ย่อขยาย"
 
 
+msgid "Mix"
+msgstr "ผสม"
+
+
+msgid "Difference"
+msgstr "แตกต่าง"
+
+
+msgid "Screen"
+msgstr "จอภาพ"
+
+
 msgid "Squares"
 msgstr "สี่เหลี่ยม"
 
@@ -4953,36 +4941,16 @@ msgid "Mix Color"
 msgstr "ผสมสี"
 
 
-msgid "Metaball"
-msgstr "เมตาบอล"
-
-
-msgid "Names"
-msgstr "ชื่อ"
-
-
-msgid "Pivot Point"
-msgstr "จุดหมุน"
-
-
-msgid "Snap"
-msgstr "ยึดติด"
-
-
-msgid "Proportional Editing Falloff"
-msgstr "แก้ไข"
-
-
-msgid "Mask Edit"
-msgstr "การแก้ไขหน้ากาก"
-
-
-msgid "Layout"
-msgstr "เค้าโครง"
+msgid "Math"
+msgstr "คณิตศาสตร์"
 
 
 msgid "Mirror"
 msgstr "กระจกสะท้อน"
+
+
+msgid "Snap"
+msgstr "ยึดติด"
 
 
 msgid "Local View"
@@ -5009,12 +4977,12 @@ msgid "View Regions"
 msgstr "ขอบเขตมุมมอง"
 
 
-msgid "Keying"
-msgstr "คีย์"
+msgid "Metaball"
+msgstr "เมตาบอล"
 
 
-msgid "Math"
-msgstr "คณิตศาสตร์"
+msgid "Import"
+msgstr "นำเข้า"
 
 
 msgid "Light"
@@ -5023,6 +4991,10 @@ msgstr "แสง"
 
 msgid "Add Image"
 msgstr "เพิ่มภาพ"
+
+
+msgid "UV"
+msgstr "UV"
 
 
 msgid "Apply"
@@ -5037,8 +5009,8 @@ msgid "Hooks"
 msgstr "ตะขอ"
 
 
-msgid "Import"
-msgstr "นำเข้า"
+msgid "Names"
+msgstr "ชื่อ"
 
 
 msgid "Face Data"
@@ -5049,8 +5021,24 @@ msgid "Merge"
 msgstr "ผสาน"
 
 
-msgid "UV"
-msgstr "UV"
+msgid "Layout"
+msgstr "เค้าโครง"
+
+
+msgid "Keying"
+msgstr "คีย์"
+
+
+msgid "Pivot Point"
+msgstr "จุดหมุน"
+
+
+msgid "Proportional Editing Falloff"
+msgstr "แก้ไข"
+
+
+msgid "Mask Edit"
+msgstr "การแก้ไขหน้ากาก"
 
 
 msgid "Zoom"
@@ -6074,10 +6062,6 @@ msgid "New"
 msgstr "ใหม่"
 
 
-msgid "Restore Frame"
-msgstr "คืนค่าเฟรม"
-
-
 msgctxt "Operator"
 msgid "Play Animation"
 msgstr "เล่นแอนิเมชัน"
@@ -6315,12 +6299,12 @@ msgid "Single Image"
 msgstr "ภาพเดี่ยว"
 
 
-msgid "View Lock"
-msgstr "ล็อกมุมมอง"
-
-
 msgid "Overlays"
 msgstr "วางซ้อน"
+
+
+msgid "View Lock"
+msgstr "ล็อกมุมมอง"
 
 
 msgid "Mask Display"
@@ -7348,6 +7332,11 @@ msgstr "ติดตั้งแม่แบบแอปพลิเคชั่
 
 
 msgctxt "Operator"
+msgid "Save Copy..."
+msgstr "บันทึกเป็น..."
+
+
+msgctxt "Operator"
 msgid "Quit"
 msgstr "ออก"
 
@@ -7415,11 +7404,6 @@ msgstr "พื้นที่ใช้งานถัดไป"
 msgctxt "Operator"
 msgid "Back to Previous"
 msgstr "กลับไปยังก่อนหน้านี้"
-
-
-msgctxt "Operator"
-msgid "Save Copy..."
-msgstr "บันทึกเป็น..."
 
 
 msgctxt "Operator"

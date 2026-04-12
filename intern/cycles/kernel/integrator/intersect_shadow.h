@@ -46,7 +46,7 @@ ccl_device bool integrate_intersect_shadow_opaque(KernelGlobals kg,
    * consider any intersections. There is no need to write anything to the state if the hit is
    * opaque because in this case the path is terminated. */
   if (!opaque_hit) {
-    INTEGRATOR_STATE_WRITE(state, shadow_path, num_hits) = 0;
+    INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = 0;
   }
 
   return opaque_hit;
@@ -136,10 +136,10 @@ ccl_device bool integrate_intersect_shadow_transparent(KernelGlobals kg,
       sort_shadow_intersections(state, num_recorded_hits);
     }
 
-    INTEGRATOR_STATE_WRITE(state, shadow_path, num_hits) = num_hits;
+    INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = num_hits;
   }
   else {
-    INTEGRATOR_STATE_WRITE(state, shadow_path, num_hits) = 0;
+    INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = 0;
   }
 
   return opaque_hit;
@@ -185,7 +185,7 @@ ccl_device void integrator_intersect_shadow(KernelGlobals kg, IntegratorShadowSt
            * hits. Set throughput to zero to signal full occlusion; shade_shadow applies tint. */
           if (!is_zero(shadow_color)) {
             INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) = zero_spectrum();
-            INTEGRATOR_STATE_WRITE(state, shadow_path, num_hits) = 0;
+            INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = 0;
             integrator_shadow_path_next(state,
                                         DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW,
                                         DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);

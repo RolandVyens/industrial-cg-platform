@@ -228,9 +228,6 @@ void GeometryDataSource::foreach_default_column_ids(
   if (!attributes.has_value()) {
     return;
   }
-  if (attributes->domain_size(domain_) == 0) {
-    return;
-  }
 
   if (component_->type() == bke::GeometryComponent::Type::Instance) {
     fn({const_cast<char *>("Name")}, false);
@@ -274,9 +271,6 @@ std::unique_ptr<ColumnValues> GeometryDataSource::get_column_values(
     return {};
   }
   const int domain_num = attributes->domain_size(domain_);
-  if (domain_num == 0) {
-    return {};
-  }
   if (!display_attribute(column_id.name, domain_)) {
     return {};
   }
@@ -418,7 +412,7 @@ bool GeometryDataSource::has_selection_filter() const
 
 static IndexMask calc_mesh_selection_mask_faces(const Mesh &mesh_eval,
                                                 const Mesh &mesh_orig,
-                                                IndexMaskMemory &memory)
+                                                LinearAllocator<> &memory)
 {
   const bke::AttributeAccessor attributes_eval = mesh_eval.attributes();
   const IndexRange range(attributes_eval.domain_size(bke::AttrDomain::Face));
@@ -426,7 +420,7 @@ static IndexMask calc_mesh_selection_mask_faces(const Mesh &mesh_eval,
 
   BM_mesh_elem_table_ensure(bm, BM_FACE);
   if (mesh_eval.faces_num == bm->totface) {
-    return IndexMask::from_predicate(range, GrainSize(4096), memory, [&](const int i) {
+    return IndexMask::from_predicate(range, memory, [&](const int i) {
       const BMFace *face = BM_face_at_index(bm, i);
       return BM_elem_flag_test_bool(face, BM_ELEM_SELECT);
     });
@@ -434,7 +428,7 @@ static IndexMask calc_mesh_selection_mask_faces(const Mesh &mesh_eval,
   if (const int *orig_indices = static_cast<const int *>(
           CustomData_get_layer(&mesh_eval.face_data, CD_ORIGINDEX)))
   {
-    return IndexMask::from_predicate(range, GrainSize(2048), memory, [&](const int i) {
+    return IndexMask::from_predicate(range, memory, [&](const int i) {
       const int orig = orig_indices[i];
       if (orig == -1) {
         return false;
@@ -449,7 +443,7 @@ static IndexMask calc_mesh_selection_mask_faces(const Mesh &mesh_eval,
 static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
                                           const Mesh &mesh_orig,
                                           const bke::AttrDomain domain,
-                                          IndexMaskMemory &memory)
+                                          LinearAllocator<> &memory)
 {
   const bke::AttributeAccessor attributes_eval = mesh_eval.attributes();
   const IndexRange range(attributes_eval.domain_size(domain));
@@ -459,7 +453,7 @@ static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
     case bke::AttrDomain::Point: {
       BM_mesh_elem_table_ensure(bm, BM_VERT);
       if (mesh_eval.verts_num == bm->totvert) {
-        return IndexMask::from_predicate(range, GrainSize(4096), memory, [&](const int i) {
+        return IndexMask::from_predicate(range, memory, [&](const int i) {
           const BMVert *vert = BM_vert_at_index(bm, i);
           return BM_elem_flag_test_bool(vert, BM_ELEM_SELECT);
         });
@@ -467,7 +461,7 @@ static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
       if (const int *orig_indices = static_cast<const int *>(
               CustomData_get_layer(&mesh_eval.vert_data, CD_ORIGINDEX)))
       {
-        return IndexMask::from_predicate(range, GrainSize(2048), memory, [&](const int i) {
+        return IndexMask::from_predicate(range, memory, [&](const int i) {
           const int orig = orig_indices[i];
           if (orig == -1) {
             return false;
@@ -481,7 +475,7 @@ static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
     case bke::AttrDomain::Edge: {
       BM_mesh_elem_table_ensure(bm, BM_EDGE);
       if (mesh_eval.edges_num == bm->totedge) {
-        return IndexMask::from_predicate(range, GrainSize(4096), memory, [&](const int i) {
+        return IndexMask::from_predicate(range, memory, [&](const int i) {
           const BMEdge *edge = BM_edge_at_index(bm, i);
           return BM_elem_flag_test_bool(edge, BM_ELEM_SELECT);
         });
@@ -489,7 +483,7 @@ static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
       if (const int *orig_indices = static_cast<const int *>(
               CustomData_get_layer(&mesh_eval.edge_data, CD_ORIGINDEX)))
       {
-        return IndexMask::from_predicate(range, GrainSize(2048), memory, [&](const int i) {
+        return IndexMask::from_predicate(range, memory, [&](const int i) {
           const int orig = orig_indices[i];
           if (orig == -1) {
             return false;
@@ -527,7 +521,7 @@ static IndexMask calc_mesh_selection_mask(const Mesh &mesh_eval,
   }
 }
 
-IndexMask GeometryDataSource::apply_selection_filter(IndexMaskMemory &memory) const
+IndexMask GeometryDataSource::apply_selection_filter(LinearAllocator<> &memory) const
 {
   std::lock_guard lock{mutex_};
   const IndexMask full_range(this->tot_rows());
@@ -698,7 +692,12 @@ std::unique_ptr<ColumnValues> VolumeDataSource::get_column_values(
   if (STREQ(column_id.name, "Min Voxel")) {
     return std::make_unique<ColumnValues>(
         IFACE_("Min Voxel"), VArray<int3>::from_std_func(size, [volume](const int64_t index) {
-          return int3(BKE_volume_grid_get(volume, index)->active_bounds().min().asPointer());
+          const openvdb::CoordBBox &active_bounds =
+              BKE_volume_grid_get(volume, index)->active_bounds();
+          if (active_bounds.empty()) {
+            return int3(0, 0, 0);
+          }
+          return int3(active_bounds.min().asPointer());
         }));
   }
 #else
@@ -787,7 +786,12 @@ std::unique_ptr<ColumnValues> VolumeGridDataSource::get_column_values(
                                           VArray<int3>::from_single(extent, 1));
   }
   if (STREQ(column_id.name, "Min Voxel")) {
-    const int3 min = int3(grid.active_bounds().min().asPointer());
+    const openvdb::CoordBBox &active_bounds = grid.active_bounds();
+    if (active_bounds.empty()) {
+      return std::make_unique<ColumnValues>(IFACE_("Min Voxel"),
+                                            VArray<int3>::from_single(int3(0, 0, 0), 1));
+    }
+    const int3 min = int3(active_bounds.min().asPointer());
     return std::make_unique<ColumnValues>(IFACE_("Min Voxel"), VArray<int3>::from_single(min, 1));
   }
   return {};
@@ -906,8 +910,8 @@ void BundleDataSource::collect_flat_items(const nodes::Bundle &bundle, const Str
 {
   for (const auto &item : bundle.items()) {
     const std::string path = parent_path.is_empty() ?
-                                 item.key :
-                                 nodes::Bundle::combine_path({parent_path, item.key});
+                                 item.key.string() :
+                                 nodes::Bundle::combine_path({parent_path, item.key.ref()});
     flat_item_keys_.append(path);
     flat_items_.append(&item.value);
     if (const auto *value = std::get_if<nodes::BundleItemSocketValue>(&item.value.value)) {
@@ -1091,9 +1095,9 @@ static bke::SocketValueVariant lookup_bundle_path(const nodes::BundlePtr &bundle
   if (path.bundle_path_num == 0) {
     return bke::SocketValueVariant::From(bundle);
   }
-  Vector<StringRef> keys;
+  Vector<UString> keys;
   for (const int i : IndexRange(path.bundle_path_num)) {
-    keys.append(path.bundle_path[i].identifier);
+    keys.append(UString(path.bundle_path[i].identifier));
   }
   return bundle->lookup_path<bke::SocketValueVariant>(keys).value_or(bke::SocketValueVariant{});
 }

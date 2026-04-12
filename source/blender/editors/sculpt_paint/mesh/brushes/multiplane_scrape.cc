@@ -570,7 +570,7 @@ void do_multiplane_scrape_brush(const Depsgraph &depsgraph,
   }
 
   /* Delay the first daub because grab delta is not setup. */
-  if (SCULPT_stroke_is_first_brush_step_of_symmetry_pass(*ss.cache)) {
+  if (stroke_is_first_brush_step_of_symmetry_pass(*ss.cache)) {
     ss.cache->multiplane_scrape_angle = 0.0f;
     return;
   }
@@ -684,61 +684,67 @@ void do_multiplane_scrape_brush(const Depsgraph &depsgraph,
       MutableSpan<bke::pbvh::MeshNode> nodes = pbvh.nodes<bke::pbvh::MeshNode>();
       const PositionDeformData position_data(depsgraph, object);
       const Span<float3> vert_normals = bke::pbvh::vert_normals_eval(depsgraph, object);
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_faces(depsgraph,
-                   sd,
-                   brush,
-                   mat,
-                   multiplane_scrape_planes,
-                   ss.cache->multiplane_scrape_angle,
-                   strength,
-                   vert_normals,
-                   attribute_data,
-                   nodes[i],
-                   object,
-                   tls,
-                   position_data);
-        bke::pbvh::update_node_bounds_mesh(position_data.eval, nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_faces(depsgraph,
+                       sd,
+                       brush,
+                       mat,
+                       multiplane_scrape_planes,
+                       ss.cache->multiplane_scrape_angle,
+                       strength,
+                       vert_normals,
+                       attribute_data,
+                       nodes[i],
+                       object,
+                       tls,
+                       position_data);
+            bke::pbvh::update_node_bounds_mesh(position_data.eval, nodes[i]);
+          },
+          exec_mode::grain_size(1));
       break;
     }
     case bke::pbvh::Type::Grids: {
       SubdivCCG &subdiv_ccg = *object.runtime->sculpt_session->subdiv_ccg;
       MutableSpan<float3> positions = subdiv_ccg.positions;
       MutableSpan<bke::pbvh::GridsNode> nodes = pbvh.nodes<bke::pbvh::GridsNode>();
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_grids(depsgraph,
-                   sd,
-                   brush,
-                   mat,
-                   multiplane_scrape_planes,
-                   ss.cache->multiplane_scrape_angle,
-                   strength,
-                   nodes[i],
-                   object,
-                   tls);
-        bke::pbvh::update_node_bounds_grids(subdiv_ccg.grid_area, positions, nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_grids(depsgraph,
+                       sd,
+                       brush,
+                       mat,
+                       multiplane_scrape_planes,
+                       ss.cache->multiplane_scrape_angle,
+                       strength,
+                       nodes[i],
+                       object,
+                       tls);
+            bke::pbvh::update_node_bounds_grids(subdiv_ccg.grid_area, positions, nodes[i]);
+          },
+          exec_mode::grain_size(1));
       break;
     }
     case bke::pbvh::Type::BMesh: {
       MutableSpan<bke::pbvh::BMeshNode> nodes = pbvh.nodes<bke::pbvh::BMeshNode>();
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_bmesh(depsgraph,
-                   sd,
-                   brush,
-                   mat,
-                   multiplane_scrape_planes,
-                   ss.cache->multiplane_scrape_angle,
-                   strength,
-                   nodes[i],
-                   object,
-                   tls);
-        bke::pbvh::update_node_bounds_bmesh(nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_bmesh(depsgraph,
+                       sd,
+                       brush,
+                       mat,
+                       multiplane_scrape_planes,
+                       ss.cache->multiplane_scrape_angle,
+                       strength,
+                       nodes[i],
+                       object,
+                       tls);
+            bke::pbvh::update_node_bounds_bmesh(nodes[i]);
+          },
+          exec_mode::grain_size(1));
       break;
     }
   }
@@ -759,7 +765,7 @@ void multiplane_scrape_preview_draw(const uint gpuattr,
   float4x4 local_mat_inv = math::invert(ss.cache->stroke_local_mat);
   GPU_matrix_mul(local_mat_inv.ptr());
   float angle = ss.cache->multiplane_scrape_angle;
-  if (ss.cache->pen_flip || ss.cache->invert) {
+  if (ss.cache->toggle_settings.invert) {
     angle = -angle;
   }
 

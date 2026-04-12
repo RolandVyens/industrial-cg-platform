@@ -379,6 +379,7 @@ if(WITH_BLENDER)
       file_tick
       file_volume
       filter
+      filter_filled
       fixed_size
       folder_redirect
       fontpreview
@@ -413,6 +414,9 @@ if(WITH_BLENDER)
       gizmo
       gp_caps_flat
       gp_caps_round
+      gp_draw_stroke
+      gp_draw_fill
+      gp_draw_both
       gp_multiframe_editing
       gp_only_selected
       gp_select_between_strokes

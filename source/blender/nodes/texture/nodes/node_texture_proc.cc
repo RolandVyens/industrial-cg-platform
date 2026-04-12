@@ -250,7 +250,7 @@ static void init(bNodeTree * /*ntree*/, bNode *node)
   { \
     static bke::bNodeType ntype; \
 \
-    tex_node_type_base(&ntype, idname, TEX_NODE_PROC + TEXTYPE); \
+    tex_node_type_base(&ntype, UString(idname), TEX_NODE_PROC + TEXTYPE); \
     ntype.ui_name = Name; \
     ntype.enum_name_legacy = EnumNameLegacy; \
     ntype.nclass = NODE_CLASS_TEXTURE; \

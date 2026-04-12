@@ -13,22 +13,22 @@ namespace nodes::node_shader_bsdf_glossy_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Color>("Color").default_value({0.8f, 0.8f, 0.8f, 1.0f});
-  b.add_input<decl::Float>("Roughness")
+  b.add_input<decl::Color>("Color"_ustr).default_value({0.8f, 0.8f, 0.8f, 1.0f});
+  b.add_input<decl::Float>("Roughness"_ustr)
       .default_value(0.5f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_input<decl::Float>("Anisotropy").default_value(0.0f).min(-1.0f).max(1.0f);
-  b.add_input<decl::Float>("Rotation")
+  b.add_input<decl::Float>("Anisotropy"_ustr).default_value(0.0f).min(-1.0f).max(1.0f);
+  b.add_input<decl::Float>("Rotation"_ustr)
       .default_value(0.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_input<decl::Vector>("Normal").hide_value();
-  b.add_input<decl::Vector>("Tangent").hide_value();
-  b.add_input<decl::Float>("Weight").available(false);
-  b.add_output<decl::Shader>("BSDF");
+  b.add_input<decl::Vector>("Normal"_ustr).hide_value();
+  b.add_input<decl::Vector>("Tangent"_ustr).hide_value();
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_output<decl::Shader>("BSDF"_ustr);
 }
 
 static void node_shader_buts_glossy(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -101,7 +101,7 @@ void register_node_type_sh_bsdf_glossy()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeBsdfAnisotropic", SH_NODE_BSDF_GLOSSY);
+  sh_node_type_base(&ntype, "ShaderNodeBsdfAnisotropic"_ustr, SH_NODE_BSDF_GLOSSY);
   ntype.ui_name = "Glossy BSDF";
   ntype.ui_description =
       "Reflection with microfacet distribution, used for materials such as metal or mirrors";
@@ -120,7 +120,7 @@ void register_node_type_sh_bsdf_glossy()
 
   /* Needed to preserve API compatibility with older versions which had separate
    * Glossy and Anisotropic nodes. */
-  bke::node_register_alias(ntype, "ShaderNodeBsdfGlossy");
+  bke::node_register_alias(ntype, "ShaderNodeBsdfGlossy"_ustr);
 }
 
 }  // namespace blender

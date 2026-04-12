@@ -110,8 +110,6 @@ void blf_font_draw__wrap(FontBLF *font, const char *str, size_t str_len, ResultB
  */
 void blf_draw_svg_icon(FontBLF *font,
                        uint icon_id,
-                       float x,
-                       float y,
                        float size,
                        const float color[4] = nullptr,
                        float outline_alpha = 1.0f,
@@ -230,7 +228,8 @@ bool blf_character_to_curves(FontBLF *font,
                              ListBaseT<Nurb> *nurbsbase,
                              const float scale,
                              bool use_fallback,
-                             float *r_advance);
+                             float *r_advance,
+                             rctf *r_bounds);
 
 }  // namespace blender
 

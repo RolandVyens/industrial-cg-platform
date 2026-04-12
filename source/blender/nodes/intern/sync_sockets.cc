@@ -59,7 +59,7 @@ static BundleSyncState get_sync_state_separate_bundle(
     const bNode &separate_bundle_node,
     const bNodeSocket *src_bundle_socket = nullptr)
 {
-  BLI_assert(separate_bundle_node.is_type("NodeSeparateBundle"));
+  BLI_assert(separate_bundle_node.is_type("NodeSeparateBundle"_ustr));
   snode.edittree->ensure_topology_cache();
   if (!src_bundle_socket) {
     src_bundle_socket = &separate_bundle_node.input_socket(0);
@@ -97,7 +97,7 @@ static BundleSyncState get_sync_state_combine_bundle(
     const bNode &combine_bundle_node,
     const bNodeSocket *src_bundle_socket = nullptr)
 {
-  BLI_assert(combine_bundle_node.is_type("NodeCombineBundle"));
+  BLI_assert(combine_bundle_node.is_type("NodeCombineBundle"_ustr));
   snode.edittree->ensure_topology_cache();
   if (!src_bundle_socket) {
     src_bundle_socket = &combine_bundle_node.output_socket(0);
@@ -580,16 +580,16 @@ void sync_node(bContext &C, bNode &node, ReportList *reports)
 {
   const bke::bNodeZoneType &closure_zone_type = *bke::zone_type_by_node_type(NODE_CLOSURE_OUTPUT);
   SpaceNode &snode = *CTX_wm_space_node(&C);
-  if (node.is_type("NodeEvaluateClosure")) {
+  if (node.is_type("NodeEvaluateClosure"_ustr)) {
     sync_sockets_evaluate_closure(snode, node, reports);
   }
-  else if (node.is_type("NodeSeparateBundle")) {
+  else if (node.is_type("NodeSeparateBundle"_ustr)) {
     sync_sockets_separate_bundle(snode, node, reports);
   }
-  else if (node.is_type("NodeCombineBundle")) {
+  else if (node.is_type("NodeCombineBundle"_ustr)) {
     sync_sockets_combine_bundle(snode, node, reports);
   }
-  else if (node.is_type("NodeClosureInput")) {
+  else if (node.is_type("NodeClosureInput"_ustr)) {
     bNode &closure_input_node = node;
     if (bNode *closure_output_node = closure_zone_type.get_corresponding_output(
             *snode.edittree, closure_input_node))
@@ -597,7 +597,7 @@ void sync_node(bContext &C, bNode &node, ReportList *reports)
       sync_sockets_closure(snode, closure_input_node, *closure_output_node, reports);
     }
   }
-  else if (node.is_type("NodeClosureOutput")) {
+  else if (node.is_type("NodeClosureOutput"_ustr)) {
     bNode &closure_output_node = node;
     if (bNode *closure_input_node = closure_zone_type.get_corresponding_input(*snode.edittree,
                                                                               closure_output_node))
@@ -614,7 +614,7 @@ std::string sync_node_description_get(const bContext &C, const bNode &node)
     return "";
   }
 
-  if (node.is_type("NodeSeparateBundle")) {
+  if (node.is_type("NodeSeparateBundle"_ustr)) {
     const nodes::BundleSignature old_signature = nodes::BundleSignature::from_separate_bundle_node(
         node, true);
     if (const std::optional<nodes::BundleSignature> new_signature =
@@ -623,7 +623,7 @@ std::string sync_node_description_get(const bContext &C, const bNode &node)
       return get_bundle_sync_tooltip(old_signature, *new_signature);
     }
   }
-  else if (node.is_type("NodeCombineBundle")) {
+  else if (node.is_type("NodeCombineBundle"_ustr)) {
     const nodes::BundleSignature old_signature = nodes::BundleSignature::from_combine_bundle_node(
         node, true);
     if (const std::optional<nodes::BundleSignature> new_signature =
@@ -632,7 +632,7 @@ std::string sync_node_description_get(const bContext &C, const bNode &node)
       return get_bundle_sync_tooltip(old_signature, *new_signature);
     }
   }
-  else if (node.is_type("NodeEvaluateClosure")) {
+  else if (node.is_type("NodeEvaluateClosure"_ustr)) {
     const nodes::ClosureSignature old_signature =
         nodes::ClosureSignature::from_evaluate_closure_node(node, true);
     if (const std::optional<nodes::ClosureSignature> new_signature =
@@ -641,7 +641,7 @@ std::string sync_node_description_get(const bContext &C, const bNode &node)
       return get_closure_sync_tooltip(old_signature, *new_signature);
     }
   }
-  else if (node.is_type("NodeClosureOutput")) {
+  else if (node.is_type("NodeClosureOutput"_ustr)) {
     const nodes::ClosureSignature old_signature =
         nodes::ClosureSignature::from_closure_output_node(node, true);
     if (const std::optional<nodes::ClosureSignature> new_signature =
@@ -661,16 +661,16 @@ bool node_can_sync_sockets(const bContext &C, const bNodeTree & /*tree*/, const 
   }
   Map<int, bool> &cache = ed::space_node::node_can_sync_cache_get(*snode);
   const bool can_sync = cache.lookup_or_add_cb(node.identifier, [&]() {
-    if (node.is_type("NodeEvaluateClosure")) {
+    if (node.is_type("NodeEvaluateClosure"_ustr)) {
       return get_sync_state_evaluate_closure(*snode, node).source_signature.has_value();
     }
-    if (node.is_type("NodeClosureOutput")) {
+    if (node.is_type("NodeClosureOutput"_ustr)) {
       return get_sync_state_closure_output(*snode, node).source_signature.has_value();
     }
-    if (node.is_type("NodeCombineBundle")) {
+    if (node.is_type("NodeCombineBundle"_ustr)) {
       return get_sync_state_combine_bundle(*snode, node).source_signature.has_value();
     }
-    if (node.is_type("NodeSeparateBundle")) {
+    if (node.is_type("NodeSeparateBundle"_ustr)) {
       return get_sync_state_separate_bundle(*snode, node).source_signature.has_value();
     }
     return false;

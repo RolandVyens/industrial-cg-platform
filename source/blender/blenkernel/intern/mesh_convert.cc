@@ -620,6 +620,8 @@ void BKE_pointcloud_to_mesh(Main *bmain, Depsgraph *depsgraph, Scene * /*scene*/
   ob->data = id_cast<ID *>(mesh);
   ob->type = OB_MESH;
 
+  bke::mesh_ensure_active_uv_map(*mesh);
+
   BKE_object_free_derived_caches(ob);
 }
 
@@ -1039,7 +1041,7 @@ Mesh *BKE_mesh_new_from_object_to_bmain(Main *bmain,
 static void copy_loose_vert_hint(const Mesh &src, Mesh &dst)
 {
   const auto &src_cache = src.runtime->loose_verts_cache;
-  if (src_cache.is_cached() && src_cache.data().count == 0) {
+  if (src_cache.is_cached() && src_cache.data().mask.is_empty()) {
     dst.tag_loose_verts_none();
   }
 }
@@ -1047,7 +1049,7 @@ static void copy_loose_vert_hint(const Mesh &src, Mesh &dst)
 static void copy_loose_edge_hint(const Mesh &src, Mesh &dst)
 {
   const auto &src_cache = src.runtime->loose_edges_cache;
-  if (src_cache.is_cached() && src_cache.data().count == 0) {
+  if (src_cache.is_cached() && src_cache.data().mask.is_empty()) {
     dst.tag_loose_edges_none();
   }
 }

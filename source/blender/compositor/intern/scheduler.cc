@@ -26,7 +26,7 @@ namespace blender::compositor {
 static bool has_file_output_recursive(const bNodeTree &node_group)
 {
   node_group.ensure_topology_cache();
-  for (const bNode *node : node_group.nodes_by_type("CompositorNodeOutputFile")) {
+  for (const bNode *node : node_group.nodes_by_type("CompositorNodeOutputFile"_ustr)) {
     if (!node->is_muted()) {
       return true;
     }
@@ -54,7 +54,7 @@ static bool has_viewer_recursive(const bNodeTree &node_group,
 
   /* If this is the active node group, check if a viewer node exists.  */
   if (active_node_group_instance_key == instance_key) {
-    for (const bNode *node : node_group.nodes_by_type("CompositorNodeViewer")) {
+    for (const bNode *node : node_group.nodes_by_type("CompositorNodeViewer"_ustr)) {
       if (node->flag & NODE_DO_OUTPUT && !node->is_muted()) {
         return true;
       }
@@ -119,7 +119,7 @@ static void add_output_nodes(const Context &context,
 
   /* Add File Output nodes. */
   if (flag_is_set(needed_outputs_types, NodeGroupOutputTypes::FileOutputNode)) {
-    for (const bNode *node : node_group.nodes_by_type("CompositorNodeOutputFile")) {
+    for (const bNode *node : node_group.nodes_by_type("CompositorNodeOutputFile"_ustr)) {
       if (!node->is_muted()) {
         node_stack.push(node);
       }
@@ -132,7 +132,7 @@ static void add_output_nodes(const Context &context,
   const bool is_root_node_group = instance_key == bke::NODE_INSTANCE_KEY_BASE;
   const bool should_add_viewer = is_active_node_group || (is_root_node_group && !viewer_exists);
   if (flag_is_set(needed_outputs_types, NodeGroupOutputTypes::ViewerNode) && should_add_viewer) {
-    for (const bNode *node : node_group.nodes_by_type("CompositorNodeViewer")) {
+    for (const bNode *node : node_group.nodes_by_type("CompositorNodeViewer"_ustr)) {
       if (node->flag & NODE_DO_OUTPUT && !node->is_muted()) {
         node_stack.push(node);
         viewer_exists = true;

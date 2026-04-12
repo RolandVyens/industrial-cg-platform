@@ -4,7 +4,7 @@
 
 # Populate a template file (POT format currently) from Blender RNA/py/C data.
 # XXX: This script is meant to be used from inside Blender!
-#      You should not directly use this script, rather use update_msg.py!
+#      You should not directly use this script, rather use ui_translate core add-on!
 
 __all__ = (
     "dump_addon_messages",
@@ -218,7 +218,7 @@ def dump_rna_messages(msgs, reports, settings, verbose=False):
         )
         }
 
-        # More builtin classes we don't need to parse.
+        # More built-in classes we don't need to parse.
         blacklist_rna_class |= {cls for cls in bpy.types.Property.__subclasses__()}
 
         return blacklist_rna_class

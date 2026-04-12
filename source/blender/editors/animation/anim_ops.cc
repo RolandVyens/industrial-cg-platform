@@ -575,6 +575,12 @@ static void change_frame_apply(bContext *C, wmOperator *op, const bool always_up
     scene->r.cfra = round_fl_to_int(frame);
     scene->r.subframe = 0.0f;
   }
+  bScreen *screen = ED_screen_animation_playing(CTX_wm_manager(C));
+  if (screen->animtimer) {
+    wmTimer *wt = screen->animtimer;
+    ScreenAnimData *sad = static_cast<ScreenAnimData *>(wt->customdata);
+    BKE_scene_frame_clamp_for_playback(scene, (sad->flag & ANIMPLAY_FLAG_REVERSE) == 0);
+  }
   FRAMENUMBER_MIN_CLAMP(scene->r.cfra);
 
   ed::vse::sync_active_scene_and_time_with_scene_strip(*C);
@@ -612,7 +618,8 @@ static float frame_from_event(bContext *C, const wmEvent *event)
 
   /* respect preview range restrictions (if only allowed to move around within that range) */
   if (scene->r.flag & SCER_LOCK_FRAME_SELECTION) {
-    CLAMP(frame, PSFRA, PEFRA);
+    const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(scene);
+    CLAMP(frame, playback_range.start_frame, playback_range.end_frame);
   }
 
   return frame;
@@ -925,7 +932,7 @@ static wmOperatorStatus anim_set_sfra_exec(bContext *C, wmOperator *op)
     scene->r.sfra = frame;
   }
 
-  if (PEFRA < frame) {
+  if (scene->playback_end() < frame) {
     if (PRVRANGEON) {
       scene->r.pefra = frame;
     }
@@ -981,7 +988,7 @@ static wmOperatorStatus anim_set_efra_exec(bContext *C, wmOperator *op)
     scene->r.efra = frame;
   }
 
-  if (PSFRA > frame) {
+  if (scene->playback_start() > frame) {
     if (PRVRANGEON) {
       scene->r.psfra = frame;
     }
@@ -1191,8 +1198,9 @@ static wmOperatorStatus scene_range_frame_exec(bContext *C, wmOperator * /*op*/)
   BLI_assert(region);
 
   View2D &v2d = region->v2d;
-  v2d.cur.xmin = PSFRA;
-  v2d.cur.xmax = PEFRA;
+  const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(scene);
+  v2d.cur.xmin = playback_range.start_frame;
+  v2d.cur.xmax = playback_range.end_frame;
 
   v2d.cur = ANIM_frame_range_view2d_add_xmargin(v2d, v2d.cur);
 

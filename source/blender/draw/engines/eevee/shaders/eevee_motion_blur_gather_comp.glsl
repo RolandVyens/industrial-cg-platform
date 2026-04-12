@@ -19,7 +19,7 @@ COMPUTE_SHADER_CREATE_INFO(eevee_motion_blur_gather)
 
 #include "draw_view_lib.glsl"
 #include "eevee_motion_blur_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "eevee_sampling_lib.glsl"
 #include "eevee_velocity_lib.glsl"
 #include "gpu_shader_utildefines_lib.glsl"

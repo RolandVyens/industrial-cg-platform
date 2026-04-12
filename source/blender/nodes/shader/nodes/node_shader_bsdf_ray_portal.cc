@@ -12,11 +12,11 @@ namespace nodes::node_shader_bsdf_ray_portal_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Color>("Color").default_value({1.0f, 1.0f, 1.0f, 1.0f});
-  b.add_input<decl::Vector>("Position").hide_value();
-  b.add_input<decl::Vector>("Direction").hide_value();
-  b.add_input<decl::Float>("Weight").available(false);
-  b.add_output<decl::Shader>("BSDF");
+  b.add_input<decl::Color>("Color"_ustr).default_value({1.0f, 1.0f, 1.0f, 1.0f});
+  b.add_input<decl::Vector>("Position"_ustr).hide_value();
+  b.add_input<decl::Vector>("Direction"_ustr).hide_value();
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_output<decl::Shader>("BSDF"_ustr);
 }
 
 static int node_shader_gpu_bsdf_ray_portal(GPUMaterial *mat,
@@ -62,7 +62,7 @@ void register_node_type_sh_bsdf_ray_portal()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeBsdfRayPortal", SH_NODE_BSDF_RAY_PORTAL);
+  sh_node_type_base(&ntype, "ShaderNodeBsdfRayPortal"_ustr, SH_NODE_BSDF_RAY_PORTAL);
   ntype.ui_name = "Ray Portal BSDF";
   ntype.ui_description = "Continue tracing from an arbitrary new position and in a new direction";
   ntype.enum_name_legacy = "BSDF_RAY_PORTAL";

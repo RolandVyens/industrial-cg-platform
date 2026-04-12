@@ -1,0 +1,22 @@
+﻿World Environment Fog Camera-Hit Clipping Proof
+Date: 2026-04-08
+
+Setup:
+- Validation scene: foggy_street_boxes_test.blend
+- Baseline render: factory-startup, OPTIX, 16 samples, PNG RGBA, film transparent
+- Clip render adds a camera-parented full-frame opaque black plane at the first visible camera segment
+
+Outputs:
+- Baseline: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\final_matrix_2026-04-08\foggy_street_holdout_baseline_0001.png
+- Camera blocker: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\final_matrix_2026-04-08\foggy_street_camera_blocker_full_0001.png
+
+Measured image stats:
+- Baseline avg luma: 0.499992
+- Camera blocker avg luma: 0.447611
+- Baseline avg alpha: 0.908383
+- Camera blocker avg alpha: 0.908384
+
+Practical read:
+- A foreground camera hit measurably truncates the visible alley/fog contribution behind it.
+- This is the concrete proof captured in the current CLI image path for camera-segment clipping.
+- The alpha channel is not a useful holdout proof signal in this PNG path.

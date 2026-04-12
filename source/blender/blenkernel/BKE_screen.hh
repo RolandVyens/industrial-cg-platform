@@ -38,7 +38,6 @@ class AssetRepresentation;
 namespace ui {
 struct Layout;
 struct Block;
-enum class PopupAttachDirection : int8_t;
 }  // namespace ui
 
 struct ARegion;
@@ -96,6 +95,7 @@ struct wmSpaceTypeListenerParams {
   ScrArea *area;
   const wmNotifier *notifier;
   const Scene *scene;
+  const Main *bmain;
 };
 
 struct SpaceType {
@@ -230,6 +230,12 @@ enum class ARegionTypeFlag {
    * region.
    */
   UsePanelCategoryTabs = (1 << 1),
+
+  /**
+   * When using panel categories, this hides the sidebar tab where there is only one category
+   * active.
+   */
+  HideSinglePanelCategories = (1 << 2),
 };
 ENUM_OPERATORS(ARegionTypeFlag)
 
@@ -281,10 +287,6 @@ struct ARegionType {
   /** Split region, copy data optionally. */
   void *(*duplicate)(void *poin);
 
-  /** Register operator types on startup. */
-  void (*operatortypes)();
-  /** Add items to keymap. */
-  void (*keymap)(wmKeyConfig *keyconf);
   /** Allows default cursor per region. */
   void (*cursor)(wmWindow *win, ScrArea *area, ARegion *region);
 
@@ -415,7 +417,6 @@ struct PanelType {
   /** Sub panels. */
   PanelType *parent;
   ListBaseT<LinkData> children;
-  ui::PopupAttachDirection popup_draw_direction;
   /** RNA integration. */
   ExtensionRNA rna_ext;
 };
@@ -490,11 +491,11 @@ struct Panel_Runtime {
   LayoutPanels layout_panels;
 
   /**
-   * Runtime storage reference which saves the open-close-state for layout panels created with
-   * `layout.panel(...)` in popups. This precedes #Panel::layout_panel_states when storing layout
-   * panel state.
+   * Custom storage for saving the open-close-state of layout panels created with
+   * `layout.panel(...)`. This precedes #Panel::layout_panel_states when storing layout panel
+   * state.
    */
-  ListBaseT<LayoutPanelState> *popup_layout_panel_states = nullptr;
+  ListBaseT<LayoutPanelState> *layout_panel_states_storage = nullptr;
 };
 
 namespace bke {

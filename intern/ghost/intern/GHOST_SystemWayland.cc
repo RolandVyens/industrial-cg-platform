@@ -74,6 +74,7 @@
 #include <viewporter-client-protocol.h>
 #include <xdg-activation-v1-client-protocol.h>
 #include <xdg-output-unstable-v1-client-protocol.h>
+#include <xdg-toplevel-icon-v1-client-protocol.h>
 #ifdef WITH_INPUT_IME
 #  include <text-input-unstable-v3-client-protocol.h>
 #endif
@@ -1491,6 +1492,9 @@ struct GWL_Display {
     /* Managers. */
     zxdg_output_manager_v1 *output_manager = nullptr;
     xdg_activation_v1 *activation_manager = nullptr;
+    xdg_toplevel_icon_manager_v1 *toplevel_icon_manager = nullptr;
+    /** Maximum preferred icon size from the compositor (0 = no preference, use a default). */
+    int toplevel_icon_logical_size_max = 0;
   } xdg;
 
   GWL_DisplayTimeStamp input_timestamp;
@@ -3892,6 +3896,11 @@ static void data_device_handle_enter(void *data,
 
   for (size_t i = 0; i < ARRAY_SIZE(ghost_wl_mime_preference_order); i++) {
     const char *type = ghost_wl_mime_preference_order[i];
+    if (!data_offer->types.contains(type)) {
+      /* Not required by the spec but SMITHAY based compositors fail to drop without this.
+       * See bug 1953, reported upstream. */
+      continue;
+    }
     wl_data_offer_accept(id, serial, type);
   }
 
@@ -7593,6 +7602,50 @@ static void gwl_registry_xdg_activation_remove(GWL_Display *display,
   *value_p = nullptr;
 }
 
+/* #GWL_Display.xdg_toplevel_icon_manager */
+
+static void xdg_toplevel_icon_manager_handle_icon_size(void *data,
+                                                       xdg_toplevel_icon_manager_v1 * /*manager*/,
+                                                       int32_t size)
+{
+  GWL_Display *display = static_cast<GWL_Display *>(data);
+  /* Use the largest size the compositor requests. */
+  if (size > display->xdg.toplevel_icon_logical_size_max) {
+    display->xdg.toplevel_icon_logical_size_max = size;
+  }
+}
+
+static void xdg_toplevel_icon_manager_handle_done(void * /*data*/,
+                                                  xdg_toplevel_icon_manager_v1 * /*manager*/)
+{
+}
+
+static const xdg_toplevel_icon_manager_v1_listener xdg_toplevel_icon_manager_listener = {
+    /*icon_size*/ xdg_toplevel_icon_manager_handle_icon_size,
+    /*done*/ xdg_toplevel_icon_manager_handle_done,
+};
+
+static void gwl_registry_xdg_toplevel_icon_manager_add(GWL_Display *display,
+                                                       const GWL_RegisteryAdd_Params &params)
+{
+  const uint version = GWL_IFACE_VERSION_CLAMP(params.version, 1u, 1u);
+
+  display->xdg.toplevel_icon_manager = static_cast<xdg_toplevel_icon_manager_v1 *>(
+      wl_registry_bind(
+          display->wl.registry, params.name, &xdg_toplevel_icon_manager_v1_interface, version));
+  xdg_toplevel_icon_manager_v1_add_listener(
+      display->xdg.toplevel_icon_manager, &xdg_toplevel_icon_manager_listener, display);
+  gwl_registry_entry_add(display, params, nullptr);
+}
+static void gwl_registry_xdg_toplevel_icon_manager_remove(GWL_Display *display,
+                                                          void * /*user_data*/,
+                                                          const bool /*on_exit*/)
+{
+  xdg_toplevel_icon_manager_v1 **value_p = &display->xdg.toplevel_icon_manager;
+  xdg_toplevel_icon_manager_v1_destroy(*value_p);
+  *value_p = nullptr;
+}
+
 /* #GWL_Display.wp_fractional_scale_manger */
 
 static void gwl_registry_wp_fractional_scale_manager_add(GWL_Display *display,
@@ -7802,6 +7855,12 @@ static const GWL_RegistryHandler gwl_registry_handlers[] = {
         /*add_fn*/ gwl_registry_xdg_activation_add,
         /*update_fn*/ nullptr,
         /*remove_fn*/ gwl_registry_xdg_activation_remove,
+    },
+    {
+        /*interface_p*/ &xdg_toplevel_icon_manager_v1_interface.name,
+        /*add_fn*/ gwl_registry_xdg_toplevel_icon_manager_add,
+        /*update_fn*/ nullptr,
+        /*remove_fn*/ gwl_registry_xdg_toplevel_icon_manager_remove,
     },
     {
         /*interface_p*/ &wp_fractional_scale_manager_v1_interface.name,
@@ -8691,7 +8750,7 @@ uint *GHOST_SystemWayland::getClipboardImage(int *r_width, int *r_height) const
       *r_height = ibuf->y;
       const size_t byte_count = size_t(ibuf->x) * size_t(ibuf->y) * 4;
       rgba = (uint *)malloc(byte_count);
-      std::memcpy(rgba, ibuf->byte_buffer.data, byte_count);
+      std::memcpy(rgba, ibuf->byte_data(), byte_count);
       blender::IMB_freeImBuf(ibuf);
     }
   }
@@ -9747,6 +9806,72 @@ GHOST_TimerManager *GHOST_SystemWayland::key_repeat_timer_manager()
   return display_->key_repeat_timer_manager;
 }
 
+void GHOST_SystemWayland::xdg_toplevel_icon_update(GHOST_WindowWayland *window,
+                                                   xdg_toplevel *toplevel)
+{
+  /* Called during window creation and when the window scale changes. */
+  xdg_toplevel_icon_manager_v1 *icon_manager = display_->xdg.toplevel_icon_manager;
+  if (icon_manager == nullptr) {
+    return;
+  }
+
+  if (icon_generator_ == nullptr) {
+    return;
+  }
+
+  const int icon_logical_size = display_->xdg.toplevel_icon_logical_size_max > 0 ?
+                                    display_->xdg.toplevel_icon_logical_size_max :
+                                    32;
+
+  /* The icon size from the compositor is in logical coordinates,
+   * scale to physical pixels using the window's scale. */
+  int buffer_scale;
+  const int icon_pixel_size = gwl_window_scale_buffer_size_to(
+      window->scale_params_get(), icon_logical_size, &buffer_scale);
+  GHOST_ASSERT(icon_pixel_size > 0, "Scale must be initialized before setting the icon!");
+
+  GWL_XDG_WindowIcon &icon = window->gwl_xdg_icon_get();
+
+  /* Re-generate the buffer if the size has changed or this is the first call. */
+  if (icon.icon_pixel_size != icon_pixel_size) {
+    gwl_xdg_window_icon_free(icon);
+
+    const int32_t size_xy[2] = {icon_pixel_size, icon_pixel_size};
+    void *buffer_data = nullptr;
+    size_t buffer_data_size = 0;
+    wl_buffer *buffer = ghost_wl_buffer_create_for_image(
+        display_->wl.shm, size_xy, WL_SHM_FORMAT_ARGB8888, &buffer_data, &buffer_data_size);
+    /* SHM buffer allocation should practically never fail. */
+    if (buffer == nullptr) [[unlikely]] {
+      return;
+    }
+
+    /* The callback fills an RGBA (straight alpha) buffer.
+     * Convert to pre-multiplied ARGB for the Wayland SHM format,
+     * swapping R and B since ARGB8888 stores B,G,R,A bytes on little-endian. */
+    const int pixel_count = icon_pixel_size * icon_pixel_size;
+    icon_generator_->generate_fn(
+        icon_generator_, window, static_cast<uint8_t *>(buffer_data), icon_pixel_size);
+    uint32_t *pixels = static_cast<uint32_t *>(buffer_data);
+    for (int i = 0; i < pixel_count; i++) {
+      uint8_t *bytes = reinterpret_cast<uint8_t *>(&pixels[i]);
+      std::swap(bytes[0], bytes[2]);
+      pixels[i] = rgba_straight_to_premul(pixels[i]);
+    }
+
+    /* Keep the buffer for reuse if this function is called again at the same size. */
+    icon.buffer = buffer;
+    icon.buffer_data = buffer_data;
+    icon.buffer_size = buffer_data_size;
+    icon.icon_pixel_size = icon_pixel_size;
+  }
+
+  xdg_toplevel_icon_v1 *toplevel_icon = xdg_toplevel_icon_manager_v1_create_icon(icon_manager);
+  xdg_toplevel_icon_v1_add_buffer(toplevel_icon, icon.buffer, buffer_scale);
+  xdg_toplevel_icon_manager_v1_set_icon(icon_manager, toplevel, toplevel_icon);
+  xdg_toplevel_icon_v1_destroy(toplevel_icon);
+}
+
 bool GHOST_SystemWayland::use_window_frame_get() const
 {
   return display_->use_window_frame;
@@ -9804,8 +9929,9 @@ void GHOST_SystemWayland::ime_begin(const GHOST_WindowWayland *win,
     seat->ime.has_preedit = false;
     seat->ime.is_enabled = true;
 
+    /* Don't commit here, bundle enable + cursor rectangle into a single commit below.
+     * Otherwise the proper location wont be used. */
     zwp_text_input_v3_enable(seat->wp.text_input);
-    zwp_text_input_v3_commit(seat->wp.text_input);
 
     /* Now that it's enabled, set the input properties. */
     zwp_text_input_v3_set_content_type(seat->wp.text_input,

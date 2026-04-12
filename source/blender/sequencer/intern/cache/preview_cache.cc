@@ -12,6 +12,7 @@
 #include "GPU_texture.hh"
 
 #include "SEQ_preview_cache.hh"
+#include "SEQ_sequencer.hh"
 
 namespace blender::seq {
 
@@ -19,6 +20,8 @@ struct PreviewCacheItem {
   int64_t last_used = -1;
   int timeline_frame = -1;
   int display_channel = -1;
+  int width = -1;
+  int height = -1;
 
   gpu::Texture *texture = nullptr;
   gpu::Texture *display_texture = nullptr;
@@ -27,6 +30,8 @@ struct PreviewCacheItem {
   {
     last_used = -1;
     timeline_frame = -1;
+    width = -1;
+    height = -1;
     GPU_TEXTURE_FREE_SAFE(texture);
     GPU_TEXTURE_FREE_SAFE(display_texture);
   }
@@ -55,7 +60,7 @@ static PreviewCache *query_preview_cache(Scene *scene)
   if (scene == nullptr || scene->ed == nullptr) {
     return nullptr;
   }
-  return scene->ed->runtime.preview_cache;
+  return scene->ed->runtime->preview_cache;
 }
 
 static PreviewCache *ensure_preview_cache(Scene *scene)
@@ -63,14 +68,15 @@ static PreviewCache *ensure_preview_cache(Scene *scene)
   if (scene == nullptr || scene->ed == nullptr) {
     return nullptr;
   }
-  PreviewCache *&cache = scene->ed->runtime.preview_cache;
+  PreviewCache *&cache = scene->ed->runtime->preview_cache;
   if (cache == nullptr) {
     cache = MEM_new<PreviewCache>(__func__);
   }
   return cache;
 }
 
-gpu::Texture *preview_cache_get_gpu_texture(Scene *scene, int timeline_frame, int display_channel)
+gpu::Texture *preview_cache_get_gpu_texture(
+    Scene *scene, int timeline_frame, int display_channel, int width, int height)
 {
   PreviewCache *cache = query_preview_cache(scene);
   if (cache == nullptr) {
@@ -79,7 +85,7 @@ gpu::Texture *preview_cache_get_gpu_texture(Scene *scene, int timeline_frame, in
   cache->tick_count++;
   for (PreviewCacheItem &item : cache->items) {
     if (item.timeline_frame == timeline_frame && item.display_channel == display_channel &&
-        item.texture != nullptr)
+        item.width == width && item.height == height && item.texture != nullptr)
     {
       item.last_used = cache->tick_count;
       return item.texture;
@@ -88,9 +94,8 @@ gpu::Texture *preview_cache_get_gpu_texture(Scene *scene, int timeline_frame, in
   return nullptr;
 }
 
-gpu::Texture *preview_cache_get_gpu_display_texture(Scene *scene,
-                                                    int timeline_frame,
-                                                    int display_channel)
+gpu::Texture *preview_cache_get_gpu_display_texture(
+    Scene *scene, int timeline_frame, int display_channel, int width, int height)
 {
   PreviewCache *cache = query_preview_cache(scene);
   if (cache == nullptr) {
@@ -99,7 +104,7 @@ gpu::Texture *preview_cache_get_gpu_display_texture(Scene *scene,
   cache->tick_count++;
   for (PreviewCacheItem &item : cache->items) {
     if (item.timeline_frame == timeline_frame && item.display_channel == display_channel &&
-        item.display_texture != nullptr)
+        item.width == width && item.height == height && item.display_texture != nullptr)
     {
       item.last_used = cache->tick_count;
       return item.display_texture;
@@ -108,13 +113,16 @@ gpu::Texture *preview_cache_get_gpu_display_texture(Scene *scene,
   return nullptr;
 }
 
-static PreviewCacheItem *find_slot(PreviewCache *cache, int timeline_frame, int display_channel)
+static PreviewCacheItem *find_slot(
+    PreviewCache *cache, int timeline_frame, int display_channel, int width, int height)
 {
   cache->tick_count++;
 
   /* Try to find an exact frame match. */
   for (PreviewCacheItem &item : cache->items) {
-    if (item.timeline_frame == timeline_frame && item.display_channel == display_channel) {
+    if (item.timeline_frame == timeline_frame && item.display_channel == display_channel &&
+        item.width == width && item.height == height)
+    {
       return &item;
     }
   }
@@ -145,13 +153,17 @@ void preview_cache_set_gpu_texture(Scene *scene,
   if (cache == nullptr || texture == nullptr) {
     return;
   }
-  PreviewCacheItem *slot = find_slot(cache, timeline_frame, display_channel);
+  const int width = GPU_texture_width(texture);
+  const int height = GPU_texture_height(texture);
+  PreviewCacheItem *slot = find_slot(cache, timeline_frame, display_channel, width, height);
   if (slot == nullptr) {
     return;
   }
 
   slot->timeline_frame = timeline_frame;
   slot->display_channel = display_channel;
+  slot->width = width;
+  slot->height = height;
   slot->last_used = cache->tick_count;
   GPU_TEXTURE_FREE_SAFE(slot->texture);
   /* Free the display-space texture of this slot too. */
@@ -168,13 +180,17 @@ void preview_cache_set_gpu_display_texture(Scene *scene,
   if (cache == nullptr || texture == nullptr) {
     return;
   }
-  PreviewCacheItem *slot = find_slot(cache, timeline_frame, display_channel);
+  const int width = GPU_texture_width(texture);
+  const int height = GPU_texture_height(texture);
+  PreviewCacheItem *slot = find_slot(cache, timeline_frame, display_channel, width, height);
   if (slot == nullptr) {
     return;
   }
 
   slot->timeline_frame = timeline_frame;
   slot->display_channel = display_channel;
+  slot->width = width;
+  slot->height = height;
   slot->last_used = cache->tick_count;
   GPU_TEXTURE_FREE_SAFE(slot->display_texture);
   slot->display_texture = texture;
@@ -192,7 +208,7 @@ void preview_cache_destroy(Scene *scene)
 {
   PreviewCache *cache = query_preview_cache(scene);
   if (cache != nullptr) {
-    MEM_SAFE_DELETE(scene->ed->runtime.preview_cache);
+    MEM_SAFE_DELETE(scene->ed->runtime->preview_cache);
   }
 }
 

@@ -31,6 +31,7 @@
 #include "BKE_geometry_set.hh"
 #include "BKE_global.hh"
 #include "BKE_grease_pencil.hh"
+#include "BKE_grease_pencil_fills.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_material.hh"
 #include "BKE_mesh.hh"
@@ -794,10 +795,10 @@ static void lineart_triangle_cull_single(LineartData *ld,
       tri->intersecting_verts);
 
   LineartVert *vt = &(static_cast<LineartVert *>(v_eln->pointer))[v_count];
-  LineartTriangle *tri1 = static_cast<LineartTriangle *>(
-      static_cast<void *>((static_cast<uchar *>(t_eln->pointer)) + ld->sizeof_triangle * t_count));
+  LineartTriangle *tri1 = static_cast<LineartTriangle *>(static_cast<void *>(
+      (static_cast<uchar *>(t_eln->pointer)) + (size_t)ld->sizeof_triangle * t_count));
   LineartTriangle *tri2 = static_cast<LineartTriangle *>(static_cast<void *>(
-      (static_cast<uchar *>(t_eln->pointer)) + ld->sizeof_triangle * (t_count + 1)));
+      (static_cast<uchar *>(t_eln->pointer)) + (size_t)ld->sizeof_triangle * (t_count + 1)));
 
   new_e = &(static_cast<LineartEdge *>(e_eln->pointer))[e_count];
   /* Init `edge` to the last `edge` entry. */
@@ -1314,8 +1315,8 @@ void lineart_main_cull_triangles(LineartData *ld, bool clip_far)
     ob = static_cast<Object *>(eln.object_ref);
     for (i = 0; i < eln.element_count; i++) {
       /* Select the triangle in the array. */
-      tri = static_cast<LineartTriangle *>(
-          static_cast<void *>((static_cast<uchar *>(eln.pointer)) + ld->sizeof_triangle * i));
+      tri = static_cast<LineartTriangle *>(static_cast<void *>(
+          (static_cast<uchar *>(eln.pointer)) + (size_t)ld->sizeof_triangle * i));
 
       if (tri->flags & LRT_CULL_DISCARD) {
         continue;
@@ -1479,7 +1480,7 @@ static LineartTriangle *lineart_triangle_from_index(LineartData *ld,
                                                     int index)
 {
   int8_t *b = reinterpret_cast<int8_t *>(rt_array);
-  b += (index * ld->sizeof_triangle);
+  b += ((size_t)index * ld->sizeof_triangle);
   return reinterpret_cast<LineartTriangle *>(b);
 }
 
@@ -1811,10 +1812,12 @@ struct TriData {
   Span<int3> corner_tris;
   Span<int> tri_faces;
   Span<int> material_indices;
+  Span<bool> face_marks;
   LineartVert *vert_arr;
   LineartTriangle *tri_arr;
   int lineart_triangle_size;
   LineartTriangleAdjacent *tri_adj;
+  bool invert_face_marks;
 };
 
 static void lineart_load_tri_task(void *__restrict userdata,
@@ -1832,8 +1835,8 @@ static void lineart_load_tri_task(void *__restrict userdata,
   LineartVert *vert_arr = tri_task_data->vert_arr;
   LineartTriangle *tri = tri_task_data->tri_arr;
 
-  tri = reinterpret_cast<LineartTriangle *>((reinterpret_cast<uchar *>(tri)) +
-                                            tri_task_data->lineart_triangle_size * i);
+  tri = reinterpret_cast<LineartTriangle *>((reinterpret_cast<size_t>(tri)) +
+                                            (size_t)tri_task_data->lineart_triangle_size * i);
 
   int v1 = corner_verts[corner_tri[0]];
   int v2 = corner_verts[corner_tri[1]];
@@ -1877,6 +1880,14 @@ static void lineart_load_tri_task(void *__restrict userdata,
   }
   else if (ELEM(ob_info->usage, OBJECT_LRT_NO_INTERSECTION, OBJECT_LRT_OCCLUSION_ONLY)) {
     tri->flags |= LRT_TRIANGLE_NO_INTERSECTION;
+  }
+
+  if (!tri_task_data->face_marks.is_empty()) {
+    const bool has_mark = tri_task_data->face_marks[face_i];
+    const bool filtered = tri_task_data->invert_face_marks ? has_mark : (!has_mark);
+    if (filtered) {
+      tri->flags |= LRT_TRIANGLE_NO_INTERSECTION;
+    }
   }
 
   /* Re-use this field to refer to adjacent info, will be cleared after culling stage. */
@@ -1981,6 +1992,7 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   const Span<int3> corner_tris = mesh->corner_tris();
   const AttributeAccessor attributes = mesh->attributes();
   const VArraySpan material_indices = *attributes.lookup<int>("material_index", AttrDomain::Face);
+  const VArraySpan face_marks = *attributes.lookup<bool>("freestyle_face", AttrDomain::Face);
 
   /* If we allow duplicated edges, one edge should get added multiple times if is has been
    * classified as more than one edge type. This is so we can create multiple different line type
@@ -2078,6 +2090,10 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   tri_data.tri_arr = la_tri_arr;
   tri_data.lineart_triangle_size = la_data->sizeof_triangle;
   tri_data.tri_adj = tri_adj;
+  if (la_data->conf.filter_face_mark) {
+    tri_data.face_marks = face_marks;
+    tri_data.invert_face_marks = la_data->conf.filter_face_mark_invert;
+  }
 
   uint32_t total_edges = corner_tris.size() * 3;
 
@@ -2134,17 +2150,10 @@ static void lineart_geometry_object_load(LineartObjectInfo *ob_info,
   if (la_data->conf.use_loose) {
     /* Only identifying floating edges at this point because other edges has been taken care of
      * inside #lineart_identify_corner_tri_feature_edges function. */
-    const LooseEdgeCache &loose_edges = mesh->loose_edges();
-    loose_data.loose_array = MEM_new_array_uninitialized<int>(size_t(loose_edges.count), __func__);
-    if (loose_edges.count > 0) {
-      loose_data.loose_count = 0;
-      for (const int64_t edge_i : IndexRange(mesh->edges_num)) {
-        if (loose_edges.is_loose_bits[edge_i]) {
-          loose_data.loose_array[loose_data.loose_count] = int(edge_i);
-          loose_data.loose_count++;
-        }
-      }
-    }
+    const IndexMask &loose_edges = mesh->loose_edges();
+    loose_data.loose_array = MEM_new_array_uninitialized<int>(loose_edges.size(), __func__);
+    loose_data.loose_count = loose_edges.size();
+    loose_edges.to_indices(MutableSpan(loose_data.loose_array, loose_data.loose_count));
   }
 
   int allocate_la_e = edge_reduce.feat_edges + loose_data.loose_count;
@@ -2303,7 +2312,9 @@ static uchar lineart_intersection_mask_check(Collection *c, Object *ob)
     }
   }
 
-  if (BKE_collection_has_object(c, id_cast<Object *>(ob->id.orig_id))) {
+  /* We already did "depth-priority search" above, so if no child collection is overriding the
+   * value, we use the parent's value. */
+  if (BKE_collection_has_object_recursive_instanced(c, id_cast<Object *>(ob->id.orig_id))) {
     if (c->lineart_flags & COLLECTION_LRT_USE_INTERSECTION_MASK) {
       return c->lineart_intersection_mask;
     }
@@ -2324,7 +2335,10 @@ static uchar lineart_intersection_priority_check(Collection *c, Object *ob)
       return result;
     }
   }
-  if (BKE_collection_has_object(c, id_cast<Object *>(ob->id.orig_id))) {
+
+  /* We already did "depth-priority search" above, so if no child collection is overriding the
+   * value, we use the parent's value. */
+  if (BKE_collection_has_object_recursive_instanced(c, id_cast<Object *>(ob->id.orig_id))) {
     if (c->lineart_flags & COLLECTION_LRT_USE_INTERSECTION_PRIORITY) {
       return c->lineart_intersection_priority;
     }
@@ -2547,8 +2561,16 @@ void lineart_main_load_geometries(Depsgraph *depsgraph,
       lineart_matrix_perspective_44d(proj, fov, asp, cam->clip_start, cam->clip_end);
     }
     else if (cam->type == CAM_ORTHO) {
-      const double w = cam->ortho_scale / 2;
-      lineart_matrix_ortho_44d(proj, -w, w, -w / asp, w / asp, cam->clip_start, cam->clip_end);
+      double horizontal = cam->ortho_scale / 2;
+      double vertical = horizontal;
+      if (fit == CAMERA_SENSOR_FIT_VERT) {
+        horizontal *= asp;
+      }
+      else {
+        vertical /= asp;
+      }
+      lineart_matrix_ortho_44d(
+          proj, -horizontal, horizontal, -vertical, vertical, cam->clip_start, cam->clip_end);
     }
     else {
       BLI_assert(!"Unsupported camera type in lineart_main_load_geometries");
@@ -2720,7 +2742,7 @@ bool lineart_edge_from_triangle(const LineartTriangle *tri,
                                 bool allow_overlapping_edges)
 {
   const LineartEdge *use_e = e;
-  if (e->flags & MOD_LINEART_EDGE_FLAG_LIGHT_CONTOUR) {
+  if (e->flags & (MOD_LINEART_EDGE_FLAG_LIGHT_CONTOUR | MOD_LINEART_EDGE_FLAG_PROJECTED_SHADOW)) {
     if (((e->target_reference & LRT_LIGHT_CONTOUR_TARGET) == tri->target_reference) ||
         (((e->target_reference >> 32) & LRT_LIGHT_CONTOUR_TARGET) == tri->target_reference))
     {
@@ -4578,7 +4600,7 @@ static void lineart_add_triangles_worker(TaskPool *__restrict /*pool*/, LineartI
       int index_start = eln == th->pending_from ? th->index_from : 0;
       int index_end = eln == th->pending_to ? th->index_to : eln->element_count;
       LineartTriangle *tri = static_cast<LineartTriangle *>(static_cast<void *>(
-          (static_cast<uchar *>(eln->pointer)) + ld->sizeof_triangle * index_start));
+          (static_cast<uchar *>(eln->pointer)) + (size_t)ld->sizeof_triangle * index_start));
       for (int ei = index_start; ei < index_end; ei++) {
         int x1, x2, y1, y2;
         int r, co;
@@ -4696,17 +4718,13 @@ static void lineart_create_edges_from_isec_data(LineartIsecData *d)
                                                         &ld->geom.line_buffer_pointers, obi2);
       Object *ob1 = eln1 ? static_cast<Object *>(eln1->object_ref) : nullptr;
       Object *ob2 = eln2 ? static_cast<Object *>(eln2->object_ref) : nullptr;
-      if (e->t1->intersection_priority > e->t2->intersection_priority) {
+      if (e->t1->intersection_priority >= e->t2->intersection_priority) {
+        /* `object_ref` should be ambiguous if intersection lines comes from different objects with
+         * the same priority. */
         e->object_ref = ob1;
       }
       else if (e->t1->intersection_priority < e->t2->intersection_priority) {
         e->object_ref = ob2;
-      }
-      else { /* equal priority */
-        if (ob1 == ob2) {
-          /* object_ref should be ambiguous if intersection lines comes from different objects. */
-          e->object_ref = ob1;
-        }
       }
 
       lineart_add_edge_to_array(&ld->pending_edges, e);
@@ -5227,6 +5245,7 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
                                      const uchar intersection_mask,
                                      const float thickness,
                                      const float opacity,
+                                     const bool fill_strokes,
                                      const uchar shadow_selection,
                                      const uchar silhouette_mode,
                                      const char *source_vgname,
@@ -5402,6 +5421,8 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
   bke::CurvesGeometry new_curves(total_point_count, stroke_count);
   new_curves.fill_curve_types(CURVE_TYPE_POLY);
 
+  BKE_defgroup_copy_list(&new_curves.vertex_group_names, &drawing.geometry.vertex_group_names);
+
   MutableAttributeAccessor attributes = new_curves.attributes_for_write();
   MutableSpan<float3> point_positions = new_curves.positions_for_write();
 
@@ -5540,6 +5561,13 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
   point_radii.finish();
   point_opacities.finish();
   stroke_materials.finish();
+
+  if (fill_strokes) {
+    SpanAttributeWriter<int> fill_ids = attributes.lookup_or_add_for_write_span<int>(
+        "fill_id", AttrDomain::Curve);
+    bke::greasepencil::gather_next_available_fill_ids({}, fill_ids.span);
+    fill_ids.finish();
+  }
 
   Curves *original_curves = bke::curves_new_nomain(drawing.strokes());
   Curves *created_curves = bke::curves_new_nomain(std::move(new_curves));

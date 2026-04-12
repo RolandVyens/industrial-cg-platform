@@ -14,7 +14,7 @@
 
 COMPUTE_SHADER_CREATE_INFO(eevee_shadow_tilemap_init)
 
-#include "eevee_shadow_tilemap_lib.glsl"
+#include "eevee_shadow_tilemap_lib.bsl.hh"
 #include "gpu_shader_utildefines_lib.glsl"
 
 shared int directional_range_changed;

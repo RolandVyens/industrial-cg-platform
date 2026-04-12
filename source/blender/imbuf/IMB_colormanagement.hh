@@ -13,14 +13,18 @@
 #include "BLI_string_ref.hh"
 #include "BLI_vector.hh"
 
+#include <optional>
+#include <variant>
+
 #define BCM_CONFIG_FILE "config.ocio"
 
 namespace blender {
+struct CurveMapping;
 
 struct ColorManagedColorspaceSettings;
 struct ColorManagedDisplaySettings;
 struct ColorManagedViewSettings;
-struct ColormanageProcessor;
+class ColormanageProcessor;
 struct ID;
 struct EnumPropertyItem;
 struct ImBuf;
@@ -29,9 +33,13 @@ struct Main;
 struct bContext;
 
 namespace ocio {
+class CPUProcessor;
 class ColorSpace;
+class Config;
 class Display;
 }  // namespace ocio
+
+using ColorManagedConfig = ocio::Config;
 using ColorSpace = ocio::ColorSpace;
 using ColorManagedDisplay = ocio::Display;
 
@@ -57,6 +65,8 @@ enum class ColorManagedFileOutput { Image, Video };
 /** \name Generic Functions
  * \{ */
 
+ColorManagedConfig &IMB_colormanagement_get_config();
+
 void IMB_colormanagement_check_file_config(Main *bmain);
 
 void IMB_colormanagement_validate_settings(const ColorManagedDisplaySettings *display_settings,
@@ -65,15 +75,16 @@ void IMB_colormanagement_validate_settings(const ColorManagedDisplaySettings *di
 const char *IMB_colormanagement_role_colorspace_name_get(int role);
 const char *IMB_colormanagement_srgb_colorspace_name_get();
 void IMB_colormanagement_check_is_data(ImBuf *ibuf, const char *name);
-void IMB_colormanagegent_copy_settings(ImBuf *ibuf_src, ImBuf *ibuf_dst);
+void IMB_colormanagement_copy_settings(ImBuf *ibuf_src, ImBuf *ibuf_dst);
 void IMB_colormanagement_assign_float_colorspace(ImBuf *ibuf, const char *name);
 void IMB_colormanagement_assign_byte_colorspace(ImBuf *ibuf, const char *name);
 
 const char *IMB_colormanagement_get_float_colorspace(const ImBuf *ibuf);
-const char *IMB_colormanagement_get_rect_colorspace(const ImBuf *ibuf);
+const char *IMB_colormanagement_get_byte_colorspace(const ImBuf *ibuf);
 const char *IMB_colormanagement_space_from_filepath_rules(const char *filepath);
 
 const ColorSpace *IMB_colormanagement_space_get_named(const char *name);
+const ColorSpace *IMB_colormanagement_space_get_named(StringRefNull name);
 bool IMB_colormanagement_space_is_data(const ColorSpace *colorspace);
 bool IMB_colormanagement_space_is_scene_linear(const ColorSpace *colorspace);
 bool IMB_colormanagement_space_is_srgb(const ColorSpace *colorspace);
@@ -91,11 +102,11 @@ Vector<char> IMB_colormanagement_space_to_icc_profile(const ColorSpace *colorspa
  * For describing the color-space of videos and high dynamic range image files.
  */
 bool IMB_colormanagement_space_to_cicp(const ColorSpace *colorspace,
-                                       const ColorManagedFileOutput output,
-                                       const bool rgb_matrix,
+                                       ColorManagedFileOutput output,
+                                       bool rgb_matrix,
                                        int cicp[4]);
 const ColorSpace *IMB_colormanagement_space_from_cicp(const int cicp[4],
-                                                      const ColorManagedFileOutput output);
+                                                      ColorManagedFileOutput output);
 
 /**
  * Get identifier for color-spaces that works with multiple OpenColorIO configurations,
@@ -150,9 +161,7 @@ float3x3 IMB_colormanagement_get_scene_linear_to_xyz();
 /**
  * Functions for converting between color temperature/tint and RGB white points.
  */
-void IMB_colormanagement_get_whitepoint(const float temperature,
-                                        const float tint,
-                                        float whitepoint[3]);
+void IMB_colormanagement_get_whitepoint(float temperature, float tint, float whitepoint[3]);
 bool IMB_colormanagement_set_whitepoint(const float whitepoint[3],
                                         float &temperature,
                                         float &tint);
@@ -187,7 +196,7 @@ void IMB_colormanagement_transform_byte(unsigned char *buffer,
  * Convert a byte image buffer into a float buffer, changing the color spaces too.
  */
 void IMB_colormanagement_transform_byte_to_float(float *float_buffer,
-                                                 unsigned char *byte_buffer,
+                                                 const unsigned char *byte_buffer,
                                                  int width,
                                                  int height,
                                                  int channels,
@@ -282,7 +291,7 @@ BLI_INLINE void IMB_colormanagement_srgb_to_scene_linear_v3(float scene_linear[3
 void IMB_colormanagement_scene_linear_to_display_v3(
     float pixel[3],
     const ColorManagedDisplay *display,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+    ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
 /**
  * Same as #IMB_colormanagement_scene_linear_to_display_v3,
  * but converts color in opposite direction.
@@ -290,20 +299,20 @@ void IMB_colormanagement_scene_linear_to_display_v3(
 void IMB_colormanagement_display_to_scene_linear_v3(
     float pixel[3],
     const ColorManagedDisplay *display,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+    ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
 
 void IMB_colormanagement_pixel_to_display_space_v4(
     float result[4],
     const float pixel[4],
     const ColorManagedViewSettings *view_settings,
     const ColorManagedDisplaySettings *display_settings,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+    ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
 
 void IMB_colormanagement_imbuf_make_display_space(
     ImBuf *ibuf,
     const ColorManagedViewSettings *view_settings,
     const ColorManagedDisplaySettings *display_settings,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+    ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
 
 /**
  * Prepare image buffer to be saved on disk, applying color management if needed
@@ -336,14 +345,14 @@ void IMB_colormanagement_display_settings_from_ctx(
 /**
  * Acquire display buffer for given image buffer using specified view and display settings.
  */
-unsigned char *IMB_display_buffer_acquire(ImBuf *ibuf,
-                                          const ColorManagedViewSettings *view_settings,
-                                          const ColorManagedDisplaySettings *display_settings,
-                                          void **cache_handle);
+const uchar *IMB_display_buffer_acquire(ImBuf *ibuf,
+                                        const ColorManagedViewSettings *view_settings,
+                                        const ColorManagedDisplaySettings *display_settings,
+                                        void **cache_handle);
 /**
  * Same as #IMB_display_buffer_acquire but gets view and display settings from context.
  */
-unsigned char *IMB_display_buffer_acquire_ctx(const bContext *C, ImBuf *ibuf, void **cache_handle);
+const uchar *IMB_display_buffer_acquire_ctx(const bContext *C, ImBuf *ibuf, void **cache_handle);
 
 void IMB_display_buffer_transform_apply(unsigned char *display_buffer,
                                         float *linear_buffer,
@@ -413,6 +422,8 @@ const char *IMB_colormanagement_look_validate_for_view(const char *view_name,
 int IMB_colormanagement_colorspace_get_named_index(const char *name);
 const char *IMB_colormanagement_colorspace_get_indexed_name(int index);
 const char *IMB_colormanagement_colorspace_get_name(const ColorSpace *colorspace);
+const char *IMB_colormanagement_colorspace_get_family(const ColorSpace *colorspace);
+const char *IMB_colormanagement_colorspace_get_description(const ColorSpace *colorspace);
 const char *IMB_colormanagement_view_get_default_name(const char *display_name);
 const char *IMB_colormanagement_view_get_raw_or_default_name(const char *display_name);
 
@@ -430,17 +441,17 @@ const char *IMB_colormanagement_working_space_get();
 
 bool IMB_colormanagement_working_space_set_from_name(const char *name);
 void IMB_colormanagement_working_space_check(Main *bmain,
-                                             const bool for_undo,
-                                             const bool have_editable_assets);
+                                             bool for_undo,
+                                             bool have_editable_assets);
 
 void IMB_colormanagement_working_space_init_default(Main *bmain);
 void IMB_colormanagement_working_space_init_startup(Main *bmain);
 void IMB_colormanagement_working_space_convert(Main *bmain,
                                                const float3x3 &current_scene_linear_to_xyz,
                                                const float3x3 &new_xyz_to_scene_linear,
-                                               const bool depsgraph_tag = false,
-                                               const bool linked_only = false,
-                                               const bool editable_assets_only = false);
+                                               bool depsgraph_tag = false,
+                                               bool linked_only = false,
+                                               bool editable_assets_only = false);
 void IMB_colormanagement_working_space_convert(Main *bmain, const Main *reference_bmain);
 
 int IMB_colormanagement_working_space_get_named_index(const char *name);
@@ -503,46 +514,60 @@ void IMB_partial_display_buffer_update_delayed(
 /* -------------------------------------------------------------------- */
 /** \name Pixel Processor Functions
  * \{ */
+class ColormanageProcessor : NonCopyable {
+  using ProcessorType =
+      std::variant<std::shared_ptr<const ocio::CPUProcessor>, const ocio::CPUProcessor *>;
 
-ColormanageProcessor *IMB_colormanagement_display_processor_new(
-    const ColorManagedViewSettings *view_settings,
-    const ColorManagedDisplaySettings *display_settings,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW,
-    const bool inverse = false);
+  ProcessorType cpu_processor_ = nullptr;
+  CurveMapping *curve_mapping_ = nullptr;
+  bool is_data_result_ = false;
 
-ColormanageProcessor *IMB_colormanagement_display_processor_for_imbuf(
-    const ImBuf *ibuf,
-    const ColorManagedViewSettings *view_settings,
-    const ColorManagedDisplaySettings *display_settings,
-    const ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+ public:
+  ColormanageProcessor() = default;
+  ColormanageProcessor(ColormanageProcessor &&other) noexcept;
+  ~ColormanageProcessor();
+  ColormanageProcessor &operator=(ColormanageProcessor &&other) noexcept;
+
+  static ColormanageProcessor colorspace_processor_new(StringRefNull from_colorspace,
+                                                       StringRefNull to_colorspace);
+  static ColormanageProcessor colorspace_processor_from_scene_linear_new(
+      const ColorSpace &to_colorspace);
+  static ColormanageProcessor colorspace_processor_to_scene_linear_new(
+      const ColorSpace &from_colorspace);
+  static ColormanageProcessor display_processor_new(
+      const ColorManagedViewSettings *view_settings,
+      const ColorManagedDisplaySettings *display_settings,
+      ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW,
+      bool inverse = false);
+  static std::optional<ColormanageProcessor> display_processor_for_imbuf(
+      const ImBuf *ibuf,
+      const ColorManagedViewSettings *view_settings,
+      const ColorManagedDisplaySettings *display_settings,
+      ColorManagedDisplaySpace display_space = DISPLAY_SPACE_DRAW);
+
+  bool is_data_result() const;
+  bool is_noop() const;
+  void apply_v4(float pixel[4]) const;
+  void apply_v4_predivide(float pixel[4]) const;
+  void apply_v3(float pixel[3]) const;
+  void apply_pixel(float *pixel, int channels) const;
+  void apply(float *buffer, int width, int height, int channels, bool predivide) const;
+  void apply_byte(unsigned char *buffer, int width, int height, int channels) const;
+
+ private:
+  const ocio::CPUProcessor *get_cpu_processor() const
+  {
+    if (std::holds_alternative<std::shared_ptr<const ocio::CPUProcessor>>(cpu_processor_)) {
+      return std::get<std::shared_ptr<const ocio::CPUProcessor>>(cpu_processor_).get();
+    }
+    return std::get<const ocio::CPUProcessor *>(cpu_processor_);
+  }
+};
 
 bool IMB_colormanagement_display_processor_needed(
     const ImBuf *ibuf,
     const ColorManagedViewSettings *view_settings,
     const ColorManagedDisplaySettings *display_settings);
-
-ColormanageProcessor *IMB_colormanagement_colorspace_processor_new(const char *from_colorspace,
-                                                                   const char *to_colorspace);
-bool IMB_colormanagement_processor_is_noop(ColormanageProcessor *cm_processor);
-void IMB_colormanagement_processor_apply_v4(ColormanageProcessor *cm_processor, float pixel[4]);
-void IMB_colormanagement_processor_apply_v4_predivide(ColormanageProcessor *cm_processor,
-                                                      float pixel[4]);
-void IMB_colormanagement_processor_apply_v3(ColormanageProcessor *cm_processor, float pixel[3]);
-void IMB_colormanagement_processor_apply_pixel(ColormanageProcessor *cm_processor,
-                                               float *pixel,
-                                               int channels);
-void IMB_colormanagement_processor_apply(ColormanageProcessor *cm_processor,
-                                         float *buffer,
-                                         int width,
-                                         int height,
-                                         int channels,
-                                         bool predivide);
-void IMB_colormanagement_processor_apply_byte(ColormanageProcessor *cm_processor,
-                                              unsigned char *buffer,
-                                              int width,
-                                              int height,
-                                              int channels);
-void IMB_colormanagement_processor_free(ColormanageProcessor *cm_processor);
 
 /** \} */
 

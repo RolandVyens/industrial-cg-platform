@@ -134,6 +134,18 @@ class MATERIAL_PT_gpencil_strokecolor(GPMaterialButtonsPanel, Panel):
 
             col.prop(gpcolor, "stroke_style", text="Style")
 
+            if gpcolor.mode in {'DOTS', 'BOX'}:
+                col.prop(gpcolor, "placement_mode")
+                if gpcolor.placement_mode == 'COUNT':
+                    col.prop(gpcolor, "placement_count")
+                    col.separator()
+                elif gpcolor.placement_mode == 'DENSITY':
+                    col.prop(gpcolor, "placement_density")
+                    col.separator()
+                elif gpcolor.placement_mode == 'RADIUS':
+                    col.prop(gpcolor, "placement_radius_spacing")
+                    col.separator()
+
             col.prop(gpcolor, "color", text="Base Color")
             col.prop(gpcolor, "use_stroke_holdout")
 

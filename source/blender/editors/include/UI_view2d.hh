@@ -303,7 +303,7 @@ void view2d_scrollers_draw(View2D *v2d, const rcti *mask_custom);
  *
  * \param columnwidth, rowheight: size of each 'cell'
  * \param startx, starty: coordinates (in 'tot' rect space) that the list starts from.
- * This should be (0,0) for most views. However, for those where the starting row was offsetted
+ * This should be (0,0) for most views. However, for those where the starting row was offset
  * (like for Animation Editor channel lists, to make the first entry more visible), these will be
  * the min-coordinates of the first item.
  * \param viewx, viewy: 2D-coordinates (in 2D-view / 'tot' rect space) to get the cell for
@@ -418,6 +418,7 @@ void view2d_scale_get_inverse(const View2D *v2d, float *r_x, float *r_y);
  */
 void view2d_center_get(const View2D *v2d, float *r_x, float *r_y);
 void view2d_center_set(View2D *v2d, float x, float y);
+void view2d_size_x_set(View2D *v2d, float size_x);
 
 /**
  * Simple pan function

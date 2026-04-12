@@ -527,8 +527,7 @@ static void rna_GreasePencilLayer_tint_color_set(PointerRNA *ptr, const float *v
           grease_pencil.attributes_for_write().lookup_or_add_for_write_span<ColorGeometry4f>(
               "tint_color",
               bke::AttrDomain::Layer,
-              bke::AttributeInitVArray(VArray<ColorGeometry4f>::from_single(
-                  ColorGeometry4f(0.0f, 0.0f, 0.0f, 0.0f), grease_pencil.layers().size()))))
+              bke::AttributeInitValue(ColorGeometry4f(0.0f, 0.0f, 0.0f, 0.0f))))
   {
     copy_v3_v3(tint_colors.span[layer_idx], values);
     tint_colors.finish();
@@ -558,8 +557,7 @@ static void rna_GreasePencilLayer_tint_factor_set(PointerRNA *ptr, const float v
           grease_pencil.attributes_for_write().lookup_or_add_for_write_span<ColorGeometry4f>(
               "tint_color",
               bke::AttrDomain::Layer,
-              bke::AttributeInitVArray(VArray<ColorGeometry4f>::from_single(
-                  ColorGeometry4f(0.0f, 0.0f, 0.0f, 0.0f), grease_pencil.layers().size()))))
+              bke::AttributeInitValue(ColorGeometry4f(0.0f, 0.0f, 0.0f, 0.0f))))
   {
     tint_colors.span[layer_idx][3] = value;
     tint_colors.finish();
@@ -587,10 +585,7 @@ static void rna_GreasePencilLayer_radius_offset_set(PointerRNA *ptr, const float
 
   if (bke::SpanAttributeWriter<float> radius_offsets =
           grease_pencil.attributes_for_write().lookup_or_add_for_write_span<float>(
-              "radius_offset",
-              bke::AttrDomain::Layer,
-              bke::AttributeInitVArray(
-                  VArray<float>::from_single(0.0f, grease_pencil.layers().size()))))
+              "radius_offset", bke::AttrDomain::Layer, bke::AttributeInitValue(0.0f)))
   {
     radius_offsets.span[layer_idx] = value;
     radius_offsets.finish();
@@ -990,6 +985,7 @@ static void rna_def_grease_pencil_layer_masks(BlenderRNA *brna, PropertyRNA *cpr
                              "rna_grease_pencil_active_mask_index_set",
                              "rna_grease_pencil_active_mask_index_range");
   RNA_def_property_ui_text(prop, "Active Layer Mask Index", "Active index in layer mask array");
+  RNA_api_grease_pencil_layer_masks(srna);
 }
 
 static void rna_def_grease_pencil_tree_node(BlenderRNA *brna)

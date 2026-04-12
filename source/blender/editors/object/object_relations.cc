@@ -259,7 +259,7 @@ static wmOperatorStatus vertex_parent_set_exec(bContext *C, wmOperator *op)
         BKE_report(op->reports, RPT_ERROR, "Loop in parents");
       }
       else {
-        BKE_view_layer_synced_ensure(scene, view_layer);
+        BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
         ob->parent = BKE_view_layer_active_object_get(view_layer);
         if (par3 != INDEX_UNSET) {
           ob->partype = PARVERT3;
@@ -965,7 +965,7 @@ static wmOperatorStatus parent_set_invoke_menu(bContext *C, wmOperatorType *ot)
   ui::Layout &layout = *popup_menu_layout(pup);
 
   PointerRNA opptr = layout.op(
-      ot, IFACE_("Object"), ICON_NONE, wm::OpCallContext::ExecDefault, UI_ITEM_NONE);
+      ot, IFACE_("Object"), ICON_OBJECT_DATA, wm::OpCallContext::ExecDefault, UI_ITEM_NONE);
   RNA_enum_set(&opptr, "type", PAR_OBJECT);
   RNA_boolean_set(&opptr, "keep_transform", false);
 
@@ -1020,7 +1020,7 @@ static wmOperatorStatus parent_set_invoke_menu(bContext *C, wmOperatorType *ot)
   if (parent->type == OB_ARMATURE) {
 
     if (can_support.armature_deform) {
-      op_ptr = layout.op(ot, IFACE_("Armature Deform"), ICON_NONE);
+      op_ptr = layout.op(ot, IFACE_("Armature Deform"), ICON_OUTLINER_OB_ARMATURE);
       RNA_enum_set(&op_ptr, "type", PAR_ARMATURE);
     }
     if (can_support.empty_groups) {
@@ -1035,21 +1035,21 @@ static wmOperatorStatus parent_set_invoke_menu(bContext *C, wmOperatorType *ot)
       op_ptr = layout.op(ot, IFACE_("   With Automatic Weights"), ICON_NONE);
       RNA_enum_set(&op_ptr, "type", PAR_ARMATURE_AUTO);
     }
-    op_ptr = layout.op(ot, IFACE_("Bone"), ICON_NONE);
+    op_ptr = layout.op(ot, IFACE_("Bone"), ICON_BONE_DATA);
     RNA_enum_set(&op_ptr, "type", PAR_BONE);
     op_ptr = layout.op(ot, IFACE_("Bone Relative"), ICON_NONE);
     RNA_enum_set(&op_ptr, "type", PAR_BONE_RELATIVE);
   }
   else if (parent->type == OB_CURVES_LEGACY) {
-    op_ptr = layout.op(ot, IFACE_("Curve Deform"), ICON_NONE);
+    op_ptr = layout.op(ot, IFACE_("Curve Deform"), ICON_OUTLINER_OB_CURVE);
     RNA_enum_set(&op_ptr, "type", PAR_CURVE);
-    op_ptr = layout.op(ot, IFACE_("Follow Path"), ICON_NONE);
+    op_ptr = layout.op(ot, IFACE_("Follow Path"), ICON_CURVE_PATH);
     RNA_enum_set(&op_ptr, "type", PAR_FOLLOW);
     op_ptr = layout.op(ot, IFACE_("Path Constraint"), ICON_NONE);
     RNA_enum_set(&op_ptr, "type", PAR_PATH_CONST);
   }
   else if (parent->type == OB_LATTICE) {
-    op_ptr = layout.op(ot, IFACE_("Lattice Deform"), ICON_NONE);
+    op_ptr = layout.op(ot, IFACE_("Lattice Deform"), ICON_OUTLINER_OB_LATTICE);
     RNA_enum_set(&op_ptr, "type", PAR_LATTICE);
   }
   else if (parent->type == OB_MESH) {
@@ -1060,7 +1060,7 @@ static wmOperatorStatus parent_set_invoke_menu(bContext *C, wmOperatorType *ot)
 
   /* vertex parenting */
   if (OB_TYPE_SUPPORT_PARVERT(parent->type)) {
-    op_ptr = layout.op(ot, IFACE_("Vertex"), ICON_NONE);
+    op_ptr = layout.op(ot, IFACE_("Vertex"), ICON_VERTEXSEL);
     RNA_enum_set(&op_ptr, "type", PAR_VERTEX);
     op_ptr = layout.op(ot, IFACE_("Vertex (Triangle)"), ICON_NONE);
     RNA_enum_set(&op_ptr, "type", PAR_VERTEX_TRI);
@@ -1477,10 +1477,11 @@ enum {
   MAKE_LINKS_GROUP = 4,
   MAKE_LINKS_DUPLICOLLECTION = 5,
   MAKE_LINKS_MODIFIERS = 6,
-  MAKE_LINKS_FONTS = 7,
-  MAKE_LINKS_SHADERFX = 8,
-  MAKE_LINKS_LIGHT_LINKING = 9,
-  MAKE_LINKS_SHADOW_LINKING = 10,
+  MAKE_LINKS_CONSTRAINTS = 7,
+  MAKE_LINKS_FONTS = 8,
+  MAKE_LINKS_SHADERFX = 9,
+  MAKE_LINKS_LIGHT_LINKING = 10,
+  MAKE_LINKS_SHADOW_LINKING = 11,
 };
 
 /* Matches has_geometry_visibility() from Python.
@@ -1540,6 +1541,8 @@ static bool allow_make_links_data(const int type, Object *ob_src, Object *ob_dst
         return true;
       }
       break;
+    case MAKE_LINKS_CONSTRAINTS:
+      return true;
     case MAKE_LINKS_FONTS:
       if ((ob_src->data != ob_dst->data) && (ob_src->type == OB_FONT) && (ob_dst->type == OB_FONT))
       {
@@ -1657,6 +1660,12 @@ static wmOperatorStatus make_links_data_exec(bContext *C, wmOperator *op)
             DEG_id_tag_update(&ob_dst->id,
                               ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_ANIMATION);
             break;
+          case MAKE_LINKS_CONSTRAINTS:
+            BKE_constraints_free(&ob_dst->constraints);
+            BKE_constraints_copy(&ob_dst->constraints, &ob_src->constraints, true);
+            DEG_id_tag_update(&ob_dst->id, ID_RECALC_GEOMETRY | ID_RECALC_TRANSFORM);
+            WM_event_add_notifier(C, NC_OBJECT | ND_CONSTRAINT, nullptr);
+            break;
           case MAKE_LINKS_FONTS: {
             Curve *cu_src = id_cast<Curve *>(ob_src->data);
             Curve *cu_dst = id_cast<Curve *>(ob_dst->data);
@@ -1769,6 +1778,7 @@ void OBJECT_OT_make_links_data(wmOperatorType *ot)
       {MAKE_LINKS_FONTS, "FONTS", 0, "Link Fonts to Text", "Replace Text object Fonts"},
       RNA_ENUM_ITEM_SEPR,
       {MAKE_LINKS_MODIFIERS, "MODIFIERS", 0, "Copy Modifiers", "Replace Modifiers"},
+      {MAKE_LINKS_CONSTRAINTS, "CONSTRAINTS", 0, "Copy Constraints", "Replace Constraints"},
       {MAKE_LINKS_SHADERFX,
        "EFFECTS",
        0,
@@ -1937,7 +1947,7 @@ static void single_obdata_users(
 {
   ID *id;
 
-  FOREACH_OBJECT_FLAG_BEGIN (scene, view_layer, v3d, flag, ob) {
+  FOREACH_OBJECT_FLAG_BEGIN (bmain, scene, view_layer, v3d, flag, ob) {
     if (BKE_id_is_editable(bmain, &ob->id)) {
       id = ob->data;
       if (single_data_needs_duplication(id)) {
@@ -2092,7 +2102,7 @@ void single_obdata_user_make(Main *bmain, Scene *scene, Object *ob)
 static void single_object_action_users(
     Main *bmain, Scene *scene, ViewLayer *view_layer, View3D *v3d, const int flag)
 {
-  FOREACH_OBJECT_FLAG_BEGIN (scene, view_layer, v3d, flag, ob) {
+  FOREACH_OBJECT_FLAG_BEGIN (bmain, scene, view_layer, v3d, flag, ob) {
     if (BKE_id_is_editable(bmain, &ob->id)) {
       AnimData *adt = BKE_animdata_from_id(&ob->id);
       if (adt == nullptr) {
@@ -2112,7 +2122,7 @@ static void single_object_action_users(
 static void single_objectdata_action_users(
     Main *bmain, Scene *scene, ViewLayer *view_layer, View3D *v3d, const int flag)
 {
-  FOREACH_OBJECT_FLAG_BEGIN (scene, view_layer, v3d, flag, ob) {
+  FOREACH_OBJECT_FLAG_BEGIN (bmain, scene, view_layer, v3d, flag, ob) {
     if (BKE_id_is_editable(bmain, &ob->id) && ob->data != nullptr) {
       ID *id_obdata = ob->data;
       AnimData *adt = BKE_animdata_from_id(id_obdata);
@@ -2136,7 +2146,7 @@ static void single_mat_users(
   Material *ma, *man;
   int a;
 
-  FOREACH_OBJECT_FLAG_BEGIN (scene, view_layer, v3d, flag, ob) {
+  FOREACH_OBJECT_FLAG_BEGIN (bmain, scene, view_layer, v3d, flag, ob) {
     if (BKE_id_is_editable(bmain, &ob->id)) {
       for (a = 1; a <= ob->totcol; a++) {
         ma = BKE_object_material_get(ob, short(a));
@@ -2241,7 +2251,7 @@ static bool make_local_all__instance_indirect_unused(Main *bmain,
       id_us_plus(&ob->id);
 
       BKE_collection_object_add(bmain, collection, ob);
-      BKE_view_layer_synced_ensure(scene, view_layer);
+      BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
       base = BKE_view_layer_base_find(view_layer, ob);
       base_select(base, BA_SELECT);
       DEG_id_tag_update(&ob->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_ANIMATION);
@@ -2313,7 +2323,7 @@ static wmOperatorStatus make_local_exec(bContext *C, wmOperator *op)
     BKE_main_id_tag_all(bmain, ID_TAG_PRE_EXISTING, false);
 
     /* De-select so the user can differentiate newly instanced from existing objects. */
-    BKE_view_layer_base_deselect_all(scene, view_layer);
+    BKE_view_layer_base_deselect_all(*bmain, scene, view_layer);
 
     if (make_local_all__instance_indirect_unused(bmain, scene, view_layer, collection)) {
       BKE_report(op->reports,
@@ -2848,7 +2858,7 @@ static wmOperatorStatus clear_override_library_exec(bContext *C, wmOperator * /*
     Object *ob_iter = static_cast<Object *>(todo_object_iter->link);
     if (BKE_lib_override_library_is_hierarchy_leaf(bmain, &ob_iter->id)) {
       bool do_remap_active = false;
-      BKE_view_layer_synced_ensure(scene, view_layer);
+      BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
       if (BKE_view_layer_active_object_get(view_layer) == ob_iter) {
         do_remap_active = true;
       }
@@ -2857,7 +2867,7 @@ static wmOperatorStatus clear_override_library_exec(bContext *C, wmOperator * /*
                          ob_iter->id.override_library->reference,
                          ID_REMAP_SKIP_INDIRECT_USAGE);
       if (do_remap_active) {
-        BKE_view_layer_synced_ensure(scene, view_layer);
+        BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
         Object *ref_object = id_cast<Object *>(ob_iter->id.override_library->reference);
         Base *basact = BKE_view_layer_base_find(view_layer, ref_object);
         if (basact != nullptr) {
@@ -2920,7 +2930,7 @@ static wmOperatorStatus make_single_user_exec(bContext *C, wmOperator *op)
 
   if (RNA_boolean_get(op->ptr, "object")) {
     if (flag == SELECT) {
-      BKE_view_layer_selected_objects_tag(scene, view_layer, OB_DONE);
+      BKE_view_layer_selected_objects_tag(*bmain, scene, view_layer, OB_DONE);
       single_object_users(bmain, scene, v3d, OB_DONE, copy_collections);
     }
     else {

@@ -286,6 +286,7 @@ enum ClosureLabel {
   LABEL_TRANSMIT_TRANSPARENT = 128,
   LABEL_SUBSURFACE_SCATTER = 256,
   LABEL_RAY_PORTAL = 512,
+  LABEL_CACHE_MISS = 1024,
 };
 
 /* Render Passes */
@@ -339,9 +340,10 @@ enum PassType {
   /* No Scatter color since it's tricky to define what it would even mean. */
   PASS_MIST,
   PASS_DENOISING_ALBEDO,
+  PASS_DENOISING_SPECULAR_ALBEDO,
   PASS_DENOISING_NORMAL,
+  PASS_DENOISING_ROUGHNESS,
   PASS_DENOISING_DEPTH,
-  PASS_DENOISING_PREVIOUS,
   PASS_RENDER_TIME,
 
   /* PASS_SHADOW_CATCHER accumulates contribution of shadow catcher object which is not affected by
@@ -376,6 +378,8 @@ enum PassType {
   PASS_BAKE_SEED,
   PASS_BAKE_DIFFERENTIAL,
   PASS_CATEGORY_BAKE_END = 95,
+
+  PASS_DENOISING_PREVIOUS,
 
   PASS_NUM,
 };
@@ -412,7 +416,6 @@ enum FilterClosures {
 enum ShaderFlag {
   SHADER_SMOOTH_NORMAL = (1 << 31),
   SHADER_CAST_SHADOW = (1 << 30),
-  SHADER_AREA_LIGHT = (1 << 29),
   SHADER_USE_MIS = (1 << 28),
   SHADER_EXCLUDE_DIFFUSE = (1 << 27),
   SHADER_EXCLUDE_GLOSSY = (1 << 26),
@@ -424,8 +427,7 @@ enum ShaderFlag {
                         SHADER_EXCLUDE_CAMERA | SHADER_EXCLUDE_SCATTER |
                         SHADER_EXCLUDE_SHADOW_CATCHER),
 
-  SHADER_MASK = ~(SHADER_SMOOTH_NORMAL | SHADER_CAST_SHADOW | SHADER_AREA_LIGHT | SHADER_USE_MIS |
-                  SHADER_EXCLUDE_ANY)
+  SHADER_MASK = ~(SHADER_SMOOTH_NORMAL | SHADER_CAST_SHADOW | SHADER_USE_MIS | SHADER_EXCLUDE_ANY)
 };
 
 enum EmissionSampling {
@@ -442,7 +444,7 @@ enum EmissionSampling {
 
 enum LightType {
   LIGHT_POINT,
-  LIGHT_DISTANT,
+  LIGHT_SUN,
   LIGHT_BACKGROUND,
   LIGHT_AREA,
   LIGHT_SPOT,
@@ -861,16 +863,16 @@ enum ShaderDataFlag {
   SD_IS_VOLUME_SHADER_EVAL = (1 << 8),
   /* Shader has transparent closure. */
   SD_TRANSPARENT = (1 << 9),
-  /* BSDF requires LCG for evaluation. */
-  SD_BSDF_NEEDS_LCG = (1 << 10),
   /* BSDF has a transmissive component. */
-  SD_BSDF_HAS_TRANSMISSION = (1 << 11),
+  SD_BSDF_HAS_TRANSMISSION = (1 << 10),
   /* Shader has ray portal closure. */
-  SD_RAY_PORTAL = (1 << 12),
+  SD_RAY_PORTAL = (1 << 11),
+  /* Shader evaluation needs to be redone, because of texture cache miss */
+  SD_CACHE_MISS = (1 << 12),
 
   SD_CLOSURE_FLAGS = (SD_EMISSION | SD_BSDF | SD_BSDF_HAS_EVAL | SD_BSSRDF | SD_HOLDOUT |
-                      SD_EXTINCTION | SD_SCATTER | SD_IS_VOLUME_SHADER_EVAL | SD_BSDF_NEEDS_LCG |
-                      SD_BSDF_HAS_TRANSMISSION | SD_RAY_PORTAL),
+                      SD_EXTINCTION | SD_SCATTER | SD_IS_VOLUME_SHADER_EVAL |
+                      SD_BSDF_HAS_TRANSMISSION | SD_RAY_PORTAL | SD_CACHE_MISS),
 
   /* Shader flags. */
 
@@ -1144,6 +1146,10 @@ struct KernelCamera {
   /* differentials */
   float4 dx;
   float4 dy;
+
+  /* Scale up differentials for progressive rendering, so that mip levels for the
+   * full resolution are used rather than loading unnecessary lower levels. */
+  float differential_scale;
 
   /* clipping */
   float nearclip;
@@ -1432,7 +1438,7 @@ struct KernelAreaLight {
   float pad[2];
 };
 
-struct KernelDistantLight {
+struct KernelSunLight {
   float angle;
   float one_minus_cosangle;
   float half_inv_sin_half_angle;
@@ -1454,7 +1460,7 @@ struct KernelLight {
   union {
     KernelSpotLight spot;
     KernelAreaLight area;
-    KernelDistantLight distant;
+    KernelSunLight sun;
   };
 };
 static_assert_align(KernelLight, 16);
@@ -1462,7 +1468,7 @@ static_assert_align(KernelLight, 16);
 struct KernelLightDistribution {
   float totarea;
   int prim;
-  int shader_flag;
+  int visibility_flag;
   int object_id;
 };
 static_assert_align(KernelLightDistribution, 16);
@@ -1573,7 +1579,7 @@ struct KernelLightTreeEmitter {
 
   /* Object and shader. */
   int object_id;
-  int shader_flag;
+  int visibility_flag;
 
   /* Bit trail from root node to leaf node containing emitter. */
   int bit_trail;
@@ -1643,6 +1649,15 @@ struct KernelShaderEvalInput {
   float u, v;
 };
 static_assert_align(KernelShaderEvalInput, 16);
+
+enum ShaderEvalResult {
+  /* Shader evaluation is empty (e.g. no volume density, no emission from light, ..). */
+  SHADER_EVAL_EMPTY = 0,
+  /* Shader evaluation succeeded. */
+  SHADER_EVAL_OK = 1,
+  /* Cache miss means shader evaluation can not be used. */
+  SHADER_EVAL_CACHE_MISS = 2,
+};
 
 /* Pre-computed sample table sizes for the tabulated Sobol sampler.
  *

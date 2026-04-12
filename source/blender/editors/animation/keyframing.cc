@@ -241,7 +241,6 @@ static wmOperatorStatus insert_key_with_keyingset(bContext *C, wmOperator *op, K
 
 static Vector<RNAPath> construct_rna_paths(PointerRNA *ptr)
 {
-  eRotationModes rotation_mode;
   Vector<RNAPath> paths;
 
   if (ptr->type == RNA_Strip || RNA_struct_is_a(ptr->type, RNA_Strip)) {
@@ -263,15 +262,8 @@ static Vector<RNAPath> construct_rna_paths(PointerRNA *ptr)
     return paths;
   }
 
-  if (ptr->type == RNA_PoseBone) {
-    bPoseChannel *pchan = static_cast<bPoseChannel *>(ptr->data);
-    rotation_mode = eRotationModes(pchan->rotmode);
-  }
-  else if (ptr->type == RNA_Object) {
-    Object *ob = static_cast<Object *>(ptr->data);
-    rotation_mode = eRotationModes(ob->rotmode);
-  }
-  else {
+  std::optional<eRotationModes> rotation_mode = animrig::get_rotation_mode_from_rna_pointer(*ptr);
+  if (!rotation_mode.has_value()) {
     /* Pointer type not supported. */
     return paths;
   }
@@ -281,7 +273,7 @@ static Vector<RNAPath> construct_rna_paths(PointerRNA *ptr)
     paths.append({"location"});
   }
   if (insert_channel_flags & USER_ANIM_KEY_CHANNEL_ROTATION) {
-    switch (rotation_mode) {
+    switch (rotation_mode.value()) {
       case ROT_MODE_QUAT:
         paths.append({"rotation_quaternion"});
         break;
@@ -1300,14 +1292,17 @@ static wmOperatorStatus insert_key_button_exec(bContext *C, wmOperator *op)
       FCurve *fcu = BKE_fcurve_find(&strip->fcurves, RNA_property_identifier(prop), index);
 
       if (fcu) {
-        changed = insert_keyframe_direct(op->reports,
-                                         ptr,
-                                         prop,
-                                         fcu,
-                                         &anim_eval_context,
-                                         eBezTriple_KeyframeType(ts->keyframe_type),
-                                         nullptr,
-                                         eInsertKeyFlags(0));
+        const SingleKeyingResult result = insert_keyframe_direct(
+            ptr,
+            *prop,
+            *fcu,
+            anim_eval_context.eval_time,
+            eBezTriple_KeyframeType(ts->keyframe_type),
+            eInsertKeyFlags(0));
+        changed = result == SingleKeyingResult::SUCCESS;
+        if (result != SingleKeyingResult::SUCCESS) {
+          generate_single_keying_result_report(result, op->reports);
+        }
       }
       else {
         BKE_report(op->reports,
@@ -1326,16 +1321,17 @@ static wmOperatorStatus insert_key_button_exec(bContext *C, wmOperator *op)
       if (fcu && driven) {
         const float driver_frame = evaluate_driver_from_rna_pointer(
             &anim_eval_context, &ptr, prop, fcu);
-        AnimationEvalContext remapped_context = BKE_animsys_eval_context_construct(
-            CTX_data_depsgraph_pointer(C), driver_frame);
-        changed = insert_keyframe_direct(op->reports,
-                                         ptr,
-                                         prop,
-                                         fcu,
-                                         &remapped_context,
-                                         eBezTriple_KeyframeType(ts->keyframe_type),
-                                         nullptr,
-                                         INSERTKEY_NOFLAGS);
+        const SingleKeyingResult result = insert_keyframe_direct(
+            ptr,
+            *prop,
+            *fcu,
+            driver_frame,
+            eBezTriple_KeyframeType(ts->keyframe_type),
+            INSERTKEY_NOFLAGS);
+        changed = result == SingleKeyingResult::SUCCESS;
+        if (result != SingleKeyingResult::SUCCESS) {
+          generate_single_keying_result_report(result, op->reports);
+        }
       }
     }
     else {

@@ -8,7 +8,7 @@ FRAGMENT_SHADER_CREATE_INFO(eevee_display_lightprobe_planar)
 
 #include "draw_view_lib.glsl"
 #include "eevee_lightprobe_sphere_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 
 float2 sampling_uv(float2 screen_uv)
 {

@@ -32,6 +32,9 @@ void AbstractViewItem::update_from_old(const AbstractViewItem &old)
   is_renaming_ = old.is_renaming_;
   is_highlighted_search_ = old.is_highlighted_search_;
   is_selected_ = old.is_selected_;
+  if (old.view_item_but_ && old.view_item_but_->flag & UI_HOVER) {
+    is_hovered_ = true;
+  }
 }
 
 /** \} */
@@ -378,6 +381,13 @@ void AbstractViewItem::disable_interaction()
 bool AbstractViewItem::is_interactive() const
 {
   return is_interactive_;
+}
+
+bool AbstractViewItem::is_hovered() const
+{
+  BLI_assert_msg(this->get_view().is_reconstructed(),
+                 "State cannot be queried until reconstruction is completed");
+  return is_hovered_;
 }
 
 bool AbstractViewItem::is_active() const

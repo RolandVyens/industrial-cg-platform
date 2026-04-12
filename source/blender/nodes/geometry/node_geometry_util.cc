@@ -61,7 +61,7 @@ const EnumPropertyItem *attribute_type_type_with_socket_fn(bContext * /*C*/,
   return enum_items_filter(
       rna_enum_attribute_type_items, [](const EnumPropertyItem &item) -> bool {
         return generic_attribute_type_supported(item) &&
-               !ELEM(item.value, CD_PROP_INT8, CD_PROP_BYTE_COLOR, CD_PROP_FLOAT2);
+               !ELEM(item.value, CD_PROP_INT8, CD_PROP_BYTE_COLOR, CD_PROP_FLOAT2, CD_PROP_FLOAT4);
       });
 }
 
@@ -134,7 +134,7 @@ bool geo_node_poll_default(const bke::bNodeType * /*ntype*/,
 }
 
 void geo_node_type_base(bke::bNodeType *ntype,
-                        std::string idname,
+                        UString idname,
                         const std::optional<int16_t> legacy_type)
 {
   bke::node_type_base(*ntype, idname, legacy_type);
@@ -155,7 +155,7 @@ static bool geo_cmp_node_poll_default(const bke::bNodeType * /*ntype*/,
 }
 
 void geo_cmp_node_type_base(bke::bNodeType *ntype,
-                            std::string idname,
+                            UString idname,
                             const std::optional<int16_t> legacy_type)
 {
   bke::node_type_base(*ntype, idname, legacy_type);

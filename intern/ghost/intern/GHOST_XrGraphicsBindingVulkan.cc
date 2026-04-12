@@ -18,10 +18,6 @@
 #include "BLI_string_ref.hh"
 #include "BLI_vector.hh"
 
-#include "CLG_log.h"
-
-static CLG_LogRef LOG = {"ghost.xr"};
-
 #ifdef _WIN32
 #  include <vulkan/vulkan_win32.h>
 #endif
@@ -114,7 +110,7 @@ bool GHOST_XrGraphicsBindingVulkan::loadExtensionFunctions(XrInstance instance)
 
 #undef LOAD_FUNCTION
 
-  CLOG_INFO(&LOG,
+  CLOG_INFO(LOG_GHOST_XR,
             "XR/Vulkan graphics extensions:\n"
             " - [%c] XR_KHR_vulkan_enable\n"
             " - [%c] XR_KHR_vulkan_enable2",
@@ -154,9 +150,9 @@ bool GHOST_XrGraphicsBindingVulkan::checkVersionRequirements(GHOST_Context &ghos
                 << XR_VERSION_MINOR(xr_graphics_requirements.minApiVersionSupported) << std::endl;
     }
     if (vk_version > xr_graphics_requirements.maxApiVersionSupported) {
-      CLOG_INFO(&LOG,
+      CLOG_INFO(LOG_GHOST_XR,
                 "OpenXR platform vulkan version requirements do not match with Blender. "
-                "This is known to happen when using Occulus/Meta Quest. A workaround for this is "
+                "This is known to happen when using Oculus/Meta Quest. A workaround for this is "
                 "already enabled by enabling extensions that are known to be in core vulkan. "
                 "(minimum vulkan version=%d.%d, maximum vulkan version=%d.%d).",
                 XR_VERSION_MAJOR(xr_graphics_requirements.minApiVersionSupported),
@@ -185,9 +181,9 @@ bool GHOST_XrGraphicsBindingVulkan::checkVersionRequirements(GHOST_Context &ghos
                 << XR_VERSION_MINOR(xr_graphics_requirements2.minApiVersionSupported) << std::endl;
     }
     if (vk_version > xr_graphics_requirements2.maxApiVersionSupported) {
-      CLOG_INFO(&LOG,
+      CLOG_INFO(LOG_GHOST_XR,
                 "OpenXR platform vulkan version requirements do not match with Blender. "
-                "This is known to happen when using Occulus/Meta Quest. A workaround for this is "
+                "This is known to happen when using Oculus/Meta Quest. A workaround for this is "
                 "already enabled by enabling extensions that are known to be in core vulkan. "
                 "(minimum vulkan version=%d.%d, maximum vulkan version=%d.%d).",
                 XR_VERSION_MAJOR(xr_graphics_requirements2.minApiVersionSupported),
@@ -342,7 +338,8 @@ bool GHOST_XrGraphicsBindingVulkan::tryReuseVulkanInstance(GHOST_ContextVK &ghos
                                                            XrSystemId system_id)
 {
   if (!extensions_.vulkan_enable) {
-    CLOG_INFO(&LOG, "Unable to reuse vulkan instance: XR_KHR_vulkan_enable isn't supported");
+    CLOG_INFO(LOG_GHOST_XR,
+              "Unable to reuse vulkan instance: XR_KHR_vulkan_enable isn't supported");
     return false;
   }
 
@@ -363,7 +360,7 @@ bool GHOST_XrGraphicsBindingVulkan::tryReuseVulkanInstance(GHOST_ContextVK &ghos
     return result;
   }
 
-  CLOG_INFO(&LOG, "Reusing vulkan instance.");
+  CLOG_INFO(LOG_GHOST_XR, "Reusing vulkan instance.");
   data_transfer_mode_ = GHOST_kVulkanXRModeRenderGraph;
 
   /* Initialize binding struct */
@@ -410,9 +407,9 @@ bool GHOST_XrGraphicsBindingVulkan::areRequiredInstanceExtensionsEnabled(
     log_ss << "\n - [" << (is_extension_enabled ? 'X' : ' ') << "] " << extension_name;
     all_extensions_enabled &= is_extension_enabled;
   }
-  CLOG_DEBUG(&LOG, "%s", log_ss.str().c_str());
+  CLOG_DEBUG(LOG_GHOST_XR, "%s", log_ss.str().c_str());
   if (!all_extensions_enabled) {
-    CLOG_INFO(&LOG,
+    CLOG_INFO(LOG_GHOST_XR,
               "Unable to reuse vulkan instance: not all required instance extensions are enabled");
     return false;
   }
@@ -438,9 +435,9 @@ bool GHOST_XrGraphicsBindingVulkan::areRequiredDeviceExtensionsEnabled(XrInstanc
     log_ss << "\n - [" << (is_extension_enabled ? 'X' : ' ') << "] " << extension_name;
     all_extensions_enabled &= is_extension_enabled;
   }
-  CLOG_DEBUG(&LOG, "%s", log_ss.str().c_str());
+  CLOG_DEBUG(LOG_GHOST_XR, "%s", log_ss.str().c_str());
   if (!all_extensions_enabled) {
-    CLOG_INFO(&LOG,
+    CLOG_INFO(LOG_GHOST_XR,
               "Unable to reuse vulkan instance: not all required device extensions are enabled");
     return false;
   }
@@ -460,7 +457,7 @@ bool GHOST_XrGraphicsBindingVulkan::isSamePhysicalDeviceSelected(
     VkPhysicalDeviceProperties context_physical_device_properties = {};
     vkGetPhysicalDeviceProperties(context_handles.physical_device,
                                   &context_physical_device_properties);
-    CLOG_INFO(&LOG,
+    CLOG_INFO(LOG_GHOST_XR,
               "Unable to reuse vulkan instance: OpenXR requires to use a different GPU [%s] than "
               "currently in used [%s].",
               openxr_physical_device_properties.deviceName,

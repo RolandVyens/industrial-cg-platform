@@ -13,6 +13,7 @@
 
 #include "BLI_enum_flags.hh"
 #include "BLI_math_matrix_types.hh"
+#include "BLI_span.hh"
 
 #include "IMB_imbuf_types.hh"
 
@@ -32,36 +33,73 @@ void IMB_init();
 void IMB_exit();
 
 /**
+ * Module GPU context management.
+ */
+void IMB_ensure_gpu_context();
+void IMB_activate_gpu_context();
+void IMB_deactivate_gpu_context();
+
+/**
  * Load image.
  */
 ImBuf *IMB_load_image_from_memory(const unsigned char *mem,
-                                  const size_t size,
-                                  const int flags,
+                                  size_t size,
+                                  int flags,
                                   const char *descr,
                                   const char *filepath = nullptr,
                                   char r_colorspace[IM_MAX_SPACE] = nullptr);
 
-ImBuf *IMB_load_image_from_file_descriptor(const int file,
-                                           const int flags,
+ImBuf *IMB_load_image_from_file_descriptor(int file,
+                                           int flags,
                                            const char *filepath = nullptr,
                                            char r_colorspace[IM_MAX_SPACE] = nullptr);
 
 ImBuf *IMB_load_image_from_filepath(const char *filepath,
-                                    const int flags,
+                                    int flags,
                                     char r_colorspace[IM_MAX_SPACE] = nullptr);
 
 /**
  * Save image.
  */
-bool IMB_save_image(ImBuf *ibuf, const char *filepath, const int flags);
+bool IMB_save_image(ImBuf *ibuf, const char *filepath, int flags);
 
 /**
  * Test image file.
  */
 bool IMB_test_image(const char *filepath);
-bool IMB_test_image_type_matches(const char *filepath, int filetype);
-int IMB_test_image_type_from_memory(const unsigned char *buf, size_t buf_size);
-int IMB_test_image_type(const char *filepath);
+bool IMB_test_image_type_matches(const char *filepath, eImbFileType filetype);
+eImbFileType IMB_test_image_type_from_memory(const unsigned char *buf, size_t buf_size);
+eImbFileType IMB_test_image_type(const char *filepath);
+
+/**
+ * Return true if the file type is supported (compiled in).
+ */
+bool IMB_ftype_is_supported(eImbFileType ftype);
+
+/**
+ * Return the string identifier for a file type, or nullptr if not found.
+ */
+const char *IMB_ftype_to_id(eImbFileType ftype);
+
+/**
+ * Return the file type enum value for a string identifier, or #IMB_FTYPE_NONE if not found.
+ */
+eImbFileType IMB_ftype_from_id(const char *id);
+
+/**
+ * Return the null-terminated list of extensions for a file type, or nullptr if not found.
+ */
+const char **IMB_ftype_file_extensions(eImbFileType ftype);
+
+/**
+ * Return the read capability flags for a file type.
+ */
+eImFileTypeCapability IMB_ftype_capability_read(eImbFileType ftype);
+
+/**
+ * Return the write capability flags for a file type.
+ */
+eImFileTypeCapability IMB_ftype_capability_write(eImbFileType ftype);
 
 /**
  * Load thumbnail image.
@@ -75,9 +113,9 @@ enum class IMBThumbLoadFlags {
 ENUM_OPERATORS(IMBThumbLoadFlags);
 
 ImBuf *IMB_thumb_load_image(const char *filepath,
-                            const size_t max_thumb_size,
+                            size_t max_thumb_size,
                             char colorspace[IM_MAX_SPACE],
-                            const IMBThumbLoadFlags load_flags = IMBThumbLoadFlags::Zero);
+                            IMBThumbLoadFlags load_flags = IMBThumbLoadFlags::Zero);
 
 /**
  * Allocate and free image buffer.
@@ -122,11 +160,20 @@ void IMB_assign_byte_buffer(ImBuf *ibuf, uint8_t *buffer_data, ImBufOwnership ow
 void IMB_assign_float_buffer(ImBuf *ibuf, float *buffer_data, ImBufOwnership ownership);
 
 /**
- * Assign the GPU texture of the buffer to the given texture. The current GPU texture is release.
+ * Assign the GPU texture of the buffer to the given texture. The current GPU texture is released.
  *
  * \note Does not modify the topology (width, height, number of channels).
  */
 void IMB_assign_gpu_texture(ImBuf *ibuf, gpu::Texture *texture);
+
+/**
+ * Reads the GPU data texture of the image buffer if it exists and assigns the data to the float
+ * buffer. This is only done if the buffer has the IB_HOST_BUFFER_INVALID flag is set, which is
+ * then reset after the function executes.
+ *
+ * \warning Not thread-safe, so callee should worry about thread locks.
+ */
+void IMB_ensure_host_buffer(ImBuf *ibuf);
 
 /**
  * Assign the content and the color space of the corresponding buffer the data from the given
@@ -222,6 +269,10 @@ void IMB_blend_color_byte(unsigned char dst[4],
 void IMB_blend_color_float(float dst[4],
                            const float src1[4],
                            const float src2[4],
+                           IMB_BlendMode mode);
+void IMB_blend_color_float(MutableSpan<float4> dst,
+                           Span<float4> src1,
+                           Span<float4> src2,
                            IMB_BlendMode mode);
 
 /**
@@ -511,9 +562,7 @@ void IMB_free_byte_pixels(ImBuf *ibuf);
  * Allocate storage for float type pixels.
  * If the image already contains float data storage, it is freed first.
  */
-bool IMB_alloc_float_pixels(ImBuf *ibuf,
-                            const unsigned int channels,
-                            bool initialize_pixels = true);
+bool IMB_alloc_float_pixels(ImBuf *ibuf, unsigned int channels, bool initialize_pixels = true);
 /**
  * Deallocate image float storage.
  */
@@ -568,10 +617,16 @@ void IMB_transform(const ImBuf *src,
                    const float3x3 &transform_matrix,
                    const rctf *src_crop);
 
+/* Creates a GPU texture from the given image buffer and name. If use_high_bitdepth is true, float
+ * image buffers will be stored in full float textures, otherwise, they will be stored in half
+ * float textures. If use_premult is true, the image buffer data will be stored premultiplied. If
+ * limit_size is true, the texture will be scaled down to match the maximum size allowed by the
+ * U.glreslimit user preferences setting. */
 gpu::Texture *IMB_create_gpu_texture(const char *name,
                                      ImBuf *ibuf,
                                      bool use_high_bitdepth,
-                                     bool use_premult);
+                                     bool use_premult,
+                                     const bool limit_size);
 
 gpu::TextureFormat IMB_gpu_get_texture_format(const ImBuf *ibuf,
                                               bool high_bitdepth,

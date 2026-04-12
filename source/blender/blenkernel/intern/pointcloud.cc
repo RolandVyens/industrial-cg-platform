@@ -115,7 +115,7 @@ static void pointcloud_blend_write(BlendWriter *writer, ID *id, const void *id_a
   PointCloud *pointcloud = id_cast<PointCloud *>(id);
 
   ResourceScope scope;
-  bke::AttributeStorage::BlendWriteData attribute_data{scope};
+  bke::AttributeStorage::BlendWriteData attribute_data{writer, scope};
   attribute_storage_blend_write_prepare(
       pointcloud->attribute_storage.wrap(),
       !BLO_write_is_undo(writer),
@@ -130,6 +130,7 @@ static void pointcloud_blend_write(BlendWriter *writer, ID *id, const void *id_a
     pointcloud->attribute_storage.dna_attributes = attribute_data.attributes.data();
     pointcloud->attribute_storage.dna_attributes_num = attribute_data.attributes.size();
   }
+  BLO_write_generated_pointer_tag(writer, pointcloud->attribute_storage.dna_attributes);
 
   CustomData_reset(&pointcloud->pdata_legacy);
 
@@ -140,7 +141,7 @@ static void pointcloud_blend_write(BlendWriter *writer, ID *id, const void *id_a
   /* Direct data */
   pointcloud->attribute_storage.wrap().blend_write(*writer, attribute_data);
 
-  BLO_write_pointer_array(writer, pointcloud->totcol, pointcloud->mat);
+  writer->write_pointer_array(pointcloud->totcol, pointcloud->mat);
 }
 
 static void pointcloud_blend_read_data(BlendDataReader *reader, ID *id)

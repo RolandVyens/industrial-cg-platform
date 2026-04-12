@@ -246,7 +246,7 @@ void node_geometry_add_volume_grid_search_button(const bContext & /*C*/,
   const bNodeSocket &socket = *static_cast<const bNodeSocket *>(socket_ptr.data);
   GridSearchData *data = MEM_new_zeroed<GridSearchData>(__func__);
   data->node_id = node.identifier;
-  data->can_create_grid = node.is_type("GeometryNodeStoreNamedGrid");
+  data->can_create_grid = node.is_type("GeometryNodeStoreNamedGrid"_ustr);
   STRNCPY_UTF8(data->socket_identifier, socket.identifier);
 
   button_func_search_set_results_are_suggestions(but, true);

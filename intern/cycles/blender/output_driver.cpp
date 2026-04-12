@@ -42,8 +42,8 @@ bool BlenderOutputDriver::read_render_tile(const Tile &tile)
   /* Copy each pass.
    * TODO:copy only the required ones for better performance? */
   for (blender::RenderPass &b_pass : b_rlay->passes) {
-    if (b_pass.ibuf && b_pass.ibuf->float_buffer.data) {
-      const float *rect = b_pass.ibuf->float_buffer.data;
+    if (b_pass.ibuf && b_pass.ibuf->float_data()) {
+      const float *rect = b_pass.ibuf->float_data();
       tile.set_pass_pixels(b_pass.name, b_pass.channels, rect);
     }
     else {
@@ -108,7 +108,6 @@ void BlenderOutputDriver::write_render_tile(const Tile &tile)
     if (!tile.get_pass_pixels(b_pass.name, b_pass.channels, pixels.data())) {
       memset(pixels.data(), 0, pixels.size() * sizeof(float));
     }
-
     /* Capture Combined pass for deep recolor (post-render beauty buffer). */
     if (strcmp(b_pass.name, "Combined") == 0 && b_pass.channels == 4) {
       const int full_width = tile.full_size.x;
@@ -167,8 +166,8 @@ void BlenderOutputDriver::write_render_tile(const Tile &tile)
       }
     }
 
-    if (b_pass.ibuf && b_pass.ibuf->float_buffer.data) {
-      float *rect = b_pass.ibuf->float_buffer.data;
+    if (b_pass.ibuf && b_pass.ibuf->float_data()) {
+      float *rect = b_pass.ibuf->float_data_for_write();
       const size_t size_in_bytes = sizeof(float) * b_pass.rectx * b_pass.recty * b_pass.channels;
       memcpy(rect, pixels.data(), size_in_bytes);
     }

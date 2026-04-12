@@ -21,6 +21,8 @@
 #include "BLI_path_utils.hh"
 #include "BLI_string.h"
 
+#include "CLG_log.h"
+
 #include "DNA_listBase.h"
 
 #include "IMB_colormanagement.hh"
@@ -48,6 +50,8 @@ static const char *STUDIOLIGHT_MATCAP_FOLDER = "studiolights" SEP_STR "matcap" S
 
 static const char *STUDIOLIGHT_WORLD_DEFAULT = "forest.exr";
 static const char *STUDIOLIGHT_MATCAP_DEFAULT = "basic_1.exr";
+
+static CLG_LogRef LOG = {"bke.studiolight"};
 
 /* ITER MACRO */
 
@@ -450,7 +454,7 @@ static void studiolight_create_equirect_radiance_gputexture(StudioLight *sl)
         1,
         gpu::TextureFormat::SFLOAT_16_16_16_16,
         GPU_TEXTURE_USAGE_SHADER_READ,
-        ibuf->float_buffer.data);
+        ibuf->float_data());
     gpu::Texture *tex = sl->equirect_radiance_gputexture;
     GPU_texture_filter_mode(tex, true);
     GPU_texture_extend_mode(tex, GPU_SAMPLER_EXTEND_MODE_REPEAT);
@@ -465,7 +469,7 @@ static void studiolight_create_matcap_gputexture(StudioLightImage *sli)
   const size_t ibuf_pixel_count = IMB_get_pixel_count(ibuf);
   float *gpu_matcap_3components = MEM_new_array_zeroed<float>(3 * ibuf_pixel_count, __func__);
 
-  const float (*offset4)[4] = reinterpret_cast<const float (*)[4]>(ibuf->float_buffer.data);
+  const float (*offset4)[4] = reinterpret_cast<const float (*)[4]>(ibuf->float_data());
   float (*offset3)[3] = reinterpret_cast<float (*)[3]>(gpu_matcap_3components);
   for (size_t i = 0; i < ibuf_pixel_count; i++, offset4++, offset3++) {
     copy_v3_v3(*offset3, *offset4);
@@ -872,10 +876,14 @@ void BKE_studiolight_init()
                                         STUDIOLIGHT_LIGHTS_FOLDER,
                                         STUDIOLIGHT_TYPE_STUDIO |
                                             STUDIOLIGHT_SPECULAR_HIGHLIGHT_PASS);
+#ifdef WITH_IMAGE_OPENEXR
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_WORLD_FOLDER, STUDIOLIGHT_TYPE_WORLD);
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_MATCAP_FOLDER, STUDIOLIGHT_TYPE_MATCAP);
+#else
+  CLOG_WARN(&LOG, "Unable to load matcap or world presets, Built without 'WITH_IMAGE_OPENEXR'");
+#endif
 
   /* sort studio lights on filename. */
   BLI_listbase_sort(&studiolights, studiolight_cmp);

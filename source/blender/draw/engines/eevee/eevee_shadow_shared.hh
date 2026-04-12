@@ -76,7 +76,7 @@ struct [[host_shared]] ShadowTileMapData {
   /** Effective minimum resolution after update throttle. */
   int effective_lod_min;
   float _pad2;
-  /** Near and far clip distances for punctual. */
+  /** Near and far clip distances for punctual (positive). */
   float clip_near;
   float clip_far;
   /** Half of the tilemap size in world units. Used to compute window matrix. */
@@ -199,7 +199,10 @@ enum [[host_shared]] eShadowFlag : uint32_t {
   SHADOW_IS_ALLOCATED = (1u << 28u),
   SHADOW_DO_UPDATE = (1u << 29u),
   SHADOW_IS_RENDERED = (1u << 30u),
-  SHADOW_IS_USED = (1u << 31u)
+  SHADOW_IS_USED = (1u << 31u),
+  /* Reuse the same flag for tagging update before LOD propagation.
+   * Assume usage tagging is done afterwards. */
+  SHADOW_TAG_UPDATE = (1u << 31u)
 };
 
 /* NOTE: Trust the input to be in valid range (max is [3,3,255]).

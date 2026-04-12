@@ -14,7 +14,7 @@ VERTEX_SHADER_CREATE_INFO(eevee_geom_pointcloud)
 #include "draw_pointcloud_lib.glsl"
 #include "eevee_attributes_pointcloud_lib.glsl"
 #include "eevee_nodetree_vert_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "eevee_surf_lib.glsl"
 #include "eevee_velocity_lib.glsl"
 
@@ -27,10 +27,12 @@ void main()
 
   init_interface();
 
+  const eObjectInfoFlag ob_flag = buffer_get(draw_object_infos, drw_infos)[drw_resource_id()].flag;
+
   const pointcloud::Point ls_pt = pointcloud::point_get(uint(gl_VertexID));
   const pointcloud::Point ws_pt = pointcloud::object_to_world(ls_pt, drw_modelmat());
   const pointcloud::ShapePoint pt = pointcloud::shape_point_get(
-      ws_pt, drw_world_incident_vector(ws_pt.P), drw_view_up());
+      ws_pt, drw_world_incident_vector(ws_pt.P), drw_view_up(), ob_flag);
 
   pointcloud_interp_flat.id = ws_pt.point_id;
   pointcloud_interp.position = ws_pt.P;

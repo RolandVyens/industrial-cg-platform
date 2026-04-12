@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "DNA_userdef_types.h"
 #include "RNA_types.hh"
 
 #include "blender/id_map.h"
@@ -95,7 +96,9 @@ class BlenderSync {
   void free_data_after_sync(blender::Depsgraph &b_depsgraph);
 
   /* get parameters */
-  static SceneParams get_scene_params(blender::Scene &b_scene,
+  static SceneParams get_scene_params(blender::UserDef &b_preferences,
+                                      blender::Main &b_data,
+                                      blender::Scene &b_scene,
                                       const bool background,
                                       const bool use_developer_ui);
   static SessionParams get_session_params(blender::RenderEngine &b_engine,
@@ -216,6 +219,7 @@ class BlenderSync {
                             TaskPool *task_pool);
 
   /* Light */
+  Geometry *create_light(BObjectInfo &b_ob_info);
   void sync_light(BObjectInfo &b_ob_info, Light *light);
   void sync_background_light(blender::bScreen *b_screen, blender::View3D *b_v3d);
 

@@ -29,6 +29,20 @@ def object_shader_nodes_poll(context):
             snode.shader_type == 'OBJECT')
 
 
+# only show nodes working in object material node trees
+def object_material_shader_nodes_poll(context):
+    owner = context.space_data.id_from
+    return (object_shader_nodes_poll(context) and
+            (owner is None or owner.type != 'LIGHT'))
+
+
+# only show nodes working in object light node trees
+def object_light_shader_nodes_poll(context):
+    owner = context.space_data.id_from
+    return (object_shader_nodes_poll(context) and
+            (owner is None or owner.type == 'LIGHT'))
+
+
 def cycles_shader_nodes_poll(context):
     return context.engine == 'CYCLES'
 
@@ -53,20 +67,22 @@ class NODE_MT_shader_node_input_base(node_add_menu.NodeMenu):
     def draw(self, context):
         layout = self.layout
 
-        self.node_operator(layout, "ShaderNodeAmbientOcclusion")
+        self.draw_menu(layout, "Input/Constant")
+        layout.separator()
+        self.node_operator(layout, "ShaderNodeAmbientOcclusion", poll=object_material_shader_nodes_poll(context))
         self.node_operator(layout, "ShaderNodeAttribute")
-        self.node_operator(layout, "ShaderNodeBevel")
+        self.node_operator(layout, "ShaderNodeBevel", poll=object_material_shader_nodes_poll(context))
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeCameraData",
             ["View Vector", "View Z Depth", "View Distance"],
         )
-        self.node_operator(layout, "ShaderNodeRGB")
-        self.node_operator(layout, "ShaderNodeVertexColor")
+        self.node_operator(layout, "ShaderNodeVertexColor", poll=object_material_shader_nodes_poll(context))
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeHairInfo",
             ["Is Strand", "Intercept", "Length", "Thickness", "Tangent Normal", "Random"],
+            poll=object_material_shader_nodes_poll(context)
         )
-        self.node_operator(layout, "ShaderNodeFresnel")
+        self.node_operator(layout, "ShaderNodeFresnel", poll=object_material_shader_nodes_poll(context))
         self.node_operator_with_outputs(
             context,
             layout,
@@ -83,7 +99,7 @@ class NODE_MT_shader_node_input_base(node_add_menu.NodeMenu):
                 "Random Per Island",
             ],
         )
-        self.node_operator(layout, "ShaderNodeLayerWeight")
+        self.node_operator(layout, "ShaderNodeLayerWeight", poll=object_material_shader_nodes_poll(context))
         self.node_operator_with_outputs(
             context,
             layout,
@@ -109,31 +125,53 @@ class NODE_MT_shader_node_input_base(node_add_menu.NodeMenu):
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeObjectInfo",
             ["Location", "Color", "Alpha", "Object Index", "Material Index", "Random"],
+            poll=object_shader_nodes_poll(context)
         )
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeParticleInfo",
             ["Index", "Random", "Age", "Lifetime", "Location", "Size", "Velocity", "Angular Velocity"],
+            poll=object_material_shader_nodes_poll(context)
         )
         self.node_operator_with_outputs(
             context, layout, "ShaderNodePointInfo",
             ["Position", "Radius", "Random"],
+            poll=object_material_shader_nodes_poll(context)
         )
-        self.node_operator(layout, "ShaderNodeRaycast")
+        self.node_operator(layout, "ShaderNodeRaycast", poll=object_material_shader_nodes_poll(context))
         self.node_operator(layout, "ShaderNodeTangent")
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeTexCoord",
             ["Generated", "Normal", "UV", "Object", "Camera", "Window", "Reflection"],
         )
         self.node_operator(layout, "ShaderNodeUVAlongStroke", poll=line_style_shader_nodes_poll(context))
-        self.node_operator(layout, "ShaderNodeUVMap")
-        self.node_operator(layout, "ShaderNodeValue")
+        self.node_operator(layout, "ShaderNodeUVMap", poll=object_material_shader_nodes_poll(context))
         self.node_operator_with_outputs(
             context, layout, "ShaderNodeVolumeInfo",
             ["Color", "Density", "Flame", "Temperature"],
+            poll=object_material_shader_nodes_poll(context)
         )
-        self.node_operator(layout, "ShaderNodeWireframe")
+        self.node_operator(layout, "ShaderNodeWireframe", poll=object_material_shader_nodes_poll(context))
 
         self.draw_assets_for_catalog(layout, self.bl_label)
+
+
+class NODE_MT_shader_node_input_constant_base(node_add_menu.NodeMenu):
+    bl_label = "Constant"
+    bl_translation_context = i18n_contexts.id_nodetree
+    menu_path = "Input/Constant"
+
+    def draw(self, context):
+        del context
+        layout = self.layout
+
+        self.node_operator(layout, "FunctionNodeInputBool")
+        self.node_operator(layout, "ShaderNodeRGB")
+        self.node_operator(layout, "FunctionNodeInputInt")
+        self.node_operator(layout, "FunctionNodeInputMenu")
+        self.node_operator(layout, "ShaderNodeValue")
+        self.node_operator(layout, "FunctionNodeInputVector")
+
+        self.draw_assets_for_catalog(layout, self.menu_path)
 
 
 class NODE_MT_shader_node_output_base(node_add_menu.NodeMenu):
@@ -145,6 +183,7 @@ class NODE_MT_shader_node_output_base(node_add_menu.NodeMenu):
         self.node_operator(
             layout,
             "ShaderNodeOutputAOV",
+            poll=object_material_shader_nodes_poll(context) or world_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
@@ -159,7 +198,7 @@ class NODE_MT_shader_node_output_base(node_add_menu.NodeMenu):
         self.node_operator(
             layout,
             "ShaderNodeOutputMaterial",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
@@ -172,6 +211,10 @@ class NODE_MT_shader_node_output_base(node_add_menu.NodeMenu):
 
 class NODE_MT_shader_node_shader_base(node_add_menu.NodeMenu):
     bl_label = "Shader"
+
+    @classmethod
+    def poll(cls, context):
+        return super().poll(context) and not line_style_shader_nodes_poll(context)
 
     def draw(self, context):
         layout = self.layout
@@ -195,7 +238,7 @@ class NODE_MT_shader_node_shader_base(node_add_menu.NodeMenu):
         self.node_operator(
             layout,
             "ShaderNodeBsdfDiffuse",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
@@ -204,52 +247,52 @@ class NODE_MT_shader_node_shader_base(node_add_menu.NodeMenu):
         self.node_operator(
             layout,
             "ShaderNodeBsdfGlass",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfGlossy",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfHair",
-            poll=object_not_eevee_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context) and not eevee_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeHoldout",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfMetallic",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfPrincipled",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfHairPrincipled",
-            poll=object_not_eevee_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context) and not eevee_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfRayPortal",
-            poll=object_not_eevee_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context) and not eevee_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfRefraction",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfSheen",
-            poll=object_not_eevee_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context) and not eevee_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
@@ -259,41 +302,45 @@ class NODE_MT_shader_node_shader_base(node_add_menu.NodeMenu):
         self.node_operator(
             layout,
             "ShaderNodeSubsurfaceScattering",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfToon",
-            poll=object_not_eevee_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context) and not eevee_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfTranslucent",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeBsdfTransparent",
-            poll=object_shader_nodes_poll(context),
+            poll=object_material_shader_nodes_poll(context),
         )
 
         layout.separator()
 
         self.node_operator(
             layout,
-            "ShaderNodeVolumePrincipled"
+            "ShaderNodeVolumePrincipled",
+            poll=not object_light_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeVolumeAbsorption",
+            poll=not object_light_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeVolumeScatter",
+            poll=not object_light_shader_nodes_poll(context),
         )
         self.node_operator(
             layout,
             "ShaderNodeVolumeCoefficients",
+            poll=not object_light_shader_nodes_poll(context),
         )
 
         self.draw_assets_for_catalog(layout, self.bl_label)
@@ -371,7 +418,12 @@ class NODE_MT_shader_node_vector_base(node_add_menu.NodeMenu):
         self.node_operator(layout, "ShaderNodeNormal")
         self.node_operator(layout, "ShaderNodeRadialTiling")
         self.node_operator(layout, "ShaderNodeVectorCurve")
-        self.node_operator_with_searchable_enum(context, layout, "ShaderNodeVectorMath", "operation")
+        self.node_operator_with_searchable_enum(
+            context,
+            layout,
+            "ShaderNodeVectorMath",
+            "operation",
+            defaults_callback=node_add_menu.set_vector_math_node_defaults)
         self.node_operator(layout, "ShaderNodeVectorRotate")
         self.node_operator(layout, "ShaderNodeVectorTransform")
 
@@ -388,7 +440,12 @@ class NODE_MT_shader_node_math_base(node_add_menu.NodeMenu):
         self.node_operator(layout, "ShaderNodeClamp")
         self.node_operator(layout, "ShaderNodeFloatCurve")
         self.node_operator(layout, "ShaderNodeMapRange")
-        self.node_operator_with_searchable_enum(context, layout, "ShaderNodeMath", "operation")
+        self.node_operator_with_searchable_enum(
+            context,
+            layout,
+            "ShaderNodeMath",
+            "operation",
+            defaults_callback=node_add_menu.set_math_node_default_props)
         self.node_operator(layout, "ShaderNodeMix")
 
         self.draw_assets_for_catalog(layout, self.menu_path)
@@ -396,6 +453,10 @@ class NODE_MT_shader_node_math_base(node_add_menu.NodeMenu):
 
 class NODE_MT_shader_node_displacement_base(node_add_menu.NodeMenu):
     bl_label = "Displacement"
+
+    @classmethod
+    def poll(cls, context):
+        return super().poll(context) and not line_style_shader_nodes_poll(context)
 
     def draw(self, _context):
         layout = self.layout
@@ -419,6 +480,7 @@ class NODE_MT_shader_node_utilities_base(node_add_menu.NodeMenu):
         layout.separator()
         self.repeat_zone(layout, label="Repeat")
         layout.separator()
+        self.node_operator(layout, "NodeImplicitConversion")
         self.closure_zone(layout, label="Closure")
         self.node_operator(layout, "NodeEvaluateClosure")
         self.node_operator(layout, "NodeCombineBundle")
@@ -464,6 +526,7 @@ class NODE_MT_shader_node_all_base(node_add_menu.NodeMenu):
 add_menus = {
     # menu `bl_idname`: base-class.
     "NODE_MT_category_shader_input": NODE_MT_shader_node_input_base,
+    "NODE_MT_category_shader_input_constant": NODE_MT_shader_node_input_constant_base,
     "NODE_MT_category_shader_output": NODE_MT_shader_node_output_base,
     "NODE_MT_category_shader_color": NODE_MT_shader_node_color_base,
     "NODE_MT_category_shader_shader": NODE_MT_shader_node_shader_base,
@@ -484,6 +547,7 @@ add_menus = node_add_menu.generate_menus(
 swap_menus = {
     # menu `bl_idname`: base-class.
     "NODE_MT_shader_node_input_swap": NODE_MT_shader_node_input_base,
+    "NODE_MT_shader_node_input_constant_swap": NODE_MT_shader_node_input_constant_base,
     "NODE_MT_shader_node_output_swap": NODE_MT_shader_node_output_base,
     "NODE_MT_shader_node_color_swap": NODE_MT_shader_node_color_base,
     "NODE_MT_shader_node_shader_swap": NODE_MT_shader_node_shader_base,

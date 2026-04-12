@@ -1,0 +1,12 @@
+World Environment Fog Performance Compare
+blend: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\foggy_street_cyberpunk_test.blend
+original fog density: 0.08500000089406967
+scene.cycles.device: GPU
+preferences.compute_device_type: OPTIX
+devices: unavailable from prefs.get_devices()
+fog_off_seconds: 3.814001
+fog_off_output: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\perf_2026-04-11\foggy_street_cyberpunk_perf_fog_off_0001.png
+fog_on_seconds: 13.424270
+fog_on_output: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\perf_2026-04-11\foggy_street_cyberpunk_perf_fog_on_0001.png
+fog_on_vs_off_delta_seconds: 9.610269
+fog_on_vs_off_delta_percent: 251.973

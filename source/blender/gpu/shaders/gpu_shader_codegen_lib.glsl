@@ -56,7 +56,6 @@ float2 calc_barycentric_co(int vertid)
 #  define FrontFacing true
 #endif
 
-/* Can't use enum here because not a header file. But would be great to do. */
 enum ClosureType : uchar {
   CLOSURE_NONE_ID = 0u,
   /* Diffuse */
@@ -91,6 +90,12 @@ struct ClosureUndetermined {
   /* Additional data different for each closure type. */
   packed_float4 data;
 };
+
+bool closure_has_transmission(const ClosureType closure)
+{
+  return closure == CLOSURE_BSDF_TRANSLUCENT_ID ||
+         closure == CLOSURE_BSDF_MICROFACET_GGX_REFRACTION_ID;
+}
 
 ClosureUndetermined closure_new(ClosureType type)
 {

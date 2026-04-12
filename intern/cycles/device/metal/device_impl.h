@@ -80,7 +80,7 @@ class MetalDevice : public Device {
   bool is_texture(const KernelImageInfo &info);
   device_vector<KernelImageInfo> image_info;
   id<MTLBuffer> image_bindings = nil;
-  std::vector<id<MTLResource>> image_slot_map;
+  std::vector<id<MTLResource>> image_info_id_map;
 
   MetalPipelineType kernel_specialization_level = PSO_GENERIC;
 
@@ -182,6 +182,8 @@ class MetalDevice : public Device {
   void image_alloc_as_buffer(device_image &mem);
   void image_copy_to(device_image &mem);
   void image_free(device_image &mem);
+
+  bool has_unified_memory() const override;
 
   void flush_delayed_free_list();
 

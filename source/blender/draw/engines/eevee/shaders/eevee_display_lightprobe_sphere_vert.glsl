@@ -7,7 +7,7 @@
 VERTEX_SHADER_CREATE_INFO(eevee_display_lightprobe_sphere)
 
 #include "draw_view_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 
 void main()
 {

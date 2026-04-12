@@ -490,7 +490,7 @@ void draw_strip_thumbnails(const TimelineDrawContext &ctx,
     SeqThumbInfo &info = thumbs[i];
 
     void *cache_handle = nullptr;
-    uchar *display_buffer = IMB_display_buffer_acquire(
+    const uchar *display_buffer = IMB_display_buffer_acquire(
         info.ibuf, view_settings, display_settings, &cache_handle);
     if (display_buffer != nullptr && info.ibuf != nullptr) {
       int cropx_min = int(info.cropx_min);

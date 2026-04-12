@@ -16,6 +16,7 @@
 
 #include "BKE_context.hh"
 #include "BKE_global.hh"
+#include "BKE_scene.hh"
 
 #include "UI_view2d.hh"
 
@@ -80,7 +81,8 @@ static void graphview_cursor_apply(bContext *C, wmOperator *op)
        * NOTE: Preview range won't go into negative values,
        *       so only clamping once should be fine.
        */
-      CLAMP(scene->r.cfra, PSFRA, PEFRA);
+      const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(scene);
+      CLAMP(scene->r.cfra, playback_range.start_frame, playback_range.end_frame);
     }
     else {
       /* Prevent negative frames */

@@ -14,12 +14,12 @@
 COMPUTE_SHADER_CREATE_INFO(eevee_ray_trace_planar)
 
 #include "eevee_bxdf_sampling_lib.glsl"
-#include "eevee_colorspace_lib.glsl"
+#include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_gbuffer_read_lib.glsl"
 #include "eevee_lightprobe_eval_lib.glsl"
 #include "eevee_ray_trace_screen_lib.glsl"
-#include "eevee_ray_types_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_ray_types_lib.bsl.hh"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "eevee_sampling_lib.glsl"
 
 void main()
@@ -50,9 +50,7 @@ void main()
   gbuffer::Header gbuf_header = gbuffer::read_header(texel_fullres);
   ClosureType closure_type = gbuffer::mode_to_closure_type(gbuf_header.bin_type(closure_index));
 
-  if ((closure_type == CLOSURE_BSDF_TRANSLUCENT_ID) ||
-      (closure_type == CLOSURE_BSDF_MICROFACET_GGX_REFRACTION_ID))
-  {
+  if (closure_has_transmission(closure_type)) {
     /* Planar light-probes cannot trace refraction yet. */
     return;
   }
@@ -105,13 +103,13 @@ void main()
      * direction over many rays. */
     float3 Ng = ray.direction;
     /* Fall back to nearest light-probe. */
-    LightProbeSample samp = lightprobe_load(P, Ng, V);
+    LightProbeSample samp = lightprobe_load(float2(texel), P, Ng, V);
     radiance = lightprobe_eval_direction(samp, P, ray.direction, ray_pdf_inv);
     /* Set point really far for correct reprojection of background. */
     hit.time = 10000.0f;
   }
 
-  radiance = colorspace_brightness_clamp_max(radiance, uniform_buf.clamp.surface_indirect);
+  radiance = colorspace::brightness_clamp_max(radiance, uniform_buf.clamp.surface_indirect);
 
   imageStoreFast(ray_time_img, texel, float4(hit.time));
   imageStoreFast(ray_radiance_img, texel, float4(radiance, 0.0f));

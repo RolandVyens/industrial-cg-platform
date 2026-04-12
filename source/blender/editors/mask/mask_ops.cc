@@ -13,8 +13,12 @@
 #include "BLI_listbase.h"
 #include "BLI_math_matrix.h"
 #include "BLI_math_vector.h"
+#include "BLI_string.h"
+#include "BLI_string_utils.hh"
+#include "BLI_utildefines.h"
 
 #include "BKE_context.hh"
+#include "BKE_lib_id.hh"
 #include "BKE_mask.hh"
 
 #include "BLT_translation.hh"
@@ -36,6 +40,7 @@
 
 #include "ANIM_keyframing.hh"
 
+#include "UI_interface.hh"
 #include "UI_interface_icons.hh"
 
 #include "RNA_access.hh"
@@ -103,11 +108,49 @@ static wmOperatorStatus mask_new_exec(bContext *C, wmOperator *op)
 
   RNA_string_get(op->ptr, "name", name);
 
-  ED_mask_new(C, name);
+  Main *bmain = CTX_data_main(C);
 
-  WM_event_add_notifier(C, NC_MASK | NA_ADDED, nullptr);
+  PointerRNA ptr;
+  PropertyRNA *prop;
+  ui::context_active_but_prop_get_templateID(C, &ptr, &prop);
+
+  Mask *mask;
+
+  if (prop) {
+    mask = BKE_mask_new(bmain, name);
+
+    /* When creating new ID blocks, use is already 1, but RNA
+     * pointer use also increases user, so this compensates it. */
+    id_us_min(&mask->id);
+
+    if (ptr.owner_id) {
+      BKE_id_move_to_same_lib(*bmain, mask->id, *ptr.owner_id);
+    }
+
+    PointerRNA idptr = RNA_id_pointer_create(&mask->id);
+    RNA_property_pointer_set(&ptr, prop, idptr, nullptr);
+    RNA_property_update(C, &ptr, prop);
+  }
+  else {
+    mask = ED_mask_new(C, name);
+  }
+
+  WM_event_add_notifier(C, NC_MASK | NA_ADDED, mask);
 
   return OPERATOR_FINISHED;
+}
+
+static bool mask_new_poll(bContext *C)
+{
+  PropertyPointerRNA pprop;
+  ui::context_active_but_prop_get_templateID(C, &pprop.ptr, &pprop.prop);
+
+  /* Allow if invoked from a template_ID button. */
+  if (pprop.prop != nullptr) {
+    return true;
+  }
+
+  return ED_maskedit_poll(C);
 }
 
 void MASK_OT_new(wmOperatorType *ot)
@@ -122,7 +165,7 @@ void MASK_OT_new(wmOperatorType *ot)
 
   /* API callbacks. */
   ot->exec = mask_new_exec;
-  ot->poll = ED_maskedit_poll;
+  ot->poll = mask_new_poll;
 
   /* properties */
   RNA_def_string(ot->srna, "name", nullptr, MAX_ID_NAME - 2, "Name", "Name of new mask");
@@ -1988,6 +2031,123 @@ void MASK_OT_layer_move(wmOperatorType *ot)
                0,
                "Direction",
                "Direction to move the active layer");
+}
+
+/******************** mask move to layer operator *********************/
+
+static bool mask_move_to_layer_poll(bContext *C)
+{
+  if (ED_maskedit_mask_poll(C)) {
+    Mask *mask = CTX_data_edit_mask(C);
+
+    return mask->masklay_tot > 0;
+  }
+
+  return false;
+}
+
+static wmOperatorStatus mask_move_to_layer_exec(bContext *C, wmOperator *op)
+{
+  Mask *mask = CTX_data_edit_mask(C);
+
+  MaskLayer *target_mask_layer = nullptr;
+  const std::string target_layer_name = RNA_string_get(op->ptr, "target_layer_name");
+  if (RNA_boolean_get(op->ptr, "add_new_layer")) {
+    target_mask_layer = BKE_mask_layer_new(mask, target_layer_name.c_str());
+  }
+  else {
+    target_mask_layer = BKE_mask_layer_by_name(mask, target_layer_name.c_str());
+  }
+
+  for (MaskLayer &mask_layer : mask->masklayers) {
+    if (&mask_layer == target_mask_layer) {
+      continue;
+    }
+
+    if (mask_layer.visibility_flag & (MASK_HIDE_VIEW | MASK_HIDE_SELECT)) {
+      continue;
+    }
+
+    for (MaskSpline &spline : mask_layer.splines.items_mutable()) {
+      if (ED_mask_spline_select_check(&spline)) {
+        BKE_mask_spline_move_to_layer(&spline, &mask_layer, target_mask_layer);
+      }
+    }
+  }
+
+  WM_event_add_notifier(C, NC_MASK | NA_EDITED, mask);
+  DEG_id_tag_update(&mask->id, ID_RECALC_SYNC_TO_EVAL);
+
+  return OPERATOR_FINISHED;
+}
+
+static VectorSet<StringRef> get_layer_names(Mask *mask)
+{
+  VectorSet<StringRef> names;
+  for (const MaskLayer &mask_layer : mask->masklayers) {
+    names.add(mask_layer.name);
+  }
+  return names;
+}
+
+static std::string unique_layer_name(Mask *mask, const StringRef name)
+{
+  BLI_assert(!name.is_empty());
+  const VectorSet<StringRef> names = get_layer_names(mask);
+  return BLI_uniquename_cb(
+      [&](const StringRef check_name) { return names.contains(check_name); }, '.', name);
+}
+
+static wmOperatorStatus mask_move_to_layer_invoke(bContext *C,
+                                                  wmOperator *op,
+                                                  const wmEvent *event)
+{
+  const bool add_new_layer = RNA_boolean_get(op->ptr, "add_new_layer");
+  if (add_new_layer) {
+    Mask *mask = CTX_data_edit_mask(C);
+    std::string unique_name_string = unique_layer_name(mask, DATA_("MaskLayer"));
+    const char *unique_name = unique_name_string.c_str();
+    RNA_string_set(op->ptr, "target_layer_name", unique_name);
+
+    return WM_operator_props_popup_confirm_ex(
+        C, op, event, IFACE_("Move to New Layer"), IFACE_("Create"));
+  }
+
+  /* Show the move menu if this operator is invoked from operator search without any property
+   * pre-set. */
+  PropertyRNA *prop = RNA_struct_find_property(op->ptr, "target_layer_name");
+  if (!RNA_property_is_set(op->ptr, prop)) {
+    WM_menu_name_call(C, "MASK_MT_move_to_layer", wm::OpCallContext::InvokeDefault);
+    return OPERATOR_FINISHED;
+  }
+
+  return mask_move_to_layer_exec(C, op);
+}
+
+void MASK_OT_move_to_layer(wmOperatorType *ot)
+{
+  PropertyRNA *prop;
+
+  /* identifiers */
+  ot->name = "Move to Layer";
+  ot->description = "Move the active spline to layer";
+  ot->idname = "MASK_OT_move_to_layer";
+
+  /* api callbacks */
+  ot->invoke = mask_move_to_layer_invoke;
+  ot->exec = mask_move_to_layer_exec;
+  ot->poll = mask_move_to_layer_poll;
+
+  /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+  /* properties */
+  prop = RNA_def_string(
+      ot->srna, "target_layer_name", nullptr, INT16_MAX, "Name", "Target Mask Layer");
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+  prop = RNA_def_boolean(
+      ot->srna, "add_new_layer", false, "New Layer", "Move selection to a new layer");
+  RNA_def_property_flag(prop, PROP_HIDDEN | PROP_SKIP_SAVE);
 }
 
 /******************** duplicate *********************/

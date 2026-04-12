@@ -21,9 +21,9 @@
 
 COMPUTE_SHADER_CREATE_INFO(eevee_depth_of_field_stabilize)
 
-#include "eevee_colorspace_lib.glsl"
+#include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_depth_of_field_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "eevee_velocity_lib.glsl"
 #include "gpu_shader_math_safe_lib.glsl"
 
@@ -75,7 +75,7 @@ void dof_cache_init()
         int2 load_texel = clamp(texel + offset - 1, int2(0), textureSize(color_tx, 0) - 1);
 
         float4 color = texelFetch(color_tx, load_texel, 0);
-        color_cache[cache_texel.y][cache_texel.x] = colorspace_YCoCg_from_scene_linear(color);
+        color_cache[cache_texel.y][cache_texel.x] = colorspace::YCoCg_from_scene_linear(color);
         coc_cache[cache_texel.y][cache_texel.x] = texelFetch(coc_tx, load_texel, 0).x;
       }
       /* 2 Pixels border. */
@@ -225,7 +225,7 @@ float2 dof_pixel_history_motion_vector(int2 texel_sample)
  * \a texel is sample position with sub-pixel accuracy. */
 DofSample dof_sample_history(float2 input_texel)
 {
-#if 1 /* Bilinar. */
+#if 1 /* Bilinear. */
   float2 uv = float2(input_texel + 0.5f) / float2(textureSize(in_history_tx, 0));
   float4 color = textureLod(in_history_tx, uv, 0.0f);
 
@@ -266,7 +266,9 @@ DofSample dof_sample_history(float2 input_texel)
 }
 
 /* Modulate the history color to avoid ghosting artifact. */
-DofSample dof_amend_history(DofNeighborhoodMinMax bbox, DofSample history, DofSample src)
+DofSample dof_amend_history(DofNeighborhoodMinMax bbox,
+                            DofSample history,
+                            [[maybe_unused]] DofSample src)
 {
 #if 0
   /* Clip instead of clamping to avoid color accumulating in the AABB corners. */
@@ -371,7 +373,7 @@ void main()
   /* Clamp opacity since we don't store it in history. */
   result.color.a = clamp(src.color.a, bbox.min.color.a, bbox.max.color.a);
 
-  result.color = colorspace_scene_linear_from_YCoCg(result.color);
+  result.color = colorspace::scene_linear_from_YCoCg(result.color);
 
   imageStore(out_color_img, src_texel, result.color);
   imageStore(out_coc_img, src_texel, float4(result.coc));

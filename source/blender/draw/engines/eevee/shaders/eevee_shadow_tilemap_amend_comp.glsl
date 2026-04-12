@@ -20,7 +20,7 @@
 COMPUTE_SHADER_CREATE_INFO(eevee_shadow_tilemap_amend)
 
 #include "eevee_light_iter_lib.glsl"
-#include "eevee_shadow_tilemap_lib.glsl"
+#include "eevee_shadow_tilemap_lib.bsl.hh"
 
 shared uint tiles_local[gl_WorkGroupSize.x][gl_WorkGroupSize.y];
 

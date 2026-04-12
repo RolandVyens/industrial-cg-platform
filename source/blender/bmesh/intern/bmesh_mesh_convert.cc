@@ -394,13 +394,13 @@ void BM_mesh_bm_from_me(BMesh *bm, const Mesh *mesh, const BMeshFromMeshParams *
 
   {
     const StringRef name = mesh->active_uv_map_name();
-    const int index = CustomData_get_named_layer_index(&bm->ldata, CD_PROP_FLOAT2, name);
-    CustomData_set_layer_active_index(&bm->ldata, CD_PROP_FLOAT2, std::max(index, 0));
+    const int index = CustomData_get_named_layer(&bm->ldata, CD_PROP_FLOAT2, name);
+    CustomData_set_layer_active(&bm->ldata, CD_PROP_FLOAT2, std::max(index, 0));
   }
   {
     const StringRef name = mesh->default_uv_map_name();
-    const int index = CustomData_get_named_layer_index(&bm->ldata, CD_PROP_FLOAT2, name);
-    CustomData_set_layer_render_index(&bm->ldata, CD_PROP_FLOAT2, std::max(index, 0));
+    const int index = CustomData_get_named_layer(&bm->ldata, CD_PROP_FLOAT2, name);
+    CustomData_set_layer_render(&bm->ldata, CD_PROP_FLOAT2, std::max(index, 0));
   }
 
   /* -------------------------------------------------------------------- */
@@ -1037,7 +1037,7 @@ static void bm_to_mesh_shape(BMesh *bm,
       if (currkey.data && (cd_shape_keyindex_offset != -1)) {
         CLOG_WARN(&LOG,
                   "Found shape-key but no CD_SHAPEKEY layers to read from, "
-                  "using existing shake-key data where possible");
+                  "using existing shape-key data where possible");
       }
       else {
         CLOG_WARN(&LOG,
@@ -1380,14 +1380,14 @@ class AttrSingleValueChecker {
       attrs_.append(&attr);
     }
     spans_.reinitialize(attrs_.size());
+    can_be_single_.reinitialize(attrs_.size());
     for (const int attr_i : attrs_.index_range()) {
       BLI_assert(attrs_[attr_i]->storage_type() == bke::AttrStorageType::Array);
       const auto &data = std::get<bke::Attribute::ArrayData>(attrs_[attr_i]->data());
       const CPPType &type = bke::attribute_type_to_cpp_type(attrs_[attr_i]->data_type());
       spans_[attr_i] = GSpan(type, data.data, data.size);
+      can_be_single_[attr_i] = attrs_[attr_i]->data_type() != bke::AttrType::String;
     }
-    can_be_single_.reinitialize(attrs_.size());
-    std::ranges::fill(can_be_single_, true);
   }
 
   /**
@@ -1518,7 +1518,7 @@ static void bm_to_mesh_edges(Mesh &mesh,
 
   process_edges(bm_edges.index_range().take_front(1));
 
-  threading::parallel_for(dst_edges.index_range(), 512, [&](const IndexRange range) {
+  threading::parallel_for(dst_edges.index_range().drop_front(1), 512, [&](const IndexRange range) {
     process_edges(range);
     single_checker.check_range(range);
   });
@@ -1640,10 +1640,11 @@ static void bm_to_mesh_loops(Mesh &mesh,
 
   process_corners(bm_loops.index_range().take_front(1));
 
-  threading::parallel_for(dst_corner_verts.index_range(), 1024, [&](const IndexRange range) {
-    process_corners(range);
-    single_checker.check_range(range);
-  });
+  threading::parallel_for(
+      dst_corner_verts.index_range().drop_front(1), 1024, [&](const IndexRange range) {
+        process_corners(range);
+        single_checker.check_range(range);
+      });
 }
 
 void BM_mesh_bm_to_me(Main *bmain, BMesh *bm, Mesh *mesh, const BMeshToMeshParams *params)
@@ -2008,21 +2009,14 @@ void BM_mesh_bm_to_me_compact(BMesh &bm,
     add_bm_cd_to_mesh(bm, bke::AttrDomain::Corner, mask_final.lmask, mesh);
   }
 
-  {
-    const StringRef name = mesh.active_uv_map_name();
-    int index = CustomData_get_named_layer_index(&bm.ldata, CD_PROP_FLOAT2, name);
-    if (index == -1) {
-      index = CustomData_get_layer_index(&bm.ldata, CD_PROP_FLOAT2);
-    }
-    CustomData_set_layer_active_index(&bm.ldata, CD_PROP_FLOAT2, index);
+  if (const char *name = CustomData_get_active_layer_name(&bm.ldata, CD_PROP_FLOAT2)) {
+    MEM_SAFE_DELETE(mesh.active_uv_map_attribute);
+    mesh.active_uv_map_attribute = BLI_strdup(name);
   }
-  {
-    const StringRef name = mesh.default_uv_map_name();
-    int index = CustomData_get_named_layer_index(&bm.ldata, CD_PROP_FLOAT2, name);
-    if (index == -1) {
-      index = CustomData_get_layer_index(&bm.ldata, CD_PROP_FLOAT2);
-    }
-    CustomData_set_layer_render_index(&bm.ldata, CD_PROP_FLOAT2, index);
+
+  if (const char *name = CustomData_get_render_layer_name(&bm.ldata, CD_PROP_FLOAT2)) {
+    MEM_SAFE_DELETE(mesh.default_uv_map_attribute);
+    mesh.default_uv_map_attribute = BLI_strdup(name);
   }
 
   /* Add optional mesh attributes before parallel iteration. */

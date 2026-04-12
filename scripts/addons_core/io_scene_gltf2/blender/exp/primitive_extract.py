@@ -11,7 +11,7 @@ from ...io.exp.user_extensions import export_user_extensions
 from ...io.com import constants as gltf2_io_constants
 from ..com import conversion as gltf2_blender_conversion
 from ..com.gltf2_blender_utils import fast_structured_np_unique
-from .material.materials import get_base_material, get_active_uvmap_index, get_new_material_texture_shared
+from .material.materials import get_base_material, get_render_uvmap_index, get_new_material_texture_shared
 from .material.texture_info import gather_udim_texture_info
 from . import skins as gltf2_blender_gather_skins
 from . attribute_utils import extract_attribute_data
@@ -97,7 +97,7 @@ class PrimitiveCreator:
 
         self.use_tangents = False
         if self.use_normals and self.export_settings['gltf_tangents']:
-            if self.blender_mesh.uv_layers.active and len(self.blender_mesh.uv_layers) > 0:
+            if len(self.blender_mesh.uv_layers) > 0:
                 try:
                     self.blender_mesh.calc_tangents()
                     self.use_tangents = True
@@ -108,7 +108,7 @@ class PrimitiveCreator:
 
         self.tex_coord_max = 0
         if self.export_settings['gltf_texcoords']:
-            if self.blender_mesh.uv_layers.active:
+            if len(self.blender_mesh.uv_layers) > 0:
                 self.tex_coord_max = len(self.blender_mesh.uv_layers)
 
         self.use_morph_normals = self.use_normals and self.export_settings['gltf_morph_normal']
@@ -177,7 +177,8 @@ class PrimitiveCreator:
         class KeepAttribute:
             def __init__(self, attr_name):
                 self.attr_name = attr_name
-                self.keep = attr_name.startswith("_")
+                # By default, keep only custom attributes (starting with _ or KHR_)
+                self.keep = attr_name.startswith("_") or attr_name.startswith("KHR_")
 
         # Manage attributes
         for blender_attribute_index, blender_attribute in enumerate(self.blender_mesh.attributes):
@@ -652,14 +653,14 @@ class PrimitiveCreator:
             # So, retrieve all uvmaps used by this material
             all_uvmaps = {}
             for tex in material_info['udim_info'].keys():
-                if material_info['uv_info'][tex]['type'] == "Active":
-                    index_uvmap = get_active_uvmap_index(self.blender_mesh)
+                if material_info['uv_info'][tex]['type'] == "Render":
+                    index_uvmap = get_render_uvmap_index(self.blender_mesh)
                     uvmap_name = "TEXCOORD_" + str(index_uvmap)
                 elif material_info['uv_info'][tex]['type'] == "Fixed":
                     index_uvmap = self.blender_mesh.uv_layers.find(material_info['uv_info'][tex]['value'])
                     if index_uvmap < 0:
-                        # Using active index
-                        index_uvmap = get_active_uvmap_index(self.blender_mesh)
+                        # Using render index
+                        index_uvmap = get_render_uvmap_index(self.blender_mesh)
                     uvmap_name = "TEXCOORD_" + str(index_uvmap)
                 else:  # Attribute
                     # This can be a regular UVMap, or a custom attribute
@@ -1138,7 +1139,7 @@ class PrimitiveCreator:
     def get_function(self):
 
         def getting_function(attr):
-            if attr['gltf_attribute_name'].startswith("_"):
+            if attr['gltf_attribute_name'].startswith("_") or attr['gltf_attribute_name'].startswith("KHR_"):
                 self.__get_layer_attribute(attr)
             elif attr['gltf_attribute_name'].startswith("TEXCOORD_"):
                 self.__get_uvs_attribute(int(attr['gltf_attribute_name'].split("_")[-1]), attr)

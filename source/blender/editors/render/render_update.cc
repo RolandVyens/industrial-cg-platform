@@ -241,7 +241,7 @@ static void texture_changed(Main *bmain, Tex *tex)
   {
     /* paint overlays */
     for (ViewLayer &view_layer : scene->view_layers) {
-      BKE_paint_invalidate_overlay_tex(scene, &view_layer, tex);
+      BKE_paint_invalidate_overlay_tex(*bmain, scene, &view_layer, tex);
     }
   }
 
@@ -327,11 +327,11 @@ static void update_sequencer(const DEGEditorUpdateContext *update_ctx, Main *bma
     }
   }
 
-  /* Invalidate cache for strips that use this compositing tree as a modifier. */
+  /* Invalidate cache for strips that use this compositing tree. */
   if (GS(id->name) == ID_NT) {
     const bNodeTree *node_tree = reinterpret_cast<const bNodeTree *>(id);
     if (node_tree->type == NTREE_COMPOSIT) {
-      seq::relations_invalidate_compositor_modifiers(bmain, node_tree);
+      seq::relations_invalidate_compositor_users(bmain, node_tree);
     }
   }
 }

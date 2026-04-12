@@ -35,6 +35,7 @@ from bl_ui.properties_data_light import (
     DATA_PT_light,
     DATA_PT_EEVEE_light,
 )
+from bl_operators.geometry_nodes import geometry_modifier_poll
 
 
 class NODE_HT_header(Header):
@@ -158,20 +159,27 @@ class NODE_HT_header(Header):
                 sequencer_scene = context.workspace.sequencer_scene
                 sequencer_editor = sequencer_scene.sequence_editor if sequencer_scene else None
                 active_strip = sequencer_editor.active_strip if sequencer_editor else None
-                active_modifier = active_strip.modifiers.active if active_strip else None
-                is_compositor_modifier_active = active_modifier and active_modifier.type == 'COMPOSITOR'
-                if is_compositor_modifier_active and not snode.pin:
-                    if active_modifier.node_group:
-                        row.template_ID(active_modifier,
-                                        "node_group",
-                                        new="node.duplicate_compositing_modifier_node_group")
-                    else:
-                        row.template_ID(
-                            active_modifier,
+                if active_strip:
+                    active_modifier = active_strip.modifiers.active
+                    is_compositor_modifier_active = active_modifier and active_modifier.type == 'COMPOSITOR'
+                    is_compositor_effect_active = active_strip.type == 'COMPOSITOR'
+                    if is_compositor_effect_active and not snode.pin:
+                        row.template_ID(  # @TODO: duplicate operator
+                            active_strip,
                             "node_group",
                             new="node.new_compositor_sequencer_node_group")
-                elif active_strip and active_strip.type != 'SOUND':
-                    row.template_ID(snode, "node_tree", new="node.new_compositor_sequencer_node_group")
+                    elif is_compositor_modifier_active and not snode.pin:
+                        if active_modifier.node_group:
+                            row.template_ID(active_modifier,
+                                            "node_group",
+                                            new="node.duplicate_compositing_modifier_node_group")
+                        else:
+                            row.template_ID(
+                                active_modifier,
+                                "node_group",
+                                new="node.new_compositor_sequencer_node_group")
+                    elif active_strip.type != 'SOUND':
+                        row.template_ID(snode, "node_tree", new="node.new_compositor_sequencer_node_group")
 
         elif snode.tree_type == 'GeometryNodeTree':
             layout.prop(snode, "node_tree_sub_type", text="")
@@ -186,6 +194,8 @@ class NODE_HT_header(Header):
                     row.enabled = False
                     row.template_ID(snode, "node_tree", new="node.new_geometry_node_group_assign")
                 elif ob:
+                    row.enabled = geometry_modifier_poll(context)
+
                     active_modifier = ob.modifiers.active
                     if active_modifier and active_modifier.type == 'NODES':
                         if active_modifier.node_group:
@@ -431,6 +441,8 @@ class NODE_MT_node(Menu):
         layout.operator("transform.resize")
 
         layout.separator()
+        layout.operator("node.delete_copy_reconnect", text="Cut")
+        layout.operator_context = 'EXEC_DEFAULT'
         layout.operator("node.clipboard_copy", text="Copy", icon='COPYDOWN')
         layout.operator_context = 'EXEC_DEFAULT'
         layout.operator("node.clipboard_paste", text="Paste", icon='PASTEDOWN')
@@ -534,8 +546,9 @@ class NODE_PT_material_slots(Panel):
         if ob.mode == 'EDIT':
             row = layout.row(align=True)
             row.operator("object.material_slot_assign", text="Assign")
-            row.operator("object.material_slot_select", text="Select")
-            row.operator("object.material_slot_deselect", text="Deselect")
+            if ob.type != 'FONT':
+                row.operator("object.material_slot_select", text="Select")
+                row.operator("object.material_slot_deselect", text="Deselect")
 
 
 class NODE_PT_geometry_node_tool_object_types(Panel):
@@ -723,6 +736,7 @@ class NODE_MT_context_menu(Menu):
 
             layout.separator()
 
+        layout.operator("node.delete_copy_reconnect", text="Cut")
         layout.operator("node.clipboard_copy", text="Copy", icon='COPYDOWN')
         layout.operator("node.clipboard_paste", text="Paste", icon='PASTEDOWN')
 
@@ -813,6 +827,7 @@ class NODE_PT_active_node_generic(Panel):
             text="",
         )
 
+        col = layout.column()
         col.prop(node, "show_options")
         col.prop(node, "mute")
 
@@ -953,7 +968,7 @@ class NODE_PT_overlay(Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'HEADER'
     bl_label = "Overlays"
-    bl_ui_units_x = 7
+    bl_ui_units_x = 14
 
     def draw(self, context):
         layout = self.layout
@@ -988,6 +1003,13 @@ class NODE_PT_overlay(Panel):
 
         if snode.tree_type == 'CompositorNodeTree':
             col.prop(overlay, "show_timing", text="Timings")
+
+            subcol = col.column(align=True)
+            subcol.active = overlay.show_render_size and snode.show_backdrop
+
+            row = subcol.row(align=True)
+            row.prop(overlay, "show_render_size", text="Render Region")
+            row.prop(overlay, "passepartout_alpha", text="Passepartout")
 
 
 class NODE_MT_node_tree_interface_context_menu(Menu):

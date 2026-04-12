@@ -22,10 +22,14 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.allow_any_socket_order();
   b.add_default_layout();
   b.is_function_node();
-  b.add_input<decl::Rotation>("Rotation").hide_value();
-  b.add_output<decl::Rotation>("Rotation").align_with_previous();
-  b.add_input<decl::Float>("Factor").default_value(1.0f).min(0.0f).max(1.0f).subtype(PROP_FACTOR);
-  b.add_input<decl::Vector>("Vector").default_value({0.0, 0.0, 1.0}).subtype(PROP_XYZ);
+  b.add_input<decl::Rotation>("Rotation"_ustr).hide_value();
+  b.add_output<decl::Rotation>("Rotation"_ustr).align_with_previous();
+  b.add_input<decl::Float>("Factor"_ustr)
+      .default_value(1.0f)
+      .min(0.0f)
+      .max(1.0f)
+      .subtype(PROP_FACTOR);
+  b.add_input<decl::Vector>("Vector"_ustr).default_value({0.0, 0.0, 1.0}).subtype(PROP_XYZ);
 }
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -231,7 +235,8 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeAlignRotationToVector", FN_NODE_ALIGN_ROTATION_TO_VECTOR);
+  fn_node_type_base(
+      &ntype, "FunctionNodeAlignRotationToVector"_ustr, FN_NODE_ALIGN_ROTATION_TO_VECTOR);
   ntype.ui_name = "Align Rotation to Vector";
   ntype.ui_description = "Orient a rotation along the given direction";
   ntype.enum_name_legacy = "ALIGN_ROTATION_TO_VECTOR";

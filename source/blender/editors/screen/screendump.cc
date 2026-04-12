@@ -47,6 +47,7 @@
 namespace blender {
 
 struct ScreenshotData {
+  /* Ownership transferred to ImBuf in exec function. */
   uint8_t *dumprect = nullptr;
   int dumpsx = 0, dumpsy = 0;
   rcti crop = {};
@@ -89,15 +90,8 @@ static int screenshot_data_create(bContext *C, wmOperator *op, ScrArea *area)
 
 static void screenshot_data_free(wmOperator *op)
 {
-  ScreenshotData *scd = static_cast<ScreenshotData *>(op->customdata);
-
-  if (scd) {
-    if (scd->dumprect) {
-      MEM_delete(scd->dumprect);
-    }
-    MEM_delete(scd);
-    op->customdata = nullptr;
-  }
+  MEM_delete(static_cast<ScreenshotData *>(op->customdata));
+  op->customdata = nullptr;
 }
 
 static wmOperatorStatus screenshot_exec(bContext *C, wmOperator *op)
@@ -122,12 +116,12 @@ static wmOperatorStatus screenshot_exec(bContext *C, wmOperator *op)
 
       /* operator ensures the extension */
       ibuf = IMB_allocImBuf(scd->dumpsx, scd->dumpsy, 24, 0);
-      IMB_assign_byte_buffer(ibuf, scd->dumprect, IB_DO_NOT_TAKE_OWNERSHIP);
+      IMB_assign_byte_buffer(ibuf, scd->dumprect, IB_TAKE_OWNERSHIP);
+      scd->dumprect = nullptr;
 
       /* crop to show only single editor */
       if (use_crop) {
         IMB_rect_crop(ibuf, &scd->crop);
-        scd->dumprect = ibuf->byte_buffer.data;
       }
 
       if ((scd->im_format.planes == R_IMF_PLANES_BW) &&

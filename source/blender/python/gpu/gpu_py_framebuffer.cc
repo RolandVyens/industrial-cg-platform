@@ -488,7 +488,7 @@ static PyObject *pygpu_framebuffer_clear(BPyGPUFrameBuffer *self, PyObject *args
     buffers |= GPU_STENCIL_BIT;
   }
 
-  GPU_framebuffer_clear(self->fb, buffers, col, depth, stencil);
+  GPU_framebuffer_clear(self->fb, buffers, double4(UNPACK4(col)), depth, stencil);
   Py_RETURN_NONE;
 }
 
@@ -838,20 +838,22 @@ static PyMethodDef pygpu_framebuffer__tp_methods[] = {
 PyDoc_STRVAR(
     /* Wrap. */
     pygpu_framebuffer__tp_doc,
-    ".. class:: GPUFrameBuffer(*, depth_slot=None, color_slots=None)\n"
+    ".. class:: GPUFrameBuffer\n"
     "\n"
     "   This object gives access to framebuffer functionalities.\n"
     "   When a 'layer' is specified in a argument, a single layer of a 3D or array "
     "texture is attached to the frame-buffer.\n"
     "   For cube map textures, layer is translated into a cube map face.\n"
     "\n"
-    "   :param depth_slot: GPUTexture to attach or a ``dict`` containing keywords: "
+    "   .. method:: __init__(*, depth_slot=None, color_slots=None)\n"
+    "\n"
+    "      :param depth_slot: GPUTexture to attach or a ``dict`` containing keywords: "
     "'texture', 'layer' and 'mip'.\n"
-    "   :type depth_slot: :class:`gpu.types.GPUTexture` | dict[str, int | "
+    "      :type depth_slot: :class:`gpu.types.GPUTexture` | dict[str, int | "
     ":class:`gpu.types.GPUTexture`] | None\n"
-    "   :param color_slots: Tuple where each item can be a GPUTexture or a ``dict`` "
+    "      :param color_slots: Tuple where each item can be a GPUTexture or a ``dict`` "
     "containing keywords: 'texture', 'layer' and 'mip'.\n"
-    "   :type color_slots: :class:`gpu.types.GPUTexture` | "
+    "      :type color_slots: :class:`gpu.types.GPUTexture` | "
     "dict[str, int | :class:`gpu.types.GPUTexture`] | "
     "Sequence[:class:`gpu.types.GPUTexture` | dict[str, int | "
     ":class:`gpu.types.GPUTexture`]] | "

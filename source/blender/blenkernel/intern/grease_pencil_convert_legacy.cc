@@ -35,7 +35,7 @@
 #include "BLO_read_write.hh"
 #include "BLO_readfile.hh"
 
-#include "BLI_color.hh"
+#include "BLI_color_types.hh"
 #include "BLI_function_ref.hh"
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
@@ -1192,30 +1192,30 @@ static bNodeTree *offset_radius_node_tree_add(ConversionData &conversion_data, L
   group->tree_interface.add_socket(
       DATA_("Layer"), "", "NodeSocketString", NODE_INTERFACE_SOCKET_INPUT, nullptr);
 
-  bNode *group_output = bke::node_add_node(nullptr, *group, "NodeGroupOutput");
+  bNode *group_output = bke::node_add_node(nullptr, *group, "NodeGroupOutput"_ustr);
   group_output->location[0] = 800;
   group_output->location[1] = 160;
-  bNode *group_input = bke::node_add_node(nullptr, *group, "NodeGroupInput");
+  bNode *group_input = bke::node_add_node(nullptr, *group, "NodeGroupInput"_ustr);
   group_input->location[0] = 0;
   group_input->location[1] = 160;
 
-  bNode *set_curve_radius = bke::node_add_node(nullptr, *group, "GeometryNodeSetCurveRadius");
+  bNode *set_curve_radius = bke::node_add_node(nullptr, *group, "GeometryNodeSetCurveRadius"_ustr);
   set_curve_radius->location[0] = 600;
   set_curve_radius->location[1] = 160;
   bNode *named_layer_selection = bke::node_add_node(
-      nullptr, *group, "GeometryNodeInputNamedLayerSelection");
+      nullptr, *group, "GeometryNodeInputNamedLayerSelection"_ustr);
   named_layer_selection->location[0] = 200;
   named_layer_selection->location[1] = 100;
-  bNode *input_radius = bke::node_add_node(nullptr, *group, "GeometryNodeInputRadius");
+  bNode *input_radius = bke::node_add_node(nullptr, *group, "GeometryNodeInputRadius"_ustr);
   input_radius->location[0] = 0;
   input_radius->location[1] = 0;
 
-  bNode *add = bke::node_add_node(nullptr, *group, "ShaderNodeMath");
+  bNode *add = bke::node_add_node(nullptr, *group, "ShaderNodeMath"_ustr);
   add->custom1 = NODE_MATH_ADD;
   add->location[0] = 200;
   add->location[1] = 0;
 
-  bNode *clamp_radius = bke::node_add_node(nullptr, *group, "ShaderNodeClamp");
+  bNode *clamp_radius = bke::node_add_node(nullptr, *group, "ShaderNodeClamp"_ustr);
   clamp_radius->location[0] = 400;
   clamp_radius->location[1] = 0;
   bNodeSocket *sock_max = bke::node_find_socket(*clamp_radius, SOCK_IN, "Max");
@@ -1476,15 +1476,16 @@ static void layer_adjustments_to_modifiers(ConversionData &conversion_data,
       BLI_addtail(&dst_object.modifiers, md);
       BKE_modifiers_persistent_uid_init(dst_object, md->modifier);
 
-      md->settings.properties = bke::idprop::create_group("Nodes Modifier Settings").release();
+      md->settings_legacy.properties =
+          bke::idprop::create_group("Nodes Modifier Settings").release();
       IDProperty *radius_offset_prop =
           bke::idprop::create(DATA_("Socket_2"), radius_offset).release();
       auto *ui_data = reinterpret_cast<IDPropertyUIDataFloat *>(
           IDP_ui_data_ensure(radius_offset_prop));
       ui_data->soft_min = 0.0;
       ui_data->base.rna_subtype = PROP_TRANSLATION;
-      IDP_AddToGroup(md->settings.properties, radius_offset_prop);
-      IDP_AddToGroup(md->settings.properties,
+      IDP_AddToGroup(md->settings_legacy.properties, radius_offset_prop);
+      IDP_AddToGroup(md->settings_legacy.properties,
                      bke::idprop::create(DATA_("Socket_3"), gpl.info).release());
 
       if (has_thickness_adjustment_animation) {

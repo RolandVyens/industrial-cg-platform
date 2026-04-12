@@ -309,6 +309,7 @@ set(GLSL_SRC
   shaders/compositor_morphological_distance.glsl
   shaders/compositor_morphological_distance_feather.glsl
   shaders/compositor_morphological_distance_threshold.glsl
+  shaders/compositor_morphological_distance_threshold_seeds.glsl
   shaders/compositor_morphological_step.glsl
   shaders/compositor_motion_blur.glsl
   shaders/compositor_motion_blur_max_velocity_dilate.glsl
@@ -390,6 +391,16 @@ set(GLSL_SRC
   shaders/library/gpu_shader_compositor_summed_area_table_lib.glsl
   shaders/library/gpu_shader_compositor_texture_utilities.glsl
   shaders/library/gpu_shader_compositor_type_conversion.glsl
+
+  shaders/library/gpu_shader_function_combine_matrix.glsl
+  shaders/library/gpu_shader_function_invert_matrix.glsl
+  shaders/library/gpu_shader_function_matrix_determinant.glsl
+  shaders/library/gpu_shader_function_matrix_multiply.glsl
+  shaders/library/gpu_shader_function_project_point.glsl
+  shaders/library/gpu_shader_function_separate_matrix.glsl
+  shaders/library/gpu_shader_function_transform_direction.glsl
+  shaders/library/gpu_shader_function_transform_point.glsl
+  shaders/library/gpu_shader_function_transpose_matrix.glsl
 )
 
 set(GLSL_INC
@@ -399,8 +410,8 @@ set(GLSL_INC
   ../gpu/shaders/common
 
   shaders
-  shaders/library
   shaders/infos
+  shaders/library
 )
 
 set(GLSL_C "")

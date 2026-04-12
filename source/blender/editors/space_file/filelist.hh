@@ -99,7 +99,12 @@ ImBuf *filelist_geticon_special_file_image_ex(const FileDirEntry *file);
 ImBuf *filelist_geticon_special_file_image(FileList *filelist, int index);
 int filelist_geticon_file_type(FileList *filelist, int index, bool is_main);
 
-FileList *filelist_new(short type);
+/**
+ * \param is_from_global_asset_list: Set to indicate that the file list is owned by the
+ *    #ED_asset_list.hh API (global storage to load and store assets globally), not by an
+ *    Asset/File Browser.
+ */
+FileList *filelist_new(short type, bool is_from_global_asset_list = false);
 void filelist_settype(FileList *filelist, short type);
 void filelist_clear(FileList *filelist);
 void filelist_clear_ex(FileList *filelist,
@@ -156,7 +161,7 @@ int filelist_file_find_path(FileList *filelist, const char *filename);
  */
 int filelist_file_find_id(const FileList *filelist, const ID *id);
 /**
- * Get the ID a file represents (if any). For #FILE_MAIN, #FILE_MAIN_ASSET.
+ * Get the ID a file represents (if any). For #FILE_MAIN_ASSET.
  */
 ID *filelist_file_get_id(const FileDirEntry *file);
 /**

@@ -1075,7 +1075,7 @@ static void layerDefault_mcol(void *data, const int count)
 
 static void layerDefault_origindex(void *data, const int count)
 {
-  copy_vn_i(static_cast<int *>(data), count, ORIGINDEX_NONE);
+  std::fill_n(static_cast<int *>(data), count, ORIGINDEX_NONE);
 }
 
 static void layerInterp_shapekey(const void **sources, const float *weights, int count, void *dest)
@@ -1314,6 +1314,7 @@ static void layerAdd_propfloat4(void *data1, const void *data2)
   vec1->x += vec2->x;
   vec1->y += vec2->y;
   vec1->z += vec2->z;
+  vec1->w += vec2->w;
 }
 
 /* -------------------------------------------------------------------- */
@@ -2536,7 +2537,7 @@ static void CustomData_external_free(CustomData *data)
 void CustomData_reset(CustomData *data)
 {
   *data = CustomData{};
-  copy_vn_i(data->typemap, CD_NUMTYPES, -1);
+  std::fill_n(data->typemap, CD_NUMTYPES, -1);
 }
 
 void CustomData_free(CustomData *data)
@@ -3252,7 +3253,7 @@ void CustomData_interp(const CustomData *source,
     default_weights = (count > SOURCE_BUF_SIZE) ?
                           MEM_new_array_uninitialized<float>(size_t(count), __func__) :
                           default_weights_buf;
-    copy_vn_fl(default_weights, count, 1.0f / count);
+    std::fill_n(default_weights, count, 1.0f / count);
     weights = default_weights;
   }
 
@@ -4012,7 +4013,7 @@ void CustomData_bmesh_interp(
     default_weights = (count > SOURCE_BUF_SIZE) ?
                           MEM_new_array_uninitialized<float>(size_t(count), __func__) :
                           default_weights_buf;
-    copy_vn_fl(default_weights, count, 1.0f / count);
+    std::fill_n(default_weights, count, 1.0f / count);
     weights = default_weights;
   }
 
@@ -4740,46 +4741,16 @@ static void get_type_file_write_info(const eCustomDataType type,
   *r_struct_num = typeInfo->structnum;
 }
 
-void CustomData_blend_write_prepare(CustomData &data,
-                                    const bke::AttrDomain domain,
-                                    const int domain_size,
-                                    Vector<CustomDataLayer, 16> &layers_to_write,
-                                    bke::AttributeStorage::BlendWriteData &write_data)
+void CustomData_blend_write_prepare(CustomData &data, Vector<CustomDataLayer, 16> &layers_to_write)
 {
   using namespace blender::bke;
   for (const CustomDataLayer &layer : Span(data.layers, data.totlayer)) {
     if (layer.flag & CD_FLAG_NOCOPY) {
       continue;
     }
-    const StringRef name = layer.name;
-    if (attribute_name_is_anonymous(name)) {
-      continue;
-    }
-
-    /* We always write the data in the new #AttributeStorage format, even though it's not yet used
-     * at runtime. This block should be removed when the new format is used at runtime. */
-    const eCustomDataType data_type = eCustomDataType(layer.type);
-    if (const std::optional<AttrType> type = custom_data_type_to_attr_type(data_type)) {
-      blender::Attribute attribute_dna{};
-      attribute_dna.name = layer.name;
-      attribute_dna.data_type = int16_t(*type);
-      attribute_dna.domain = int8_t(domain);
-      attribute_dna.storage_type = int8_t(AttrStorageType::Array);
-
-      /* Do not increase the user count; #::AttributeArray does not act as an owner of the
-       * attribute data, since it's only used temporarily for writing files. Changing the user
-       * count would be okay too, but it's unnecessary because none of this data should be
-       * modified while it's being written anyway. */
-      auto &array_dna = write_data.scope.construct<blender::AttributeArray>();
-      array_dna.data = layer.data;
-      array_dna.sharing_info = layer.sharing_info;
-      array_dna.size = domain_size;
-      attribute_dna.data = &array_dna;
-
-      write_data.attributes.append(attribute_dna);
-      continue;
-    }
-
+    /* Generic attribute types are stored in #AttributeStorage (except for BMesh but that is
+     * runtime only). */
+    BLI_assert((CD_TYPE_AS_MASK(eCustomDataType(layer.type)) & CD_MASK_PROP_ALL) == 0);
     layers_to_write.append(layer);
   }
   data.totlayer = layers_to_write.size();
@@ -4811,14 +4782,13 @@ static void write_mdisps(BlendWriter *writer,
       const MDisps *md = &mdlist[i];
       if (md->disps) {
         if (!external) {
-          BLO_write_float3_array(writer, md->totdisp, &md->disps[0][0]);
+          writer->write_float3_array(md->totdisp, &md->disps[0][0]);
         }
       }
 
       if (md->hidden) {
-        BLO_write_int8_array(writer,
-                             BLI_BITMAP_SIZE(md->totdisp) * sizeof(BLI_bitmap),
-                             reinterpret_cast<const int8_t *>(md->hidden));
+        writer->write_int8_array(BLI_BITMAP_SIZE(md->totdisp) * sizeof(BLI_bitmap),
+                                 reinterpret_cast<const int8_t *>(md->hidden));
       }
     }
   }
@@ -4834,7 +4804,7 @@ static void write_grid_paint_mask(BlendWriter *writer,
       const GridPaintMask *gpm = &grid_paint_mask[i];
       if (gpm->data) {
         const uint32_t gridsize = uint32_t(CCG_grid_size(gpm->level));
-        BLO_write_float_array(writer, gridsize * gridsize, gpm->data);
+        writer->write_float_array(gridsize * gridsize, gpm->data);
       }
     }
   }
@@ -4853,7 +4823,7 @@ static void blend_write_layer_data(BlendWriter *writer,
           writer, count, static_cast<const MDisps *>(layer.data), layer.flag & CD_FLAG_EXTERNAL);
       break;
     case CD_PAINT_MASK:
-      BLO_write_float_array(writer, count, static_cast<const float *>(layer.data));
+      writer->write_float_array(count, static_cast<const float *>(layer.data));
       break;
     case CD_GRID_PAINT_MASK:
       write_grid_paint_mask(writer, count, static_cast<const GridPaintMask *>(layer.data));
@@ -4861,7 +4831,7 @@ static void blend_write_layer_data(BlendWriter *writer,
     case CD_PROP_BOOL:
       BLI_STATIC_ASSERT(sizeof(bool) == sizeof(uint8_t),
                         "bool type is expected to have the same size as uint8_t")
-      BLO_write_uint8_array(writer, count, static_cast<const uint8_t *>(layer.data));
+      writer->write_uint8_array(count, static_cast<const uint8_t *>(layer.data));
       break;
     default: {
       const char *structname;

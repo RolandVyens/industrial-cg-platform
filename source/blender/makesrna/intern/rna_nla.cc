@@ -691,6 +691,20 @@ static void rna_NlaStrip_remove(
   DEG_id_tag_update_ex(bmain, id, ID_RECALC_ANIMATION | ID_RECALC_SYNC_TO_EVAL);
 }
 
+static std::optional<std::string> rna_NlaTrack_path(const PointerRNA *ptr)
+{
+  const NlaTrack *nlt = static_cast<const NlaTrack *>(ptr->data);
+  const AnimData *adt = BKE_animdata_from_id(ptr->owner_id);
+
+  if (!adt) {
+    return "";
+  }
+
+  char name_esc[sizeof(nlt->name) * 2];
+  BLI_str_escape(name_esc, nlt->name, sizeof(name_esc));
+  return fmt::format("animation_data.nla_tracks[\"{}\"]", name_esc);
+}
+
 /* Set the 'solo' setting for the given NLA-track, making sure that it is the only one
  * that has this status in its AnimData block.
  */
@@ -877,9 +891,9 @@ static void rna_def_nlastrip(BlenderRNA *brna)
       "property instead.");
   RNA_def_property_update(
       prop, NC_ANIMATION | ND_NLA | NA_EDITED, "rna_NlaStrip_transform_update");
-  /* The `..._ui` properties should NOT be considered for library overrides, as they are meant to
-   * have different behavior than when setting their non-`..._ui` counterparts. */
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
+  /* The `..._ui` properties should NOT be considered for library overrides. But they should *act*
+   * as if they are a overridable property since from a user perspective they are. */
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_IGNORE);
 
   prop = RNA_def_property(srna, "frame_end_ui", PROP_FLOAT, PROP_TIME);
   RNA_def_property_float_sdna(prop, nullptr, "end");
@@ -892,9 +906,9 @@ static void rna_def_nlastrip(BlenderRNA *brna)
       "changed, see the \"frame_end\" property instead.");
   RNA_def_property_update(
       prop, NC_ANIMATION | ND_NLA | NA_EDITED, "rna_NlaStrip_transform_update");
-  /* The `..._ui` properties should NOT be considered for library overrides, as they are meant to
-   * have different behavior than when setting their non-`..._ui` counterparts. */
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
+  /* The `..._ui` properties should NOT be considered for library overrides. But they should *act*
+   * as if they are a overridable property since from a user perspective they are. */
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_IGNORE);
 
   /* Blending */
   prop = RNA_def_property(srna, "blend_in", PROP_FLOAT, PROP_NONE);
@@ -1184,6 +1198,7 @@ static void rna_def_nlatrack(BlenderRNA *brna)
   srna = RNA_def_struct(brna, "NlaTrack", nullptr);
   RNA_def_struct_ui_text(
       srna, "NLA Track", "An animation layer containing Actions referenced as NLA strips");
+  RNA_def_struct_path_func(srna, "rna_NlaTrack_path");
   RNA_def_struct_ui_icon(srna, ICON_NLA);
 
   /* strips collection */

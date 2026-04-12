@@ -12,7 +12,7 @@
 
 COMPUTE_SHADER_CREATE_INFO(eevee_volume_scatter_with_lights)
 
-#include "eevee_colorspace_lib.glsl"
+#include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_light_iter_lib.glsl"
 #include "eevee_light_lib.glsl"
 #include "eevee_lightprobe_volume_eval_lib.glsl"
@@ -49,7 +49,7 @@ float3 volume_light(LightData light, const bool is_directional, LightVector lv)
 #  define VOLUMETRIC_SHADOW_MAX_STEP 128.0f
 
 float3 volume_shadow(
-    LightData ld, const bool is_directional, float3 P, LightVector lv, sampler3D extinction_tx)
+    LightData /*ld*/, const bool is_directional, float3 P, LightVector lv, sampler3D extinction_tx)
 {
 #  if defined(VOLUME_SHADOW) || defined(GLSL_CPP_STUBS)
   if (uniform_buf.volumes.shadow_steps == 0) {
@@ -132,13 +132,13 @@ float3 volume_light_eval(
 
 float3 volume_lightprobe_eval(float3 P, float3 V, float s_anisotropy)
 {
-  SphericalHarmonicL1 phase_sh = volume_phase_function_as_sh_L1(V, s_anisotropy);
-  SphericalHarmonicL1 volume_radiance_sh = lightprobe_volume_sample(P);
+  SphericalHarmonicL1<float4> phase_sh = volume_phase_function_as_sh_L1(V, s_anisotropy);
+  SphericalHarmonicL1<float4> volume_radiance_sh = lightprobe_volume_sample(P);
 
   float clamp_indirect = uniform_buf.clamp.volume_indirect;
-  volume_radiance_sh = spherical_harmonics_clamp(volume_radiance_sh, clamp_indirect);
+  volume_radiance_sh = spherical_harmonics::clamp_energy(volume_radiance_sh, clamp_indirect);
 
-  return spherical_harmonics_dot(volume_radiance_sh, phase_sh).xyz;
+  return spherical_harmonics::dot(volume_radiance_sh, phase_sh).xyz;
 }
 
 #endif
@@ -197,8 +197,8 @@ void main()
 
   float clamp_direct = uniform_buf.clamp.volume_direct;
   float clamp_indirect = uniform_buf.clamp.volume_indirect;
-  direct_radiance = colorspace_brightness_clamp_max(direct_radiance, clamp_direct);
-  indirect_radiance = colorspace_brightness_clamp_max(indirect_radiance, clamp_indirect);
+  direct_radiance = colorspace::brightness_clamp_max(direct_radiance, clamp_direct);
+  indirect_radiance = colorspace::brightness_clamp_max(indirect_radiance, clamp_indirect);
 
   direct_radiance *= uniform_buf.clamp.direct_scale;
   indirect_radiance *= uniform_buf.clamp.indirect_scale;

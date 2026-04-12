@@ -14,7 +14,7 @@ VERTEX_SHADER_CREATE_INFO(eevee_geom_curves)
 #include "draw_model_lib.glsl"
 #include "eevee_attributes_curves_lib.glsl"
 #include "eevee_nodetree_vert_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "eevee_surf_lib.glsl"
 #include "eevee_velocity_lib.glsl"
 

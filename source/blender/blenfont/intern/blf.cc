@@ -636,8 +636,26 @@ void BLF_draw_svg_icon(uint icon_id,
 #ifndef WITH_HEADLESS
   FontBLF *font = global_font[0];
   if (font) {
-    blf_draw_gpu__start(font);
-    blf_draw_svg_icon(font, icon_id, x, y, size, color, outline_alpha, multicolor, edit_source_cb);
+    font->pos[0] = x;
+    font->pos[1] = y;
+    font->pos[2] = 0;
+
+    if (font->flags & (BLF_ROTATION | BLF_ASPECT)) {
+      GPU_matrix_push();
+
+      const float center = (font->flags & BLF_ROTATION) ? size / 2.0f : 0.0f;
+      GPU_matrix_translate_3f(font->pos[0] + center, font->pos[1] + center, font->pos[2]);
+      if (font->flags & BLF_ASPECT) {
+        GPU_matrix_scale_3fv(font->aspect);
+      }
+
+      if (font->flags & BLF_ROTATION) {
+        GPU_matrix_rotate_2d(RAD2DEG(font->angle));
+        GPU_matrix_translate_3f(-center, -center, 0);
+      }
+    }
+
+    blf_draw_svg_icon(font, icon_id, size, color, outline_alpha, multicolor, edit_source_cb);
     blf_draw_gpu__end(font);
   }
 #else
@@ -1150,13 +1168,15 @@ bool BLF_character_to_curves(int fontid,
                              ListBaseT<Nurb> *nurbsbase,
                              const float scale,
                              bool use_fallback,
-                             float *r_advance)
+                             float *r_advance,
+                             rctf *r_bounds)
 {
   FontBLF *font = blf_get(fontid);
   if (!font) {
     return false;
   }
-  return blf_character_to_curves(font, unicode, nurbsbase, scale, use_fallback, r_advance);
+  return blf_character_to_curves(
+      font, unicode, nurbsbase, scale, use_fallback, r_advance, r_bounds);
 }
 
 #ifndef NDEBUG

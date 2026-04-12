@@ -71,28 +71,30 @@ static void node_declare(NodeDeclarationBuilder &b)
 {
   b.use_custom_socket_order();
   b.allow_any_socket_order();
-  b.add_input<decl::Color>("Image")
+  b.add_input<decl::Color>("Image"_ustr)
       .default_value({1.0f, 1.0f, 1.0f, 1.0f})
       .hide_value()
       .structure_type(StructureType::Dynamic);
-  b.add_output<decl::Color>("Image").structure_type(StructureType::Dynamic).align_with_previous();
+  b.add_output<decl::Color>("Image"_ustr)
+      .structure_type(StructureType::Dynamic)
+      .align_with_previous();
 
-  b.add_input<decl::Color>("Albedo")
+  b.add_input<decl::Color>("Albedo"_ustr)
       .default_value({1.0f, 1.0f, 1.0f, 1.0f})
       .hide_value()
       .structure_type(StructureType::Dynamic);
-  b.add_input<decl::Vector>("Normal")
+  b.add_input<decl::Vector>("Normal"_ustr)
       .default_value({0.0f, 0.0f, 0.0f})
       .min(-1.0f)
       .max(1.0f)
       .hide_value()
       .structure_type(StructureType::Dynamic);
-  b.add_input<decl::Bool>("HDR").default_value(true);
-  b.add_input<decl::Menu>("Prefilter")
+  b.add_input<decl::Bool>("HDR"_ustr).default_value(true);
+  b.add_input<decl::Menu>("Prefilter"_ustr)
       .default_value(CMP_NODE_DENOISE_PREFILTER_ACCURATE)
       .static_items(prefilter_items)
       .optional_label();
-  b.add_input<decl::Menu>("Quality")
+  b.add_input<decl::Menu>("Quality"_ustr)
       .default_value(CMP_NODE_DENOISE_QUALITY_SCENE)
       .static_items(quality_items)
       .optional_label();
@@ -259,12 +261,7 @@ class DenoiseOperation : public NodeOperation {
         }
       }
 
-      /* Float3 results might be stored in 4-component textures due to hardware limitations, so we
-       * need to use the pixel stride of the texture. */
-      const int normal_channels_count = this->context().use_gpu() ?
-                                            GPU_texture_component_len(
-                                                GPU_texture_format(input_normal)) :
-                                            input_normal.channels_count();
+      const int normal_channels_count = input_normal.channels_count();
       int normal_pixel_stride = sizeof(float) * normal_channels_count;
 
       const int64_t normal_buffer_size = int64_t(width) * height * normal_channels_count;
@@ -393,7 +390,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  cmp_node_type_base(&ntype, "CompositorNodeDenoise", CMP_NODE_DENOISE);
+  cmp_node_type_base(&ntype, "CompositorNodeDenoise"_ustr, CMP_NODE_DENOISE);
   ntype.ui_name = "Denoise";
   ntype.ui_description = "Denoise renders from Cycles and other ray tracing renderers";
   ntype.enum_name_legacy = "DENOISE";

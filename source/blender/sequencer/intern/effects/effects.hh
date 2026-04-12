@@ -41,9 +41,6 @@ struct EffectHandle {
   /* #init is only called on first creation, or when changing effect type. */
   void (*init)(Strip *strip);
 
-  /* Number of input strips needed for this effect. */
-  int (*num_inputs)();
-
   /* duplicate */
   void (*copy)(Strip *dst, const Strip *src, int flag);
 
@@ -123,6 +120,7 @@ void alpha_over_effect_get_handle(EffectHandle &rval);
 void alpha_under_effect_get_handle(EffectHandle &rval);
 void blend_mode_effect_get_handle(EffectHandle &rval);
 void color_mix_effect_get_handle(EffectHandle &rval);
+void compositor_effect_get_handle(EffectHandle &rval);
 void cross_effect_get_handle(EffectHandle &rval);
 void gamma_cross_effect_get_handle(EffectHandle &rval);
 void gaussian_blur_effect_get_handle(EffectHandle &rval);
@@ -153,25 +151,26 @@ static void apply_effect_op(const OpT &op, const ImBuf *src1, const ImBuf *src2,
                  "Sequencer only supports 4 channel images");
   BLI_assert_msg(dst->channels == 0 || dst->channels == 4,
                  "Sequencer only supports 4 channel images");
+  float *dst_float_data = dst->float_data_for_write();
+  uchar *dst_byte_data = dst->byte_data_for_write();
   threading::parallel_for(IndexRange(size_t(dst->x) * dst->y), 32 * 1024, [&](IndexRange range) {
     int64_t offset = range.first() * 4;
-    if (dst->float_buffer.data) {
-      const float *src1_ptr = src1->float_buffer.data + offset;
-      const float *src2_ptr = src2->float_buffer.data + offset;
-      float *dst_ptr = dst->float_buffer.data + offset;
+    if (dst_float_data) {
+      const float *src1_ptr = src1->float_data() + offset;
+      const float *src2_ptr = src2->float_data() + offset;
+      float *dst_ptr = dst_float_data + offset;
       op.apply(src1_ptr, src2_ptr, dst_ptr, range.size());
     }
     else {
-      const uchar *src1_ptr = src1->byte_buffer.data + offset;
-      const uchar *src2_ptr = src2->byte_buffer.data + offset;
-      uchar *dst_ptr = dst->byte_buffer.data + offset;
+      const uchar *src1_ptr = src1->byte_data() + offset;
+      const uchar *src2_ptr = src2->byte_data() + offset;
+      uchar *dst_ptr = dst_byte_data + offset;
       op.apply(src1_ptr, src2_ptr, dst_ptr, range.size());
     }
   });
 }
 
 std::unique_lock<Mutex> text_runtime_scoped_lock_get();
-TextVarsRuntime *text_effect_calc_runtime(const Strip *strip, int font, const int2 image_size);
 int text_effect_font_init(const RenderData *context, const Strip *strip, FontFlags font_flags);
 
 }  // namespace seq

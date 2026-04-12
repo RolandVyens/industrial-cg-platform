@@ -154,6 +154,17 @@ class TestEnvironment:
         else:
             return pathlib.Path('blender')
 
+    def _has_install_files(self, executable_path: pathlib.Path) -> bool:
+        """
+        Check if the given executable is a full installation of blender by checking
+        the availability of the 'license' directory.
+        """
+        if platform.system() == "Darwin":
+            license_path = executable_path.parent.parent / 'Resources' / 'text' / 'license'
+        else:
+            license_path = executable_path.parent / 'license'
+        return license_path.is_dir()
+
     def _blender_executable_from_path(self, executable: pathlib.Path) -> pathlib.Path:
         if executable.is_dir():
             # Directory
@@ -162,7 +173,7 @@ class TestEnvironment:
             # Executable path without proper path on Windows or macOS.
             executable = executable.parent / self._blender_executable_name()
 
-        if executable.is_file():
+        if executable.is_file() and self._has_install_files(executable):
             return executable
 
         return None
@@ -241,11 +252,9 @@ class TestEnvironment:
 
         return lines
 
-    def call_blender(self, args: list[str], foreground=False, gpu_backend='default') -> list[str]:
+    def call_blender(self, args: list[str], foreground=False) -> list[str]:
         # Execute Blender command with arguments.
         common_args = ['--factory-startup', '-noaudio', '--enable-autoexec', '--python-exit-code', '1']
-        if gpu_backend != 'default':
-            common_args += ['--gpu-backend', gpu_backend]
         if sys.platform == 'win32':
             # Set HighQoS level on Windows to avoid reduced performance when the window is out of focus.
             # See: https://learn.microsoft.com/en-us/windows/win32/procthread/quality-of-service
@@ -262,8 +271,7 @@ class TestEnvironment:
                        function: Callable[[dict], dict],
                        args: dict,
                        blender_args: list = [],
-                       foreground=False,
-                       gpu_backend='default') -> dict:
+                       foreground=False) -> dict:
         # Run function in a Blender instance. Arguments and return values are
         # passed as a Python object that must be serializable with pickle.
 
@@ -285,7 +293,7 @@ class TestEnvironment:
                       f'print("\\n{output_prefix}" + result.decode() + "\\n")')
 
         expr_args = blender_args + ['--python-expr', expression]
-        lines = self.call_blender(expr_args, foreground=foreground, gpu_backend=gpu_backend)
+        lines = self.call_blender(expr_args, foreground=foreground)
 
         # Parse output.
         for line in lines:

@@ -1,0 +1,36 @@
+/* SPDX-FileCopyrightText: 2026 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+
+/**
+ * Compile shader files as C++ inside one compilation unit to lint syntax and get IDE integration.
+ */
+
+#include "eevee_bxdf_lut.bsl.hh"                     /* IWYU pragma: export */
+#include "eevee_bxdf_lut_lib.bsl.hh"                 /* IWYU pragma: export */
+#include "eevee_camera_lib.bsl.hh"                   /* IWYU pragma: export */
+#include "eevee_colorspace_lib.bsl.hh"               /* IWYU pragma: export */
+#include "eevee_horizon_scan.bsl.hh"                 /* IWYU pragma: export */
+#include "eevee_horizon_scan_lib.bsl.hh"             /* IWYU pragma: export */
+#include "eevee_light_culling.bsl.hh"                /* IWYU pragma: export */
+#include "eevee_light_shadow_setup.bsl.hh"           /* IWYU pragma: export */
+#include "eevee_ltc_lib.bsl.hh"                      /* IWYU pragma: export */
+#include "eevee_ltc_lut_lib.bsl.hh"                  /* IWYU pragma: export */
+#include "eevee_occupancy_lib.bsl.hh"                /* IWYU pragma: export */
+#include "eevee_octahedron_lib.bsl.hh"               /* IWYU pragma: export */
+#include "eevee_ray_denoise.bsl.hh"                  /* IWYU pragma: export */
+#include "eevee_ray_types_lib.bsl.hh"                /* IWYU pragma: export */
+#include "eevee_reverse_z_lib.bsl.hh"                /* IWYU pragma: export */
+#include "eevee_shadow_page_allocate.bsl.hh"         /* IWYU pragma: export */
+#include "eevee_shadow_page_defrag.bsl.hh"           /* IWYU pragma: export */
+#include "eevee_shadow_page_free.bsl.hh"             /* IWYU pragma: export */
+#include "eevee_shadow_page_mask.bsl.hh"             /* IWYU pragma: export */
+#include "eevee_shadow_page_ops.bsl.hh"              /* IWYU pragma: export */
+#include "eevee_shadow_tag_update.bsl.hh"            /* IWYU pragma: export */
+#include "eevee_shadow_tag_usage.bsl.hh"             /* IWYU pragma: export */
+#include "eevee_shadow_tag_usage_transparent.bsl.hh" /* IWYU pragma: export */
+#include "eevee_shadow_tilemap_lib.bsl.hh"           /* IWYU pragma: export */
+#include "eevee_subsurface.bsl.hh"                   /* IWYU pragma: export */
+#include "eevee_thickness_lib.bsl.hh"                /* IWYU pragma: export */
+
+void main() {}

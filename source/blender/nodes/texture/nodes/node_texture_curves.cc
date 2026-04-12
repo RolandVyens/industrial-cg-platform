@@ -56,7 +56,7 @@ void register_node_type_tex_curve_time()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeCurveTime", TEX_NODE_CURVE_TIME);
+  tex_node_type_base(&ntype, "TextureNodeCurveTime"_ustr, TEX_NODE_CURVE_TIME);
   ntype.ui_name = "Time";
   ntype.enum_name_legacy = "CURVE_TIME";
   ntype.nclass = NODE_CLASS_INPUT;
@@ -109,7 +109,7 @@ void register_node_type_tex_curve_rgb()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeCurveRGB", TEX_NODE_CURVE_RGB);
+  tex_node_type_base(&ntype, "TextureNodeCurveRGB"_ustr, TEX_NODE_CURVE_RGB);
   ntype.ui_name = "RGB Curves";
   ntype.enum_name_legacy = "CURVE_RGB";
   ntype.nclass = NODE_CLASS_OP_COLOR;

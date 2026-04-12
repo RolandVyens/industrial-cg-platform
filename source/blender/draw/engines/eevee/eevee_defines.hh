@@ -194,7 +194,7 @@
 
 /* Utility Texture. */
 #define UTIL_TEX_SIZE 64
-#define UTIL_BTDF_LAYER_COUNT 16
+#define UTIL_BSDF_LAYER_COUNT 16
 /* Scale and bias to avoid interpolation of the border pixel.
  * Remap UVs to the border pixels centers. */
 #define UTIL_TEX_UV_SCALE ((UTIL_TEX_SIZE - 1.0f) / UTIL_TEX_SIZE)
@@ -203,8 +203,8 @@
 #define UTIL_BLUE_NOISE_LAYER 0
 #define UTIL_SSS_TRANSMITTANCE_PROFILE_LAYER 1
 #define UTIL_LTC_MAT_LAYER 2
-#define UTIL_BSDF_LAYER 3
-#define UTIL_BTDF_LAYER 4
+#define UTIL_BRDF_LAYER 3
+#define UTIL_BSDF_LAYER 4
 #define UTIL_DISK_INTEGRAL_LAYER UTIL_SSS_TRANSMITTANCE_PROFILE_LAYER
 #define UTIL_DISK_INTEGRAL_COMP 3
 

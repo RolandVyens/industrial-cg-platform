@@ -121,11 +121,19 @@ struct FileData {
 
   /** Used to retrieve ID names from (bhead+1). */
   int id_name_offset = 0;
-  /** Used to retrieve asset data from (bhead+1). NOTE: This may not be available in old files,
-   * will be -1 then! */
+  /**
+   * Used to retrieve asset data from (bhead+1). NOTE: This may not be available in old files,
+   * will be -1 then!
+   */
   int id_asset_data_offset = 0;
   int id_flag_offset = 0;
   int id_deep_hash_offset = 0;
+  /**
+   * Gives access to libraries' filepath and flag, useful for introspection of blendfiles'
+   * dependencies _without_ having to fully read them.
+   */
+  int library_filepath_offset = 0;
+  int library_flag_offset = 0;
   /** For do_versions patching. */
   int globalf = 0;
   int fileflags = 0;
@@ -197,6 +205,11 @@ struct FileData {
 
   /** Opaque handle to the storage system used for non-static allocation strings. */
   void *storage_handle = nullptr;
+
+  /**
+   * Set when reading a file from undo with incomplete preview, to trigger restart of preview jobs.
+   */
+  bool need_preview_render_restart = false;
 };
 
 /**
@@ -266,6 +279,19 @@ short blo_bhead_id_flag(const FileData *fd, const BHead *bhead);
  * Warning! Caller's responsibility to ensure given bhead **is** an ID one!
  */
 AssetMetaData *blo_bhead_id_asset_data_address(const FileData *fd, const BHead *bhead);
+
+/**
+ * Return the stored filepath (may be relative) of a library ID.
+ *
+ * Warning! Caller's responsibility to ensure that the given bhead **is** a Library ID one!
+ */
+const char *blo_bhead_library_filepath(const FileData *fd, const BHead *bhead);
+/**
+ * Return the stored flags of a library ID.
+ *
+ * Warning! Caller's responsibility to ensure that the given bhead **is** a Library ID one!
+ */
+LibraryFlag blo_bhead_library_flag(const FileData *fd, const BHead *bhead);
 
 /* do versions stuff */
 

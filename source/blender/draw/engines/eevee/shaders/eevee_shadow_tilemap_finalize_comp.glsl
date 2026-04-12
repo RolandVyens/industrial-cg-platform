@@ -14,7 +14,7 @@
 
 COMPUTE_SHADER_CREATE_INFO(eevee_shadow_tilemap_finalize)
 
-#include "eevee_shadow_tilemap_lib.glsl"
+#include "eevee_shadow_tilemap_lib.bsl.hh"
 #include "gpu_shader_math_matrix_projection_lib.glsl"
 
 shared int rect_min_x;

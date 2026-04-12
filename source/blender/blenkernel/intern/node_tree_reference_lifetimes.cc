@@ -296,7 +296,7 @@ static Vector<ReferenceSetInfo> find_reference_sets(
   }
   /* Each output of the Evaluate Closure node may reference data in any other output. We can't know
    * exactly what references what here. */
-  for (const bNode *node : tree.nodes_by_type("NodeEvaluateClosure")) {
+  for (const bNode *node : tree.nodes_by_type("NodeEvaluateClosure"_ustr)) {
     const auto &storage = *static_cast<NodeEvaluateClosure *>(node->storage);
     Vector<const bNodeSocket *> reference_outputs;
     for (const int i : IndexRange(storage.output_items.items_num)) {

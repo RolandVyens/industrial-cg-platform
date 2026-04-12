@@ -133,6 +133,8 @@ static void rna_Main_ID_remove(Main *bmain,
     id_ptr->invalidate();
     /* Force full redraw, mandatory to avoid crashes when running this from UI... */
     WM_main_add_notifier(NC_WINDOW, nullptr);
+    WM_main_add_notifier(NC_SCENE | ND_OB_ACTIVE, nullptr);
+    WM_main_add_notifier(NC_SCENE | ND_LAYER_CONTENT, nullptr);
   }
   else if (ID_REAL_USERS(id) <= 0) {
     const int flag = (do_id_user ? 0 : LIB_ID_FREE_NO_USER_REFCOUNT) |
@@ -309,7 +311,7 @@ static bNodeTree *rna_Main_nodetree_new(Main *bmain, const char *name, int type)
 
   bke::bNodeTreeType *typeinfo = rna_node_tree_type_from_enum(type);
   if (typeinfo) {
-    bNodeTree *ntree = bke::node_tree_add_tree(bmain, safe_name, typeinfo->idname);
+    bNodeTree *ntree = bke::node_tree_add_tree(bmain, safe_name, typeinfo->idname.ref());
     BKE_main_ensure_invariants(*bmain);
 
     id_us_min(&ntree->id);

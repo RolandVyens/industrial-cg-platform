@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2026-02-14 01:12+0000\n"
 "Last-Translator: Timo Hoetmer <timo@timohoetmer.nl>\n"
 "Language-Team: Dutch <https://translate.blender.org/projects/blender-ui/ui/nl/>\n"
@@ -733,14 +733,6 @@ msgstr "Onderkant"
 
 msgid "Place the Mix node at the same height as the lowest node"
 msgstr "Plaats de Mix node op dezelfde hoogte als de laagste node"
-
-
-msgid "Show Hotkey List"
-msgstr "Toon Hotkey Lijst"
-
-
-msgid "Expand this box into a list of all the hotkeys for functions in this addon"
-msgstr "Bereid deze box uit tot een lijst van alle sneltoetsen voor functies in deze addon"
 
 
 msgid "Fribidi Library"
@@ -3418,10 +3410,6 @@ msgid "Show Lines"
 msgstr "Toon Lijnen"
 
 
-msgid "Fill"
-msgstr "Vul"
-
-
 msgid "Active Layer"
 msgstr "Actieve Laag"
 
@@ -3432,6 +3420,10 @@ msgstr "Willekeurige Instellingen"
 
 msgid "Mode Type"
 msgstr "Type Modus"
+
+
+msgid "Fill"
+msgstr "Vul"
 
 
 msgid "Object Path"
@@ -3966,44 +3958,8 @@ msgid "Blend Factor"
 msgstr "Blend Factor"
 
 
-msgid "Blend Type"
-msgstr "Blend Type"
-
-
 msgid "Mode used to mix with texture output color"
 msgstr "Modus gebruikt om te mixen met textuur output-kleur"
-
-
-msgid "Mix"
-msgstr "Mix"
-
-
-msgid "Darken"
-msgstr "Verdonker"
-
-
-msgid "Lighten"
-msgstr "Verlicht"
-
-
-msgid "Overlay"
-msgstr "Overlay"
-
-
-msgid "Soft Light"
-msgstr "Zacht Licht"
-
-
-msgid "Linear Light"
-msgstr "Lineair Licht"
-
-
-msgid "Difference"
-msgstr "Verschil"
-
-
-msgid "Divide"
-msgstr "Delen"
 
 
 msgid "Brightness"
@@ -4508,6 +4464,10 @@ msgid "Value Offset"
 msgstr "Waardeverschuiving"
 
 
+msgid "Blend Type"
+msgstr "Blend Type"
+
+
 msgid "Roughness"
 msgstr "Ruwheid"
 
@@ -4846,6 +4806,10 @@ msgstr "Herhaal"
 
 msgid "Grease Pencil Layer"
 msgstr "Vetkrijt laag"
+
+
+msgid "Divide"
+msgstr "Delen"
 
 
 msgid "Red"
@@ -5483,6 +5447,10 @@ msgid "Current Frame"
 msgstr "Huidige Frame"
 
 
+msgid "Restore Frame"
+msgstr "Herstel Frame"
+
+
 msgid "Rigid Body World"
 msgstr "Star Lichaam Wereld"
 
@@ -5733,12 +5701,40 @@ msgid "Selected Objects"
 msgstr "Geselecteerde Objecten"
 
 
+msgid "Mix"
+msgstr "Mix"
+
+
+msgid "Difference"
+msgstr "Verschil"
+
+
 msgid "Max Angle"
 msgstr "Maximale Hoek"
 
 
 msgid "Min Angle"
 msgstr "Minimale Hoek"
+
+
+msgid "Darken"
+msgstr "Verdonker"
+
+
+msgid "Lighten"
+msgstr "Verlicht"
+
+
+msgid "Overlay"
+msgstr "Overlay"
+
+
+msgid "Soft Light"
+msgstr "Zacht Licht"
+
+
+msgid "Linear Light"
+msgstr "Lineair Licht"
 
 
 msgctxt "FreestyleLineStyle"
@@ -5771,18 +5767,6 @@ msgid "Dots"
 msgstr "Stippen"
 
 
-msgid "Show/Hide"
-msgstr "Toon/Verberg"
-
-
-msgid "Names"
-msgstr "Namen"
-
-
-msgid "Layout"
-msgstr "Indeling"
-
-
 msgid "Mirror"
 msgstr "Spiegel"
 
@@ -5801,6 +5785,10 @@ msgstr "Selecteer Vergelijkbaar"
 
 msgid "Select Linked"
 msgstr "Selecteer Aaneengesloten"
+
+
+msgid "Import"
+msgstr "Importeren"
 
 
 msgid "Light"
@@ -5823,6 +5811,10 @@ msgid "Quick Effects"
 msgstr "Snelle Effecten"
 
 
+msgid "Show/Hide"
+msgstr "Toon/Verberg"
+
+
 msgid "Convert"
 msgstr "Converteer"
 
@@ -5835,8 +5827,12 @@ msgid "Clear Transform"
 msgstr "Maak Transformatie Leeg"
 
 
-msgid "Import"
-msgstr "Importeren"
+msgid "Names"
+msgstr "Namen"
+
+
+msgid "Layout"
+msgstr "Indeling"
 
 
 msgctxt "MovieClip"
@@ -7866,10 +7862,6 @@ msgid "New Node Tree"
 msgstr "Nieuwe Node Boom"
 
 
-msgid "Current"
-msgstr "Huidige"
-
-
 msgctxt "Operator"
 msgid "Toggle Node Options"
 msgstr "Node Opties Aan/Uit"
@@ -8653,10 +8645,6 @@ msgstr "Voeg Render Beeld Toe"
 msgctxt "Operator"
 msgid "Remove Render View"
 msgstr "Verwijder Render Beeld"
-
-
-msgid "Restore Frame"
-msgstr "Herstel Frame"
 
 
 msgctxt "Operator"
@@ -10148,6 +10136,10 @@ msgid "Particle Properties"
 msgstr "Deeltjeseigenschappen"
 
 
+msgid "Current"
+msgstr "Huidige"
+
+
 msgid "Find Text"
 msgstr "Vind Tekst"
 
@@ -10616,6 +10608,10 @@ msgid "Rotation"
 msgstr "Rotatie"
 
 
+msgid "Frame Range Start"
+msgstr "Framebereik Start"
+
+
 msgid "Frame Range Before"
 msgstr "Framebereik Voor"
 
@@ -10631,10 +10627,6 @@ msgstr "Berekenen..."
 
 msgid "Before"
 msgstr "Voordat"
-
-
-msgid "Frame Range Start"
-msgstr "Framebereik Start"
 
 
 msgctxt "Operator"
@@ -11231,6 +11223,16 @@ msgstr "Annotatie:"
 
 
 msgctxt "Operator"
+msgid "Save Copy..."
+msgstr "Sla Kopie Op..."
+
+
+msgctxt "Operator"
+msgid "Save Incremental"
+msgstr "Incrementeel Opslaan"
+
+
+msgctxt "Operator"
 msgid "Quit"
 msgstr "Sluit af"
 
@@ -11288,16 +11290,6 @@ msgstr "Vorige Werkplaats"
 msgctxt "Operator"
 msgid "Next Workspace"
 msgstr "Volgende Werkplaats"
-
-
-msgctxt "Operator"
-msgid "Save Copy..."
-msgstr "Sla Kopie Op..."
-
-
-msgctxt "Operator"
-msgid "Save Incremental"
-msgstr "Incrementeel Opslaan"
 
 
 msgctxt "Operator"
@@ -11940,10 +11932,6 @@ msgid "Copy All to Selected"
 msgstr "Kopieer Alles naar Geselecteerd"
 
 
-msgid "Value:"
-msgstr "Waarde:"
-
-
 msgid "OK"
 msgstr "OK"
 
@@ -12307,6 +12295,10 @@ msgstr "Afbeeldingen"
 
 msgid "Videos"
 msgstr "Video's"
+
+
+msgid "Value:"
+msgstr "Waarde:"
 
 
 msgid "It cannot be left blank"

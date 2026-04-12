@@ -25,10 +25,10 @@ FRAGMENT_SHADER_CREATE_INFO(eevee_surf_shadow_atomic)
 
 #include "eevee_nodetree_frag_lib.glsl"
 #include "eevee_sampling_lib.glsl"
-#include "eevee_shadow_tilemap_lib.glsl"
+#include "eevee_shadow_tilemap_lib.bsl.hh"
 #include "eevee_surf_lib.glsl"
 
-float4 closure_to_rgba(Closure cl)
+float4 closure_to_rgba(Closure /*cl*/)
 {
   return float4(0.0f);
 }

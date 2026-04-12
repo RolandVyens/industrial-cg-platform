@@ -6,6 +6,7 @@
  * \ingroup spview3d
  */
 
+#include <algorithm>
 #include <cfloat>
 #include <cstring>
 
@@ -119,8 +120,8 @@ struct CurvesDataPanelState {
   char cyclic;
 
   float fill_opacity;
-  int start_cap;
-  int end_cap;
+  int8_t start_cap;
+  int8_t end_cap;
   float softness;
   float u_scale;
   float aspect_ratio;
@@ -491,9 +492,11 @@ static bool apply_to_curves_point_selection(const int tot,
 
     bke::SpanAttributeWriter<float3> handles =
         curves.attributes_for_write().lookup_for_write_span<float3>(handles_attribute);
-    selection.foreach_index(GrainSize(2048), [&](const int point) {
-      apply_raw_diff_v3(handles.span[point], tot, ve_median.location, median.location);
-    });
+    selection.foreach_index(
+        [&](const int point) {
+          apply_raw_diff_v3(handles.span[point], tot, ve_median.location, median.location);
+        },
+        exec_mode::grain_size(2048));
     handles.finish();
 
     changed = true;
@@ -537,6 +540,10 @@ struct CurvesSelectionStatus {
   int resolution_max = 0;
 
   StatusValue<float> fill_opacity;
+  /* Use int for start_cap and end_cap, even though the underlying
+   * attribute is int8_t. The statusvalue is used to hold the
+   * summation of the value over all curves, so it needs the headroom.
+   */
   StatusValue<int> start_cap;
   StatusValue<int> end_cap;
   StatusValue<float> softness;
@@ -699,7 +706,7 @@ static void v3d_editvertex_buts(
   bool has_skinradius = false;
   PointerRNA data_ptr;
 
-  copy_vn_fl(reinterpret_cast<float *>(&median_basis), TRANSFORM_MEDIAN_ARRAY_LEN, 0.0f);
+  std::fill_n(reinterpret_cast<float *>(&median_basis), TRANSFORM_MEDIAN_ARRAY_LEN, 0.0f);
   tot = totedgedata = totcurvedata = totlattdata = totcurvebweight = 0;
 
   if (ob->type == OB_MESH) {
@@ -1777,9 +1784,10 @@ static void do_view3d_vgroup_buttons(bContext *C, void * /*arg*/, int event)
     return;
   }
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   ed::object::vgroup_vert_active_mirror(ob, event - B_VGRP_PNL_EDIT_SINGLE);
   DEG_id_tag_update(ob->data, ID_RECALC_GEOMETRY);
@@ -1788,9 +1796,10 @@ static void do_view3d_vgroup_buttons(bContext *C, void * /*arg*/, int event)
 
 static bool view3d_panel_vgroup_poll(const bContext *C, PanelType * /*pt*/)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   if (ob && (BKE_object_is_in_editmode_vgroup(ob) || BKE_object_is_in_wpaint_select_vert(ob))) {
     MDeformVert *dvert_act = ED_mesh_active_dvert_get_only(ob);
@@ -1817,9 +1826,10 @@ static void update_active_vertex_weight(bContext *C, void *arg1, void * /*arg2*/
 static void view3d_panel_vgroup(const bContext *C, Panel *panel)
 {
   ui::Block *block = panel->layout->absolute().block();
+  const Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   View3D *v3d = CTX_wm_view3d(C);
   TransformProperties *tfp = v3d_transform_props_ensure(v3d);
@@ -2171,10 +2181,11 @@ static void v3d_editmetaball_buts(ui::Layout &layout, Object *ob)
 
 static void do_view3d_region_buttons(bContext *C, void * /*index*/, int event)
 {
+  const Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   switch (event) {
@@ -2202,18 +2213,20 @@ static void do_view3d_region_buttons(bContext *C, void * /*index*/, int event)
 
 static bool view3d_panel_transform_poll(const bContext *C, PanelType * /*pt*/)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   return (BKE_view_layer_active_base_get(view_layer) != nullptr);
 }
 
 static void view3d_panel_transform(const bContext *C, Panel *panel)
 {
   ui::Block *block;
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   Object *obedit = OBEDIT_FROM_OBACT(ob);
 
@@ -2252,9 +2265,10 @@ static void view3d_panel_transform(const bContext *C, Panel *panel)
 
 static bool view3d_panel_curve_data_poll(const bContext *C, PanelType * /*pt*/)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   return (ob && ELEM(ob->type, OB_GREASE_PENCIL, OB_CURVES) && BKE_object_is_in_editmode(ob));
 }
@@ -2265,9 +2279,10 @@ static void apply_to_active_object(
                      const IndexMask &selection,
                      bke::CurvesGeometry &curves)> curves_geometry_handler)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   View3D *v3d = CTX_wm_view3d(C);
@@ -2334,23 +2349,25 @@ static void update_custom_knots(const OffsetIndices<int> &src_custom_knots_by_cu
     const VArray<bool> cyclic = curves.cyclic();
     MutableSpan<float> custom_knots = curves.nurbs_custom_knots_for_write();
 
-    custom_knot_curves.foreach_index(GrainSize(512), [&](const int curve) {
-      const IndexRange dst_knots = custom_knots_by_curve[curve];
-      const IndexRange src_knots = src_custom_knots_by_curve[curve];
-      if (src_knots.is_empty()) {
-        const int points_num = points_by_curve[curve].size();
-        const int order = orders[curve];
-        const bool is_cyclic = cyclic[curve];
-        Array<float> knots_buffer(bke::curves::nurbs::knots_num(points_num, order, is_cyclic));
-        bke::curves::nurbs::calculate_knots(
-            points_num, KnotsMode(src_knot_modes[curve]), order, is_cyclic, knots_buffer);
-        custom_knots.slice(dst_knots).copy_from(
-            knots_buffer.as_span().take_front(dst_knots.size()));
-      }
-      else {
-        custom_knots.slice(dst_knots).copy_from(src_custom_knots.slice(src_knots));
-      }
-    });
+    custom_knot_curves.foreach_index(
+        [&](const int curve) {
+          const IndexRange dst_knots = custom_knots_by_curve[curve];
+          const IndexRange src_knots = src_custom_knots_by_curve[curve];
+          if (src_knots.is_empty()) {
+            const int points_num = points_by_curve[curve].size();
+            const int order = orders[curve];
+            const bool is_cyclic = cyclic[curve];
+            Array<float> knots_buffer(bke::curves::nurbs::knots_num(points_num, order, is_cyclic));
+            bke::curves::nurbs::calculate_knots(
+                points_num, KnotsMode(src_knot_modes[curve]), order, is_cyclic, knots_buffer);
+            custom_knots.slice(dst_knots).copy_from(
+                knots_buffer.as_span().take_front(dst_knots.size()));
+          }
+          else {
+            custom_knots.slice(dst_knots).copy_from(src_custom_knots.slice(src_knots));
+          }
+        },
+        exec_mode::grain_size(512));
   }
 }
 
@@ -2417,15 +2434,17 @@ static void handle_curves_order(bContext *C, void *, void *)
 
         bool knot_modes_changed = false;
 
-        selection.foreach_index(GrainSize(512), [&](const int curve) {
-          if (orders[curve] != modified_state.order &&
-              nurbs_knot_modes[curve] == NURBS_KNOT_MODE_CUSTOM)
-          {
-            nurbs_knot_modes[curve] = NURBS_KNOT_MODE_NORMAL;
-            knot_modes_changed = true;
-          }
-          orders[curve] = modified_state.order;
-        });
+        selection.foreach_index(
+            [&](const int curve) {
+              if (orders[curve] != modified_state.order &&
+                  nurbs_knot_modes[curve] == NURBS_KNOT_MODE_CUSTOM)
+              {
+                nurbs_knot_modes[curve] = NURBS_KNOT_MODE_NORMAL;
+                knot_modes_changed = true;
+              }
+              orders[curve] = modified_state.order;
+            },
+            exec_mode::grain_size(512));
 
         /**
          * Custom knots need to be recopied, if some curves loose NURBS_KNOT_MODE_CUSTOM.
@@ -2538,13 +2557,15 @@ static void handle_curves_end_cap(bContext *C, void *, void *)
          const IndexMask &selection,
          bke::CurvesGeometry &curves) {
         bke::MutableAttributeAccessor attributes = curves.attributes_for_write();
-        bke::SpanAttributeWriter<int> end_cap = attributes.lookup_or_add_for_write_span<int>(
+        bke::SpanAttributeWriter<int8_t> end_cap = attributes.lookup_or_add_for_write_span<int8_t>(
             "end_cap",
             bke::AttrDomain::Curve,
             bke::AttributeInitVArray(
-                VArray<int>::from_single(GP_STROKE_CAP_TYPE_ROUND, curves.curves_num())));
-        index_mask::masked_fill(end_cap.span, modified_state.end_cap, selection);
-        end_cap.finish();
+                VArray<int8_t>::from_single(GP_STROKE_CAP_TYPE_ROUND, curves.curves_num())));
+        if (end_cap) {
+          index_mask::masked_fill(end_cap.span, modified_state.end_cap, selection);
+          end_cap.finish();
+        }
       });
 }
 
@@ -2558,22 +2579,45 @@ static void handle_curves_start_cap(bContext *C, void *, void *)
          const IndexMask &selection,
          bke::CurvesGeometry &curves) {
         bke::MutableAttributeAccessor attributes = curves.attributes_for_write();
-        bke::SpanAttributeWriter<int> start_cap = attributes.lookup_or_add_for_write_span<int>(
-            "start_cap",
-            bke::AttrDomain::Curve,
-            bke::AttributeInitVArray(
-                VArray<int>::from_single(GP_STROKE_CAP_TYPE_ROUND, curves.curves_num())));
-        index_mask::masked_fill(start_cap.span, modified_state.start_cap, selection);
-        start_cap.finish();
+        bke::SpanAttributeWriter<int8_t> start_cap =
+            attributes.lookup_or_add_for_write_span<int8_t>(
+                "start_cap",
+                bke::AttrDomain::Curve,
+                bke::AttributeInitVArray(
+                    VArray<int8_t>::from_single(GP_STROKE_CAP_TYPE_ROUND, curves.curves_num())));
+        if (start_cap) {
+          index_mask::masked_fill(start_cap.span, modified_state.start_cap, selection);
+          start_cap.finish();
+        }
       });
 }
 
 constexpr std::array<EnumPropertyItem, 5> enum_curve_knot_mode_items{{
-    {NURBS_KNOT_MODE_NORMAL, "NORMAL", ICON_NONE, "Normal", ""},
-    {NURBS_KNOT_MODE_ENDPOINT, "ENDPOINT", ICON_NONE, "Endpoint", ""},
-    {NURBS_KNOT_MODE_BEZIER, "BEZIER", ICON_NONE, "Bezier", ""},
-    {NURBS_KNOT_MODE_ENDPOINT_BEZIER, "ENDPOINT_BEZIER", ICON_NONE, "Endpoint Bezier", ""},
-    {NURBS_KNOT_MODE_CUSTOM, "CUSTOM", ICON_NONE, "Custom", ""},
+    {NURBS_KNOT_MODE_NORMAL,
+     "NORMAL",
+     ICON_NONE,
+     CTX_N_(BLT_I18NCONTEXT_ID_GPENCIL, "Normal"),
+     ""},
+    {NURBS_KNOT_MODE_ENDPOINT,
+     "ENDPOINT",
+     ICON_NONE,
+     CTX_N_(BLT_I18NCONTEXT_ID_GPENCIL, "Endpoint"),
+     ""},
+    {NURBS_KNOT_MODE_BEZIER,
+     "BEZIER",
+     ICON_NONE,
+     CTX_N_(BLT_I18NCONTEXT_ID_GPENCIL, "Bézier"),
+     ""},
+    {NURBS_KNOT_MODE_ENDPOINT_BEZIER,
+     "ENDPOINT_BEZIER",
+     ICON_NONE,
+     CTX_N_(BLT_I18NCONTEXT_ID_GPENCIL, "Endpoint Bézier"),
+     ""},
+    {NURBS_KNOT_MODE_CUSTOM,
+     "CUSTOM",
+     ICON_NONE,
+     CTX_N_(BLT_I18NCONTEXT_ID_GPENCIL, "Custom"),
+     ""},
 }};
 
 static void knot_modes_menu(bContext * /*C*/, ui::Layout *layout, void *knot_mode_p)
@@ -2585,7 +2629,7 @@ static void knot_modes_menu(bContext * /*C*/, ui::Layout *layout, void *knot_mod
   for (const EnumPropertyItem &item : enum_curve_knot_mode_items) {
     uiDefButI(block,
               ui::ButtonType::ButMenu,
-              IFACE_(item.name),
+              CTX_IFACE_(BLT_I18NCONTEXT_ID_GPENCIL, item.name),
               0,
               0,
               UI_UNIT_X * 5,
@@ -2611,7 +2655,7 @@ static void grease_pencil_cap_menu(bContext * /*C*/, ui::Layout *layout, void *c
   for (const EnumPropertyItem &item : enum_grease_pencil_cap_items) {
     uiDefButI(block,
               ui::ButtonType::ButMenu,
-              IFACE_(item.name),
+              CTX_IFACE_(BLT_I18NCONTEXT_ID_GPENCIL, item.name),
               0,
               0,
               UI_UNIT_X * 5,
@@ -2627,9 +2671,10 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
 {
   using namespace ed::curves;
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *ob = BKE_view_layer_active_object_get(view_layer);
   ui::Block *block = panel->layout->block();
 
@@ -2736,23 +2781,25 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
       });
 
   if (status.nurbs_count == status.curve_count) {
-    add_labeled_field(
-        IFACE_("Knot Mode"),
-        status.nurbs_knot_mode_max * status.nurbs_count == status.nurbs_knot_mode_sum,
-        [&]() {
-          ui::Button *but = uiDefMenuBut(block,
-                                         knot_modes_menu,
-                                         &modified.nurbs_knot_mode,
-                                         enum_curve_knot_mode_items[modified.nurbs_knot_mode].name,
-                                         0,
-                                         0,
-                                         butw,
-                                         buth,
-                                         "");
-          button_type_set_menu_from_pulldown(but);
-          button_func_set(but, handle_curves_knot_mode, nullptr, nullptr);
-          return but;
-        });
+    add_labeled_field(IFACE_("Knot Mode"),
+                      status.nurbs_knot_mode_max * status.nurbs_count ==
+                          status.nurbs_knot_mode_sum,
+                      [&]() {
+                        ui::Button *but = uiDefMenuBut(
+                            block,
+                            knot_modes_menu,
+                            &modified.nurbs_knot_mode,
+                            CTX_IFACE_(BLT_I18NCONTEXT_ID_GPENCIL,
+                                       enum_curve_knot_mode_items[modified.nurbs_knot_mode].name),
+                            0,
+                            0,
+                            butw,
+                            buth,
+                            "");
+                        button_type_set_menu_from_pulldown(but);
+                        button_func_set(but, handle_curves_knot_mode, nullptr, nullptr);
+                        return but;
+                      });
 
     add_labeled_field(
         IFACE_("Order"), status.order_max * status.nurbs_count == status.order_sum, [&]() {
@@ -2780,7 +2827,7 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
   }
 
   if (ob->type == OB_GREASE_PENCIL) {
-    add_labeled_field("Fill Opacity",
+    add_labeled_field(IFACE_("Fill Opacity"),
                       is_equal(status.fill_opacity.value_max * status.curve_count,
                                status.fill_opacity.value_sum),
                       [&]() {
@@ -2801,32 +2848,35 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
                         return but;
                       });
 
-    add_labeled_field(
-        "Start Cap",
-        status.start_cap.value_max * status.curve_count == status.start_cap.value_sum,
-        [&]() {
-          ui::Button *but = uiDefMenuBut(block,
-                                         grease_pencil_cap_menu,
-                                         &modified.start_cap,
-                                         enum_grease_pencil_cap_items[modified.start_cap].name,
-                                         0,
-                                         0,
-                                         butw,
-                                         buth,
-                                         "");
-          button_type_set_menu_from_pulldown(but);
-          button_func_set(but, handle_curves_start_cap, nullptr, nullptr);
-          return but;
-        });
+    add_labeled_field(IFACE_("Start Cap"),
+                      status.start_cap.value_max * status.curve_count ==
+                          status.start_cap.value_sum,
+                      [&]() {
+                        ui::Button *but = uiDefMenuBut(
+                            block,
+                            grease_pencil_cap_menu,
+                            &modified.start_cap,
+                            CTX_IFACE_(BLT_I18NCONTEXT_ID_GPENCIL,
+                                       enum_grease_pencil_cap_items[modified.start_cap].name),
+                            0,
+                            0,
+                            butw,
+                            buth,
+                            "");
+                        button_type_set_menu_from_pulldown(but);
+                        button_func_set(but, handle_curves_start_cap, nullptr, nullptr);
+                        return but;
+                      });
 
-    add_labeled_field("End Cap",
+    add_labeled_field(IFACE_("End Cap"),
                       status.end_cap.value_max * status.curve_count == status.end_cap.value_sum,
                       [&]() {
                         ui::Button *but = uiDefMenuBut(
                             block,
                             grease_pencil_cap_menu,
                             &modified.end_cap,
-                            enum_grease_pencil_cap_items[modified.end_cap].name,
+                            CTX_IFACE_(BLT_I18NCONTEXT_ID_GPENCIL,
+                                       enum_grease_pencil_cap_items[modified.end_cap].name),
                             0,
                             0,
                             butw,
@@ -2838,7 +2888,7 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
                       });
 
     add_labeled_field(
-        "Softness",
+        IFACE_("Softness"),
         is_equal(status.softness.value_max * status.curve_count, status.softness.value_sum),
         [&]() {
           ui::Button *but = uiDefButF(block,
@@ -2859,7 +2909,7 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
         });
 
     add_labeled_field(
-        "U Scale",
+        IFACE_("U Scale"),
         is_equal(status.u_scale.value_max * status.curve_count, status.u_scale.value_sum),
         [&]() {
           ui::Button *but = uiDefButF(block,
@@ -2879,7 +2929,7 @@ static void view3d_panel_curve_data(const bContext *C, Panel *panel)
           return but;
         });
 
-    add_labeled_field("Aspect Ratio",
+    add_labeled_field(IFACE_("Aspect Ratio"),
                       is_equal(status.aspect_ratio.value_max * status.curve_count,
                                status.aspect_ratio.value_sum),
                       [&]() {

@@ -90,6 +90,18 @@ enum eIDPropertyFlag {
 };
 
 /**
+ * #Library.flag
+ *
+ * Some of these flags define a 'virtual' library, which may not be an actual blendfile, store
+ * 'archived' embedded data, etc. IDs contained in these virtual libraries are _not_ managed by
+ * regular linking code.
+ */
+enum LibraryFlag {
+  /** The library is an 'archive' that only contains embedded linked data. */
+  LIBRARY_FLAG_IS_ARCHIVE = 1 << 0,
+};
+
+/**
  * Defines for working with IDs.
  *
  * The tags represent types! This is a dirty way of enabling RTTI. The

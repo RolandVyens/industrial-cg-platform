@@ -58,6 +58,7 @@ struct bNodeTreeExec;
 
 class CPPType;
 namespace nodes {
+struct GeneratedTreeSrnaData;
 class NodeMultiFunctionBuilder;
 class GeoNodeExecParams;
 class NodeDeclaration;
@@ -149,6 +150,12 @@ using NodeBlendWriteFunction = void (*)(const bNodeTree &tree,
                                         BlendWriter &writer);
 using NodeBlendDataReadFunction = void (*)(bNodeTree &tree, bNode &node, BlendDataReader &reader);
 
+using SocketMakeGeometryNodesInputSrnaFunction =
+    void (*)(const bNodeTree &tree,
+             StructRNA &srna,
+             const bNodeTreeInterfaceSocket &io_socket,
+             nodes::GeneratedTreeSrnaData &r_generated);
+
 /**
  * \brief Defines a socket type.
  *
@@ -156,7 +163,7 @@ using NodeBlendDataReadFunction = void (*)(bNodeTree &tree, bNode &node, BlendDa
  */
 struct bNodeSocketType {
   /** Identifier name. */
-  std::string idname;
+  UString idname;
   /** Type label. */
   std::string label;
   /** Sub-type label. */
@@ -208,6 +215,8 @@ struct bNodeSocketType {
   SocketGetGeometryNodesCPPValueFunction get_geometry_nodes_cpp_value = nullptr;
   /* Default value for this socket type. */
   const SocketValueVariant *geometry_nodes_default_value = nullptr;
+
+  SocketMakeGeometryNodesInputSrnaFunction make_geometry_nodes_input_srna = nullptr;
 };
 
 using NodeInitExecFunction = void *(*)(bNodeExecContext * context,
@@ -235,7 +244,7 @@ struct NodeInsertLinkParams {
  * implementing the node behavior.
  */
 struct bNodeType {
-  std::string idname;
+  UString idname;
   /** See bNode::type_legacy. */
   int type_legacy;
 
@@ -439,7 +448,7 @@ struct bNodeType {
    * to catch typos earlier. One can compare with `bNodeType::idname` directly if the idname might
    * not be registered.
    */
-  bool is_type(StringRef query_idname) const;
+  bool is_type(UString query_idname) const;
 };
 
 /** #bNodeType.nclass (for add-menu and themes). */
@@ -491,11 +500,11 @@ enum class NodeColorTag {
 using bNodeClassCallback = void (*)(void *calldata, int nclass, StringRefNull name);
 
 struct bNodeTreeType {
-  int type = 0;       /* type identifier */
-  std::string idname; /* identifier name */
+  int type = 0;   /* type identifier */
+  UString idname; /* identifier name */
 
   /* The ID name of group nodes for this type. */
-  std::string group_idname;
+  UString group_idname;
 
   std::string ui_name;
   std::string ui_description;
@@ -626,11 +635,11 @@ void node_tree_blend_write(BlendWriter *writer, bNodeTree *ntree);
 /** \name Generic API, Nodes
  * \{ */
 
-bNodeType *node_type_find(StringRef idname);
-StringRefNull node_type_find_alias(StringRefNull alias);
+bNodeType *node_type_find(UString idname);
+UString node_type_find_alias(UString alias);
 void node_register_type(bNodeType &ntype);
 void node_unregister_type(bNodeType &ntype);
-void node_register_alias(bNodeType &nt, StringRef alias);
+void node_register_alias(bNodeType &nt, UString alias);
 
 /**
  * Set the node type \a idname and \a type_legacy to "undefined" to prevent future access to broken
@@ -686,7 +695,7 @@ void node_modify_socket_type_static(
 
 bNode *node_add_node(const bContext *C,
                      bNodeTree &ntree,
-                     StringRef idname,
+                     UString idname,
                      std::optional<int> unique_identifier = std::nullopt);
 bNode *node_add_static_node(const bContext *C, bNodeTree &ntree, int type);
 
@@ -928,6 +937,7 @@ void node_tree_free_local_node(bNodeTree &ntree, bNode &node);
 void node_tree_update_all_new(Main &main);
 
 /** Update asset meta-data cache of data-block properties. */
+IDProperty *node_create_asset_meta_data_properties(const bNodeTree &node_tree);
 void node_update_asset_metadata(bNodeTree &node_tree);
 
 void node_tree_node_flag_set(bNodeTree &ntree, int flag, bool enable);
@@ -1152,7 +1162,7 @@ NodeColorTag node_color_tag(const bNode &node);
  * Initialize a new node type struct with default values and callbacks.
  */
 void node_type_base(bNodeType &ntype,
-                    std::string idname,
+                    UString idname,
                     std::optional<int16_t> legacy_type = std::nullopt);
 
 void node_type_socket_templates(bNodeType *ntype,
@@ -1200,8 +1210,8 @@ std::optional<eNodeSocketDatatype> grid_type_to_socket_type(VolumeGridType type)
  */
 class bNodeZoneType {
  public:
-  std::string input_idname;
-  std::string output_idname;
+  UString input_idname;
+  UString output_idname;
   int input_type;
   int output_type;
   int theme_id;
@@ -1231,7 +1241,7 @@ Span<int> all_zone_input_node_types();
 Span<int> all_zone_output_node_types();
 const bNodeZoneType *zone_type_by_node_type(const int node_type);
 
-inline bool bNodeType::is_type(const StringRef query_idname) const
+inline bool bNodeType::is_type(const UString query_idname) const
 {
   /* Ensure that the given idname exists to check for typos. */
   BLI_assert(node_type_find(query_idname) != nullptr);

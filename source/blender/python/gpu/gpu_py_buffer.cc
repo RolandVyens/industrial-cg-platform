@@ -631,9 +631,10 @@ static void pygpu_buffer_strides_calc(const eGPUDataFormat format,
                                       const Py_ssize_t *shape,
                                       Py_ssize_t *r_strides)
 {
-  r_strides[0] = GPU_texture_dataformat_size(format);
-  for (int i = 1; i < shape_len; i++) {
-    r_strides[i] = r_strides[i - 1] * shape[i - 1];
+  Py_ssize_t stride = GPU_texture_dataformat_size(format);
+  for (int i = shape_len; i-- > 0;) {
+    r_strides[i] = stride;
+    stride *= shape[i];
   }
 }
 
@@ -686,18 +687,20 @@ static PyBufferProcs pygpu_buffer__tp_as_buffer = {
 PyDoc_STRVAR(
     /* Wrap. */
     pygpu_buffer__tp_doc,
-    ".. class:: Buffer(format, dimensions, data)\n"
+    ".. class:: Buffer\n"
     "\n"
     "   For Python access to GPU functions requiring a pointer.\n"
     "\n"
-    "   :param format: Format type to interpret the buffer.\n"
-    "      ``UINT_24_8`` is deprecated, use ``FLOAT`` instead.\n"
-    "   :type format: " PYDOC_DATAFORMAT_LITERAL
+    "   .. method:: __init__(format, dimensions, data)\n"
     "\n"
-    "   :param dimensions: Array describing the dimensions.\n"
-    "   :type dimensions: int | Sequence[int]\n"
-    "   :param data: Optional data array.\n"
-    "   :type data: Buffer | Sequence[float] | Sequence[int]\n");
+    "      :param format: Format type to interpret the buffer.\n"
+    "         ``UINT_24_8`` is deprecated, use ``FLOAT`` instead.\n"
+    "      :type format: " PYDOC_DATAFORMAT_LITERAL
+    "\n"
+    "      :param dimensions: Array describing the dimensions.\n"
+    "      :type dimensions: int | Sequence[int]\n"
+    "      :param data: Optional data array.\n"
+    "      :type data: Buffer | Sequence[float] | Sequence[int]\n");
 PyTypeObject BPyGPU_BufferType = {
     /*ob_base*/ PyVarObject_HEAD_INIT(nullptr, 0)
     /*tp_name*/ "Buffer",

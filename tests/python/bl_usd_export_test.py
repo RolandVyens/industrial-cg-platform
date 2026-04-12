@@ -302,7 +302,7 @@ class USDExportTest(AbstractUSDTest):
         #  - Frame 2: 2 faces and 2 materials [mat2, mat3]
         #  - Frame 3: 4 faces and 3 materials [mat2, mat3, mat2, mat1]
         #  - Frame 4: 4 faces and 2 materials [mat2, mat3, mat2, mat3]
-        dynamic_mesh_prim = UsdGeom.Mesh(stage.GetPrimAtPath("/root/dynamic_mesh/dynamic_mesh"))
+        dynamic_mesh_prim = UsdGeom.Mesh(stage.GetPrimAtPath("/root/dynamic_mesh/Mesh"))
         geom_subsets = UsdGeom.Subset.GetGeomSubsets(dynamic_mesh_prim)
         self.assertEqual(len(geom_subsets), 0)
 
@@ -521,7 +521,7 @@ class USDExportTest(AbstractUSDTest):
         self.assertEqual(shader_attr2.GetIdAttr().Get(), "UsdPrimvarReader_vector")
 
         self.assertEqual(shader_attr.GetInput("varname").Get(), "displayColor")
-        self.assertEqual(shader_attr1.GetInput("varname").Get(), "f_float")
+        self.assertEqual(shader_attr1.GetInput("varname").Get(), "ns:f_float")
         self.assertEqual(shader_attr2.GetInput("varname").Get(), "f_vec")
 
         self.assertEqual(shader_attr.GetOutput("result").GetTypeName().type.typeName, "GfVec3f")
@@ -1658,12 +1658,15 @@ class USDExportTest(AbstractUSDTest):
 
         # Check one final unit conversion using no /root xform at all (it's a different code path)
         bpy.ops.mesh.primitive_cube_add()
+        ob = bpy.data.objects[0]
+        ob.location = (.1, .2, .3)
 
         export_path = self.tempdir / f"usd_export_units_test_non_root.usda"
         self.export_and_validate(filepath=str(export_path), convert_scene_units="CENTIMETERS", root_prim_path="")
         stage = Usd.Stage.Open(str(export_path))
         xf = UsdGeom.Xformable(stage.GetPrimAtPath("/Cube"))
         self.assertEqual(self.round_vector(xf.GetScaleOp().Get()), [100, 100, 100])
+        self.assertEqual(self.round_vector(xf.GetTranslateOp().Get()), [10, 20, 30])
 
     def test_export_native_instancing_true(self):
         """Test exporting instanced objects to native (scne graph) instances."""

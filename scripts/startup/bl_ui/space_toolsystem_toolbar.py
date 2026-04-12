@@ -13,12 +13,17 @@
 
 import bpy
 
+from collections import (
+    namedtuple
+)
+
 from bpy.types import (
     Panel,
 )
 from bpy.app.translations import (
     pgettext_iface as iface_,
     pgettext_tip as tip_,
+    contexts as i18n_contexts,
 )
 
 from bl_ui.space_toolsystem_common import (
@@ -230,7 +235,7 @@ class _defs_annotate:
                 row.ui_units_x = 15
                 row.prop(props, "arrowstyle_start", text="Start")
                 row.separator()
-                row.prop(props, "arrowstyle_end", text="End")
+                row.prop(props, "arrowstyle_end", text="End", translation_context=i18n_contexts.id_curve)
             else:
                 col = layout.row().column(align=True)
                 col.prop(props, "arrowstyle_start", text="Style Start")
@@ -498,7 +503,18 @@ class _defs_view3d_select:
         )
 
 
+ToolDefaults = namedtuple("ToolDefaults", ["origin_base", "aspect_base", "origin_depth", "aspect_depth"])
+
+
 class _defs_view3d_add:
+
+    sculpt_tool_defaults = {
+        'CUBE': ToolDefaults('EDGE', 'FREE', 'EDGE', 'FREE'),
+        'CONE': ToolDefaults('CENTER', 'FIXED', 'EDGE', 'FREE'),
+        'CYLINDER': ToolDefaults('CENTER', 'FIXED', 'EDGE', 'FREE'),
+        'SPHERE_UV': ToolDefaults('CENTER', 'FIXED', 'CENTER', 'FIXED'),
+        'SPHERE_ICO': ToolDefaults('CENTER', 'FIXED', 'CENTER', 'FIXED'),
+    }
 
     @staticmethod
     def description_interactive_add(context, _item, _km, *, prefix):
@@ -564,12 +580,35 @@ class _defs_view3d_add:
             layout.row().prop(props, "plane_aspect_depth", expand=True)
         return show_extra
 
+    @staticmethod
+    def draw_settings_defaults_init(mode, tool, primitive_type):
+        if mode != 'SCULPT':
+            return
+
+        defaults = _defs_view3d_add.sculpt_tool_defaults[primitive_type]
+
+        props = tool.operator_properties("view3d.interactive_add")
+
+        if not props.is_property_set("plane_origin_base"):
+            props.plane_origin_base = defaults.origin_base
+
+        if not props.is_property_set("plane_aspect_base"):
+            props.plane_aspect_base = defaults.aspect_base
+
+        if not props.is_property_set("plane_origin_depth"):
+            props.plane_origin_depth = defaults.origin_depth
+
+        if not props.is_property_set("plane_aspect_depth"):
+            props.plane_aspect_depth = defaults.aspect_depth
+
     @ToolDef.from_fn
     def cube_add():
         def draw_settings(context, layout, tool, *, extra=False):
             show_extra = _defs_view3d_add.draw_settings_interactive_add(layout, context.tool_settings, tool, extra)
             if show_extra:
                 layout.popover("TOPBAR_PT_tool_settings_extra", text="...")
+
+            _defs_view3d_add.draw_settings_defaults_init(context.mode, tool, 'CUBE')
 
         return dict(
             idname="builtin.primitive_cube_add",
@@ -597,6 +636,8 @@ class _defs_view3d_add:
             if show_extra:
                 layout.popover("TOPBAR_PT_tool_settings_extra", text="...")
 
+            _defs_view3d_add.draw_settings_defaults_init(context.mode, tool, 'CONE')
+
         return dict(
             idname="builtin.primitive_cone_add",
             label="Add Cone",
@@ -622,6 +663,9 @@ class _defs_view3d_add:
 
             if show_extra:
                 layout.popover("TOPBAR_PT_tool_settings_extra", text="...")
+
+            _defs_view3d_add.draw_settings_defaults_init(context.mode, tool, 'CYLINDER')
+
         return dict(
             idname="builtin.primitive_cylinder_add",
             label="Add Cylinder",
@@ -647,6 +691,9 @@ class _defs_view3d_add:
 
             if show_extra:
                 layout.popover("TOPBAR_PT_tool_settings_extra", text="...")
+
+            _defs_view3d_add.draw_settings_defaults_init(context.mode, tool, 'SPHERE_UV')
+
         return dict(
             idname="builtin.primitive_uv_sphere_add",
             label="Add UV Sphere",
@@ -671,6 +718,9 @@ class _defs_view3d_add:
 
             if show_extra:
                 layout.popover("TOPBAR_PT_tool_settings_extra", text="...")
+
+            _defs_view3d_add.draw_settings_defaults_init(context.mode, tool, 'SPHERE_ICO')
+
         return dict(
             idname="builtin.primitive_ico_sphere_add",
             label="Add Ico Sphere",
@@ -1885,11 +1935,25 @@ class _defs_sculpt:
 
     @ToolDef.from_fn
     def color_filter():
-        def draw_settings(_context, layout, tool):
+        def draw_settings(context, layout, tool):
             props = tool.operator_properties("sculpt.color_filter")
+            settings = context.tool_settings.sculpt
+            ups = settings.unified_paint_settings if settings else None
+            region_is_header = context.region.type == 'TOOL_HEADER'
+
             layout.prop(props, "type", expand=False)
-            if props.type == 'FILL':
-                layout.prop(props, "fill_color", expand=False)
+
+            if props.type == 'FILL' and ups:
+                row = layout.row(align=True)
+                if region_is_header:
+                    row.ui_units_x = 4
+                    row.prop(ups, "color", text="")
+                    row.prop(ups, "secondary_color", text="")
+                else:
+                    row.prop(ups, "color", text="")
+                    row.prop(ups, "secondary_color", text="")
+                    row.operator("paint.brush_colors_flip", icon='FILE_REFRESH', text="")
+
             layout.prop(props, "strength")
 
         return dict(
@@ -3903,6 +3967,8 @@ class VIEW3D_PT_tools_active(ToolSelectPanelHelper, Panel):
                 if _defs_sculpt.poll_multires(context)
                 else ()
             ),
+            None,
+            _tools_view3d_add,
             None,
             (
                 _defs_sculpt.mask_border,

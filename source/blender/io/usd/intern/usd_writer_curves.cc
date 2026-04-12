@@ -399,7 +399,9 @@ void USDCurvesWriter::set_writer_attributes(pxr::UsdGeomCurves &usd_curves,
   pxr::UsdAttribute attr_widths = usd_curves.CreateWidthsAttr(pxr::VtValue(), true);
   set_attribute(attr_widths, widths, time, usd_value_writer_);
 
-  usd_curves.SetWidthsInterpolation(interpolation);
+  if (!interpolation.IsEmpty()) {
+    usd_curves.SetWidthsInterpolation(interpolation);
+  }
 }
 
 static std::optional<pxr::TfToken> convert_blender_domain_to_usd(
@@ -471,7 +473,7 @@ void USDCurvesWriter::write_generic_data(const bke::CurvesGeometry &curves,
 
   const pxr::UsdTimeCode time = get_export_time_code();
   const pxr::TfToken pv_name(
-      make_safe_name(attr.name, usd_export_context_.export_params.allow_unicode));
+      make_safe_primvar_name(attr.name, usd_export_context_.export_params.allow_unicode));
   const pxr::UsdGeomPrimvarsAPI pv_api = pxr::UsdGeomPrimvarsAPI(usd_curves);
 
   pxr::UsdGeomPrimvar pv_attr = pv_api.CreatePrimvar(pv_name, *pv_type, *pv_interp);
@@ -489,7 +491,7 @@ void USDCurvesWriter::write_uv_data(const bke::AttributeIter &attr,
 
   const pxr::UsdTimeCode time = get_export_time_code();
   const pxr::TfToken pv_name(
-      make_safe_name(attr.name, usd_export_context_.export_params.allow_unicode));
+      make_safe_primvar_name(attr.name, usd_export_context_.export_params.allow_unicode));
   const pxr::UsdGeomPrimvarsAPI pv_api = pxr::UsdGeomPrimvarsAPI(usd_curves);
 
   pxr::UsdGeomPrimvar pv_uv = pv_api.CreatePrimvar(
@@ -682,7 +684,7 @@ void USDCurvesWriter::do_write(HierarchyContext &context)
 
   this->assign_materials(context, *usd_curves);
 
-  /* TODO: We cannot write custom privars for cyclic NURBS curves at the moment. */
+  /* TODO: We cannot write custom primvars for cyclic NURBS curves at the moment. */
   if (!is_cyclic || (is_cyclic && curve_type != CURVE_TYPE_NURBS)) {
     this->write_velocities(curves, *usd_curves);
     this->write_custom_data(curves, *usd_curves);

@@ -164,10 +164,10 @@ static void curve_blend_write(BlendWriter *writer, ID *id, const void *id_addres
   BKE_id_blend_write(writer, &cu->id);
 
   /* direct data */
-  BLO_write_pointer_array(writer, cu->totcol, cu->mat);
+  writer->write_pointer_array(cu->totcol, cu->mat);
 
   if (cu->ob_type == OB_FONT) {
-    BLO_write_string(writer, cu->str);
+    writer->write_string(cu->str);
     writer->write_struct_array(cu->len_char32 + 1, cu->strinfo);
     writer->write_struct_array(cu->totbox, cu->tb);
   }
@@ -183,10 +183,10 @@ static void curve_blend_write(BlendWriter *writer, ID *id, const void *id_addres
       else {
         writer->write_struct_array(nu.pntsu * nu.pntsv, nu.bp);
         if (nu.knotsu) {
-          BLO_write_float_array(writer, KNOTSU(&nu), nu.knotsu);
+          writer->write_float_array(KNOTSU(&nu), nu.knotsu);
         }
         if (nu.knotsv) {
-          BLO_write_float_array(writer, KNOTSV(&nu), nu.knotsv);
+          writer->write_float_array(KNOTSV(&nu), nu.knotsv);
         }
       }
     }
@@ -3011,7 +3011,9 @@ void BKE_curve_bevelList_make(Object *ob, const ListBaseT<Nurb> *nurbs, const bo
     if (CU_IS_2D(cu)) {
       sd = sortdata;
       for (a = 0; a < poly; a++, sd++) {
+        BLI_assert(sd->bl->reversed == false);
         if (sd->bl->hole == sd->dir) {
+          sd->bl->reversed = true;
           BevList *bl = sd->bl;
           bevp1 = bl->bevpoints;
           bevp2 = bevp1 + (bl->nr - 1);

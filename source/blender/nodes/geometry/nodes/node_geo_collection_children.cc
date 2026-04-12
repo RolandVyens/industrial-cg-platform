@@ -20,10 +20,11 @@ namespace blender::nodes::node_geo_collection_children_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Collection>("Collection").optional_label();
-  b.add_input<decl::Bool>("Recursive").description("Recursively retrieve collections and objects");
-  b.add_output<decl::Collection>("Collections").structure_type(StructureType::List);
-  b.add_output<decl::Object>("Objects").structure_type(StructureType::List);
+  b.add_input<decl::Collection>("Collection"_ustr).optional_label();
+  b.add_input<decl::Bool>("Recursive"_ustr)
+      .description("Recursively retrieve collections and objects");
+  b.add_output<decl::Collection>("Collections"_ustr).structure_type(StructureType::List);
+  b.add_output<decl::Object>("Objects"_ustr).structure_type(StructureType::List);
 }
 
 static void collection_children_recursive(Collection *collection,
@@ -41,8 +42,8 @@ static void collection_children_recursive(Collection *collection,
 
 static void node_geo_exec(GeoNodeExecParams params)
 {
-  Collection *collection = params.extract_input<Collection *>("Collection");
-  const bool recursive = params.extract_input<bool>("Recursive");
+  Collection *collection = params.extract_input<Collection *>("Collection"_ustr);
+  const bool recursive = params.extract_input<bool>("Recursive"_ustr);
 
   if (collection == nullptr) {
     params.set_default_remaining_outputs();
@@ -71,9 +72,9 @@ static void node_geo_exec(GeoNodeExecParams params)
     obj_collections.extend(child_collections);
   }
 
-  params.set_output("Collections", List::from_container(std::move(child_collections)));
+  params.set_output("Collections"_ustr, List::from_container(std::move(child_collections)));
 
-  if (!params.output_is_required("Objects")) {
+  if (!params.output_is_required("Objects"_ustr)) {
     params.set_default_remaining_outputs();
     return;
   }
@@ -81,9 +82,8 @@ static void node_geo_exec(GeoNodeExecParams params)
   Set<const Object *> obj_visited;
   for (Collection *col : obj_collections) {
     for (CollectionObject &cob : col->gobject) {
-      Object *obj_original = DEG_get_original(cob.ob);
-      if (obj_visited.add(obj_original)) {
-        child_objects.append(obj_original);
+      if (obj_visited.add(cob.ob)) {
+        child_objects.append(cob.ob);
       }
     }
   }
@@ -92,14 +92,14 @@ static void node_geo_exec(GeoNodeExecParams params)
     return BLI_strcasecmp_natural(BKE_id_name(a->id), BKE_id_name(b->id)) < 0;
   });
 
-  params.set_output("Objects", List::from_container(std::move(child_objects)));
+  params.set_output("Objects"_ustr, List::from_container(std::move(child_objects)));
 }
 
 static void node_register()
 {
   static blender::bke::bNodeType ntype;
 
-  geo_node_type_base(&ntype, "GeometryNodeCollectionChildren");
+  geo_node_type_base(&ntype, "GeometryNodeCollectionChildren"_ustr);
   ntype.ui_name = "Collection Children";
   ntype.ui_description =
       "Retrieve a collection's object and collection children, in a name-based order";

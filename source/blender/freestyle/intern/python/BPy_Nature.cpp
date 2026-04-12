@@ -173,7 +173,6 @@ int Nature_Init(PyObject *module)
 
 static PyObject *BPy_Nature_bitwise(PyObject *a, int op, PyObject *b)
 {
-  BPy_Nature *result;
   long op1, op2, v;
 
   if (!BPy_Nature_Check(a) || !BPy_Nature_Check(b)) {
@@ -203,13 +202,7 @@ static PyObject *BPy_Nature_bitwise(PyObject *a, int op, PyObject *b)
       PyErr_BadArgument();
       return nullptr;
   }
-  if (v == 0) {
-    result = PyObject_NewVar(BPy_Nature, &Nature_Type, 0);
-  }
-  else {
-    result = (BPy_Nature *)PyLong_subtype_new(&Nature_Type, v);
-  }
-  return (PyObject *)result;
+  return PyLong_subtype_new(&Nature_Type, v);
 }
 
 static PyObject *BPy_Nature_and(PyObject *a, PyObject *b)

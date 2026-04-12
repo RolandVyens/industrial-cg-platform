@@ -44,7 +44,7 @@ void register_node_type_tex_at()
 {
   static bke::bNodeType ntype;
 
-  tex_node_type_base(&ntype, "TextureNodeAt", TEX_NODE_AT);
+  tex_node_type_base(&ntype, "TextureNodeAt"_ustr, TEX_NODE_AT);
   ntype.ui_name = "At";
   ntype.enum_name_legacy = "AT";
   ntype.nclass = NODE_CLASS_DISTORT;

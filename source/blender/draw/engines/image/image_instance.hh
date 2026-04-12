@@ -74,16 +74,17 @@ class Instance : public DrawEngine {
   {
     if (this->state.image->source != IMA_SRC_TILED) {
       void *lock;
-      ImBuf *buffer = BKE_image_acquire_ibuf(this->state.image, space_->get_image_user(), &lock);
+      ImBuf *buffer = BKE_image_acquire_ibuf_gpu(
+          this->state.image, space_->get_image_user(), &lock);
       BLI_SCOPED_DEFER([&]() { BKE_image_release_ibuf(this->state.image, buffer, lock); });
 
-      /* The image buffer already have a GPU texture, so use image space drawing. */
+      /* The image buffer already has a GPU texture, so use image space drawing. */
       if (buffer && buffer->gpu.texture) {
         return std::make_unique<ImageSpaceDrawingMode>(*this, buffer->gpu.texture);
       }
 
       /* Buffer does not exist or image will not fit in a GPU texture, use screen space drawing. */
-      if (!buffer || (!buffer->float_buffer.data && !buffer->byte_buffer.data) ||
+      if (!buffer || (!buffer->float_data() && !buffer->byte_data()) ||
           !GPU_is_safe_texture_size(buffer->x, buffer->y))
       {
         return std::make_unique<ScreenSpaceDrawingMode>(*this);
@@ -101,7 +102,7 @@ class Instance : public DrawEngine {
       ImageUser tile_user = space_->get_image_user() ? *space_->get_image_user() :
                                                        ImageUser{.scene = nullptr};
       tile_user.tile = image_tile.get_tile_number();
-      ImBuf *buffer = BKE_image_acquire_ibuf(this->state.image, &tile_user, nullptr);
+      ImBuf *buffer = BKE_image_acquire_ibuf_gpu(this->state.image, &tile_user, nullptr);
       BLI_SCOPED_DEFER([&]() { BKE_image_release_ibuf(this->state.image, buffer, nullptr); });
       if (!buffer) {
         continue;
@@ -188,7 +189,7 @@ class Instance : public DrawEngine {
     }
     else {
       GPU_framebuffer_clear_color_depth(
-          DRW_context_get()->viewport_framebuffer_list_get()->default_fb, float4(0.0), 1.0f);
+          DRW_context_get()->viewport_framebuffer_list_get()->default_fb, double4(0.0), 1.0f);
     }
     this->state.float_buffers.remove_unused_buffers();
     state.image = nullptr;

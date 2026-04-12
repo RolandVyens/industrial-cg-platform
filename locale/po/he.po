@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2026-01-20 15:20+0000\n"
 "Last-Translator: golden dragon <trmhtk2@gmail.com>\n"
 "Language-Team: Hebrew <https://translate.blender.org/projects/blender-ui/ui/he/>\n"
@@ -1250,10 +1250,6 @@ msgid "View"
 msgstr "הגוצת"
 
 
-msgid "Soft Light"
-msgstr "ךר רוא"
-
-
 msgid "Adjust the brightness of the texture"
 msgstr "םקרמה לש תוריהבה תא םאתה"
 
@@ -2224,6 +2220,10 @@ msgid "Target object from which the distance is measured"
 msgstr "קחרמה דדמיי וליאש דעי טקייבוא"
 
 
+msgid "Soft Light"
+msgstr "ךר רוא"
+
+
 msgid "Bézier Curve"
 msgstr "הייזב םוקע"
 
@@ -2245,10 +2245,6 @@ msgid "Grease Pencil Color"
 msgstr "Grease Pencil יאבצ"
 
 
-msgid "Layout"
-msgstr "הסירפ"
-
-
 msgid "Mirror"
 msgstr "הארמ"
 
@@ -2263,6 +2259,10 @@ msgstr "רמה"
 
 msgid "Face Data"
 msgstr "האפ ינותנ"
+
+
+msgid "Layout"
+msgstr "הסירפ"
 
 
 msgid "Proxy"
@@ -3167,10 +3167,6 @@ msgid "Saturation:"
 msgstr ":היוור"
 
 
-msgid "Value:"
-msgstr ":ךרע"
-
-
 msgid "Movie"
 msgstr "טרס"
 
@@ -3268,6 +3264,10 @@ msgstr "ץבוק ביתנ"
 
 msgid "File name"
 msgstr "ץבוק םש"
+
+
+msgid "Value:"
+msgstr ":ךרע"
 
 
 msgid "Select Layer"

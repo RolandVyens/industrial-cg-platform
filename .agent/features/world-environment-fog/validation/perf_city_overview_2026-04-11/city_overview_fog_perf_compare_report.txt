@@ -1,0 +1,11 @@
+World Environment Fog Performance Compare - Cyberpunk City Overview
+blend: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\cyberpunk_city_overview_test.blend
+original fog density: 0.054999999701976776
+scene.cycles.device: GPU
+preferences.compute_device_type: OPTIX
+fog_off_seconds: 11.447212
+fog_off_output: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\perf_city_overview_2026-04-11\cyberpunk_city_overview_fog_off_0001.png
+fog_on_seconds: 770.644151
+fog_on_output: E:\blender_modify\blender\.agent\features\world-environment-fog\validation\perf_city_overview_2026-04-11\cyberpunk_city_overview_fog_on_0001.png
+fog_on_vs_off_delta_seconds: 759.196940
+fog_on_vs_off_delta_percent: 6632.156

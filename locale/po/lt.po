@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-07-23 15:18+0000\n"
 "Last-Translator: Aras Pranckevičius <aras@nesnausk.org>\n"
 "Language-Team: Lithuanian <https://translate.blender.org/projects/blender-ui/ui/lt/>\n"
@@ -1199,6 +1199,10 @@ msgid "Flat"
 msgstr "Plokščia"
 
 
+msgid "Threshold"
+msgstr "Slenkstis"
+
+
 msgctxt "GPencil"
 msgid "Mode"
 msgstr "Veiksena"
@@ -1265,10 +1269,6 @@ msgid "Simplify"
 msgstr "Supaprastinti"
 
 
-msgid "Threshold"
-msgstr "Slenkstis"
-
-
 msgid "Hardness"
 msgstr "Kietumas"
 
@@ -1283,16 +1283,16 @@ msgid "Smooth"
 msgstr "Lygumas"
 
 
-msgid "Fill"
-msgstr "Užpildyti"
-
-
 msgid "Random Settings"
 msgstr "Atsitiktiniai nustatymai"
 
 
 msgid "Mode Type"
 msgstr "Veiksenos tipas"
+
+
+msgid "Fill"
+msgstr "Užpildyti"
 
 
 msgctxt "File browser"
@@ -1429,30 +1429,6 @@ msgstr "Rodymas"
 
 msgid "Temperature"
 msgstr "Temperatūra"
-
-
-msgid "Mix"
-msgstr "Maišyti"
-
-
-msgid "Darken"
-msgstr "Tamsinti"
-
-
-msgid "Lighten"
-msgstr "Šviesinti"
-
-
-msgid "Screen"
-msgstr "Ekranas"
-
-
-msgid "Difference"
-msgstr "Skirtumas"
-
-
-msgid "Divide"
-msgstr "Dalinti"
 
 
 msgid "Color Mode"
@@ -2295,6 +2271,10 @@ msgid "XR"
 msgstr "„XR“"
 
 
+msgid "Divide"
+msgstr "Dalinti"
+
+
 msgctxt "Color"
 msgid "Mode"
 msgstr "Veiksena"
@@ -3073,12 +3053,32 @@ msgid "Name of the modifier"
 msgstr "Keitiklio pavadinimas"
 
 
+msgid "Mix"
+msgstr "Maišyti"
+
+
+msgid "Difference"
+msgstr "Skirtumas"
+
+
 msgid "Modifier Type"
 msgstr "Keitiklio tipas"
 
 
 msgid "Type of the modifier"
 msgstr "Keitiklio tipas"
+
+
+msgid "Darken"
+msgstr "Tamsinti"
+
+
+msgid "Lighten"
+msgstr "Šviesinti"
+
+
+msgid "Screen"
+msgstr "Ekranas"
 
 
 msgid "ID Type"
@@ -3089,12 +3089,8 @@ msgid "Dots"
 msgstr "Taškai"
 
 
-msgid "Show/Hide"
-msgstr "Rodyti/Slėpti"
-
-
-msgid "Layout"
-msgstr "Išdėstymas/Maketas"
+msgid "Import"
+msgstr "Importuoti"
 
 
 msgid "Apply"
@@ -3105,8 +3101,12 @@ msgid "Track"
 msgstr "Sekti"
 
 
-msgid "Import"
-msgstr "Importuoti"
+msgid "Show/Hide"
+msgstr "Rodyti/Slėpti"
+
+
+msgid "Layout"
+msgstr "Išdėstymas/Maketas"
 
 
 msgid "Animals"
@@ -3473,13 +3473,14 @@ msgid "Import FBX animation"
 msgstr "Importuoti „FBX“ animaciją"
 
 
+msgctxt "Mesh"
+msgid "Angle"
+msgstr "Kampas"
+
+
 msgctxt "Action"
 msgid "Object"
 msgstr "Objektas"
-
-
-msgid "Add Mode"
-msgstr "Pridėti veikseną"
 
 
 msgid "BMP"
@@ -3808,10 +3809,6 @@ msgid "Show Color Tags"
 msgstr "Rodyti spalvos žymes"
 
 
-msgid "Show Thumbnails"
-msgstr "Rodyti miniatiūras"
-
-
 msgid "Toolbar"
 msgstr "Įrankių juosta"
 
@@ -4081,11 +4078,6 @@ msgstr "Garsiakalbis"
 
 msgid "3D"
 msgstr "3D"
-
-
-msgctxt "Mesh"
-msgid "Angle"
-msgstr "Kampas"
 
 
 msgid "Color Value"
@@ -4422,6 +4414,11 @@ msgstr "Nauja/-s/-i"
 
 
 msgctxt "Operator"
+msgid "Save Copy..."
+msgstr "Išsaugoti kopiją..."
+
+
+msgctxt "Operator"
 msgid "Quit"
 msgstr "Išeiti"
 
@@ -4434,11 +4431,6 @@ msgstr "Automatiškai išsaugoti..."
 msgctxt "Operator"
 msgid "Preferences..."
 msgstr "Nuostatos..."
-
-
-msgctxt "Operator"
-msgid "Save Copy..."
-msgstr "Išsaugoti kopiją..."
 
 
 msgid "Auto-Save Preferences"

@@ -15,28 +15,28 @@ static void node_declare(NodeDeclarationBuilder &b)
 {
   b.use_custom_socket_order();
 
-  b.add_output<decl::Shader>("BSDF");
+  b.add_output<decl::Shader>("BSDF"_ustr);
 
   b.add_default_layout();
 
-  b.add_input<decl::Color>("Color").default_value({1.0f, 1.0f, 1.0f, 1.0f});
-  b.add_input<decl::Float>("Roughness")
+  b.add_input<decl::Color>("Color"_ustr).default_value({1.0f, 1.0f, 1.0f, 1.0f});
+  b.add_input<decl::Float>("Roughness"_ustr)
       .default_value(0.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_input<decl::Float>("IOR").default_value(1.5f).min(0.0f).max(1000.0f);
-  b.add_input<decl::Vector>("Normal").hide_value();
-  b.add_input<decl::Float>("Weight").available(false);
+  b.add_input<decl::Float>("IOR"_ustr).default_value(1.5f).min(0.0f).max(1000.0f);
+  b.add_input<decl::Vector>("Normal"_ustr).hide_value();
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
 
-  PanelDeclarationBuilder &film = b.add_panel("Thin Film").default_closed(true);
-  film.add_input<decl::Float>("Thin Film Thickness")
+  PanelDeclarationBuilder &film = b.add_panel("Thin Film"_ustr).default_closed(true);
+  film.add_input<decl::Float>("Thin Film Thickness"_ustr)
       .default_value(0.0)
       .min(0.0f)
       .max(100000.0f)
       .subtype(PROP_WAVELENGTH)
       .description("Thickness of the film in nanometers");
-  film.add_input<decl::Float>("Thin Film IOR")
+  film.add_input<decl::Float>("Thin Film IOR"_ustr)
       .default_value(1.33f)
       .min(1.0f)
       .max(1000.0f)
@@ -111,7 +111,7 @@ void register_node_type_sh_bsdf_glass()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeBsdfGlass", SH_NODE_BSDF_GLASS);
+  sh_node_type_base(&ntype, "ShaderNodeBsdfGlass"_ustr, SH_NODE_BSDF_GLASS);
   ntype.ui_name = "Glass BSDF";
   ntype.ui_description = "Glass-like shader mixing refraction and reflection at grazing angles";
   ntype.enum_name_legacy = "BSDF_GLASS";

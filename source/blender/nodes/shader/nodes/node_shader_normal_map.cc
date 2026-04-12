@@ -8,6 +8,7 @@
 
 #include "BKE_context.hh"
 #include "BKE_node_runtime.hh"
+#include "BKE_scene.hh"
 
 #include "DEG_depsgraph_query.hh"
 
@@ -22,16 +23,16 @@ namespace nodes::node_shader_normal_map_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Float>("Strength")
+  b.add_input<decl::Float>("Strength"_ustr)
       .default_value(1.0f)
       .min(0.0f)
       .max(10.0f)
       .description("Strength of the normal mapping effect")
       .translation_context(BLT_I18NCONTEXT_AMOUNT);
-  b.add_input<decl::Color>("Color")
+  b.add_input<decl::Color>("Color"_ustr)
       .default_value({0.5f, 0.5f, 1.0f, 1.0f})
       .description("Color that encodes the normal map in the specified space");
-  b.add_output<decl::Vector>("Normal");
+  b.add_output<decl::Vector>("Normal"_ustr);
 }
 
 static void node_shader_buts_normal_map(ui::Layout &layout, bContext *C, PointerRNA *ptr)
@@ -40,6 +41,10 @@ static void node_shader_buts_normal_map(ui::Layout &layout, bContext *C, Pointer
   layout.prop(ptr, "convention", ui::ITEM_R_SPLIT_EMPTY_NAME, "", ICON_NONE);
 
   if (RNA_enum_get(ptr, "space") == SHD_SPACE_TANGENT) {
+    if (BKE_scene_uses_cycles(CTX_data_scene(C))) {
+      layout.prop(ptr, "base", ui::ITEM_R_SPLIT_EMPTY_NAME, "", ICON_NONE);
+    }
+
     PointerRNA obptr = CTX_data_pointer_get(C, "active_object");
     Object *object = static_cast<Object *>(obptr.data);
 
@@ -193,7 +198,7 @@ void register_node_type_sh_normal_map()
 
   static bke::bNodeType ntype;
 
-  sh_node_type_base(&ntype, "ShaderNodeNormalMap", SH_NODE_NORMAL_MAP);
+  sh_node_type_base(&ntype, "ShaderNodeNormalMap"_ustr, SH_NODE_NORMAL_MAP);
   ntype.ui_name = "Normal Map";
   ntype.ui_description =
       "Generate a perturbed normal from an RGB normal map image. Typically used for faking highly "

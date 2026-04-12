@@ -858,6 +858,11 @@ class USERPREF_PT_system_memory(SystemPanel, CenterAlignMixIn, Panel):
             label = iface_("Threads") if system.shader_compilation_method == 'THREAD' else iface_("Subprocesses")
             col.prop(system, "gpu_shader_workers", text=label, translate=False)
 
+        layout.separator()
+
+        col = layout.column()
+        col.prop(system, "geometry_nodes_stack_limit")
+
 
 class USERPREF_PT_system_video_sequencer(SystemPanel, CenterAlignMixIn, Panel):
     bl_label = "Video Sequencer"
@@ -1652,6 +1657,7 @@ class USERPREF_PT_file_paths_render(FilePathsPanel, Panel):
         paths = context.preferences.filepaths
 
         col = self.layout.column()
+        col.prop(paths, "texture_cache_directory", text="Texture Cache")
         col.prop(paths, "render_output_directory", text="Render Output")
         col.prop(paths, "render_cache_directory", text="Render Cache")
 
@@ -1804,6 +1810,8 @@ class USERPREF_PT_saveload_blend(SaveLoadPanel, CenterAlignMixIn, Panel):
 
         col = layout.column(heading="Save")
         col.prop(view, "use_save_prompt")
+
+        layout.prop(paths, "save_modified_images")
 
         col = layout.column()
         col.prop(paths, "save_version")
@@ -2757,7 +2765,9 @@ class USERPREF_PT_assets(AssetsPanel, Panel):
         row.operator("extensions.userpref_allow_online", text="Allow Online Access", icon='CHECKMARK')
 
 
-class USERPREF_PT_assets_asset_libraries(AssetsPanel, Panel):
+# The panel is not located in the file paths section anymore and should be renamed. The old name is only kept for
+# compatibility (add-ons extend it). Planned for removal in 6.0, see #153901.
+class USERPREF_PT_file_paths_asset_libraries(AssetsPanel, Panel):
     bl_label = "Asset Libraries"
 
     def draw(self, context):
@@ -2806,6 +2816,7 @@ class USERPREF_PT_assets_asset_libraries(AssetsPanel, Panel):
 
 class USERPREF_UL_asset_libraries(UIList):
     def draw_item(self, context, layout, _data, item, _icon, _active_data, _active_propname, _index):
+        del context
         asset_library = item
 
         icon = 'INTERNET' if asset_library.use_remote_url else 'DISK_DRIVE'
@@ -3065,6 +3076,7 @@ class USERPREF_PT_experimental_new_features(ExperimentalPanel, Panel):
                 ({"property": "use_geometry_nodes_lists"}, ("blender/blender/issues/140918", "#140918")),
                 ({"property": "use_geometry_bundle"}, ("blender/blender/issues/150574", "#150574")),
                 ({"property": "use_remote_asset_libraries"}, ("blender/blender/issues/134495", "#134495")),
+                ({"property": "use_collection_importer"}, ("blender/blender/issues/132171", "#132171")),
             ),
         )
 
@@ -3198,7 +3210,7 @@ classes = (
     USERPREF_PT_addons,
 
     USERPREF_PT_assets,
-    USERPREF_PT_assets_asset_libraries,
+    USERPREF_PT_file_paths_asset_libraries,
 
     USERPREF_MT_extensions_active_repo,
     USERPREF_MT_extensions_active_repo_remove,

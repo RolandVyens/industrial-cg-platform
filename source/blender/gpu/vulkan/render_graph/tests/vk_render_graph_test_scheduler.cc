@@ -542,8 +542,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_framebuffer_draw_end)
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 4;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline_combine;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout_combine;
@@ -557,6 +556,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_framebuffer_draw_end)
     copy_image.vk_image_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     copy_image.node_data.src_image = image_attachment;
     copy_image.node_data.dst_image = image_feedback;
+    copy_image.node_data.mip_levels = 1u;
     copy_image.node_data.region.extent.width = 1920;
     copy_image.node_data.region.extent.height = 1080;
     copy_image.node_data.region.extent.depth = 1;
@@ -574,8 +574,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_framebuffer_draw_end)
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 4;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline_background;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout_background;
@@ -737,8 +736,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_update_draw_update_draw_update_draw_end
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 1;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout;
@@ -764,8 +762,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_update_draw_update_draw_update_draw_end
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 2;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout;
@@ -791,8 +788,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_update_draw_update_draw_update_draw_end
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 3;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout;
@@ -956,8 +952,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_to_attachment_draw_end)
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 4;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout;
@@ -971,6 +966,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_to_attachment_draw_end)
     copy_image.vk_image_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     copy_image.node_data.src_image = image_editor;
     copy_image.node_data.dst_image = image_attachment;
+    copy_image.node_data.mip_levels = 1u;
     copy_image.node_data.region.extent.width = 1920;
     copy_image.node_data.region.extent.height = 1080;
     copy_image.node_data.region.extent.depth = 1;
@@ -988,8 +984,7 @@ TEST_P(VKRenderGraphTestScheduler, begin_draw_copy_to_attachment_draw_end)
     draw.node_data.first_vertex = 0;
     draw.node_data.instance_count = 1;
     draw.node_data.vertex_count = 4;
-    draw.node_data.graphics.pipeline_data.push_constants_data = nullptr;
-    draw.node_data.graphics.pipeline_data.push_constants_size = 0;
+    draw.node_data.graphics.pipeline_data.push_constants_range = IndexRange(0);
     draw.node_data.graphics.pipeline_data.vk_descriptor_set = VK_NULL_HANDLE;
     draw.node_data.graphics.pipeline_data.vk_pipeline = pipeline;
     draw.node_data.graphics.pipeline_data.vk_pipeline_layout = pipeline_layout;

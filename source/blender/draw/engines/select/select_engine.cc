@@ -131,6 +131,12 @@ struct Instance : public DrawEngine {
       state |= DRW_STATE_CLIP_PLANES;
     }
 
+    if (draw_ctx->v3d->shading.flag & V3D_SHADING_BACKFACE_CULLING &&
+        draw_ctx->v3d->shading.type == OB_SOLID)
+    {
+      state |= DRW_STATE_CULL_BACK;
+    }
+
     bool retopology_occlusion = RETOPOLOGY_ENABLED(draw_ctx->v3d) && !XRAY_ENABLED(draw_ctx->v3d);
     float retopology_offset = RETOPOLOGY_OFFSET(draw_ctx->v3d);
 
@@ -223,7 +229,7 @@ struct Instance : public DrawEngine {
     e_data.context.max_index_drawn_len = 1;
     framebuffer_setup();
     GPU_framebuffer_bind(e_data.framebuffer_select_id);
-    GPU_framebuffer_clear_color_depth(e_data.framebuffer_select_id, float4{0.0f}, 1.0f);
+    GPU_framebuffer_clear_color_depth(e_data.framebuffer_select_id, {0.0, 0.0, 0.0, 0.0}, 1.0f);
   }
 
   ElemIndexRanges edit_mesh_sync(Object *ob,

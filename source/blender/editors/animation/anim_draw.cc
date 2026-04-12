@@ -151,9 +151,9 @@ void ANIM_draw_scene_strip_range(const bContext *C, View2D *v2d)
   const float left_handle = scene_strip->left_handle();
   const float right_handle = scene_strip->right_handle(sequencer_scene);
   float start_frame = seq::give_frame_index(sequencer_scene, scene_strip, left_handle) +
-                      scene_strip->scene->r.sfra;
+                      scene_strip->scene->r.sfra + scene_strip->anim_startofs;
   float end_frame = seq::give_frame_index(sequencer_scene, scene_strip, right_handle - 1) +
-                    scene_strip->scene->r.sfra;
+                    scene_strip->scene->r.sfra + scene_strip->anim_startofs;
 
   /* This can happen when the strip time is reversed. */
   if (start_frame > end_frame) {
@@ -609,9 +609,16 @@ static float normalization_factor_get(Scene *scene, FCurve *fcu, short flag, flo
     offset = -min_coord - range / 2.0f;
   }
   else {
-    /* Skip normalization. */
+    /* Skip normalization in 2 cases. Either the y difference of all keyframes is too small to
+     * normalize or there are no keys at all in the range. In the first case, the curve should be
+     * brought to the 0 line. In the second case we cannot do that since we have no information. */
     factor = 1.0f;
-    offset = 0.0f;
+    if (min_coord == FLT_MAX) {
+      offset = 0.0f;
+    }
+    else {
+      offset = -min_coord;
+    }
   }
 
   BLI_assert(factor != 0.0f);

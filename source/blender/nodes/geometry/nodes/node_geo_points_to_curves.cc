@@ -23,19 +23,21 @@ namespace blender::nodes::node_geo_points_to_curves_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Geometry>("Points")
+  b.add_input<decl::Geometry>("Points"_ustr)
       .supported_type(GeometryComponent::Type::PointCloud)
       .description("Points to generate curves from");
-  b.add_input<decl::Int>("Curve Group ID")
+  b.add_input<decl::Int>("Curve Group ID"_ustr)
       .field_on_all()
       .hide_value()
       .description(
           "A curve is created for every distinct group ID. All points with the same ID are put "
           "into the same curve");
-  b.add_input<decl::Float>("Weight").field_on_all().hide_value().description(
-      "Determines the order of points in each curve");
+  b.add_input<decl::Float>("Weight"_ustr)
+      .field_on_all()
+      .hide_value()
+      .description("Determines the order of points in each curve");
 
-  b.add_output<decl::Geometry>("Curves").propagate_all();
+  b.add_output<decl::Geometry>("Curves"_ustr).propagate_all();
 }
 
 static void grouped_sort(const OffsetIndices<int> offsets,
@@ -64,14 +66,10 @@ static void find_points_by_group_index(const Span<int> indices_of_curves,
                                        MutableSpan<int> r_offsets,
                                        MutableSpan<int> r_indices)
 {
-  offset_indices::build_reverse_offsets(indices_of_curves, r_offsets);
-  Array<int> counts(r_offsets.size(), 0);
-
-  for (const int64_t index : indices_of_curves.index_range()) {
-    const int curve_index = indices_of_curves[index];
-    r_indices[r_offsets[curve_index] + counts[curve_index]] = int(index);
-    counts[curve_index]++;
-  }
+  const OffsetIndices offsets = offset_indices::build_reverse_offsets(indices_of_curves,
+                                                                      r_offsets);
+  /* Sorting is implemented by the caller. */
+  offset_indices::reverse_indices_in_groups(indices_of_curves, offsets, r_indices, false);
 }
 
 static int identifiers_to_indices(MutableSpan<int> r_identifiers_to_indices)
@@ -170,11 +168,11 @@ static Curves *curves_from_points(const PointCloud &points,
 
 static void node_geo_exec(GeoNodeExecParams params)
 {
-  GeometrySet geometry_set = params.extract_input<GeometrySet>("Points");
-  const Field<int> group_id_field = params.extract_input<Field<int>>("Curve Group ID");
-  const Field<float> weight_field = params.extract_input<Field<float>>("Weight");
+  GeometrySet geometry_set = params.extract_input<GeometrySet>("Points"_ustr);
+  const Field<int> group_id_field = params.extract_input<Field<int>>("Curve Group ID"_ustr);
+  const Field<float> weight_field = params.extract_input<Field<float>>("Weight"_ustr);
 
-  const NodeAttributeFilter attribute_filter = params.get_attribute_filter("Curves");
+  const NodeAttributeFilter attribute_filter = params.get_attribute_filter("Curves"_ustr);
   geometry::foreach_real_geometry(geometry_set, [&](GeometrySet &geometry_set) {
     geometry_set.replace_curves(nullptr);
     if (const PointCloud *points = geometry_set.get_pointcloud()) {
@@ -185,14 +183,14 @@ static void node_geo_exec(GeoNodeExecParams params)
     geometry_set.keep_only({GeometryComponent::Type::Curve, GeometryComponent::Type::Edit});
   });
 
-  params.set_output("Curves", std::move(geometry_set));
+  params.set_output("Curves"_ustr, std::move(geometry_set));
 }
 
 static void node_register()
 {
   static bke::bNodeType ntype;
 
-  geo_node_type_base(&ntype, "GeometryNodePointsToCurves", GEO_NODE_POINTS_TO_CURVES);
+  geo_node_type_base(&ntype, "GeometryNodePointsToCurves"_ustr, GEO_NODE_POINTS_TO_CURVES);
   ntype.ui_name = "Points to Curves";
   ntype.ui_description = "Split all points to curve by its group ID and reorder by weight";
   ntype.enum_name_legacy = "POINTS_TO_CURVES";

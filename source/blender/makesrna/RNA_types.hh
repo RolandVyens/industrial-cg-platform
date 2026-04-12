@@ -486,6 +486,9 @@ enum PropertyFlag {
 
   /** Do not write in presets (#PROP_HIDDEN and #PROP_SKIP_SAVE won't either). */
   PROP_SKIP_PRESET = (1 << 11),
+
+  /** Use full geometry depsgraph evaluation when this property changes. */
+  PROP_FORCE_GEOMETRY_EVAL = (1 << 3),
 };
 ENUM_OPERATORS(PropertyFlag)
 
@@ -531,7 +534,7 @@ enum PropertyOverrideFlag {
    * created for it, and no attempt to restore the data from linked reference either.
    *
    * WARNING: This flag should be used with a lot of caution, as it completely bypasses override
-   * system. It is currently only used for ID's names, since we cannot prevent local override to
+   * system. It is used for example for ID's names, since we cannot prevent local override to
    * get a different name from the linked reference, and ID names are 'rna name property' (i.e. are
    * used in overrides of collections of IDs). See also `BKE_lib_override_library_update()` where
    * we deal manually with the value of that property at DNA level. */
@@ -780,6 +783,11 @@ using StringPropertySetTransformFunc = std::string (*)(PointerRNA *ptr,
                                                        const std::string &new_value,
                                                        const std::string &curr_value,
                                                        bool is_set);
+using PointerPropertyGetFunc = PointerRNA (*)(PointerRNA *ptr);
+using PointerPropertySetFunc = void (*)(PointerRNA *ptr, PointerRNA value, ReportList *reports);
+using PointerPropertyTypeFunc = StructRNA *(*)(PointerRNA * ptr);
+
+using StructPathFunc = std::optional<std::string> (*)(const PointerRNA *ptr);
 
 struct StringPropertySearchVisitParams {
   /** Text being searched for. */

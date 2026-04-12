@@ -81,6 +81,7 @@
 #include "DEG_depsgraph_build.hh"
 #include "DEG_depsgraph_query.hh"
 
+#include "NOD_geometry_nodes_srna.hh"
 #include "RNA_access.hh"
 #include "RNA_define.hh"
 #include "RNA_enum_types.hh"
@@ -1106,6 +1107,9 @@ static bool modifier_apply_obdata(ReportList *reports,
       /* Remove strings referring to attributes if they no longer exist. */
       bke::mesh_remove_invalid_attribute_strings(*mesh);
 
+      /* Make sure that if there are uv maps, one is marked as active. */
+      bke::mesh_ensure_active_uv_map(*mesh);
+
       if (md_eval->type == eModifierType_Multires) {
         multires_customdata_delete(mesh);
       }
@@ -1697,7 +1701,7 @@ static wmOperatorStatus modifier_remove_exec(bContext *C, wmOperator *op)
     /* if cloth/softbody was removed, particle mode could be cleared */
     if (mode_orig & OB_MODE_PARTICLE_EDIT) {
       if ((ob->mode & OB_MODE_PARTICLE_EDIT) == 0) {
-        BKE_view_layer_synced_ensure(scene, view_layer);
+        BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
         if (ob == BKE_view_layer_active_object_get(view_layer)) {
           WM_event_add_notifier(C, NC_SCENE | ND_MODE | NS_MODE_OBJECT, nullptr);
         }
@@ -3488,21 +3492,19 @@ static wmOperatorStatus geometry_nodes_input_attribute_toggle_exec(bContext *C, 
   char input_name[MAX_NAME];
   RNA_string_get(op->ptr, "input_name", input_name);
 
-  IDProperty *use_attribute = IDP_GetPropertyFromGroup(
-      nmd->settings.properties, std::string(input_name + std::string("_use_attribute")).c_str());
-  if (!use_attribute) {
-    return OPERATOR_CANCELLED;
-  }
+  PointerRNA modifier_ptr = RNA_pointer_create_discrete(&ob->id, RNA_NodesModifier, nmd);
+  PointerRNA properties_ptr = RNA_pointer_get(&modifier_ptr, "properties");
+  PointerRNA inputs_ptr = RNA_pointer_get(&properties_ptr, "inputs");
+  PointerRNA input_ptr = RNA_pointer_get(&inputs_ptr, input_name);
 
-  if (use_attribute->type == IDP_INT) {
-    IDP_int_set(use_attribute, !IDP_int_get(use_attribute));
-  }
-  else if (use_attribute->type == IDP_BOOLEAN) {
-    IDP_bool_set(use_attribute, !IDP_bool_get(use_attribute));
+  int type = RNA_enum_get(&input_ptr, "type");
+  if (type == int(nodes::GeometryNodesInputType::Attribute)) {
+    type = int(nodes::GeometryNodesInputType::Value);
   }
   else {
-    return OPERATOR_CANCELLED;
+    type = int(nodes::GeometryNodesInputType::Attribute);
   }
+  RNA_enum_set(&input_ptr, "type", type);
 
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
   WM_event_add_notifier(C, NC_OBJECT | ND_MODIFIER, ob);
@@ -3542,7 +3544,7 @@ static wmOperatorStatus geometry_node_tree_copy_assign_exec(bContext *C, wmOpera
 
   NodesModifierData *nmd = reinterpret_cast<NodesModifierData *>(md);
   bNodeTree *tree = nmd->node_group;
-  if (tree == nullptr) {
+  if (tree == nullptr || ID_MISSING(tree)) {
     return OPERATOR_CANCELLED;
   }
 

@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.1.0 Beta (b'1fa1b22043cd')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-16 10:28+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-12-23 20:36+0000\n"
 "Last-Translator: \"Adriel Y.\" <mixnblend@users.noreply.translate.blender.org>\n"
 "Language-Team: Indonesian <https://translate.blender.org/projects/blender-ui/ui/id/>\n"
@@ -822,14 +822,6 @@ msgid "Place the Mix node at the same height as the lowest node"
 msgstr "Menaruh simpul Campur di ketinggian yang sama dengan simpul terendah"
 
 
-msgid "Show Hotkey List"
-msgstr "Tampilkan Daftar Tombol Pintas"
-
-
-msgid "Expand this box into a list of all the hotkeys for functions in this addon"
-msgstr "Ekspansi kotak ini menjadi daftar semua tombol pintas untuk fungsi-fungsi dalam addon ini"
-
-
 msgid "Fribidi Library"
 msgstr "Perpustakaan Fribidi"
 
@@ -1420,6 +1412,10 @@ msgstr "Default"
 
 msgid "Annotation Stroke"
 msgstr "Anotasi Guratan"
+
+
+msgid "Display Mode"
+msgstr "Mode Layar"
 
 
 msgid "Stroke Points"
@@ -5149,6 +5145,10 @@ msgid "Flat"
 msgstr "Datar"
 
 
+msgid "Threshold"
+msgstr "Ambang"
+
+
 msgid "Curve Jitter"
 msgstr "Jitter Kurva"
 
@@ -5179,6 +5179,11 @@ msgstr "Kekuatan Kurva"
 
 msgid "Curve used for the strength"
 msgstr "Kurva digunakan untuk kekuatan"
+
+
+msgctxt "Operator"
+msgid "Poly"
+msgstr "Poli"
 
 
 msgid "Dilate/Contract"
@@ -5361,10 +5366,6 @@ msgid "Number of simplify steps (large values reduce fill accuracy)"
 msgstr "Jumlah langkah penyederhanaan (nilai besar mengurangi akurasi pengisian)"
 
 
-msgid "Threshold"
-msgstr "Ambang"
-
-
 msgid "Threshold to consider color transparent for filling"
 msgstr "Ambang untuk mempertimbangkan warna transparan untuk pengisian"
 
@@ -5514,14 +5515,6 @@ msgstr "Jangan menampilkan warna isi saat menggambarkan sapuan"
 
 msgid "Factor of Simplify using adaptive algorithm"
 msgstr "Faktor Penyederhanaan menggunakan algoritma adaptif"
-
-
-msgid "Stroke"
-msgstr "Sapuan"
-
-
-msgid "Fill"
-msgstr "Isi"
 
 
 msgid "Active Layer"
@@ -5676,20 +5669,12 @@ msgid "Defines how vertex color affect to the strokes"
 msgstr "Mendefinisikan bagaimana warna titik sudut mempengaruhi sapuan"
 
 
-msgid "Vertex Color affects to Stroke only"
-msgstr "Warna Titik Sudut hanya mempengaruhi Sapuan"
+msgid "Stroke"
+msgstr "Sapuan"
 
 
-msgid "Vertex Color affects to Fill only"
-msgstr "Warna Titik Sudut mempengaruhi Isi saja"
-
-
-msgid "Stroke & Fill"
-msgstr "Sapuan & Isi"
-
-
-msgid "Vertex Color affects to Stroke and Fill"
-msgstr "Warna Titik Sudut mempengaruhi Sapuan dan Isi"
+msgid "Fill"
+msgstr "Isi"
 
 
 msgid "Byte Color Attribute Value"
@@ -6750,46 +6735,6 @@ msgstr "Campurkan warna agar campur dengan tekstur warna keluaran"
 
 msgid "Blend Factor"
 msgstr "Faktor Campuran"
-
-
-msgid "Blend Type"
-msgstr "Tipe Campuran"
-
-
-msgid "Mix"
-msgstr "Campur/Mix"
-
-
-msgid "Darken"
-msgstr "Menggelapkan"
-
-
-msgid "Lighten"
-msgstr "Menerangkan"
-
-
-msgid "Screen"
-msgstr "Layar"
-
-
-msgid "Overlay"
-msgstr "Hamparan"
-
-
-msgid "Soft Light"
-msgstr "Cahaya Halus"
-
-
-msgid "Linear Light"
-msgstr "Cahaya Linier"
-
-
-msgid "Difference"
-msgstr "Perbedaan"
-
-
-msgid "Divide"
-msgstr "Membagi"
 
 
 msgid "Brightness"
@@ -10071,6 +10016,10 @@ msgid "Limit F-Modifier"
 msgstr "Modus Sunting"
 
 
+msgid "Blend Type"
+msgstr "Tipe Campuran"
+
+
 msgid "Phase"
 msgstr "Fase"
 
@@ -10285,10 +10234,6 @@ msgstr "Tampilkan Ukuran"
 
 msgid "Medium"
 msgstr "Sedang"
-
-
-msgid "Display Mode"
-msgstr "Mode Layar"
 
 
 msgid "Vertical List"
@@ -11594,6 +11539,10 @@ msgid "Hard Light"
 msgstr "Cahaya Keras"
 
 
+msgid "Divide"
+msgstr "Membagi"
+
+
 msgid "Grease Pencil frames"
 msgstr "Bingkai-bingkai Pensil Grease"
 
@@ -11821,24 +11770,8 @@ msgid "The number of times the cavity mask is blurred"
 msgstr "Berapa kali masker rongga diburamkan"
 
 
-msgid "Blending Mode"
-msgstr "Mode Campuran"
-
-
-msgid "Exclusion"
-msgstr "Pengecualian (Eksklusi)"
-
-
-msgid "Erase Alpha"
-msgstr "Hapus Alpha"
-
-
 msgid "Erase alpha while painting"
 msgstr "Hapus alpha saat melukis"
-
-
-msgid "Add Alpha"
-msgstr "Tambah Alpha"
 
 
 msgid "Add alpha while painting"
@@ -12215,6 +12148,10 @@ msgstr "Skala/Translasi"
 
 msgid "Topology"
 msgstr "Topologi"
+
+
+msgid "Plane Normal"
+msgstr "Bidang Normal"
 
 
 msgid "Rate"
@@ -15281,6 +15218,14 @@ msgid "Modifier Name"
 msgstr "Nama Pengubah"
 
 
+msgid "Mix"
+msgstr "Campur/Mix"
+
+
+msgid "Difference"
+msgstr "Perbedaan"
+
+
 msgid "Mapping"
 msgstr "Pemetaan"
 
@@ -15291,6 +15236,34 @@ msgstr "Jenis Pengubah"
 
 msgid "Material Attribute"
 msgstr "Atribut Bahan"
+
+
+msgid "Darken"
+msgstr "Menggelapkan"
+
+
+msgid "Lighten"
+msgstr "Menerangkan"
+
+
+msgid "Screen"
+msgstr "Layar"
+
+
+msgid "Overlay"
+msgstr "Hamparan"
+
+
+msgid "Soft Light"
+msgstr "Cahaya Halus"
+
+
+msgid "Linear Light"
+msgstr "Cahaya Linier"
+
+
+msgid "Exclusion"
+msgstr "Pengecualian (Eksklusi)"
 
 
 msgid "2D Offset"
@@ -15691,52 +15664,52 @@ msgid "Use Material Mask"
 msgstr "Gunakan Masker Bahan"
 
 
-msgid "Sample"
-msgstr "Sampel"
-
-
-msgid "Metaball"
-msgstr "Metabola"
-
-
-msgid "Names"
-msgstr "Nama"
-
-
-msgid "Snap"
-msgstr "Jepret"
-
-
-msgid "Layout"
-msgstr "Tata Letak"
-
-
-msgid "Mirror"
-msgstr "Cermin"
-
-
-msgid "Navigation"
-msgstr "Navigasi"
-
-
-msgid "Select Linked"
-msgstr "Seleksi yang Terhubung"
-
-
-msgid "Tracking"
-msgstr "Pelacakan"
+msgid "Math"
+msgstr "Matematika"
 
 
 msgid "Utilities"
 msgstr "Utilitas"
 
 
-msgid "Math"
-msgstr "Matematika"
+msgid "Mirror"
+msgstr "Cermin"
+
+
+msgid "Snap"
+msgstr "Jepret"
+
+
+msgid "Navigation"
+msgstr "Navigasi"
+
+
+msgid "Sample"
+msgstr "Sampel"
+
+
+msgid "Select Linked"
+msgstr "Seleksi yang Terhubung"
 
 
 msgid "Assign Material"
 msgstr "Tugaskan Bahan"
+
+
+msgid "Gizmo"
+msgstr "Gizmo"
+
+
+msgid "Instances"
+msgstr "Contoh-contoh"
+
+
+msgid "Metaball"
+msgstr "Metabola"
+
+
+msgid "Import"
+msgstr "Impor"
 
 
 msgid "Light"
@@ -15749,6 +15722,10 @@ msgstr "Probe Cahaya"
 
 msgid "Add Image"
 msgstr "Tambah Gambar"
+
+
+msgid "UV"
+msgstr "UV"
 
 
 msgid "Apply"
@@ -15767,24 +15744,20 @@ msgid "Hooks"
 msgstr "Kait"
 
 
-msgid "Gizmo"
-msgstr "Gizmo"
-
-
-msgid "Instances"
-msgstr "Contoh-contoh"
-
-
-msgid "Import"
-msgstr "Impor"
+msgid "Names"
+msgstr "Nama"
 
 
 msgid "Merge"
 msgstr "Menggabungkan"
 
 
-msgid "UV"
-msgstr "UV"
+msgid "Layout"
+msgstr "Tata Letak"
+
+
+msgid "Tracking"
+msgstr "Pelacakan"
 
 
 msgid "Animals"
@@ -16512,6 +16485,10 @@ msgid "Vanish"
 msgstr "Hilang"
 
 
+msgid "Stroke & Fill"
+msgstr "Sapuan & Isi"
+
+
 msgid "Fills"
 msgstr "Isian"
 
@@ -17072,10 +17049,6 @@ msgstr "Kurva Kustom"
 msgctxt "Curve"
 msgid "Random"
 msgstr "Acak"
-
-
-msgid "Use Channel"
-msgstr "Gunakan Saluran"
 
 
 msgid "Group Add"
@@ -17859,14 +17832,6 @@ msgid "Custom color of the node body"
 msgstr "Warna kustom badan simpul"
 
 
-msgid "Absolute bounding box dimensions of the node"
-msgstr "Dimensi box terbatas absolut simpul"
-
-
-msgid "Height of the node"
-msgstr "Tinggi node"
-
-
 msgid "Internal Links"
 msgstr "Tautan Internal"
 
@@ -17889,10 +17854,6 @@ msgstr "Pengenal simpul unik"
 
 msgid "Outputs"
 msgstr "Keluaran"
-
-
-msgid "Parent this node is attached to"
-msgstr "Induk simpul ini terikat ke"
 
 
 msgid "Node selection state"
@@ -18780,6 +18741,10 @@ msgstr "Mengonversi dari derajat menjadi radian"
 
 msgid "Convert from radians to degrees"
 msgstr "Mengonversi dari radian menjadi derajat"
+
+
+msgid "Blending Mode"
+msgstr "Mode Campuran"
 
 
 msgid "Space of the input normal"
@@ -21307,10 +21272,6 @@ msgid "Clear Inner"
 msgstr "Bebaskan bagian dalam"
 
 
-msgid "Plane Normal"
-msgstr "Bidang Normal"
-
-
 msgid "Interpolation method"
 msgstr "Metode Interpolasi"
 
@@ -21938,18 +21899,6 @@ msgstr "Opsi"
 
 msgid "Difference Mode"
 msgstr "Mode Perbedaan"
-
-
-msgid "Burn Mode"
-msgstr "Mode Bakar"
-
-
-msgid "Current"
-msgstr "Setelah Ini"
-
-
-msgid "Absolute Mode"
-msgstr "Mode Absolut"
 
 
 msgid "TIFF"
@@ -26463,14 +26412,6 @@ msgid "Surface Guiding Probability"
 msgstr "Probabilitas Pemandu Permukaan"
 
 
-msgid "No Limit"
-msgstr "Tidak Ada Batas"
-
-
-msgid "No texture size limit"
-msgstr "Tidak ada batas ukuran tekstur"
-
-
 msgid "Tile Size"
 msgstr "Ukurang"
 
@@ -27197,6 +27138,10 @@ msgid "Edit animation/keyframes displayed as 2D curves"
 msgstr "Mengedit animasi/bingkai kunci ditampilkan sebagai kurva 2D"
 
 
+msgid "Context sensitive gizmo for the active node"
+msgstr "Gizmo yang peka terhadap konteks untuk node aktif"
+
+
 msgid "Show Mask Editor"
 msgstr "Penyunting Grafik"
 
@@ -27233,10 +27178,6 @@ msgid "Edit shader nodes from Line Style"
 msgstr "Edit node shader dari Gaya Garis"
 
 
-msgid "Context sensitive gizmo for the active node"
-msgstr "Gizmo yang peka terhadap konteks untuk node aktif"
-
-
 msgid "Texture Node Editor"
 msgstr "Editor Simpul Tekstur"
 
@@ -27268,6 +27209,10 @@ msgstr "Tipe"
 
 msgid "Show reference frame only"
 msgstr "Saluran"
+
+
+msgid "Current"
+msgstr "Setelah Ini"
 
 
 msgid "Context Gizmo"
@@ -27471,10 +27416,6 @@ msgstr "Masker"
 msgctxt "Sequence"
 msgid "Sound"
 msgstr "Suara"
-
-
-msgid "Use Linear Modifiers"
-msgstr "Modus Pahat"
 
 
 msgid "Multiply Colors"
@@ -28561,10 +28502,6 @@ msgid "No output node"
 msgstr "Tidak ada node keluaran"
 
 
-msgid "Texture Limit"
-msgstr "Batas Tekstur"
-
-
 msgid "Distance Culling"
 msgstr "Culling Jarak"
 
@@ -29165,11 +29102,6 @@ msgstr "Kursor ke Asal Dunia"
 msgctxt "Operator"
 msgid "Cursor to Grid"
 msgstr "Kursor ke Grid"
-
-
-msgctxt "Operator"
-msgid "Poly"
-msgstr "Poli"
 
 
 msgid "Display Cursor"
@@ -31615,10 +31547,6 @@ msgid "Lightness:"
 msgstr "Keringanan:"
 
 
-msgid "Value:"
-msgstr "Nilai:"
-
-
 msgid "Alpha:"
 msgstr "Alpha:"
 
@@ -32457,6 +32385,10 @@ msgid "Cursor X"
 msgstr "Kursor X"
 
 
+msgid "Value:"
+msgstr "Nilai:"
+
+
 msgid "Driver:"
 msgstr "Driver:"
 
@@ -32521,16 +32453,16 @@ msgid "Subtype"
 msgstr "Subtipe"
 
 
+msgid "Compositing..."
+msgstr "Pengomposisian..."
+
+
 msgid " Named Attribute"
 msgstr " Atribut bernama"
 
 
 msgid " Named Attributes"
 msgstr " Atribut Bernama"
-
-
-msgid "Compositing..."
-msgstr "Pengomposisian..."
 
 
 msgid "3D Float Vector"
@@ -33685,10 +33617,6 @@ msgstr "Modus Sunting"
 
 msgid "Strips must have the same number of inputs"
 msgstr "Partikel"
-
-
-msgid "Blur X"
-msgstr "X Buram"
 
 
 msgid "Object Pivot"

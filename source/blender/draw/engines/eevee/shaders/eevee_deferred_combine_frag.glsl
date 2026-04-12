@@ -12,7 +12,7 @@
 FRAGMENT_SHADER_CREATE_INFO(eevee_deferred_combine)
 
 #include "draw_view_lib.glsl"
-#include "eevee_colorspace_lib.glsl"
+#include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_gbuffer_read_lib.glsl"
 #include "eevee_renderpass_lib.glsl"
 #include "gpu_shader_shared_exponent_lib.glsl"
@@ -105,7 +105,7 @@ void main()
 
     if ((cl.type == CLOSURE_BSDF_TRANSLUCENT_ID ||
          cl.type == CLOSURE_BSDF_MICROFACET_GGX_REFRACTION_ID) &&
-        (gbuffer::read_thickness(gbuf.header, texel) != 0.0f))
+        (gbuffer::read_thickness(gbuf.header, texel).value() != 0.0f))
     {
       /* We model two transmission event, so the surface color need to be applied twice. */
       cl.color *= cl.color;
@@ -125,17 +125,17 @@ void main()
   /* Light clamping. */
   float clamp_direct = uniform_buf.clamp.surface_direct;
   float clamp_indirect = uniform_buf.clamp.surface_indirect;
-  out_direct = colorspace_brightness_clamp_max(out_direct, clamp_direct);
-  out_indirect = colorspace_brightness_clamp_max(out_indirect, clamp_indirect);
+  out_direct = colorspace::brightness_clamp_max(out_direct, clamp_direct);
+  out_indirect = colorspace::brightness_clamp_max(out_indirect, clamp_indirect);
   /* Apply contribution scaling after clamping (compositing-equivalent). */
   out_direct *= uniform_buf.clamp.direct_scale;
   out_indirect *= uniform_buf.clamp.indirect_scale;
 
   /* TODO(@fclem): Shouldn't we clamp these relative the main clamp? */
-  diffuse_direct = colorspace_brightness_clamp_max(diffuse_direct, clamp_direct);
-  diffuse_indirect = colorspace_brightness_clamp_max(diffuse_indirect, clamp_indirect);
-  specular_direct = colorspace_brightness_clamp_max(specular_direct, clamp_direct);
-  specular_indirect = colorspace_brightness_clamp_max(specular_indirect, clamp_indirect);
+  diffuse_direct = colorspace::brightness_clamp_max(diffuse_direct, clamp_direct);
+  diffuse_indirect = colorspace::brightness_clamp_max(diffuse_indirect, clamp_indirect);
+  specular_direct = colorspace::brightness_clamp_max(specular_direct, clamp_direct);
+  specular_indirect = colorspace::brightness_clamp_max(specular_indirect, clamp_indirect);
 
   diffuse_direct *= uniform_buf.clamp.direct_scale;
   diffuse_indirect *= uniform_buf.clamp.indirect_scale;
@@ -169,5 +169,5 @@ void main()
 
   out_combined = float4(out_direct + out_indirect, 0.0f);
   out_combined = any(isnan(out_combined)) ? float4(1.0f, 0.0f, 1.0f, 0.0f) : out_combined;
-  out_combined = colorspace_safe_color(out_combined);
+  out_combined = colorspace::safe_color(out_combined);
 }

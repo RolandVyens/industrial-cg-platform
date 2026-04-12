@@ -122,10 +122,14 @@ if(WITH_UI_TESTS)
       # while this could be investigated, use windowed mode instead.
       # Use a window size that balances software GPU rendering with enough room to use the UI.
       --factory-startup
+      # Workaround for https://projects.blender.org/blender/blender/issues/154770.
+      --no-native-pixels
       # No need for window frame with tests.
       --no-window-frame
       -p 0 0 800 600
       --gpu-backend ${backend}
+      # Log operator calls at a debug level so it is easier to debug runs on the buildbot that fail
+      --log "operator" --log-level "debug"
       "${EXE_PARAMS}"
       "${TEST_BLENDER_EXE_PARAMS_NO_THUMB}"
       "${ARGN}"
@@ -263,6 +267,32 @@ add_blender_test(
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_bpy_app.py
 )
 
+if(WITH_GPU_BACKEND_TESTS)
+  if(WITH_OPENGL_BACKEND)
+    add_blender_test(
+      script_pyapi_gpu_opengl
+      --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_gpu.py
+      --gpu-backend opengl
+    )
+  endif()
+
+  if(WITH_METAL_BACKEND)
+    add_blender_test(
+      script_pyapi_gpu_metal
+      --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_gpu.py
+      --gpu-backend metal
+    )
+  endif()
+
+  if(WITH_VULKAN_BACKEND)
+    add_blender_test(
+      script_pyapi_gpu_vulkan
+      --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_gpu.py
+      --gpu-backend vulkan
+    )
+  endif()
+endif()
+
 add_blender_test(
   script_pyapi_bpy_app_tempdir
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_bpy_app_tempdir.py
@@ -316,6 +346,21 @@ add_blender_test(
 add_blender_test(
   script_pyapi_bmesh
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_bmesh.py
+)
+
+add_blender_test(
+  imbuf_py_api
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_imbuf_py_api.py
+)
+
+add_blender_test(
+  operator_function_py_api
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_operator_function_py_api.py
+)
+
+add_blender_test(
+  operator_wrap_py_api
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_operator_wrap_py_api.py
 )
 
 add_blender_test(
@@ -406,6 +451,21 @@ if(TEST_SRC_DIR_EXISTS)
 endif()
 
 # ------------------------------------------------------------------------------
+# GLOBAL UNDO TESTS
+# ------------------------------------------------------------------------------
+
+add_blender_test(
+  global_undo
+  --log "*undo*"
+  --log-level debug
+  --debug-memory
+  --debug
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_global_undo.py --
+  --src-test-dir ${TEST_SRC_DIR}/
+  --output-dir ${TEST_OUT_DIR}/global_undo/
+)
+
+# ------------------------------------------------------------------------------
 # MODELING TESTS
 # ------------------------------------------------------------------------------
 
@@ -485,10 +545,10 @@ add_blender_test(
 )
 
 add_blender_test(
-  geonode_file_reporting
-  --python ${CMAKE_CURRENT_LIST_DIR}/bl_geonode_file_reporting.py
+  geo_node_file_reporting
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_geo_node_file_reporting.py
   --
-  --testdir "${TEST_SRC_DIR}/io_tests"
+  --testdir "${TEST_SRC_DIR}"
 )
 
 # ------------------------------------------------------------------------------
@@ -622,6 +682,11 @@ add_blender_test(
 add_blender_test(
   bl_animation_nla_strip
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_animation_nla_strip.py
+)
+
+add_blender_test(
+  bl_animation_pose_slide
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_animation_pose_slide.py
 )
 
 if(TEST_SRC_DIR_EXISTS)
@@ -788,25 +853,45 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
     texture
   )
 
+  set(workbench_tests
+    workbench
+    camera
+    colorspace
+    hair
+    image_colorspace
+    image_data_types
+    image_mapping
+    image_texture_limit
+    mesh
+    pointcloud
+    texture
+  )
+
   if(WITH_OPENSUBDIV)
     list(APPEND render_tests displacement)
   endif()
 
   if(WITH_FREESTYLE)
     list(APPEND render_tests render_layer)
-  endif()
-
-  if(WITH_MOD_FLUID)
+    list(APPEND workbench_tests render_layer)
+    endif()
+    
+    if(WITH_MOD_FLUID)
     list(APPEND render_tests motion_blur reports volume)
-  endif()
-
-  if(WITH_OPENVDB AND WITH_MOD_FLUID)
+    list(APPEND workbench_tests volume)
+    endif()
+    
+    if(WITH_OPENVDB AND WITH_MOD_FLUID)
     # Some tests in the OpenVDB folder make use of fluid simulations to generate smoke
     list(APPEND render_tests openvdb)
+    list(APPEND workbench_tests openvdb)
+    # Some tests in the instancing folder make use of OpenVDB volumes
+    list(APPEND render_tests instancing)
+    list(APPEND workbench_tests instancing)
   endif()
 
   if(WITH_OPENIMAGEDENOISE)
-    list(APPEND render_tests denoise)
+    list(APPEND render_tests denoise denoise_animation)
   endif()
 
   # Disabled until new OpenPGL version with deterministic results.
@@ -816,9 +901,11 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
 
   if(WITH_GPU_RENDER_TESTS)
     list(APPEND render_tests grease_pencil)
+    list(APPEND workbench_tests grease_pencil)
   endif()
 
   list(SORT render_tests)
+  list(SORT workbench_tests)
 
   # Cycles
   if(WITH_CYCLES)
@@ -830,7 +917,7 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
             "Supported devices are: ${_cycles_all_test_devices}")
       endif()
       string(TOLOWER "${_cycles_device}" _cycles_device_lower)
-      set(_cycles_render_tests bake;${render_tests};osl)
+      set(_cycles_render_tests bake;${render_tests};osl;image_mipmap)
 
       set(_cycles_osl_test_type none)
       if(WITH_CYCLES_OSL)
@@ -914,7 +1001,7 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
         endforeach()
       endif()
 
-      if(WITH_VULKAN_BACKEND AND (name STREQUAL "overlay" OR WITH_GPU_RENDER_TESTS_VULKAN)
+      if(WITH_VULKAN_BACKEND AND WITH_GPU_RENDER_TESTS_VULKAN
           AND (NOT (name STREQUAL "storm_hydra" OR name STREQUAL "storm_usd") OR WITH_STORM_TESTS_VULKAN))
         foreach(render_test ${render_tests})
           add_render_test(
@@ -930,9 +1017,9 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
     endfunction()
 
     add_gpu_render_tests(eevee "eevee_render_tests.py" "${gpu_render_tests}")
-    add_gpu_render_tests(workbench "workbench_render_tests.py" "${gpu_render_tests}")
+    add_gpu_render_tests(workbench "workbench_render_tests.py" "${workbench_tests}")
     if(WITH_GPU_RENDER_TESTS_HEADED)
-      add_gpu_render_tests(overlay "overlay_render_tests.py" "${gpu_render_tests}")
+      add_gpu_render_tests(overlay "overlay_render_tests.py" "overlay")
     endif()
     if(WITH_HYDRA)
       add_gpu_render_tests(storm_hydra "storm_render_tests.py" "${gpu_render_tests}" --export_method "HYDRA")
@@ -941,6 +1028,15 @@ if((WITH_CYCLES OR WITH_GPU_RENDER_TESTS) AND TEST_SRC_DIR_EXISTS)
       add_gpu_render_tests(storm_usd "storm_render_tests.py" "${gpu_render_tests}" --export_method "USD")
     endif()
   endif()
+endif()
+
+if(WITH_CYCLES AND WITH_CYCLES_OSL)
+  add_blender_test(
+    cycles_osl_compile_test
+    --python ${CMAKE_CURRENT_LIST_DIR}/cycles_osl_compile_test.py
+    --
+    --testdir "${TEST_SRC_DIR}/render"
+  )
 endif()
 
 # ------------------------------------------------------------------------------
@@ -1223,7 +1319,7 @@ if(TEST_SRC_DIR_EXISTS)
     --python ${CMAKE_CURRENT_LIST_DIR}/io_gltf_import_test.py
     --
     --testdir "${TEST_SRC_DIR}/io_tests/gltf/import"
-    --outdir "${TEST_OUT_DIR}/io_gltf"
+    --outdir "${TEST_OUT_DIR}/io_gltf_import"
   )
 endif()
 
@@ -1233,7 +1329,7 @@ if(TEST_SRC_DIR_EXISTS)
     --python ${CMAKE_CURRENT_LIST_DIR}/io_gltf_roundtrip_test.py
     --
     --testdir "${TEST_SRC_DIR}/io_tests/gltf/roundtrip"
-    --outdir "${TEST_OUT_DIR}/io_gltf"
+    --outdir "${TEST_OUT_DIR}/io_gltf_roundtrip"
   )
 endif()
 
@@ -1243,7 +1339,7 @@ if(TEST_SRC_DIR_EXISTS)
     --python ${CMAKE_CURRENT_LIST_DIR}/io_gltf_export_test.py
     --
     --testdir "${TEST_SRC_DIR}/io_tests/gltf/export"
-    --outdir "${TEST_OUT_DIR}/io_gltf"
+    --outdir "${TEST_OUT_DIR}/io_gltf_export"
   )
 endif()
 
@@ -1332,6 +1428,7 @@ if(TEST_SRC_DIR_EXISTS)
     transform
     blend_modes_byte
     blend_modes_float
+    colorspace
   )
   set(video_output_tests "")
 
@@ -1346,19 +1443,19 @@ if(TEST_SRC_DIR_EXISTS)
 
   foreach(render_test ${render_tests})
     add_render_test(
-      sequencer_render_${render_test}
+      sequencer_cpu_${render_test}
       ${CMAKE_CURRENT_LIST_DIR}/sequencer_render_tests.py
       --testdir "${TEST_SRC_DIR}/sequence_editing/${render_test}"
-      --outdir "${TEST_OUT_DIR}/sequence_editing"
+      --outdir "${TEST_OUT_DIR}/sequencer_cpu"
     )
   endforeach()
 
   foreach(video_output_test ${video_output_tests})
     add_render_test(
-      sequencer_render_${video_output_test}
+      sequencer_cpu_${video_output_test}
       ${CMAKE_CURRENT_LIST_DIR}/sequencer_video_output_tests.py
       --testdir "${TEST_SRC_DIR}/sequence_editing/${video_output_test}"
-      --outdir "${TEST_OUT_DIR}/sequence_editing"
+      --outdir "${TEST_OUT_DIR}/sequencer_cpu"
     )
   endforeach()
 
@@ -1374,6 +1471,42 @@ if(TEST_SRC_DIR_EXISTS)
     ${TEST_SRC_DIR}/sequence_editing/vse_load_meta_stack.blend
     --python ${TEST_PYTHON_DIR}/sequencer_load_meta_stack.py
   )
+
+  if(WITH_GPU_COMPOSITOR_TESTS)
+    if(WITH_OPENGL_BACKEND)
+      foreach(render_test ${render_tests})
+        add_render_test(
+                sequencer_opengl_${render_test}
+                ${CMAKE_CURRENT_LIST_DIR}/sequencer_render_tests.py
+                --testdir "${TEST_SRC_DIR}/sequence_editing/${render_test}"
+                --outdir "${TEST_OUT_DIR}/sequencer_opengl"
+                --gpu-backend opengl
+        )
+      endforeach()
+    endif()
+    if(WITH_METAL_BACKEND)
+      foreach(render_test ${render_tests})
+        add_render_test(
+                sequencer_metal_${render_test}
+                ${CMAKE_CURRENT_LIST_DIR}/sequencer_render_tests.py
+                --testdir "${TEST_SRC_DIR}/sequence_editing/${render_test}"
+                --outdir "${TEST_OUT_DIR}/sequencer_metal"
+                --gpu-backend metal
+        )
+      endforeach()
+    endif()
+    if(WITH_VULKAN_BACKEND AND WITH_GPU_RENDER_TESTS_VULKAN)
+      foreach(render_test ${render_tests})
+        add_render_test(
+                sequencer_vulkan_${render_test}
+                ${CMAKE_CURRENT_LIST_DIR}/sequencer_render_tests.py
+                --testdir "${TEST_SRC_DIR}/sequence_editing/${render_test}"
+                --outdir "${TEST_OUT_DIR}/sequencer_vulkan"
+                --gpu-backend vulkan
+        )
+      endforeach()
+    endif()
+  endif()
 endif()
 
 # ------------------------------------------------------------------------------
@@ -1381,6 +1514,17 @@ endif()
 # ------------------------------------------------------------------------------
 
 if(TEST_SRC_DIR_EXISTS)
+  add_blender_test(
+    bl_voxel_remesh
+    --python ${CMAKE_CURRENT_LIST_DIR}/sculpt_paint/voxel_remesh_test.py
+  )
+
+  add_blender_test(
+    bl_voxel_remesh_compare
+    ${TEST_SRC_DIR}/sculpting/voxel_remesh_compare.blend
+    --python ${CMAKE_CURRENT_LIST_DIR}/sculpt_paint/voxel_remesh_compare_test.py
+  )
+
   add_blender_test(
     bl_sculpt_mask
     --python ${CMAKE_CURRENT_LIST_DIR}/sculpt_paint/mask_test.py
@@ -1405,6 +1549,13 @@ if(TEST_SRC_DIR_EXISTS)
   add_blender_test(
     bl_sculpt_mesh_filter
     --python ${CMAKE_CURRENT_LIST_DIR}/sculpt_paint/mesh_filter_test.py
+    --
+    --testdir "${TEST_SRC_DIR}/sculpting"
+  )
+
+  add_blender_test(
+    bl_sculpt_automasking
+    --python ${CMAKE_CURRENT_LIST_DIR}/sculpt_paint/automask_test.py
     --
     --testdir "${TEST_SRC_DIR}/sculpting"
   )
@@ -1470,6 +1621,7 @@ if(WITH_UI_TESTS)
     test_sculpt.mask_expand_and_invert
     test_sculpt.mask_gestures
     test_sculpt.trim_gestures
+    test_sculpt.primitive_tool_add
     test_tools.sculpt_mode_toolbar
     test_undo.compositor_make_group
     test_undo.text_editor_edit_mode_mix
@@ -1497,6 +1649,10 @@ if(WITH_UI_TESTS)
     test_fullscreen.wm_toggle_fullscreen
     test_fullscreen.wm_toggle_stacked_fullscreen_file_browser
     test_fullscreen.wm_toggle_stacked_fullscreens
+    test_quick_effects.add_quick_fur
+    test_quick_effects.add_quick_smoke
+    test_quick_effects.add_quick_liquid
+    test_quick_effects.add_quick_explode
     test_render.interactive_rendering_cycles
     test_render.interactive_rendering_eevee
     test_render.animation_rendering_and_player

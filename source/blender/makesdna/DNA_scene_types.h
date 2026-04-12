@@ -710,6 +710,9 @@ enum {
   /** Use preview range. */
   SCER_PRV_RANGE = 1 << 0,
   SCER_LOCK_FRAME_SELECTION = 1 << 1,
+  /* If set, allows frames before the playback start frame to be played instead of snapping to the
+     start frame. */
+  SCER_ALLOW_PREROLL = 1 << 2,
   /** Show/use sub-frames (for checking motion blur). */
   SCER_SHOW_SUBFRAME = 1 << 3,
 };
@@ -784,6 +787,8 @@ enum {
   R_SCEMODE_UNUSED_19 = 1 << 19, /* cleared */
   R_EXR_CACHE_FILE = 1 << 20,
   R_MULTIVIEW = 1 << 21,
+  R_USE_TEXTURE_CACHE = 1 << 22,
+  R_TEXTURE_CACHE_AUTO_GENERATE = 1 << 23,
 };
 
 /** #RenderData::stamp */
@@ -888,7 +893,7 @@ struct RenderData {
   /**
    * Flags for render settings. Use bit-masking to access the settings.
    */
-  int scemode = R_DOCOMP | R_DOSEQ | R_EXTENSION;
+  int scemode = R_DOCOMP | R_DOSEQ | R_EXTENSION | R_USE_TEXTURE_CACHE;
 
   /**
    * Flags for render settings. Use bit-masking to access the settings.
@@ -1003,10 +1008,10 @@ struct RenderData {
 
   /** Render engine. */
   char engine[32] = "";
-  char _pad2[2] = {};
 
   /** Performance Options. */
   short perf_flag = 0;
+  short anisotropic_filter = 2;
 
   /** Baking. */
   struct BakeData bake;
@@ -1180,6 +1185,25 @@ enum ePaintCanvasSource {
   PAINT_CANVAS_SOURCE_COLOR_ATTRIBUTE = 2,
 };
 
+struct MeshAutomaskingSettings {
+  DNA_DEFINE_CXX_METHODS(MeshAutomaskingSettings)
+
+  int flags = 0;
+
+  int boundary_edges_propagation_steps = 1;
+  int cavity_blur_steps = 0;
+  float cavity_factor = 0.0f;
+
+  float start_normal_limit = 0.34906585f; /* 20 / 180 * pi. */
+  float start_normal_falloff = 0.25f;
+  float view_normal_limit = 1.570796; /* 0.5 * pi. */
+  float view_normal_falloff = 0.25f;
+
+  struct CurveMapping *cavity_curve = nullptr;
+  /** For use by operators. */
+  struct CurveMapping *cavity_curve_op = nullptr;
+};
+
 /** Paint Tool Base. */
 struct Paint {
   DNA_DEFINE_CXX_METHODS(Paint)
@@ -1196,10 +1220,6 @@ struct Paint {
    * file load.
    */
   struct AssetWeakReference *brush_asset_reference = nullptr;
-
-  /** Default eraser brush and associated weak reference. */
-  struct Brush *eraser_brush = nullptr;
-  struct AssetWeakReference *eraser_brush_asset_reference = nullptr;
 
   ToolSystemBrushBindings tool_brush_bindings;
 
@@ -1228,6 +1248,7 @@ struct Paint {
 
   float tile_offset[3] = {1.0f, 1.0f, 1.0f};
   struct UnifiedPaintSettings unified_paint_settings;
+  struct MeshAutomaskingSettings *mesh_automasking_settings = nullptr;
 
   bke::PaintRuntime *runtime = nullptr;
 };
@@ -1460,17 +1481,14 @@ struct Sculpt {
 
   Paint paint;
 
-  /** For rotating around a pivot point. */
-  // float pivot[3] = {}; XXX not used?
   int flags = SCULPT_DYNTOPO_SUBDIVIDE | SCULPT_DYNTOPO_COLLAPSE;
 
   /** Transform tool. */
   int transform_mode = 0;
 
-  int automasking_flags = 0;
+  /** Deprecated. \see MeshAutomaskingSettings */
+  DNA_DEPRECATED int automasking_flags = 0;
 
-  // /* Control tablet input. */
-  // char tablet_size = {}, tablet_strength = {}; XXX not used?
   int radial_symm_legacy[3] = {};
 
   /** Maximum edge length for dynamic topology sculpting (in pixels). */
@@ -1487,18 +1505,19 @@ struct Sculpt {
   float constant_detail = 3.0f;
   float detail_percent = 25;
 
-  int automasking_boundary_edges_propagation_steps = 1;
-  int automasking_cavity_blur_steps = 0;
-  float automasking_cavity_factor = 0;
+  /** Deprecated. \see MeshAutomaskingSettings */
+  DNA_DEPRECATED int automasking_boundary_edges_propagation_steps = 1;
+  DNA_DEPRECATED int automasking_cavity_blur_steps = 0;
+  DNA_DEPRECATED float automasking_cavity_factor = 0;
 
-  float automasking_start_normal_limit = 0.34906585f; /* 20 / 180 * pi. */
-  float automasking_start_normal_falloff = 0.25f;
-  float automasking_view_normal_limit = 1.570796; /* 0.5 * pi. */
-  float automasking_view_normal_falloff = 0.25f;
+  DNA_DEPRECATED float automasking_start_normal_limit = 0.34906585f; /* 20 / 180 * pi. */
+  DNA_DEPRECATED float automasking_start_normal_falloff = 0.25f;
+  DNA_DEPRECATED float automasking_view_normal_limit = 1.570796; /* 0.5 * pi. */
+  DNA_DEPRECATED float automasking_view_normal_falloff = 0.25f;
 
-  struct CurveMapping *automasking_cavity_curve = nullptr;
+  DNA_DEPRECATED struct CurveMapping *automasking_cavity_curve = nullptr;
   /** For use by operators. */
-  struct CurveMapping *automasking_cavity_curve_op = nullptr;
+  DNA_DEPRECATED struct CurveMapping *automasking_cavity_curve_op = nullptr;
   struct Object *gravity_object = nullptr;
 };
 
@@ -1784,6 +1803,7 @@ enum eSequencerSnapFlag {
   SEQ_SNAP_IGNORE_MUTED = 1 << 0,
   SEQ_SNAP_IGNORE_SOUND = 1 << 1,
   SEQ_SNAP_CURRENT_FRAME_TO_STRIPS = 1 << 2,
+  SEQ_SNAP_TO_ALL_CHANNEL_STRIPS = 1 << 3,
 };
 
 struct SequencerToolSettings {
@@ -2717,6 +2737,15 @@ enum {
   SCE_CUSTOM_SIMULATION_RANGE = 1 << 6,
 };
 
+/** #Scene::playback_loop_mode */
+enum eScenePlaybackLoopMode {
+  SCE_LOOP_MODE_INFINITE = 0,
+  SCE_LOOP_MODE_STOP_END_FRAME = 1,
+  SCE_LOOP_MODE_STOP_START_FRAME = 2,
+  SCE_LOOP_MODE_RESTORE = 3,
+  SCE_LOOP_MODE_BOUNCE = 4,
+};
+
 /* Return flag BKE_scene_base_iter_next functions. */
 enum {
   // F_ERROR = -1, /* UNUSED. */
@@ -2786,7 +2815,9 @@ struct Scene {
 
   /** None of the dependency graph vars is mean to be saved. */
   SceneDepsgraphsMap *depsgraph_hash = nullptr;
-  char _pad7[4] = {};
+
+  uint8_t playback_loop_mode = SCE_LOOP_MODE_INFINITE;
+  char _pad7[3] = {};
 
   /* User-Defined KeyingSets. */
   /**
@@ -2852,6 +2883,11 @@ struct Scene {
 #ifdef __cplusplus
   /* Return the frame rate of the scene. */
   double frames_per_second() const;
+  /* Return the playback start frame of the scene. In case both, start and end is needed use
+   * BKE_scene_get_playback_range. */
+  int playback_start() const;
+  /* Return the playback end frame of the scene. */
+  int playback_end() const;
 #endif
 };
 
@@ -2916,8 +2952,6 @@ extern const char *RE_engine_id_BLENDER_EEVEE_NEXT;
   ((!(v3d)->scenelock && (v3d)->camera) ? (v3d)->camera : (scene)->camera)
 
 #define PRVRANGEON (scene->r.flag & SCER_PRV_RANGE)
-#define PSFRA ((PRVRANGEON) ? (scene->r.psfra) : (scene->r.sfra))
-#define PEFRA ((PRVRANGEON) ? (scene->r.pefra) : (scene->r.efra))
 #define FRA2TIME(a) ((((double)scene->r.frs_sec_base) * (double)(a)) / (double)scene->r.frs_sec)
 #define TIME2FRA(a) ((((double)scene->r.frs_sec) * (double)(a)) / (double)scene->r.frs_sec_base)
 

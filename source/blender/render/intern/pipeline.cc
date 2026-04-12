@@ -179,7 +179,7 @@ static bool do_write_image_or_movie(Render *re,
                                     Scene *scene,
                                     const int totvideos,
                                     const char *filepath_override,
-                                    const bool write_anim);
+                                    const bool write_anim_or_still);
 
 /* default callbacks, set in each new render */
 static void result_rcti_nothing(void * /*arg*/, RenderResult * /*rr*/, rcti * /*rect*/) {}
@@ -238,8 +238,8 @@ ImBuf *RE_RenderLayerGetPassImBuf(RenderLayer *rl, const char *name, const char 
 
 float *RE_RenderLayerGetPass(RenderLayer *rl, const char *name, const char *viewname)
 {
-  const ImBuf *ibuf = RE_RenderLayerGetPassImBuf(rl, name, viewname);
-  return ibuf ? ibuf->float_buffer.data : nullptr;
+  ImBuf *ibuf = RE_RenderLayerGetPassImBuf(rl, name, viewname);
+  return ibuf ? ibuf->float_data_for_write() : nullptr;
 }
 
 RenderLayer *RE_GetRenderLayer(RenderResult *rr, const char *name)
@@ -1158,7 +1158,7 @@ static bool node_tree_has_group_output(const bNodeTree *node_tree)
   }
 
   node_tree->ensure_topology_cache();
-  for (const bNode *node : node_tree->nodes_by_type("NodeGroupOutput")) {
+  for (const bNode *node : node_tree->nodes_by_type("NodeGroupOutput"_ustr)) {
     if (node->flag & NODE_DO_OUTPUT && !node->is_muted()) {
       return true;
     }
@@ -1372,47 +1372,10 @@ static bool seq_result_needs_float(const ImageFormatData &im_format)
   return ELEM(im_format.depth, R_IMF_CHAN_DEPTH_10, R_IMF_CHAN_DEPTH_12);
 }
 
-static ImBuf *seq_process_render_image(ImBuf *src,
-                                       const ImageFormatData &im_format,
-                                       const Scene *scene)
-{
-  if (src == nullptr) {
-    return nullptr;
-  }
-
-  ImBuf *dst = nullptr;
-  if (seq_result_needs_float(im_format) && src->float_buffer.data == nullptr) {
-    /* If render output needs >8-BPP input and we only have 8-BPP, convert to float. */
-    dst = IMB_allocImBuf(src->x, src->y, src->planes, 0);
-    IMB_alloc_float_pixels(dst, src->channels, false);
-    /* Transform from sequencer space to scene linear. */
-    const char *from_colorspace = IMB_colormanagement_get_rect_colorspace(src);
-    const char *to_colorspace = IMB_colormanagement_role_colorspace_name_get(
-        COLOR_ROLE_SCENE_LINEAR);
-    IMB_colormanagement_transform_byte_to_float(dst->float_buffer.data,
-                                                src->byte_buffer.data,
-                                                src->x,
-                                                src->y,
-                                                src->channels,
-                                                from_colorspace,
-                                                to_colorspace);
-  }
-  else {
-    /* Duplicate sequencer output and ensure it is in needed color space. */
-    dst = IMB_dupImBuf(src);
-    seq::render_imbuf_from_sequencer_space(scene, dst);
-  }
-  IMB_metadata_copy(dst, src);
-  IMB_freeImBuf(src);
-
-  return dst;
-}
-
 /* Render sequencer strips into render result. */
 static void do_render_sequencer(Render *re)
 {
   static int recurs_depth = 0;
-  ImBuf *out;
   RenderResult *rr; /* don't assign re->result here as it might change during give_ibuf_seq */
   int cfra = re->r.cfra;
   seq::RenderData context;
@@ -1453,8 +1416,13 @@ static void do_render_sequencer(Render *re)
 
   for (view_id = 0; view_id < tot_views; view_id++) {
     context.view_id = view_id;
-    out = render_give_ibuf(&context, cfra, 0);
-    ibuf_arr[view_id] = seq_process_render_image(out, re->r.im_format, re->pipeline_scene_eval);
+    ImBuf *out = render_give_ibuf(&context, cfra, 0);
+    if (out != nullptr) {
+      bool make_float = seq_result_needs_float(re->r.im_format);
+      out = IMB_makeSingleUser(out);
+      seq::ensure_ibuf_is_linear_space(out, make_float);
+    }
+    ibuf_arr[view_id] = out;
   }
 
   rr = re->result;
@@ -1568,7 +1536,8 @@ static void do_render_full_pipeline(Render *re)
   }
 }
 
-static bool check_valid_compositing_camera(Scene *scene,
+static bool check_valid_compositing_camera(const Main &bmain,
+                                           Scene *scene,
                                            Object *camera_override,
                                            ReportList *reports)
 {
@@ -1577,7 +1546,7 @@ static bool check_valid_compositing_camera(Scene *scene,
       if (node->type_legacy == CMP_NODE_R_LAYERS && !node->is_muted()) {
         Scene *sce = node->id ? id_cast<Scene *>(node->id) : scene;
         if (sce->camera == nullptr) {
-          sce->camera = BKE_view_layer_camera_find(sce, BKE_view_layer_default_render(sce));
+          sce->camera = BKE_view_layer_camera_find(bmain, sce, BKE_view_layer_default_render(sce));
         }
         if (sce->camera == nullptr) {
           /* all render layers nodes need camera */
@@ -1602,7 +1571,10 @@ static bool check_valid_compositing_camera(Scene *scene,
   return ok;
 }
 
-static bool check_valid_camera_multiview(Scene *scene, Object *camera, ReportList *reports)
+static bool check_valid_camera_multiview(const Main &bmain,
+                                         Scene *scene,
+                                         Object *camera,
+                                         ReportList *reports)
 {
   bool active_view = false;
 
@@ -1616,7 +1588,7 @@ static bool check_valid_camera_multiview(Scene *scene, Object *camera, ReportLis
 
       if (scene->r.views_format == SCE_VIEWS_FORMAT_MULTIVIEW) {
         Object *view_camera;
-        view_camera = BKE_camera_multiview_render(scene, camera, srv.name);
+        view_camera = BKE_camera_multiview_render(bmain, scene, camera, srv.name);
 
         if (view_camera == camera) {
           /* if the suffix is not in the camera, means we are using the fallback camera */
@@ -1640,13 +1612,16 @@ static bool check_valid_camera_multiview(Scene *scene, Object *camera, ReportLis
   return true;
 }
 
-static int check_valid_camera(Scene *scene, Object *camera_override, ReportList *reports)
+static int check_valid_camera(const Main &bmain,
+                              Scene *scene,
+                              Object *camera_override,
+                              ReportList *reports)
 {
   if (camera_override == nullptr && scene->camera == nullptr) {
-    scene->camera = BKE_view_layer_camera_find(scene, BKE_view_layer_default_render(scene));
+    scene->camera = BKE_view_layer_camera_find(bmain, scene, BKE_view_layer_default_render(scene));
   }
 
-  if (!check_valid_camera_multiview(scene, scene->camera, reports)) {
+  if (!check_valid_camera_multiview(bmain, scene, scene->camera, reports)) {
     return false;
   }
 
@@ -1658,25 +1633,26 @@ static int check_valid_camera(Scene *scene, Object *camera_override, ReportList 
         {
           if (!strip.scene_camera) {
             if (!strip.scene->camera &&
-                !BKE_view_layer_camera_find(strip.scene,
-                                            BKE_view_layer_default_render(strip.scene)))
+                !BKE_view_layer_camera_find(
+                    bmain, strip.scene, BKE_view_layer_default_render(strip.scene)))
             {
               /* camera could be unneeded due to composite nodes */
               Object *override = (strip.scene == scene) ? camera_override : nullptr;
 
-              if (!check_valid_compositing_camera(strip.scene, override, reports)) {
+              if (!check_valid_compositing_camera(bmain, strip.scene, override, reports)) {
                 return false;
               }
             }
           }
-          else if (!check_valid_camera_multiview(strip.scene, strip.scene_camera, reports)) {
+          else if (!check_valid_camera_multiview(bmain, strip.scene, strip.scene_camera, reports))
+          {
             return false;
           }
         }
       }
     }
   }
-  else if (!check_valid_compositing_camera(scene, camera_override, reports)) {
+  else if (!check_valid_compositing_camera(bmain, scene, camera_override, reports)) {
     return false;
   }
 
@@ -1690,7 +1666,7 @@ static bool node_tree_has_deep_exr_output(const bNodeTree *node_tree)
   }
 
   node_tree->ensure_topology_cache();
-  for (const bNode *node : node_tree->nodes_by_type("CompositorNodeOutputFile")) {
+  for (const bNode *node : node_tree->nodes_by_type("CompositorNodeOutputFile"_ustr)) {
     if (node->is_muted() || !node->storage) {
       continue;
     }
@@ -1753,7 +1729,7 @@ static bool is_compositing_possible_on_gpu(Scene *scene, ReportList *reports)
 
   int width, height;
   BKE_render_resolution(&scene->r, false, &width, &height);
-  if (!GPU_is_safe_texture_size(width, height)) {
+  if (width > 8192 || height > 8192) {
     BKE_report(reports, RPT_ERROR, "Render size too large for GPU, use CPU compositor instead");
     return false;
   }
@@ -1761,7 +1737,8 @@ static bool is_compositing_possible_on_gpu(Scene *scene, ReportList *reports)
   return true;
 }
 
-bool RE_is_rendering_allowed(Scene *scene,
+bool RE_is_rendering_allowed(const Main &bmain,
+                             Scene *scene,
                              ViewLayer *single_layer,
                              Object *camera_override,
                              ReportList *reports)
@@ -1804,7 +1781,7 @@ bool RE_is_rendering_allowed(Scene *scene,
   }
 
   /* check valid camera, without camera render is OK (compo, seq) */
-  if (!check_valid_camera(scene, camera_override, reports)) {
+  if (!check_valid_camera(bmain, scene, camera_override, reports)) {
     return false;
   }
 
@@ -2028,7 +2005,7 @@ void RE_RenderFrame(Render *re,
             nullptr);
 
         if (errors.is_empty()) {
-          do_write_image_or_movie(re, bmain, scene, 0, filepath_override, false);
+          do_write_image_or_movie(re, bmain, scene, 0, filepath_override, write_still);
         }
         else {
           BKE_report_path_template_errors(re->reports, RPT_ERROR, rd.pic, errors);
@@ -2226,7 +2203,7 @@ static bool do_write_image_or_movie(Render *re,
                                     Scene *scene,
                                     const int totvideos,
                                     const char *filepath_override,
-                                    const bool write_anim)
+                                    const bool write_anim_or_still)
 {
   char filepath[FILE_MAX];
   RenderResult rres;
@@ -2237,7 +2214,7 @@ static bool do_write_image_or_movie(Render *re,
   /* Only disable file writing if postprocessing is also disabled. */
   const bool do_write_file = (!(re_type->flag & RE_USE_NO_IMAGE_SAVE) ||
                               (re_type->flag & RE_USE_POSTPROCESS)) &&
-                             write_anim;
+                             write_anim_or_still;
 
   if (do_write_file) {
     RE_AcquireResultImageViews(re, &rres);
@@ -2418,7 +2395,8 @@ void RE_RenderAnim(Render *re,
     bool is_error = false;
     re->movie_writers.reserve(totvideos);
     for (int i = 0; i < totvideos; i++) {
-      const char *suffix = BKE_scene_multiview_view_id_suffix_get(&re->r, i);
+      const char *suffix = is_multiview_name ? BKE_scene_multiview_view_id_suffix_get(&re->r, i) :
+                                               "";
       MovieWriter *writer = MOV_write_begin(re->pipeline_scene_eval,
                                             &re->r,
                                             &image_format,
@@ -2765,21 +2743,21 @@ void RE_layer_load_from_file(
                 filepath);
   }
 
-  if (ibuf && (ibuf->byte_buffer.data || ibuf->float_buffer.data)) {
+  if (ibuf && (ibuf->byte_data() || ibuf->float_data())) {
     if (ibuf->x == layer->rectx && ibuf->y == layer->recty) {
-      if (ibuf->float_buffer.data == nullptr) {
+      if (ibuf->float_data() == nullptr) {
         IMB_float_from_byte(ibuf);
       }
 
-      memcpy(rpass->ibuf->float_buffer.data,
-             ibuf->float_buffer.data,
+      memcpy(rpass->ibuf->float_data_for_write(),
+             ibuf->float_data(),
              sizeof(float[4]) * layer->rectx * layer->recty);
     }
     else {
       if ((ibuf->x - x >= layer->rectx) && (ibuf->y - y >= layer->recty)) {
         ImBuf *ibuf_clip;
 
-        if (ibuf->float_buffer.data == nullptr) {
+        if (ibuf->float_data() == nullptr) {
           IMB_float_from_byte(ibuf);
         }
 
@@ -2787,8 +2765,8 @@ void RE_layer_load_from_file(
         if (ibuf_clip) {
           IMB_rectcpy(ibuf_clip, ibuf, 0, 0, x, y, layer->rectx, layer->recty);
 
-          memcpy(rpass->ibuf->float_buffer.data,
-                 ibuf_clip->float_buffer.data,
+          memcpy(rpass->ibuf->float_data_for_write(),
+                 ibuf_clip->float_data(),
                  sizeof(float[4]) * layer->rectx * layer->recty);
           IMB_freeImBuf(ibuf_clip);
         }

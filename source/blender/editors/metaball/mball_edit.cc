@@ -96,7 +96,7 @@ bool ED_mball_deselect_all_multi(bContext *C)
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   ViewContext vc = ED_view3d_viewcontext_init(C, depsgraph);
   Vector<Base *> bases = BKE_view_layer_array_from_bases_in_edit_mode_unique_data(
-      vc.scene, vc.view_layer, vc.v3d);
+      *vc.bmain, vc.scene, vc.view_layer, vc.v3d);
   return BKE_mball_deselect_all_multi_ex(bases);
 }
 
@@ -149,10 +149,11 @@ static wmOperatorStatus mball_select_all_exec(bContext *C, wmOperator *op)
 {
   int action = RNA_enum_get(op->ptr, "action");
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Vector<Base *> bases = BKE_view_layer_array_from_bases_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
 
   if (action == SEL_TOGGLE) {
     action = BKE_mball_is_any_selected_multi(bases) ? SEL_DESELECT : SEL_SELECT;
@@ -330,10 +331,11 @@ static wmOperatorStatus mball_select_similar_exec(bContext *C, wmOperator *op)
   const float thresh = RNA_float_get(op->ptr, "threshold");
   int tot_mball_selected_all = 0;
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Vector<Base *> bases = BKE_view_layer_array_from_bases_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
 
   tot_mball_selected_all = BKE_mball_select_count_multi(bases);
 
@@ -460,10 +462,11 @@ static wmOperatorStatus select_random_metaelems_exec(bContext *C, wmOperator *op
   const float randfac = RNA_float_get(op->ptr, "ratio");
   const int seed = WM_operator_properties_select_random_seed_increment_get(op);
 
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Vector<Object *> objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
   for (const int ob_index : objects.index_range()) {
     Object *obedit = objects[ob_index];
     MetaBall *mb = id_cast<MetaBall *>(obedit->data);
@@ -525,10 +528,11 @@ void MBALL_OT_select_random_metaelems(wmOperatorType *ot)
 /* Duplicate selected MetaElements */
 static wmOperatorStatus duplicate_metaelems_exec(bContext *C, wmOperator * /*op*/)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Vector<Object *> objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
   for (Object *obedit : objects) {
     MetaBall *mb = id_cast<MetaBall *>(obedit->data);
     MetaElem *ml, *newml;
@@ -580,10 +584,11 @@ void MBALL_OT_duplicate_metaelems(wmOperatorType *ot)
 
 static wmOperatorStatus delete_metaelems_exec(bContext *C, wmOperator * /*op*/)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Vector<Object *> objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
   for (Object *obedit : objects) {
     MetaBall *mb = id_cast<MetaBall *>(obedit->data);
     MetaElem *ml, *next;
@@ -789,14 +794,15 @@ static bool ed_mball_findnearest_metaelem(bContext *C,
                            &buffer,
                            &rect,
                            use_cycle ? VIEW3D_SELECT_PICK_ALL : VIEW3D_SELECT_PICK_NEAREST,
-                           VIEW3D_SELECT_FILTER_NOP);
+                           VIEW3D_SELECT_FILTER_OBJECT_MODE_LOCK_SAME_TYPE,
+                           eV3DSelectShape::BOX);
 
   if (hits == 0) {
     return false;
   }
 
   Vector<Base *> bases = BKE_view_layer_array_from_bases_in_edit_mode(
-      vc.scene, vc.view_layer, vc.v3d);
+      *vc.bmain, vc.scene, vc.view_layer, vc.v3d);
 
   int hit_cycle_offset = 0;
   if (use_cycle) {
@@ -905,6 +911,7 @@ bool ED_mball_select_pick(bContext *C, const int mval[2], const SelectPick_Param
         break;
       }
     }
+    const Main *bmain = CTX_data_main(C);
     const Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
     MetaBall *mb = id_cast<MetaBall *>(base->object->data);
@@ -913,7 +920,7 @@ bool ED_mball_select_pick(bContext *C, const int mval[2], const SelectPick_Param
     DEG_id_tag_update(&mb->id, ID_RECALC_SELECT);
     WM_event_add_notifier(C, NC_GEOM | ND_SELECT, mb);
 
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     if (BKE_view_layer_active_base_get(view_layer) != base) {
       ed::object::base_activate(C, base);
     }

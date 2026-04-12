@@ -12,9 +12,9 @@ namespace blender::nodes::node_geo_edge_paths_to_selection_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Bool>("Start Vertices").default_value(true).hide_value().supports_field();
-  b.add_input<decl::Int>("Next Vertex Index").default_value(-1).hide_value().supports_field();
-  b.add_output<decl::Bool>("Selection").field_source_reference_all();
+  b.add_input<decl::Bool>("Start Vertices"_ustr).default_value(true).hide_value().supports_field();
+  b.add_input<decl::Int>("Next Vertex Index"_ustr).default_value(-1).hide_value().supports_field();
+  b.add_output<decl::Bool>("Selection"_ustr).field_source_reference_all();
 }
 
 static void edge_paths_to_selection(const Mesh &src_mesh,
@@ -25,17 +25,19 @@ static void edge_paths_to_selection(const Mesh &src_mesh,
   Array<bool> vert_selection(src_mesh.verts_num, false);
 
   const IndexRange vert_range(src_mesh.verts_num);
-  start_selection.foreach_index(GrainSize(2048), [&](const int start_vert) {
-    /* If vertex is selected, all next is already selected too. */
-    for (int current_vert = start_vert; !vert_selection[current_vert];
-         current_vert = next_indices[current_vert])
-    {
-      if (UNLIKELY(!vert_range.contains(current_vert))) {
-        break;
-      }
-      vert_selection[current_vert] = true;
-    }
-  });
+  start_selection.foreach_index(
+      [&](const int start_vert) {
+        /* If vertex is selected, all next is already selected too. */
+        for (int current_vert = start_vert; !vert_selection[current_vert];
+             current_vert = next_indices[current_vert])
+        {
+          if (UNLIKELY(!vert_range.contains(current_vert))) {
+            break;
+          }
+          vert_selection[current_vert] = true;
+        }
+      },
+      exec_mode::grain_size(2048));
 
   const Span<int2> edges = src_mesh.edges();
   threading::parallel_for(edges.index_range(), 4096, [&](const IndexRange range) {
@@ -62,7 +64,6 @@ class PathToEdgeSelectionFieldInput final : public bke::MeshFieldInput {
         start_vertices_(start_verts),
         next_vertex_(next_vertex)
   {
-    category_ = Category::Generated;
   }
 
   GVArray get_varray_for_context(const Mesh &mesh,
@@ -87,10 +88,10 @@ class PathToEdgeSelectionFieldInput final : public bke::MeshFieldInput {
         VArray<bool>::from_container(std::move(selection)), AttrDomain::Edge, domain);
   }
 
-  void for_each_field_input_recursive(FunctionRef<void(const FieldInput &)> fn) const override
+  void foreach_recursive_field(FunctionRef<void(const GField &)> fn) const override
   {
-    start_vertices_.node().for_each_field_input_recursive(fn);
-    next_vertex_.node().for_each_field_input_recursive(fn);
+    fn(start_vertices_);
+    fn(next_vertex_);
   }
 
   uint64_t hash() const override
@@ -98,7 +99,7 @@ class PathToEdgeSelectionFieldInput final : public bke::MeshFieldInput {
     return get_default_hash(start_vertices_, next_vertex_);
   }
 
-  bool is_equal_to(const fn::FieldNode &other) const override
+  bool is_equal_to(const fn::FieldInput &other) const override
   {
     if (const PathToEdgeSelectionFieldInput *other_field =
             dynamic_cast<const PathToEdgeSelectionFieldInput *>(&other))
@@ -117,18 +118,19 @@ class PathToEdgeSelectionFieldInput final : public bke::MeshFieldInput {
 
 static void node_geo_exec(GeoNodeExecParams params)
 {
-  Field<bool> start_verts = params.extract_input<Field<bool>>("Start Vertices");
-  Field<int> next_vertex = params.extract_input<Field<int>>("Next Vertex Index");
-  Field<bool> selection_field{
-      std::make_shared<PathToEdgeSelectionFieldInput>(start_verts, next_vertex)};
-  params.set_output("Selection", std::move(selection_field));
+  Field<bool> start_verts = params.extract_input<Field<bool>>("Start Vertices"_ustr);
+  Field<int> next_vertex = params.extract_input<Field<int>>("Next Vertex Index"_ustr);
+  params.set_output(
+      "Selection"_ustr,
+      Field<bool>::from_input<PathToEdgeSelectionFieldInput>(start_verts, next_vertex));
 }
 
 static void node_register()
 {
   static bke::bNodeType ntype;
 
-  geo_node_type_base(&ntype, "GeometryNodeEdgePathsToSelection", GEO_NODE_EDGE_PATHS_TO_SELECTION);
+  geo_node_type_base(
+      &ntype, "GeometryNodeEdgePathsToSelection"_ustr, GEO_NODE_EDGE_PATHS_TO_SELECTION);
   ntype.ui_name = "Edge Paths to Selection";
   ntype.ui_description = "Output a selection of edges by following paths across mesh edges";
   ntype.enum_name_legacy = "EDGE_PATHS_TO_SELECTION";

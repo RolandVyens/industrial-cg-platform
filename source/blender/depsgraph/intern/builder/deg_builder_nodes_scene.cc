@@ -84,6 +84,15 @@ void DepsgraphNodeBuilder::build_scene_compositor(Scene *scene)
   if (scene->compositing_node_group == nullptr) {
     return;
   }
+
+  add_operation_node(&scene->id,
+                     NodeType::COMPOSITOR,
+                     OperationCode::COMPOSITOR_EVAL,
+                     [](blender::Depsgraph * /*depsgraph*/) {
+                       /* Empty evaluate function, but needed to make sure the operation is not
+                        * considered a no-op. */
+                     });
+
   build_nodetree(scene->compositing_node_group);
 }
 

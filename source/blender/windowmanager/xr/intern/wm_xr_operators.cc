@@ -68,6 +68,20 @@ static bool wm_xr_operator_sessionactive(bContext *C)
   return WM_xr_session_is_ready(&wm->xr);
 }
 
+static bool wm_xr_operator_test_event(const wmOperator *op, const wmEvent *event)
+{
+  if (event->type != EVT_XR_ACTION) {
+    return false;
+  }
+
+  BLI_assert(event->custom == EVT_DATA_XR);
+  BLI_assert(event->customdata);
+
+  wmXrActionData *actiondata = static_cast<wmXrActionData *>(event->customdata);
+  return (actiondata->ot == op->type &&
+          IDP_EqualsProperties(actiondata->op_properties, op->properties));
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -120,17 +134,16 @@ static wmOperatorStatus wm_xr_session_toggle_exec(bContext *C, wmOperator * /*op
 {
   Main *bmain = CTX_data_main(C);
   wmWindowManager *wm = CTX_wm_manager(C);
-  wmWindow *win = CTX_wm_window(C);
   View3D *v3d = CTX_wm_view3d(C);
 
   /* Lazily-create XR context - tries to dynamic-link to the runtime,
    * reading `active_runtime.json`. */
-  if (wm_xr_init(wm) == false) {
+  if (wm_xr_init(C) == false) {
     return OPERATOR_CANCELLED;
   }
 
   v3d->runtime.flag |= V3D_RUNTIME_XR_SESSION_ROOT;
-  wm_xr_session_toggle(wm, win, wm_xr_session_update_screen_on_exit_cb);
+  wm_xr_session_toggle(wm, wm_xr_session_update_screen_on_exit_cb);
   wm_xr_session_update_screen(bmain, &wm->xr);
 
   WM_event_add_notifier(C, NC_WM | ND_XR_DATA_CHANGED, nullptr);
@@ -403,6 +416,10 @@ static wmOperatorStatus wm_xr_navigation_grab_invoke(bContext *C,
                                                      wmOperator *op,
                                                      const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   const wmXrActionData *actiondata = static_cast<const wmXrActionData *>(event->customdata);
 
   wm_xr_grab_init(op);
@@ -530,6 +547,10 @@ static wmOperatorStatus wm_xr_navigation_grab_modal(bContext *C,
                                                     wmOperator *op,
                                                     const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   const wmXrActionData *actiondata = static_cast<const wmXrActionData *>(event->customdata);
   XrGrabData *data = static_cast<XrGrabData *>(op->customdata);
   wmWindowManager *wm = CTX_wm_manager(C);
@@ -759,8 +780,12 @@ static void wm_xr_basenav_rotation_calc(const wmXrData *xr,
 
 static wmOperatorStatus wm_xr_navigation_fly_invoke(bContext *C,
                                                     wmOperator *op,
-                                                    const wmEvent * /*event*/)
+                                                    const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   wmWindowManager *wm = CTX_wm_manager(C);
 
   wm_xr_fly_init(op, &wm->xr);
@@ -784,6 +809,10 @@ static wmOperatorStatus wm_xr_navigation_fly_modal(bContext *C,
                                                    wmOperator *op,
                                                    const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   if (event->val == KM_RELEASE) {
     wm_xr_fly_uninit(op);
     return OPERATOR_FINISHED;
@@ -821,7 +850,7 @@ static wmOperatorStatus wm_xr_navigation_fly_modal(bContext *C,
     }
     else {
       speed_max = U.xr_navigation.turn_speed;
-      speed = speed_max * RNA_boolean_get(op->ptr, "turn_speed_factor");
+      speed = speed_max * RNA_float_get(op->ptr, "turn_speed_factor");
     }
   }
   else {
@@ -926,13 +955,13 @@ static wmOperatorStatus wm_xr_navigation_fly_modal(bContext *C,
     }
   }
   else {
-    float nav_scale, ref_quat[4];
+    float viewer_scale, ref_quat[4];
 
     WM_xr_session_state_vignette_activate(xr);
 
     /* Adjust speed for base and navigation scale. */
-    WM_xr_session_state_nav_scale_get(xr, &nav_scale);
-    speed *= xr->session_settings.base_scale * nav_scale;
+    WM_xr_session_state_viewer_scale_get(xr, &viewer_scale);
+    speed *= xr->session_settings.base_scale * viewer_scale;
 
     if (!speed_frame_based) {
       speed *= delta_time;
@@ -1313,9 +1342,9 @@ static void wm_xr_navigation_teleport_data_update(wmOperator *op,
   data->ray_line_width = RNA_float_get(op->ptr, "ray_line_width");
   data->destination_indicator_width = RNA_float_get(op->ptr, "destination_indicator_width");
 
-  float nav_scale;
-  WM_xr_session_state_nav_scale_get(xr, &nav_scale);
-  data->teleportation_scale = nav_scale;
+  float viewer_scale;
+  WM_xr_session_state_viewer_scale_get(xr, &viewer_scale);
+  data->teleportation_scale = viewer_scale;
 }
 
 static void wm_xr_navigation_teleport_raycast(Depsgraph *depsgraph,
@@ -1480,11 +1509,11 @@ static XrTeleportRayResult wm_xr_navigation_teleport_arc_scene_intersect(bContex
 static float3 wm_xr_navigation_teleport_get_nav_destination(const wmXrData *xr,
                                                             XrTeleportData *data)
 {
-  float nav_scale;
-  WM_xr_session_state_nav_scale_get(xr, &nav_scale);
+  float viewer_scale;
+  WM_xr_session_state_viewer_scale_get(xr, &viewer_scale);
 
   const float xr_head_height = xr->runtime->session_state.prev_local_pose.position[1];
-  const float view_height_offset = xr_head_height * nav_scale;
+  const float view_height_offset = xr_head_height * viewer_scale;
 
   const float3 ray_destination = data->arc_points[data->endpoint_idx];
   const float3 view_destination = ray_destination + float3(0.0f, 0.0f, view_height_offset);
@@ -1520,6 +1549,10 @@ static wmOperatorStatus wm_xr_navigation_teleport_invoke(bContext *C,
                                                          wmOperator *op,
                                                          const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   wm_xr_navigation_teleport_init(op);
 
   const wmOperatorStatus retval = op->type->modal(C, op, event);
@@ -1546,6 +1579,10 @@ static wmOperatorStatus wm_xr_navigation_teleport_modal(bContext *C,
                                                         wmOperator *op,
                                                         const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   const wmXrActionData *actiondata = static_cast<const wmXrActionData *>(event->customdata);
 
   wmXrData *xr = &CTX_wm_manager(C)->xr;
@@ -1711,13 +1748,13 @@ static wmOperatorStatus wm_xr_navigation_reset_exec(bContext *C, wmOperator *op)
   if (reset_loc) {
     float loc[3];
     if (!reset_scale) {
-      float nav_rotation[4], nav_scale;
+      float nav_rotation[4], viewer_scale;
 
       WM_xr_session_state_nav_rotation_get(xr, nav_rotation);
-      WM_xr_session_state_nav_scale_get(xr, &nav_scale);
+      WM_xr_session_state_viewer_scale_get(xr, &viewer_scale);
 
       /* Adjust location based on scale. */
-      mul_v3_v3fl(loc, xr->runtime->session_state.prev_base_pose.position, nav_scale);
+      mul_v3_v3fl(loc, xr->runtime->session_state.prev_base_pose.position, viewer_scale);
       sub_v3_v3(loc, xr->runtime->session_state.prev_base_pose.position);
       mul_qt_v3(nav_rotation, loc);
       negate_v3(loc);
@@ -1736,15 +1773,15 @@ static wmOperatorStatus wm_xr_navigation_reset_exec(bContext *C, wmOperator *op)
 
   if (reset_scale) {
     if (!reset_loc) {
-      float nav_location[3], nav_rotation[4], nav_scale;
+      float nav_location[3], nav_rotation[4], viewer_scale;
       float nav_axes[3][3], v[3];
 
       WM_xr_session_state_nav_location_get(xr, nav_location);
       WM_xr_session_state_nav_rotation_get(xr, nav_rotation);
-      WM_xr_session_state_nav_scale_get(xr, &nav_scale);
+      WM_xr_session_state_viewer_scale_get(xr, &viewer_scale);
 
       /* Offset any location changes when changing scale. */
-      mul_v3_v3fl(v, xr->runtime->session_state.prev_base_pose.position, nav_scale);
+      mul_v3_v3fl(v, xr->runtime->session_state.prev_base_pose.position, viewer_scale);
       sub_v3_v3(v, xr->runtime->session_state.prev_base_pose.position);
       mul_qt_v3(nav_rotation, v);
       add_v3_v3(nav_location, v);
@@ -1784,13 +1821,17 @@ static void WM_OT_xr_navigation_reset(wmOperatorType *ot)
 /* -------------------------------------------------------------------- */
 /** \name XR Navigation Swap Hands
  *
- * Resets XR navigation deltas relative to session base pose.
+ * Swaps XR navigation controls between left and right controllers.
  * \{ */
 
 static wmOperatorStatus wm_xr_navigation_swap_hands_invoke(bContext *C,
                                                            wmOperator *op,
-                                                           const wmEvent * /*event*/)
+                                                           const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   WM_event_add_modal_handler(C, op);
 
   wmWindowManager *wm = CTX_wm_manager(C);
@@ -1807,9 +1848,13 @@ static wmOperatorStatus wm_xr_navigation_swap_hands_exec(bContext * /*C*/, wmOpe
 }
 
 static wmOperatorStatus wm_xr_navigation_swap_hands_modal(bContext *C,
-                                                          wmOperator * /*op*/,
+                                                          wmOperator *op,
                                                           const wmEvent *event)
 {
+  if (!wm_xr_operator_test_event(op, event)) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   wmWindowManager *wm = CTX_wm_manager(C);
   wmXrData *xr = &wm->xr;
 

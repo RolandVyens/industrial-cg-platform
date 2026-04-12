@@ -171,7 +171,7 @@ static void calc_faces(const Depsgraph &depsgraph,
   gather_data_mesh(layer_displacement_factor.as_span(), verts, displacement_factors);
 
   if (use_persistent_base) {
-    if (cache.invert) {
+    if (cache.toggle_settings.invert) {
       reset_displacement_factors(displacement_factors, tls.factors, cache.bstrength);
     }
     else {
@@ -268,7 +268,7 @@ static void calc_grids(const Depsgraph &depsgraph,
       subdiv_ccg, layer_displacement_factor.as_span(), grids, tls.displacement_factors);
 
   if (use_persistent_base) {
-    if (cache.invert) {
+    if (cache.toggle_settings.invert) {
       reset_displacement_factors(displacement_factors, tls.factors, cache.bstrength);
     }
     else {
@@ -420,30 +420,31 @@ void do_layer_brush(const Depsgraph &depsgraph,
 
       if (displacement.is_empty()) {
         if (ss.cache->layer_displacement_factor.is_empty()) {
-          ss.cache->layer_displacement_factor = Array<float>(SCULPT_vertex_count_get(object),
-                                                             0.0f);
+          ss.cache->layer_displacement_factor = Array<float>(vertex_count_get(object), 0.0f);
         }
         displacement = ss.cache->layer_displacement_factor;
       }
 
       MutableSpan<bke::pbvh::MeshNode> nodes = pbvh.nodes<bke::pbvh::MeshNode>();
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_faces(depsgraph,
-                   sd,
-                   brush,
-                   attribute_data,
-                   vert_normals,
-                   use_persistent_base,
-                   persistent_position,
-                   persistent_normal,
-                   object,
-                   nodes[i],
-                   tls,
-                   displacement,
-                   position_data);
-        bke::pbvh::update_node_bounds_mesh(position_data.eval, nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_faces(depsgraph,
+                       sd,
+                       brush,
+                       attribute_data,
+                       vert_normals,
+                       use_persistent_base,
+                       persistent_position,
+                       persistent_normal,
+                       object,
+                       nodes[i],
+                       tls,
+                       displacement,
+                       position_data);
+            bke::pbvh::update_node_bounds_mesh(position_data.eval, nodes[i]);
+          },
+          exec_mode::grain_size(1));
       persistent_disp_attr.finish();
       break;
     }
@@ -476,33 +477,37 @@ void do_layer_brush(const Depsgraph &depsgraph,
       }
 
       MutableSpan<bke::pbvh::GridsNode> nodes = pbvh.nodes<bke::pbvh::GridsNode>();
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_grids(depsgraph,
-                   sd,
-                   brush,
-                   object,
-                   use_persistent_base,
-                   persistent_position,
-                   persistent_normal,
-                   nodes[i],
-                   tls,
-                   displacement);
-        bke::pbvh::update_node_bounds_grids(subdiv_ccg.grid_area, positions, nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_grids(depsgraph,
+                       sd,
+                       brush,
+                       object,
+                       use_persistent_base,
+                       persistent_position,
+                       persistent_normal,
+                       nodes[i],
+                       tls,
+                       displacement);
+            bke::pbvh::update_node_bounds_grids(subdiv_ccg.grid_area, positions, nodes[i]);
+          },
+          exec_mode::grain_size(1));
       break;
     }
     case bke::pbvh::Type::BMesh: {
       if (ss.cache->layer_displacement_factor.is_empty()) {
-        ss.cache->layer_displacement_factor = Array<float>(SCULPT_vertex_count_get(object), 0.0f);
+        ss.cache->layer_displacement_factor = Array<float>(vertex_count_get(object), 0.0f);
       }
       const MutableSpan<float> displacement = ss.cache->layer_displacement_factor;
       MutableSpan<bke::pbvh::BMeshNode> nodes = pbvh.nodes<bke::pbvh::BMeshNode>();
-      node_mask.foreach_index(GrainSize(1), [&](const int i) {
-        LocalData &tls = all_tls.local();
-        calc_bmesh(depsgraph, sd, brush, object, nodes[i], tls, displacement);
-        bke::pbvh::update_node_bounds_bmesh(nodes[i]);
-      });
+      node_mask.foreach_index(
+          [&](const int i) {
+            LocalData &tls = all_tls.local();
+            calc_bmesh(depsgraph, sd, brush, object, nodes[i], tls, displacement);
+            bke::pbvh::update_node_bounds_bmesh(nodes[i]);
+          },
+          exec_mode::grain_size(1));
       break;
     }
   }

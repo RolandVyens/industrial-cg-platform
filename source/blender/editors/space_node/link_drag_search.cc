@@ -76,7 +76,7 @@ static void link_drag_search_listen_fn(const wmRegionListenerParams *params, voi
 
 static void add_reroute_node_fn(nodes::LinkSearchOpParams &params)
 {
-  bNode &reroute = params.add_node("NodeReroute");
+  bNode &reroute = params.add_node("NodeReroute"_ustr);
   if (params.socket.in_out == SOCK_IN) {
     bke::node_add_link(params.node_tree,
                        reroute,
@@ -97,14 +97,10 @@ static void add_group_input_node_fn(nodes::LinkSearchOpParams &params)
 {
   /* Add a group input based on the connected socket, and add a new group input node. */
   bNodeTreeInterfaceSocket *socket_iface = bke::node_interface::add_interface_socket_from_node(
-      params.node_tree,
-      params.node,
-      params.socket,
-      params.socket.typeinfo->idname,
-      params.socket.name);
+      params.node_tree, params.node, params.socket, params.socket.name);
   params.node_tree.tree_interface.active_item_set(&socket_iface->item);
 
-  bNode &group_input = params.add_node("NodeGroupInput");
+  bNode &group_input = params.add_node("NodeGroupInput"_ustr);
 
   /* This is necessary to create the new sockets in the other input nodes. */
   BKE_main_ensure_invariants(*CTX_data_main(&params.C), params.node_tree.id);
@@ -144,7 +140,7 @@ static void add_existing_group_input_fn(nodes::LinkSearchOpParams &params,
   SET_FLAG_FROM_TEST(flag, in_out & SOCK_IN, NODE_INTERFACE_SOCKET_INPUT);
   SET_FLAG_FROM_TEST(flag, in_out & SOCK_OUT, NODE_INTERFACE_SOCKET_OUTPUT);
 
-  bNode &group_input = params.add_node("NodeGroupInput");
+  bNode &group_input = params.add_node("NodeGroupInput"_ustr);
 
   for (bNodeSocket &socket : group_input.outputs) {
     socket.flag |= SOCK_HIDDEN;
@@ -176,8 +172,15 @@ static void search_link_ops_for_asset_metadata(const bNodeTree &node_tree,
   const bke::bNodeTreeType &node_tree_type = *node_tree.typeinfo;
   const eNodeSocketInOut in_out = socket.in_out == SOCK_OUT ? SOCK_IN : SOCK_OUT;
 
-  const IDProperty *sockets = BKE_asset_metadata_idprop_find(
-      &asset_data, in_out == SOCK_IN ? "inputs" : "outputs");
+  const IDProperty *properties = BKE_asset_metadata_idprop_find(&asset_data, "properties");
+  if (!properties || properties->type != IDP_GROUP) {
+    return;
+  }
+  const IDProperty *sockets = IDP_GetPropertyFromGroup(properties,
+                                                       in_out == SOCK_IN ? "inputs" : "outputs");
+  if (!sockets || sockets->type != IDP_GROUP) {
+    return;
+  }
 
   int weight = -1;
   Set<StringRef> socket_names;

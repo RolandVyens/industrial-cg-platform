@@ -155,7 +155,7 @@ static Mesh *mesh_remove_doubles_on_axis(Mesh *result,
   if (tot_doubles != 0) {
     uint tot = totvert * step_tot;
     int *full_doubles_map = MEM_new_array_uninitialized<int>(tot, __func__);
-    copy_vn_i(full_doubles_map, int(tot), -1);
+    std::fill_n(full_doubles_map, int(tot), -1);
 
     uint tot_doubles_left = tot_doubles;
     for (uint i = 0; i < totvert; i += 1) {
@@ -844,7 +844,9 @@ static Mesh *modify_mesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh 
         vert_loop_map ? vert_loop_map[edges_new[i][0]] : UINT_MAX,
         vert_loop_map ? vert_loop_map[edges_new[i][1]] : UINT_MAX,
     };
-    const bool has_mloop_orig = mloop_index_orig[0] != UINT_MAX;
+
+    const bool has_mloop_orig = edge_face_map && (edge_face_map[i] != UINT_MAX) &&
+                                (mloop_index_orig[0] != UINT_MAX);
 
     int mat_nr;
 

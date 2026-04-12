@@ -573,18 +573,6 @@ struct Library {
 };
 
 /**
- * #Library.flag
- *
- * Some of these flags define a 'virtual' library, which may not be an actual blendfile, store
- * 'archived' embedded data, etc. IDs contained in these virtual libraries are _not_ managed by
- * regular linking code.
- */
-enum LibraryFlag {
-  /** The library is an 'archive' that only contains embedded linked data. */
-  LIBRARY_FLAG_IS_ARCHIVE = 1 << 0,
-};
-
-/**
  * A weak library/ID reference for local data that has been appended, to allow re-using that local
  * data instead of creating a new copy of it in future appends.
  *
@@ -616,11 +604,13 @@ enum ePreviewImage_Flag {
 /* PreviewImage.tag */
 enum {
   /** Deferred preview is being loaded. */
-  PRV_TAG_DEFFERED_RENDERING = (1 << 1),
+  PRV_TAG_DEFERRED_RENDERING = (1 << 1),
   /** Deferred preview should be deleted asap. */
-  PRV_TAG_DEFFERED_DELETE = (1 << 2),
+  PRV_TAG_DEFERRED_DELETE = (1 << 2),
   /** This deferred preview could not be loaded (e.g. not found on disk). */
-  PRV_TAG_DEFFERED_INVALID = (1 << 3),
+  PRV_TAG_DEFERRED_INVALID = (1 << 3),
+  /* Rendering was interrupted and needs restart. */
+  PRV_TAG_RESTART_RENDERING = (1 << 4),
 };
 
 /**

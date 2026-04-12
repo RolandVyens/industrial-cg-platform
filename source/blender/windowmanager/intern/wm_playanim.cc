@@ -592,14 +592,14 @@ static int pupdate_time()
   return (g_playanim.total_time < 0.0);
 }
 
-static void *ocio_transform_ibuf(const PlayDisplayContext &display_ctx,
-                                 ImBuf *ibuf,
-                                 bool *r_glsl_used,
-                                 gpu::TextureFormat *r_format,
-                                 eGPUDataFormat *r_data,
-                                 void **r_buffer_cache_handle)
+static const void *ocio_transform_ibuf(const PlayDisplayContext &display_ctx,
+                                       ImBuf *ibuf,
+                                       bool *r_glsl_used,
+                                       gpu::TextureFormat *r_format,
+                                       eGPUDataFormat *r_data,
+                                       void **r_buffer_cache_handle)
 {
-  void *display_buffer;
+  const void *display_buffer;
   bool force_fallback = false;
   *r_glsl_used = false;
   force_fallback |= (ED_draw_imbuf_method(ibuf) != IMAGE_DRAW_METHOD_GLSL);
@@ -614,8 +614,8 @@ static void *ocio_transform_ibuf(const PlayDisplayContext &display_ctx,
     *r_glsl_used = false;
     display_buffer = nullptr;
   }
-  else if (ibuf->float_buffer.data) {
-    display_buffer = ibuf->float_buffer.data;
+  else if (ibuf->float_data()) {
+    display_buffer = ibuf->float_data_for_write();
 
     *r_data = GPU_DATA_FLOAT;
     if (ibuf->channels == 4) {
@@ -639,8 +639,8 @@ static void *ocio_transform_ibuf(const PlayDisplayContext &display_ctx,
           &display_ctx.view_settings, &display_ctx.display_settings, ibuf->dither, false);
     }
   }
-  else if (ibuf->byte_buffer.data) {
-    display_buffer = ibuf->byte_buffer.data;
+  else if (ibuf->byte_data()) {
+    display_buffer = ibuf->byte_data_for_write();
     *r_glsl_used = IMB_colormanagement_setup_glsl_draw_from_space(&display_ctx.view_settings,
                                                                   &display_ctx.display_settings,
                                                                   ibuf->byte_buffer.colorspace,
@@ -654,7 +654,7 @@ static void *ocio_transform_ibuf(const PlayDisplayContext &display_ctx,
 
   /* There is data to be displayed, but GLSL is not initialized
    * properly, in this case we fallback to CPU-based display transform. */
-  if ((ibuf->byte_buffer.data || ibuf->float_buffer.data) && !*r_glsl_used) {
+  if ((ibuf->byte_data() || ibuf->float_data()) && !*r_glsl_used) {
     display_buffer = IMB_display_buffer_acquire(
         ibuf, &display_ctx.view_settings, &display_ctx.display_settings, r_buffer_cache_handle);
     *r_format = gpu::TextureFormat::UNORM_8_8_8_8;
@@ -679,7 +679,7 @@ static void draw_display_buffer(const PlayDisplayContext &display_ctx,
   uint texCoord = GPU_vertformat_attr_add(imm_format, "texCoord", gpu::VertAttrType::SFLOAT_32_32);
 
   void *buffer_cache_handle = nullptr;
-  void *display_buffer = ocio_transform_ibuf(
+  const void *display_buffer = ocio_transform_ibuf(
       display_ctx, ibuf, &glsl_used, &format, &data, &buffer_cache_handle);
 
   /* NOTE: This may fail, especially for large images that exceed the GPU's texture size limit.
@@ -1487,7 +1487,7 @@ static bool ghost_event_proc(const GHOST_IEvent *ghost_event, GHOST_TUserDataPtr
             if (ps.ghost_data.qual & WS_QUAL_SHIFT) {
               if (ps.picture && ps.picture->ibuf) {
                 printf(" Name: %s | Speed: %.2f frames/s\n",
-                       ps.picture->ibuf->filepath,
+                       ps.picture->ibuf->filepath.c_str(),
                        ps.frame_step / g_playanim.swap_time);
               }
             }
@@ -2217,7 +2217,7 @@ static std::optional<int> wm_main_playanim_intern(int argc, const char **argv, P
           frame_cache_limit_apply(ibuf);
 #endif /* USE_FRAME_CACHE_LIMIT */
 
-          STRNCPY(ibuf->filepath, ps.picture->filepath);
+          ibuf->filepath = ps.picture->filepath;
           ibuf->fileframe = ps.picture->frame;
         }
 

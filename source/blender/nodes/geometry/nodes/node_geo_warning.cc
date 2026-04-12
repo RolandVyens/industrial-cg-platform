@@ -24,9 +24,9 @@ static void node_declare(NodeDeclarationBuilder &b)
 
   b.add_default_layout();
 
-  b.add_input<decl::Bool>("Show").default_value(true).hide_value();
-  b.add_output<decl::Bool>("Show").align_with_previous();
-  b.add_input<decl::String>("Message").optional_label();
+  b.add_input<decl::Bool>("Show"_ustr).default_value(true).hide_value();
+  b.add_output<decl::Bool>("Show"_ustr).align_with_previous();
+  b.add_input<decl::String>("Message"_ustr).optional_label();
 }
 
 class LazyFunctionForWarningNode : public LazyFunction {
@@ -105,7 +105,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  geo_node_type_base(&ntype, "GeometryNodeWarning", GEO_NODE_WARNING);
+  geo_node_type_base(&ntype, "GeometryNodeWarning"_ustr, GEO_NODE_WARNING);
   ntype.ui_name = "Warning";
   ntype.ui_description = "Create custom warnings in node groups";
   ntype.enum_name_legacy = "WARNING";

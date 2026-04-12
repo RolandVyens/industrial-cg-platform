@@ -25,13 +25,13 @@ namespace blender::nodes::node_composite_hue_correct_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
-  b.add_input<decl::Color>("Image").default_value({1.0f, 1.0f, 1.0f, 1.0f});
-  b.add_input<decl::Float>("Factor", "Fac")
+  b.add_input<decl::Color>("Image"_ustr).default_value({1.0f, 1.0f, 1.0f, 1.0f});
+  b.add_input<decl::Float>("Factor"_ustr, "Fac"_ustr)
       .default_value(1.0f)
       .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR);
-  b.add_output<decl::Color>("Image");
+  b.add_output<decl::Color>("Image"_ustr);
 }
 
 static void node_init(bNodeTree * /*ntree*/, bNode *node)
@@ -139,7 +139,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  cmp_node_type_base(&ntype, "CompositorNodeHueCorrect", CMP_NODE_HUECORRECT);
+  cmp_node_type_base(&ntype, "CompositorNodeHueCorrect"_ustr, CMP_NODE_HUECORRECT);
   ntype.ui_name = "Hue Correct";
   ntype.ui_description = "Adjust hue, saturation, and value with a curve";
   ntype.enum_name_legacy = "HUECORRECT";

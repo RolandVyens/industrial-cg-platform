@@ -258,12 +258,12 @@ void USDPointInstancerWriter::process_instance_reference(
 
     case bke::InstanceReference::Type::GeometrySet: {
       bke::GeometrySet geometry_set = reference.geometry_set();
-      std::string set_name = geometry_set.name;
+      const StringRef set_name = geometry_set.name();
 
-      if (proto_index_map.contains(set_name)) {
-        proto_indices.push_back(proto_index_map.lookup(set_name));
+      if (proto_index_map.contains_as(set_name)) {
+        proto_indices.push_back(proto_index_map.lookup_as(set_name));
 
-        final_proto_index_map.add_overwrite(set_name, proto_index_map.lookup(set_name));
+        final_proto_index_map.add_overwrite(set_name, proto_index_map.lookup_as(set_name));
       }
 
       Vector<const bke::GeometryComponent *> components = geometry_set.get_components();
@@ -594,7 +594,7 @@ void USDPointInstancerWriter::write_attribute_data(const bke::AttributeIter &att
   }
 
   const pxr::TfToken pv_name(
-      make_safe_name(attr.name, usd_export_context_.export_params.allow_unicode));
+      make_safe_primvar_name(attr.name, usd_export_context_.export_params.allow_unicode));
   const pxr::UsdGeomPrimvarsAPI pv_api = pxr::UsdGeomPrimvarsAPI(usd_instancer);
 
   pxr::UsdGeomPrimvar pv_attr = pv_api.CreatePrimvar(pv_name, *pv_type);

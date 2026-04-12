@@ -321,7 +321,6 @@ set(GLSL_SRC
   intern/shaders/subdiv_infos.hh
   intern/shaders/subdiv_patch_eval_infos.hh
 
-  engines/eevee/shaders/infos/eevee_ambient_occlusion_infos.hh
   engines/eevee/shaders/infos/eevee_common_infos.hh
   engines/eevee/shaders/infos/eevee_deferred_infos.hh
   engines/eevee/shaders/infos/eevee_depth_of_field_infos.hh
@@ -330,13 +329,11 @@ set(GLSL_SRC
   engines/eevee/shaders/infos/eevee_fullscreen_infos.hh
   engines/eevee/shaders/infos/eevee_geom_infos.hh
   engines/eevee/shaders/infos/eevee_hiz_infos.hh
-  engines/eevee/shaders/infos/eevee_light_culling_infos.hh
   engines/eevee/shaders/infos/eevee_light_infos.hh
   engines/eevee/shaders/infos/eevee_lightprobe_infos.hh
   engines/eevee/shaders/infos/eevee_lightprobe_sphere_infos.hh
   engines/eevee/shaders/infos/eevee_lightprobe_volume_infos.hh
   engines/eevee/shaders/infos/eevee_lookdev_infos.hh
-  engines/eevee/shaders/infos/eevee_lut_infos.hh
   engines/eevee/shaders/infos/eevee_material_infos.hh
   engines/eevee/shaders/infos/eevee_motion_blur_infos.hh
   engines/eevee/shaders/infos/eevee_nodetree_infos.hh
@@ -344,7 +341,6 @@ set(GLSL_SRC
   engines/eevee/shaders/infos/eevee_sampling_infos.hh
   engines/eevee/shaders/infos/eevee_shadow_infos.hh
   engines/eevee/shaders/infos/eevee_shadow_pipeline_infos.hh
-  engines/eevee/shaders/infos/eevee_subsurface_infos.hh
   engines/eevee/shaders/infos/eevee_surf_capture_infos.hh
   engines/eevee/shaders/infos/eevee_surf_deferred_infos.hh
   engines/eevee/shaders/infos/eevee_surf_depth_infos.hh
@@ -365,7 +361,6 @@ set(GLSL_SRC
   engines/gpencil/shaders/infos/gpencil_infos.hh
   engines/gpencil/shaders/infos/gpencil_vfx_infos.hh
 
-  engines/overlay/shaders/infos/overlay_antialiasing_infos.hh
   engines/overlay/shaders/infos/overlay_armature_infos.hh
   engines/overlay/shaders/infos/overlay_background_infos.hh
   engines/overlay/shaders/infos/overlay_common_infos.hh
@@ -393,19 +388,20 @@ set(GLSL_SRC
   engines/workbench/shaders/infos/workbench_transparent_resolve_infos.hh
 
   engines/eevee/shaders/eevee_ambient_occlusion_lib.glsl
-  engines/eevee/shaders/eevee_ambient_occlusion_pass_comp.glsl
   engines/eevee/shaders/eevee_attributes_curves_lib.glsl
   engines/eevee/shaders/eevee_attributes_mesh_lib.glsl
   engines/eevee/shaders/eevee_attributes_pointcloud_lib.glsl
   engines/eevee/shaders/eevee_attributes_volume_lib.glsl
   engines/eevee/shaders/eevee_attributes_world_lib.glsl
   engines/eevee/shaders/eevee_bxdf_lib.glsl
+  engines/eevee/shaders/eevee_bxdf_lut.bsl.hh
+  engines/eevee/shaders/eevee_bxdf_lut_lib.bsl.hh
   engines/eevee/shaders/eevee_bxdf_microfacet_lib.glsl
   engines/eevee/shaders/eevee_bxdf_diffuse_lib.glsl
   engines/eevee/shaders/eevee_bxdf_sampling_lib.glsl
-  engines/eevee/shaders/eevee_camera_lib.glsl
+  engines/eevee/shaders/eevee_camera_lib.bsl.hh
   engines/eevee/shaders/eevee_closure_lib.glsl
-  engines/eevee/shaders/eevee_colorspace_lib.glsl
+  engines/eevee/shaders/eevee_colorspace_lib.bsl.hh
   engines/eevee/shaders/eevee_cryptomatte_lib.glsl
   engines/eevee/shaders/eevee_debug_gbuffer_frag.glsl
   engines/eevee/shaders/eevee_debug_surfels_vert.glsl
@@ -460,18 +456,10 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_geom_world_vert.glsl
   engines/eevee/shaders/eevee_hiz_debug_frag.glsl
   engines/eevee/shaders/eevee_hiz_update_comp.glsl
-  engines/eevee/shaders/eevee_horizon_denoise_comp.glsl
-  engines/eevee/shaders/eevee_horizon_resolve_comp.glsl
-  engines/eevee/shaders/eevee_horizon_scan_eval_lib.glsl
-  engines/eevee/shaders/eevee_horizon_scan_comp.glsl
-  engines/eevee/shaders/eevee_horizon_scan_lib.glsl
-  engines/eevee/shaders/eevee_horizon_setup_comp.glsl
-  engines/eevee/shaders/eevee_light_culling_debug_frag.glsl
-  engines/eevee/shaders/eevee_light_culling_select_comp.glsl
-  engines/eevee/shaders/eevee_light_culling_sort_comp.glsl
-  engines/eevee/shaders/eevee_light_culling_tile_comp.glsl
-  engines/eevee/shaders/eevee_light_culling_zbin_comp.glsl
-  engines/eevee/shaders/eevee_light_shadow_setup_comp.glsl
+  engines/eevee/shaders/eevee_horizon_scan.bsl.hh
+  engines/eevee/shaders/eevee_horizon_scan_lib.bsl.hh
+  engines/eevee/shaders/eevee_light_culling.bsl.hh
+  engines/eevee/shaders/eevee_light_shadow_setup.bsl.hh
   engines/eevee/shaders/eevee_light_eval_lib.glsl
   engines/eevee/shaders/eevee_light_iter_lib.glsl
   engines/eevee/shaders/eevee_light_lib.glsl
@@ -486,8 +474,8 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_lookdev_copy_world_comp.glsl
   engines/eevee/shaders/eevee_lookdev_display_frag.glsl
   engines/eevee/shaders/eevee_lookdev_display_vert.glsl
-  engines/eevee/shaders/eevee_ltc_lib.glsl
-  engines/eevee/shaders/eevee_lut_comp.glsl
+  engines/eevee/shaders/eevee_ltc_lib.bsl.hh
+  engines/eevee/shaders/eevee_ltc_lut_lib.bsl.hh
   engines/eevee/shaders/eevee_motion_blur_dilate_comp.glsl
   engines/eevee/shaders/eevee_motion_blur_flatten_comp.glsl
   engines/eevee/shaders/eevee_motion_blur_gather_comp.glsl
@@ -498,11 +486,9 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_nodetree_type_lib.glsl
   engines/eevee/shaders/eevee_nodetree_vert_lib.glsl
   engines/eevee/shaders/eevee_occupancy_convert_frag.glsl
-  engines/eevee/shaders/eevee_occupancy_lib.glsl
-  engines/eevee/shaders/eevee_octahedron_lib.glsl
-  engines/eevee/shaders/eevee_ray_denoise_bilateral_comp.glsl
-  engines/eevee/shaders/eevee_ray_denoise_spatial_comp.glsl
-  engines/eevee/shaders/eevee_ray_denoise_temporal_comp.glsl
+  engines/eevee/shaders/eevee_occupancy_lib.bsl.hh
+  engines/eevee/shaders/eevee_octahedron_lib.bsl.hh
+  engines/eevee/shaders/eevee_ray_denoise.bsl.hh
   engines/eevee/shaders/eevee_ray_generate_comp.glsl
   engines/eevee/shaders/eevee_ray_generate_lib.glsl
   engines/eevee/shaders/eevee_ray_tile_classify_comp.glsl
@@ -511,8 +497,8 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_ray_trace_planar_comp.glsl
   engines/eevee/shaders/eevee_ray_trace_screen_comp.glsl
   engines/eevee/shaders/eevee_ray_trace_screen_lib.glsl
-  engines/eevee/shaders/eevee_ray_types_lib.glsl
-  engines/eevee/shaders/eevee_reverse_z_lib.glsl
+  engines/eevee/shaders/eevee_ray_types_lib.bsl.hh
+  engines/eevee/shaders/eevee_reverse_z_lib.bsl.hh
   engines/eevee/shaders/eevee_lightprobe_sphere_convolve_comp.glsl
   engines/eevee/shaders/eevee_lightprobe_sphere_eval_lib.glsl
   engines/eevee/shaders/eevee_lightprobe_sphere_irradiance_comp.glsl
@@ -532,26 +518,21 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_shadow_page_clear_comp.glsl
   engines/eevee/shaders/eevee_shadow_page_defrag.bsl.hh
   engines/eevee/shaders/eevee_shadow_page_free.bsl.hh
-  engines/eevee/shaders/eevee_shadow_page_mask_comp.glsl
+  engines/eevee/shaders/eevee_shadow_page_mask.bsl.hh
   engines/eevee/shaders/eevee_shadow_page_ops.bsl.hh
-  engines/eevee/shaders/eevee_shadow_tag_update_comp.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_comp.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_frag.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_lib.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_surfels_comp.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_vert.glsl
-  engines/eevee/shaders/eevee_shadow_tag_usage_volume_comp.glsl
+  engines/eevee/shaders/eevee_shadow_tag_update.bsl.hh
+  engines/eevee/shaders/eevee_shadow_tag_usage.bsl.hh
+  engines/eevee/shaders/eevee_shadow_tag_usage_transparent.bsl.hh
   engines/eevee/shaders/eevee_shadow_tilemap_amend_comp.glsl
   engines/eevee/shaders/eevee_shadow_tilemap_bounds_comp.glsl
   engines/eevee/shaders/eevee_shadow_tilemap_finalize_comp.glsl
   engines/eevee/shaders/eevee_shadow_tilemap_init_comp.glsl
-  engines/eevee/shaders/eevee_shadow_tilemap_lib.glsl
+  engines/eevee/shaders/eevee_shadow_tilemap_lib.bsl.hh
   engines/eevee/shaders/eevee_shadow_tilemap_rendermap_comp.glsl
   engines/eevee/shaders/eevee_shadow_visibility_comp.glsl
-  engines/eevee/shaders/eevee_spherical_harmonics_lib.glsl
-  engines/eevee/shaders/eevee_subsurface_convolve_comp.glsl
+  engines/eevee/shaders/eevee_spherical_harmonics.bsl.hh
   engines/eevee/shaders/eevee_subsurface_lib.glsl
-  engines/eevee/shaders/eevee_subsurface_setup_comp.glsl
+  engines/eevee/shaders/eevee_subsurface.bsl.hh
   engines/eevee/shaders/eevee_surf_capture_frag.glsl
   engines/eevee/shaders/eevee_surf_deferred_frag.glsl
   engines/eevee/shaders/eevee_surf_depth_frag.glsl
@@ -573,7 +554,7 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_surfel_list_prepare_comp.glsl
   engines/eevee/shaders/eevee_surfel_list_sort_comp.glsl
   engines/eevee/shaders/eevee_surfel_ray_comp.glsl
-  engines/eevee/shaders/eevee_thickness_lib.glsl
+  engines/eevee/shaders/eevee_thickness_lib.bsl.hh
   engines/eevee/shaders/eevee_transparency_lib.glsl
   engines/eevee/shaders/eevee_transparency_resolve_frag.glsl
   engines/eevee/shaders/eevee_utility_tx_lib.glsl
@@ -628,12 +609,8 @@ set(GLSL_SRC
   engines/workbench/shaders/workbench_merge_depth_frag.glsl
   engines/workbench/shaders/workbench_overlay_depth_frag.glsl
   engines/workbench/shaders/workbench_prepass.bsl.hh
-  engines/workbench/shaders/workbench_shadow_caps_vert.glsl
-  engines/workbench/shaders/workbench_shadow_debug_frag.glsl
-  engines/workbench/shaders/workbench_shadow_frag.glsl
-  engines/workbench/shaders/workbench_shadow_lib.glsl
-  engines/workbench/shaders/workbench_shadow_vert.glsl
-  engines/workbench/shaders/workbench_shadow_visibility_comp.glsl
+  engines/workbench/shaders/workbench_shadow.bsl.hh
+  engines/workbench/shaders/workbench_shadow_visibility.bsl.hh
   engines/workbench/shaders/workbench_transparent_accum_frag.glsl
   engines/workbench/shaders/workbench_transparent_resolve_frag.glsl
   engines/workbench/shaders/workbench_volume.bsl.hh
@@ -652,8 +629,8 @@ set(GLSL_SRC
   intern/shaders/subdiv_normals_accumulate_comp.glsl
   intern/shaders/subdiv_patch_evaluation_comp.glsl
   intern/shaders/subdiv_vbo_edge_fac_comp.glsl
-  intern/shaders/subdiv_vbo_edituv_strech_angle_comp.glsl
-  intern/shaders/subdiv_vbo_edituv_strech_area_comp.glsl
+  intern/shaders/subdiv_vbo_edituv_stretch_angle_comp.glsl
+  intern/shaders/subdiv_vbo_edituv_stretch_area_comp.glsl
   intern/shaders/subdiv_vbo_lnor_comp.glsl
   intern/shaders/subdiv_vbo_paint_overlay_flag_comp.glsl
   intern/shaders/subdiv_vbo_sculpt_data_comp.glsl
@@ -674,12 +651,14 @@ set(GLSL_SRC
   intern/shaders/draw_intersect_lib.glsl
   intern/shaders/draw_math_geom_lib.glsl
   intern/shaders/draw_model_lib.glsl
+  intern/shaders/draw_model.bsl.hh
   intern/shaders/draw_object_infos_lib.glsl
   intern/shaders/draw_pointcloud_lib.glsl
   intern/shaders/draw_resource_finalize_comp.glsl
   intern/shaders/draw_view_clipping_lib.glsl
   intern/shaders/draw_view_finalize_comp.glsl
   intern/shaders/draw_view_lib.glsl
+  intern/shaders/draw_view.bsl.hh
   intern/shaders/draw_view_reconstruction_lib.glsl
   intern/shaders/draw_visibility_comp.glsl
 
@@ -702,6 +681,7 @@ set(GLSL_SRC
   engines/gpencil/shaders/gpencil_mask_invert_frag.glsl
   engines/gpencil/shaders/gpencil_depth_merge_frag.glsl
   engines/gpencil/shaders/gpencil_depth_merge_vert.glsl
+  engines/gpencil/shaders/gpencil_depth_pass_merge_frag.glsl
   engines/gpencil/shaders/gpencil_vfx_frag.glsl
 
   engines/gpencil/gpencil_defines.hh
@@ -715,7 +695,7 @@ set(GLSL_SRC
   engines/select/select_defines.hh
   engines/select/select_shader_shared.hh
 
-  engines/overlay/shaders/overlay_antialiasing_frag.glsl
+  engines/overlay/shaders/overlay_antialiasing.bsl.hh
   engines/overlay/shaders/overlay_armature_dof_solid_frag.glsl
   engines/overlay/shaders/overlay_armature_dof_vert.glsl
   engines/overlay/shaders/overlay_armature_envelope_outline_vert.glsl
@@ -789,6 +769,7 @@ set(GLSL_SRC
   engines/overlay/shaders/overlay_fullscreen_vert.glsl
   engines/overlay/shaders/overlay_grid_frag.glsl
   engines/overlay/shaders/overlay_grid_vert.glsl
+  engines/overlay/shaders/overlay_grid_common_lib.glsl
   engines/overlay/shaders/overlay_image_frag.glsl
   engines/overlay/shaders/overlay_image_vert.glsl
   engines/overlay/shaders/overlay_motion_path_line_frag.glsl
@@ -832,7 +813,7 @@ set(GLSL_SRC
   engines/overlay/shaders/overlay_volume_velocity_vert.glsl
   engines/overlay/shaders/overlay_wireframe_frag.glsl
   engines/overlay/shaders/overlay_wireframe_vert.glsl
-  engines/overlay/shaders/overlay_xray_fade_frag.glsl
+  engines/overlay/shaders/overlay_xray_fade.bsl.hh
 
   engines/overlay/overlay_shader_shared.hh
 
@@ -869,8 +850,8 @@ set(GLSL_INC
   ../gpu
   ../gpu/intern
   ../gpu/shaders
-  ../gpu/shaders/infos
   ../gpu/shaders/common
+  ../gpu/shaders/infos
 
   engines/gpencil
   engines/gpencil/shaders

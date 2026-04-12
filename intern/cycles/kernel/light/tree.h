@@ -18,9 +18,9 @@
 #include "kernel/light/area.h"
 #include "kernel/light/background.h"
 #include "kernel/light/common.h"
-#include "kernel/light/distant.h"
 #include "kernel/light/point.h"
 #include "kernel/light/spot.h"
+#include "kernel/light/sun.h"
 #include "kernel/light/triangle.h"
 
 #include "util/math_fast.h"
@@ -265,7 +265,7 @@ ccl_device bool compute_emitter_centroid_and_dir(KernelGlobals kg,
         centroid = make_float3(0.0f, 0.0f, 1.0f);
         dir = make_float3(0.0f, 0.0f, -1.0f);
         break;
-      case LIGHT_DISTANT:
+      case LIGHT_SUN:
         dir = centroid;
         break;
       default:
@@ -476,8 +476,8 @@ ccl_device void light_tree_emitter_importance(KernelGlobals kg,
         is_visible = background_light_tree_parameters<in_volume_segment>(
             centroid, t, cos_theta_u, distance, point_to_centroid, theta_d);
         break;
-      case LIGHT_DISTANT:
-        is_visible = distant_light_tree_parameters<in_volume_segment>(
+      case LIGHT_SUN:
+        is_visible = sun_light_tree_parameters<in_volume_segment>(
             centroid, bcone.theta_e, t, cos_theta_u, distance, point_to_centroid, theta_d);
         break;
       default:
@@ -496,8 +496,8 @@ ccl_device void light_tree_emitter_importance(KernelGlobals kg,
 
     if (is_light(kemitter)) {
       const ccl_global KernelLight *klight = &kernel_data_fetch(lights, ~(kemitter->light.id));
-      if (klight->type == LIGHT_DISTANT) {
-        /* For distant light `theta_min` is 0, but due to numerical issues this is not always true.
+      if (klight->type == LIGHT_SUN) {
+        /* For sun light `theta_min` is 0, but due to numerical issues this is not always true.
          * Therefore explicitly assign `-bcone.axis` to `point_to_centroid` in this case. */
         point_to_centroid = -bcone.axis;
       }
@@ -831,7 +831,7 @@ ccl_device float light_tree_pdf(KernelGlobals kg,
   if (is_triangle(kemitter)) {
     /* If the target is an emissive triangle, first traverse the top level tree to find the mesh
      * light emitter, then traverse the subtree. */
-    target_emitter = kernel_data_fetch(object_to_tree, object_emitter);
+    target_emitter = kernel_data_fetch(light_to_tree, object_emitter);
     const ccl_global KernelLightTreeEmitter *kmesh = &kernel_data_fetch(light_tree_emitters,
                                                                         target_emitter);
     subtree_root_index = kmesh->mesh.node_id;

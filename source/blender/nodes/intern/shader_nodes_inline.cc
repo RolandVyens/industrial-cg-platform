@@ -300,7 +300,7 @@ class ShaderNodesInliner {
     };
 
     Vector<SocketInContext> output_sockets;
-    auto add_output_type = [&](const char *output_type) {
+    auto add_output_type = [&](const UString output_type) {
       for (const TreeInContext &tree : trees) {
         const bke::bNodeTreeZones &zones = *tree->zones();
         for (const bNode *node : tree->nodes_by_type(output_type)) {
@@ -324,16 +324,16 @@ class ShaderNodesInliner {
 
     switch (tree_type) {
       case ID_MA:
-        add_output_type("ShaderNodeOutputMaterial");
-        add_output_type("ShaderNodeOutputLight");
-        add_output_type("ShaderNodeOutputAOV");
+        add_output_type("ShaderNodeOutputMaterial"_ustr);
+        add_output_type("ShaderNodeOutputLight"_ustr);
+        add_output_type("ShaderNodeOutputAOV"_ustr);
         break;
       case ID_WO:
-        add_output_type("ShaderNodeOutputWorld");
-        add_output_type("ShaderNodeOutputAOV");
+        add_output_type("ShaderNodeOutputWorld"_ustr);
+        add_output_type("ShaderNodeOutputAOV"_ustr);
         break;
       case ID_LA:
-        add_output_type("ShaderNodeOutputLight");
+        add_output_type("ShaderNodeOutputLight"_ustr);
         break;
       default:
         BLI_assert_unreachable();
@@ -401,7 +401,7 @@ class ShaderNodesInliner {
 
     const bNodeLink *used_link = nullptr;
     for (const bNodeLink *link : socket->directly_linked_links()) {
-      if (!link->is_used()) {
+      if (!link->is_used() || link->fromnode == nullptr || link->fromnode->is_undefined()) {
         continue;
       }
       used_link = link;
@@ -491,7 +491,7 @@ class ShaderNodesInliner {
     const ComputeContext *context = to_socket.context;
     for (const bke::bNodeTreeZone *zone = to_zone; zone != from_zone; zone = zone->parent_zone) {
       const bNode &zone_output_node = *zone->output_node();
-      if (zone_output_node.is_type("GeometryNodeRepeatOutput")) {
+      if (zone_output_node.is_type("GeometryNodeRepeatOutput"_ustr)) {
         if (this->should_preserve_repeat_zone_node(zone_output_node)) {
           /* Preserved repeat zones are embedded into their outer compute context. */
           continue;
@@ -524,7 +524,7 @@ class ShaderNodesInliner {
       this->handle_output_socket__group_input(socket);
       return;
     }
-    if (node->is_type("GeometryNodeRepeatOutput")) {
+    if (node->is_type("GeometryNodeRepeatOutput"_ustr)) {
       if (this->should_preserve_repeat_zone_node(*node)) {
         this->handle_output_socket__preserved_repeat_output(socket);
         return;
@@ -532,7 +532,7 @@ class ShaderNodesInliner {
       this->handle_output_socket__repeat_output(socket);
       return;
     }
-    if (node->is_type("GeometryNodeRepeatInput")) {
+    if (node->is_type("GeometryNodeRepeatInput"_ustr)) {
       if (this->should_preserve_repeat_zone_node(*node)) {
         this->handle_output_socket__preserved_repeat_input(socket);
         return;
@@ -540,32 +540,40 @@ class ShaderNodesInliner {
       this->handle_output_socket__repeat_input(socket);
       return;
     }
-    if (node->is_type("NodeClosureOutput")) {
+    if (node->is_type("NodeClosureOutput"_ustr)) {
       this->handle_output_socket__closure_output(socket);
       return;
     }
-    if (node->is_type("NodeClosureInput")) {
+    if (node->is_type("NodeClosureInput"_ustr)) {
       this->handle_output_socket__closure_input(socket);
       return;
     }
-    if (node->is_type("NodeEvaluateClosure")) {
+    if (node->is_type("NodeEvaluateClosure"_ustr)) {
       this->handle_output_socket__evaluate_closure(socket);
       return;
     }
-    if (node->is_type("NodeCombineBundle")) {
+    if (node->is_type("NodeCombineBundle"_ustr)) {
       this->handle_output_socket__combine_bundle(socket);
       return;
     }
-    if (node->is_type("NodeSeparateBundle")) {
+    if (node->is_type("NodeSeparateBundle"_ustr)) {
       this->handle_output_socket__separate_bundle(socket);
       return;
     }
-    if (node->is_type("GeometryNodeMenuSwitch")) {
+    if (node->is_type("GeometryNodeMenuSwitch"_ustr)) {
       this->handle_output_socket__menu_switch(socket);
       return;
     }
-    if (node->is_type("NodeJoinBundle")) {
+    if (node->is_type("FunctionNodeInputMenu"_ustr)) {
+      this->handle_output_socket__input_menu(socket);
+      return;
+    }
+    if (node->is_type("NodeJoinBundle"_ustr)) {
       this->handle_output_socket__join_bundle(socket);
+      return;
+    }
+    if (node->is_type("NodeImplicitConversion"_ustr)) {
+      this->handle_output_socket__implicit_conversion(socket);
       return;
     }
     this->handle_output_socket__eval(socket);
@@ -662,8 +670,8 @@ class ShaderNodesInliner {
 
   bool should_preserve_repeat_zone_node(const bNode &repeat_zone_node) const
   {
-    BLI_assert(repeat_zone_node.is_type("GeometryNodeRepeatOutput") ||
-               repeat_zone_node.is_type("GeometryNodeRepeatInput"));
+    BLI_assert(repeat_zone_node.is_type("GeometryNodeRepeatOutput"_ustr) ||
+               repeat_zone_node.is_type("GeometryNodeRepeatInput"_ustr));
     if (!params_.allow_preserving_repeat_zones) {
       return false;
     }
@@ -1081,6 +1089,32 @@ class ShaderNodesInliner {
     this->store_socket_value(socket, {PrimitiveSocketValue{is_selected}});
   }
 
+  void handle_output_socket__input_menu(const SocketInContext &socket)
+  {
+    const NodeInContext node = socket.owner_node();
+    const auto &storage = *static_cast<const NodeInputMenu *>(node->storage);
+    SocketInContext output_socket = node.output_socket(0);
+    this->store_socket_value(output_socket,
+                             {PrimitiveSocketValue::from_value(
+                                 {output_socket->typeinfo->base_cpp_type, &storage.value})});
+  }
+
+  void handle_output_socket__implicit_conversion(const SocketInContext &socket)
+  {
+    const NodeInContext node = socket.owner_node();
+
+    const SocketInContext input_socket = node.input_socket(0);
+    const SocketValue *socket_value = value_by_socket_.lookup_ptr(input_socket);
+    if (!socket_value) {
+      /* The input bundle is not known yet, so schedule it for now. */
+      this->schedule_socket(input_socket);
+      return;
+    }
+    const SocketValue converted_value = this->handle_implicit_conversion(
+        *socket_value, *socket->typeinfo, *socket->typeinfo);
+    this->store_socket_value(socket, converted_value);
+  }
+
   /**
    * Evaluate a node to compute the value of the given output socket. This may also compute all the
    * other outputs of the node.
@@ -1252,7 +1286,7 @@ class ShaderNodesInliner {
     }
     if (src_primitive_value && to_socket_type.type == SOCK_SHADER) {
       /* Insert a Color node when converting a primitive value to a shader. */
-      bNode *color_node = this->add_node("ShaderNodeRGB");
+      bNode *color_node = this->add_node("ShaderNodeRGB"_ustr);
       const void *src_buffer = src_primitive_value->buffer();
       ColorGeometry4f color;
       data_type_conversions_.convert_to_uninitialized(
@@ -1303,7 +1337,7 @@ class ShaderNodesInliner {
     }
     if (!params_.allow_preserving_repeat_zones) {
       const bool is_iterations_input = dst_node.inputs.first == &dst_socket &&
-                                       dst_node.is_type("GeometryNodeRepeatInput");
+                                       dst_node.is_type("GeometryNodeRepeatInput"_ustr);
       if (is_iterations_input) {
         this->add_dynamic_repeat_zone_iterations_error(original_node);
         this->set_primitive_value_on_socket(dst_socket, PrimitiveSocketValue{0});
@@ -1354,36 +1388,32 @@ class ShaderNodesInliner {
   NodeAndSocket primitive_value_to_output_socket(const PrimitiveSocketValue &value)
   {
     if (const float *value_float = std::get_if<float>(&value.value)) {
-      bNode *node = this->add_node("ShaderNodeValue");
+      bNode *node = this->add_node("ShaderNodeValue"_ustr);
       bNodeSocket *socket = static_cast<bNodeSocket *>(node->outputs.first);
       socket->default_value_typed<bNodeSocketValueFloat>()->value = *value_float;
       return {node, socket};
     }
     if (const int *value_int = std::get_if<int>(&value.value)) {
-      bNode *node = this->add_node("ShaderNodeValue");
-      bNodeSocket *socket = static_cast<bNodeSocket *>(node->outputs.first);
-      socket->default_value_typed<bNodeSocketValueFloat>()->value = *value_int;
-      return {node, socket};
+      bNode *node = this->add_node("FunctionNodeInputInt"_ustr);
+      auto &storage = *static_cast<NodeInputInt *>(node->storage);
+      storage.integer = *value_int;
+      return {node, static_cast<bNodeSocket *>(node->outputs.first)};
     }
     if (const bool *value_bool = std::get_if<bool>(&value.value)) {
-      bNode *node = this->add_node("ShaderNodeValue");
-      bNodeSocket *socket = static_cast<bNodeSocket *>(node->outputs.first);
-      socket->default_value_typed<bNodeSocketValueFloat>()->value = *value_bool;
-      return {node, socket};
+      bNode *node = this->add_node("FunctionNodeInputBool"_ustr);
+      auto &storage = *static_cast<NodeInputBool *>(node->storage);
+      storage.boolean = int(*value_bool);
+      return {node, static_cast<bNodeSocket *>(node->outputs.first)};
     }
     if (const float3 *value_float3 = std::get_if<float3>(&value.value)) {
-      bNode *node = this->add_node("ShaderNodeCombineXYZ");
-      bNodeSocket *output_socket = static_cast<bNodeSocket *>(node->outputs.first);
-      bNodeSocket *input_x = static_cast<bNodeSocket *>(node->inputs.first);
-      bNodeSocket *input_y = input_x->next;
-      bNodeSocket *input_z = input_y->next;
-      input_x->default_value_typed<bNodeSocketValueFloat>()->value = value_float3->x;
-      input_y->default_value_typed<bNodeSocketValueFloat>()->value = value_float3->y;
-      input_z->default_value_typed<bNodeSocketValueFloat>()->value = value_float3->z;
-      return {node, output_socket};
+      bNode *node = this->add_node("FunctionNodeInputVector"_ustr);
+      auto &storage = *static_cast<NodeInputVector *>(node->storage);
+      copy_v3_v3(storage.vector, *value_float3);
+      storage.dimensions = 3;
+      return {node, static_cast<bNodeSocket *>(node->outputs.first)};
     }
     if (const ColorGeometry4f *value_color = std::get_if<ColorGeometry4f>(&value.value)) {
-      bNode *node = this->add_node("ShaderNodeRGB");
+      bNode *node = this->add_node("ShaderNodeRGB"_ustr);
       bNodeSocket *output_socket = static_cast<bNodeSocket *>(node->outputs.first);
       auto *socket_storage = static_cast<bNodeSocketValueRGBA *>(output_socket->default_value);
       copy_v3_v3(socket_storage->value, *value_color);
@@ -1394,7 +1424,7 @@ class ShaderNodesInliner {
     return {};
   }
 
-  bNode *add_node(const StringRefNull idname)
+  bNode *add_node(const UString idname)
   {
     return bke::node_add_node(nullptr, dst_tree_, idname, this->get_next_node_identifier());
   }

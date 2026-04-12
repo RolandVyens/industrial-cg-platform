@@ -30,12 +30,14 @@ class TestEntry:
     device_type: str = 'CPU'
     device_id: str = 'CPU'
     device_name: str = 'Unknown CPU'
+    device_cpu: str = ''
     status: str = 'queued'
     # Short, single-line error.
     error_msg: str = ''
     # More detailed error info, potentially multi-lines.
     exception_msg: str = ''
     output: dict = field(default_factory=dict)
+    output_all_runs: dict = field(default_factory=dict)
     benchmark_type: str = 'comparison'
 
     def to_json(self) -> dict:
@@ -49,6 +51,12 @@ class TestEntry:
             if field in json_dict:
                 setattr(self, field, json_dict[field])
 
+    def migrate(self):
+        if self.output:
+            missing_keys = self.output.keys() - self.output_all_runs.keys()
+            for key in missing_keys:
+                self.output_all_runs[key] = [self.output[key]]
+
 
 class TestQueue:
     """Queue of tests to be run or inspected. Matches JSON file on disk."""
@@ -56,6 +64,7 @@ class TestQueue:
     def __init__(self, filepath: pathlib.Path):
         self.filepath = filepath
         self.has_multiple_categories = False
+        self.has_multiple_devices = False
         self.entries = []
 
         if self.filepath.is_file():
@@ -65,6 +74,7 @@ class TestQueue:
             for json_entry in json_entries:
                 entry = TestEntry()
                 entry.from_json(json_entry)
+                entry.migrate()
                 self.entries.append(entry)
 
     def rows(self, use_revision_columns: bool) -> list:
@@ -229,9 +239,12 @@ class TestConfig:
 
         # Detect number of categories for more compact printing.
         categories = set()
+        devices = set()
         for entry in entries:
             categories.add(entry.category)
+            devices.add(entry.device_type)
         self.queue.has_multiple_categories = len(categories) > 1
+        self.queue.has_multiple_devices = len(devices) > 1
 
         # Replace actual entries.
         self.queue.entries = entries
@@ -249,11 +262,13 @@ class TestConfig:
 
             # Filter devices that are supported by this test. Add a default CPU when
             # no devices are supported for backwards compatibility
-            devices = self.devices
+            supported_device_types = ['CPU']
             if test.use_device():
-                devices = filter(lambda device: device.type in test.supported_device_types(), devices)
+                supported_device_types = test.supported_device_types()
+
+            devices = filter(lambda device: device.type in test.supported_device_types(), self.devices)
             if not devices:
-                devices = ['CPU']
+                devices = filter(lambda device: device.type == 'CPU', self.devices)
 
             for device in devices:
                 entry = self.queue.find(revision_name, test_name, test_category, device.id)
@@ -270,6 +285,9 @@ class TestConfig:
                         entry.executable = executable
                         entry.benchmark_type = self.benchmark_type
                         entry.date = date
+                        entry.device_name = device.name
+                        if device.cpu:
+                            entry.device_cpu = device.cpu
                         if entry.status in {'done', 'failed'}:
                             entry.status = 'outdated'
                 else:
@@ -285,6 +303,7 @@ class TestConfig:
                         device_type=device.type,
                         device_id=device.id,
                         device_name=device.name,
+                        device_cpu=device.cpu,
                         benchmark_type=self.benchmark_type)
                 entries.append(entry)
 

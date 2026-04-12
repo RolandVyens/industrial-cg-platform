@@ -764,16 +764,6 @@ void BKE_brush_tag_unsaved_changes(Brush *brush)
   }
 }
 
-Brush *BKE_brush_first_search(Main *bmain, const eObjectMode ob_mode)
-{
-  for (Brush &brush : bmain->brushes) {
-    if (brush.ob_mode & ob_mode) {
-      return &brush;
-    }
-  }
-  return nullptr;
-}
-
 void BKE_brush_debug_print_state(Brush *br)
 {
   /* create a fake brush and set it to the defaults */
@@ -1238,7 +1228,7 @@ void BKE_brush_size_set(Paint *paint, Brush *brush, int size)
   /* make sure range is sane */
   CLAMP(size, 1, MAX_BRUSH_PIXEL_DIAMETER);
 
-  if (ups->flag & UNIFIED_PAINT_SIZE) {
+  if (BKE_paint_use_unified_size(paint)) {
     ups->size = size;
   }
   else {
@@ -1250,9 +1240,11 @@ void BKE_brush_size_set(Paint *paint, Brush *brush, int size)
 int BKE_brush_size_get(const Paint *paint, const Brush *brush)
 {
   const UnifiedPaintSettings *ups = &paint->unified_paint_settings;
-  int size = (ups->flag & UNIFIED_PAINT_SIZE) ? ups->size : brush->size;
 
-  return size;
+  if (BKE_paint_use_unified_size(paint)) {
+    return ups->size;
+  }
+  return brush->size;
 }
 
 float BKE_brush_radius_get(const Paint *paint, const Brush *brush)
@@ -1282,7 +1274,7 @@ void BKE_brush_unprojected_size_set(Paint *paint, Brush *brush, float unprojecte
 {
   UnifiedPaintSettings *ups = &paint->unified_paint_settings;
 
-  if (ups->flag & UNIFIED_PAINT_SIZE) {
+  if (BKE_paint_use_unified_size(paint)) {
     ups->unprojected_size = unprojected_size;
   }
   else {
@@ -1294,8 +1286,10 @@ void BKE_brush_unprojected_size_set(Paint *paint, Brush *brush, float unprojecte
 float BKE_brush_unprojected_size_get(const Paint *paint, const Brush *brush)
 {
   const UnifiedPaintSettings *ups = &paint->unified_paint_settings;
-
-  return (ups->flag & UNIFIED_PAINT_SIZE) ? ups->unprojected_size : brush->unprojected_size;
+  if (BKE_paint_use_unified_size(paint)) {
+    return ups->unprojected_size;
+  }
+  return brush->unprojected_size;
 }
 
 float BKE_brush_unprojected_radius_get(const Paint *paint, const Brush *brush)
@@ -1331,7 +1325,7 @@ void BKE_brush_alpha_set(Paint *paint, Brush *brush, float alpha)
 {
   UnifiedPaintSettings *ups = &paint->unified_paint_settings;
 
-  if (ups->flag & UNIFIED_PAINT_ALPHA) {
+  if (BKE_paint_use_unified_strength(paint)) {
     ups->alpha = alpha;
   }
   else {
@@ -1344,7 +1338,10 @@ float BKE_brush_alpha_get(const Paint *paint, const Brush *brush)
 {
   const UnifiedPaintSettings *ups = &paint->unified_paint_settings;
 
-  return (ups->flag & UNIFIED_PAINT_ALPHA) ? ups->alpha : brush->alpha;
+  if (BKE_paint_use_unified_strength(paint)) {
+    return ups->alpha;
+  }
+  return brush->alpha;
 }
 
 float BKE_brush_weight_get(const Paint *paint, const Brush *brush)
@@ -1669,28 +1666,22 @@ static bool brush_gen_texture(const Brush *br,
 
 ImBuf *BKE_brush_gen_radial_control_imbuf(Brush *br, bool secondary, bool display_gradient)
 {
-  ImBuf *im = MEM_new<ImBuf>("radial control texture");
   int side = 512;
   int half = side / 2;
 
   BKE_curvemapping_init(br->curve_distance_falloff);
 
-  float *rect_float = MEM_new_array_zeroed<float>(size_t(side) * size_t(side),
-                                                  "radial control rect");
-  IMB_assign_float_buffer(im, rect_float, IB_DO_NOT_TAKE_OWNERSHIP);
+  ImBuf *im = IMB_allocImBuf(side, side, 32, IB_float_data);
 
-  im->x = im->y = side;
-
-  const bool have_texture = brush_gen_texture(br, side, secondary, im->float_buffer.data);
+  const bool have_texture = brush_gen_texture(br, side, secondary, im->float_data_for_write());
 
   if (display_gradient || have_texture) {
+    float *float_data = im->float_data_for_write();
     for (int i = 0; i < side; i++) {
       for (int j = 0; j < side; j++) {
         const float magn = sqrtf(pow2f(i - half) + pow2f(j - half));
         const float strength = BKE_brush_curve_strength_clamped(br, magn, half);
-        im->float_buffer.data[i * side + j] = (have_texture) ?
-                                                  im->float_buffer.data[i * side + j] * strength :
-                                                  strength;
+        float_data[i * side + j] = (have_texture) ? float_data[i * side + j] * strength : strength;
       }
     }
   }
@@ -1722,6 +1713,18 @@ bool BKE_brush_has_cube_tip(const Brush *brush, PaintMode paint_mode)
   return false;
 }
 
+namespace bke::brush {
+float normal_weight_get(const Brush &brush, const bool invert)
+{
+  BLI_assert(supports_normal_weight(brush));
+  if (!invert) {
+    return brush.normal_weight;
+  }
+
+  return brush.normal_weight == 0.0f;
+}
+}  // namespace bke::brush
+
 /* -------------------------------------------------------------------- */
 /** \name Brush Capabilities
  * \{ */
@@ -1733,6 +1736,25 @@ static bool is_paint_tool(const Brush &brush)
               SCULPT_BRUSH_TYPE_PAINT,
               SCULPT_BRUSH_TYPE_SMEAR,
               SCULPT_BRUSH_TYPE_BLUR);
+}
+/**
+ * A helper method for classifying a certain subset of brush types.
+ *
+ * Certain sculpt deformations are 'grab-like' in that they behave as if they have an anchored
+ * start point.
+ */
+static bool is_grab_tool(const Brush &brush)
+{
+  return (brush.sculpt_brush_type == SCULPT_BRUSH_TYPE_CLOTH &&
+          brush.cloth_deform_type == BRUSH_CLOTH_DEFORM_GRAB) ||
+         ELEM(brush.sculpt_brush_type,
+              SCULPT_BRUSH_TYPE_GRAB,
+              SCULPT_BRUSH_TYPE_SNAKE_HOOK,
+              SCULPT_BRUSH_TYPE_ELASTIC_DEFORM,
+              SCULPT_BRUSH_TYPE_POSE,
+              SCULPT_BRUSH_TYPE_BOUNDARY,
+              SCULPT_BRUSH_TYPE_THUMB,
+              SCULPT_BRUSH_TYPE_ROTATE);
 }
 bool supports_dyntopo(const Brush &brush)
 {
@@ -1770,7 +1792,8 @@ bool supports_accumulate(const Brush &brush)
               SCULPT_BRUSH_TYPE_CLAY_STRIPS,
               SCULPT_BRUSH_TYPE_CLAY_THUMB,
               SCULPT_BRUSH_TYPE_ROTATE,
-              SCULPT_BRUSH_TYPE_PLANE);
+              SCULPT_BRUSH_TYPE_PLANE,
+              SCULPT_BRUSH_TYPE_SCENE_PROJECT);
 }
 bool supports_topology_rake(const Brush &brush)
 {
@@ -1814,11 +1837,7 @@ bool supports_plane_depth(const Brush &brush)
 bool supports_jitter(const Brush &brush)
 {
   return !(ELEM(brush.stroke_method, BRUSH_STROKE_ANCHORED, BRUSH_STROKE_DRAG_DOT)) &&
-         !ELEM(brush.sculpt_brush_type,
-               SCULPT_BRUSH_TYPE_GRAB,
-               SCULPT_BRUSH_TYPE_ROTATE,
-               SCULPT_BRUSH_TYPE_SNAKE_HOOK,
-               SCULPT_BRUSH_TYPE_THUMB);
+         !is_grab_tool(brush);
 }
 bool supports_normal_weight(const Brush &brush)
 {
@@ -1852,11 +1871,7 @@ bool supports_plane_offset(const Brush &brush)
 }
 bool supports_random_texture_angle(const Brush &brush)
 {
-  return !ELEM(brush.sculpt_brush_type,
-               SCULPT_BRUSH_TYPE_GRAB,
-               SCULPT_BRUSH_TYPE_ROTATE,
-               SCULPT_BRUSH_TYPE_SNAKE_HOOK,
-               SCULPT_BRUSH_TYPE_THUMB);
+  return !is_grab_tool(brush);
 }
 bool supports_sculpt_plane(const Brush &brush)
 {
@@ -1894,40 +1909,12 @@ bool supports_smooth_stroke(const Brush &brush)
                 BRUSH_STROKE_DRAG_DOT,
                 BRUSH_STROKE_LINE,
                 BRUSH_STROKE_CURVE)) &&
-         !ELEM(brush.sculpt_brush_type,
-               SCULPT_BRUSH_TYPE_GRAB,
-               SCULPT_BRUSH_TYPE_ROTATE,
-               SCULPT_BRUSH_TYPE_SNAKE_HOOK,
-               SCULPT_BRUSH_TYPE_THUMB);
+         !is_grab_tool(brush);
 }
 bool supports_space_attenuation(const Brush &brush)
 {
   return ELEM(brush.stroke_method, BRUSH_STROKE_SPACE, BRUSH_STROKE_LINE, BRUSH_STROKE_CURVE) &&
-         !ELEM(brush.sculpt_brush_type,
-               SCULPT_BRUSH_TYPE_GRAB,
-               SCULPT_BRUSH_TYPE_ROTATE,
-               SCULPT_BRUSH_TYPE_SMOOTH,
-               SCULPT_BRUSH_TYPE_SNAKE_HOOK);
-}
-
-/**
- * A helper method for classifying a certain subset of brush types.
- *
- * Certain sculpt deformations are 'grab-like' in that they behave as if they have an anchored
- * start point.
- */
-static bool is_grab_tool(const Brush &brush)
-{
-  return (brush.sculpt_brush_type == SCULPT_BRUSH_TYPE_CLOTH &&
-          brush.cloth_deform_type == BRUSH_CLOTH_DEFORM_GRAB) ||
-         ELEM(brush.sculpt_brush_type,
-              SCULPT_BRUSH_TYPE_GRAB,
-              SCULPT_BRUSH_TYPE_SNAKE_HOOK,
-              SCULPT_BRUSH_TYPE_ELASTIC_DEFORM,
-              SCULPT_BRUSH_TYPE_POSE,
-              SCULPT_BRUSH_TYPE_BOUNDARY,
-              SCULPT_BRUSH_TYPE_THUMB,
-              SCULPT_BRUSH_TYPE_ROTATE);
+         !is_grab_tool(brush);
 }
 bool supports_strength_pressure(const Brush &brush)
 {
@@ -1960,7 +1947,8 @@ bool supports_inverted_direction(const Brush &brush)
               SCULPT_BRUSH_TYPE_PLANE,
               SCULPT_BRUSH_TYPE_CLAY,
               SCULPT_BRUSH_TYPE_PINCH,
-              SCULPT_BRUSH_TYPE_MASK);
+              SCULPT_BRUSH_TYPE_MASK,
+              SCULPT_BRUSH_TYPE_SCENE_PROJECT);
 }
 bool supports_gravity(const Brush &brush)
 {

@@ -25,6 +25,9 @@
 #include "BKE_customdata.hh"
 #include "BKE_data_transfer.h"
 #include "BKE_mesh_remap.hh"
+#include "BKE_node.hh"
+#include "BKE_node_runtime.hh"
+#include "BKE_node_tree_interface.hh"
 
 #include "RNA_define.hh"
 #include "RNA_enum_types.hh"
@@ -873,6 +876,8 @@ static const EnumPropertyItem grease_pencil_build_time_mode_items[] = {
 #  include "DEG_depsgraph_query.hh"
 
 #  include "MOD_nodes.hh"
+
+#  include "NOD_geometry_nodes_srna.hh"
 
 #  include "ED_object.hh"
 
@@ -1926,6 +1931,36 @@ static void rna_NodesModifier_node_group_update(Main *bmain, Scene *scene, Point
   MOD_nodes_update_interface(object, nmd);
 }
 
+static StructRNA *rna_NodesModifierProperties_refine(PointerRNA *ptr)
+{
+  auto *nmd = ptr->data_as<NodesModifierData>();
+  if (!nmd->node_group || ID_MISSING(nmd->node_group)) {
+    return RNA_NodesModifierPropertiesEmpty;
+  }
+  return nmd->node_group->runtime->geometry_nodes_srna_data->properties_struct;
+}
+
+static std::optional<std::string> rna_NodesModifierProperties_path(const PointerRNA *ptr)
+{
+  const auto *nmd = ptr->data_as<NodesModifierData>();
+  return fmt::format("modifiers[\"{}\"].properties", BLI_str_escape(nmd->modifier.name));
+}
+
+static IDProperty **rna_Modifier_idprops(PointerRNA *ptr)
+{
+  auto *md = ptr->data_as<ModifierData>();
+  return &md->system_properties;
+}
+
+static PointerRNA rna_NodesModifierProperties_get(PointerRNA *ptr)
+{
+  auto *nmd = ptr->data_as<NodesModifierData>();
+  if (!nmd->node_group) {
+    return PointerRNA_NULL;
+  }
+  return RNA_pointer_create_with_parent(*ptr, RNA_NodesModifierProperties, nmd);
+}
+
 static nodes::geo_eval_log::GeoTreeLog *get_nodes_modifier_log(const Object &object,
                                                                NodesModifierData &nmd)
 {
@@ -1998,11 +2033,50 @@ static int rna_NodesModifierWarning_type_get(PointerRNA *ptr)
   return int(warning->type);
 }
 
-static IDProperty **rna_NodesModifier_properties(PointerRNA *ptr)
+static bool rna_NodesModifier_is_input_visible(PointerRNA nmd_ptr,
+                                               ReportList *reports,
+                                               const char *identifier)
 {
-  NodesModifierData *nmd = static_cast<NodesModifierData *>(ptr->data);
-  NodesModifierSettings *settings = &nmd->settings;
-  return &settings->properties;
+  const Object &object = *id_cast<Object *>(nmd_ptr.owner_id);
+  const NodesModifierData *nmd = nmd_ptr.data_as<NodesModifierData>();
+  bNodeTree *ntree = nmd->node_group;
+  if (ntree == nullptr) {
+    return false;
+  }
+
+  nmd->runtime->usage_cache.ensure(object, *nmd);
+  const auto &input_usages = nmd->runtime->usage_cache.inputs;
+
+  const int index = ntree->interface_input_index_by_identifier(identifier);
+  if (index != -1) {
+    return input_usages[index].is_visible;
+  }
+
+  BKE_reportf(reports, RPT_ERROR, "Input '%s' not found", identifier);
+  return false;
+}
+
+static bool rna_NodesModifier_is_input_used(PointerRNA nmd_ptr,
+                                            ReportList *reports,
+                                            const char *identifier)
+{
+  const Object &object = *id_cast<Object *>(nmd_ptr.owner_id);
+  const NodesModifierData *nmd = nmd_ptr.data_as<NodesModifierData>();
+  bNodeTree *ntree = nmd->node_group;
+  if (ntree == nullptr) {
+    return false;
+  }
+
+  nmd->runtime->usage_cache.ensure(object, *nmd);
+  const auto &input_usages = nmd->runtime->usage_cache.inputs;
+
+  const int index = ntree->interface_input_index_by_identifier(identifier);
+  if (index != -1) {
+    return input_usages[index].is_used;
+  }
+
+  BKE_reportf(reports, RPT_ERROR, "Input '%s' not found", identifier);
+  return false;
 }
 
 static void rna_Lineart_start_level_set(PointerRNA *ptr, int value)
@@ -5899,6 +5973,7 @@ static void rna_def_modifier_weightvg_mask(BlenderRNA * /*brna*/,
 
   prop = RNA_def_property(srna, "mask_tex_use_channel", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, weightvg_mask_tex_used_items);
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_COLOR);
   RNA_def_property_ui_text(prop, "Use Channel", "Which texture channel to use for masking");
   RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
@@ -8045,10 +8120,28 @@ static void rna_def_modifier_nodes_warning(BlenderRNA *brna)
   RNA_def_property_enum_funcs(prop, "rna_NodesModifierWarning_type_get", nullptr, nullptr);
 }
 
+static void rna_def_modifier_nodes_properties(BlenderRNA *brna)
+{
+  StructRNA *srna;
+
+  srna = RNA_def_struct(brna, "NodesModifierProperties", nullptr);
+  RNA_def_struct_ui_text(srna, "Geometry Nodes Modifier Properties", "");
+  RNA_def_struct_refine_func(srna, "rna_NodesModifierProperties_refine");
+  RNA_def_struct_system_idprops_func(srna, "rna_Modifier_idprops");
+  RNA_def_struct_path_func(srna, "rna_NodesModifierProperties_path");
+
+  srna = RNA_def_struct(brna, "NodesModifierPropertiesEmpty", nullptr);
+  RNA_def_struct_ui_text(srna, "Geometry Nodes Modifier Empty Properties", "");
+  RNA_def_struct_system_idprops_func(srna, "rna_Modifier_idprops");
+  RNA_def_struct_path_func(srna, "rna_NodesModifierProperties_path");
+}
+
 static void rna_def_modifier_nodes(BlenderRNA *brna)
 {
   StructRNA *srna;
   PropertyRNA *prop;
+  FunctionRNA *func;
+  PropertyRNA *parm;
 
   rna_def_modifier_nodes_data_block(brna);
 
@@ -8060,13 +8153,11 @@ static void rna_def_modifier_nodes(BlenderRNA *brna)
 
   rna_def_modifier_nodes_warning(brna);
 
+  rna_def_modifier_nodes_properties(brna);
+
   srna = RNA_def_struct(brna, "NodesModifier", "Modifier");
   RNA_def_struct_ui_text(srna, "Nodes Modifier", "");
   RNA_def_struct_sdna(srna, "NodesModifierData");
-  /* NOTE: `RNA_def_struct_idprops_func` should be removed once #132129 is implemented.
-   * Similar to the issue with Operator (for node tools), see #rna_def_operator. */
-  RNA_def_struct_idprops_func(srna, "rna_NodesModifier_properties");
-  RNA_def_struct_system_idprops_func(srna, "rna_NodesModifier_properties");
   RNA_def_struct_ui_icon(srna, ICON_GEOMETRY_NODES);
 
   RNA_define_lib_overridable(true);
@@ -8127,6 +8218,24 @@ static void rna_def_modifier_nodes(BlenderRNA *brna)
   RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_override_clear_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
 
+  func = RNA_def_function(srna, "is_input_visible", "rna_NodesModifier_is_input_visible");
+  RNA_def_function_flag(func, FUNC_SELF_AS_RNA | FUNC_USE_REPORTS);
+  RNA_def_function_ui_description(
+      func, "Check whether an input is currently visible based on modifier settings.");
+  parm = RNA_def_string(func, "identifier", "Identifier", 0, "", "The identifier of the input");
+  RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
+  parm = RNA_def_boolean(func, "result", false, "Result", "");
+  RNA_def_function_return(func, parm);
+
+  func = RNA_def_function(srna, "is_input_used", "rna_NodesModifier_is_input_used");
+  RNA_def_function_flag(func, FUNC_SELF_AS_RNA | FUNC_USE_REPORTS);
+  RNA_def_function_ui_description(
+      func, "Check whether an input is currently used based on modifier settings.");
+  parm = RNA_def_string(func, "identifier", "Identifier", 0, "", "The identifier of the input");
+  RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
+  parm = RNA_def_boolean(func, "result", false, "Result", "");
+  RNA_def_function_return(func, parm);
+
   rna_def_modifier_panel_open_prop(
       srna, "open_output_attributes_panel", NODES_MODIFIER_PANEL_OUTPUT_ATTRIBUTES);
   rna_def_modifier_panel_open_prop(srna, "open_manage_panel", NODES_MODIFIER_PANEL_MANAGE);
@@ -8136,6 +8245,12 @@ static void rna_def_modifier_nodes(BlenderRNA *brna)
   rna_def_modifier_panel_open_prop(
       srna, "open_bake_data_blocks_panel", NODES_MODIFIER_PANEL_BAKE_DATA_BLOCKS);
   rna_def_modifier_panel_open_prop(srna, "open_warnings_panel", NODES_MODIFIER_PANEL_WARNINGS);
+
+  prop = RNA_def_property(srna, "properties", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "NodesModifierProperties");
+  RNA_def_property_ui_text(prop, "Properties", "");
+  RNA_def_property_pointer_funcs(
+      prop, "rna_NodesModifierProperties_get", nullptr, nullptr, nullptr);
 
   RNA_define_lib_overridable(false);
 }
@@ -8633,6 +8748,7 @@ static void rna_def_modifier_grease_pencil_color(BlenderRNA *brna)
   RNA_def_property_ui_range(prop, 0.0, 2.0, 0.1, 3);
   RNA_def_property_float_sdna(prop, nullptr, "hsv[2]");
   RNA_def_property_ui_text(prop, "Value", "Color value factor");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_COLOR);
   RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
   RNA_define_lib_overridable(false);
@@ -9042,6 +9158,12 @@ static void rna_def_modifier_grease_pencil_lineart(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, modifier_lineart_silhouette_filtering);
   RNA_def_property_ui_text(prop, "Silhouette Filtering", "Select contour or silhouette");
   RNA_def_property_update(prop, 0, "rna_Modifier_dependency_update");
+
+  prop = RNA_def_property(srna, "fill_strokes", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, nullptr, "fill_strokes", 0);
+  RNA_def_property_ui_text(
+      prop, "Fill Strokes", "Generate filled strokes instead of only outline");
+  RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
   prop = RNA_def_property(srna, "use_multiple_levels", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, nullptr, "use_multiple_levels", 0);

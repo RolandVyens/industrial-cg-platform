@@ -4,9 +4,9 @@
 
 # Libraries configuration for Apple.
 
-macro(find_package_wrapper)
-  # do nothing, just satisfy the macro
-endmacro()
+function(find_package_wrapper)
+  # do nothing, just satisfy the function
+endfunction()
 
 function(print_found_status
   lib_name
@@ -367,7 +367,7 @@ endif()
 
 find_package(Eigen3 REQUIRED CONFIG)
 
-if (WITH_LIBMV)
+if(WITH_LIBMV)
   find_package(Ceres REQUIRED CONFIG)
 endif()
 add_bundled_libraries(ceres/lib)
@@ -407,9 +407,7 @@ string(APPEND CMAKE_CXX_FLAGS " -ftemplate-depth=1024")
 # Avoid conflicts with Luxrender, and other plug-ins that may use the same
 # libraries as Blender with a different version or build options.
 set(PLATFORM_SYMBOLS_MAP ${CMAKE_SOURCE_DIR}/source/creator/symbols_apple.map)
-string(APPEND PLATFORM_LINKFLAGS
-  " -Wl,-unexported_symbols_list,'${PLATFORM_SYMBOLS_MAP}'"
-)
+set(PLATFORM_LINKFLAGS_SYMBOL_HIDING "-Wl,-unexported_symbols_list,'${PLATFORM_SYMBOLS_MAP}'")
 
 if(${XCODE_VERSION} VERSION_EQUAL 15.0)
   # V4.5 specific workaround: Enforce the legacy Xcode linker to avoid incorrect
@@ -433,6 +431,13 @@ elseif(${XCODE_VERSION} VERSION_GREATER_EQUAL 15.0)
     # it is corrected in CMake 3.29:
     #    https://gitlab.kitware.com/cmake/cmake/-/issues/25297
     string(APPEND PLATFORM_LINKFLAGS " -Xlinker -no_warn_duplicate_libraries")
+
+    # Silence: ld: warning: reducing alignment of section __DATA,__common from 0x8000
+    #          to 0x4000 because it exceeds segment maximum alignment
+    # The flag to silence this warning is only available on Xcode 26.4 and above.
+    if(${XCODE_VERSION} VERSION_GREATER_EQUAL 26.4)
+      string(APPEND PLATFORM_LINKFLAGS " -Xlinker -no_warn_reduced_section_align")
+    endif()
   endif()
 endif()
 

@@ -620,7 +620,7 @@ bool VKShader::finalize(const shader::ShaderCreateInfo *info)
   return finalize_post(info->pipelines_.as_span());
 }
 
-bool VKShader::finalize_post(Span<PipelineState> pipelines)
+bool VKShader::finalize_post(Span<PipelineState> pipeline_states)
 {
   bool result = finalize_shader_module(vertex_module, "vertex") &&
                 finalize_shader_module(geometry_module, "geometry") &&
@@ -638,7 +638,7 @@ bool VKShader::finalize_post(Span<PipelineState> pipelines)
     ensure_and_get_compute_pipeline(*constants);
   }
   else {
-    result &= ensure_graphics_pipelines(pipelines);
+    result &= ensure_graphics_pipelines(pipeline_states);
   }
 
   return result;
@@ -653,7 +653,7 @@ bool VKShader::finalize_shader_module(VKShaderModule &shader_module, const char 
   if (bool(shader_module.compilation_result.GetNumWarnings() +
            shader_module.compilation_result.GetNumErrors()))
   {
-    print_log({shader_module.combined_sources},
+    print_log({shader_module.original_sources},
               shader_module.compilation_result.GetErrorMessage().c_str(),
               stage_name,
               bool(shader_module.compilation_result.GetNumErrors()),
@@ -662,6 +662,7 @@ bool VKShader::finalize_shader_module(VKShaderModule &shader_module, const char 
 
   std::string full_name = std::string(name) + "_" + stage_name;
   shader_module.finalize(full_name.c_str());
+  shader_module.original_sources.clear();
   shader_module.combined_sources.clear();
   shader_module.sources_hash.clear();
   shader_module.compilation_result = {};
@@ -723,9 +724,9 @@ bool VKShader::finalize_descriptor_set_layouts(VKDevice &vk_device,
 
 void VKShader::bind(const shader::SpecializationConstants *constants_state)
 {
-  VKContext *ctx = VKContext::get();
+  VKContext *context = VKContext::get();
   /* Copy constants state. */
-  ctx->specialization_constants_set(constants_state);
+  context->specialization_constants_set(constants_state);
 
   /* Intentionally empty. Binding of the pipeline are done just before drawing/dispatching.
    * See #VKPipeline.update_and_bind */

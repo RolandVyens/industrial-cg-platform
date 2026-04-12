@@ -225,6 +225,14 @@ static void joined_armature_fix_links(
   Object *ob;
   bPose *pose;
 
+  /* Important: Ensure that no hierarchy cycles are created with this operation. See #154651. */
+  Set<Object *> skip_reparenting;
+  Object *ob_iter = tarArm;
+  while (ob_iter) {
+    skip_reparenting.add(ob_iter);
+    ob_iter = ob_iter->parent;
+  }
+
   /* let's go through all objects in database */
   for (ob = static_cast<Object *>(bmain->objects.first); ob;
        ob = static_cast<Object *>(ob->id.next))
@@ -255,7 +263,9 @@ static void joined_armature_fix_links(
       }
 
       /* make tar armature be new parent */
-      ob->parent = tarArm;
+      if (!skip_reparenting.contains(ob)) {
+        ob->parent = tarArm;
+      }
 
       DEG_id_tag_update_ex(bmain, &ob->id, ID_RECALC_SYNC_TO_EVAL);
     }
@@ -712,7 +722,7 @@ static wmOperatorStatus separate_armature_exec(bContext *C, wmOperator *op)
   WM_cursor_wait(true);
 
   Vector<Base *> bases = BKE_view_layer_array_from_bases_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
 
   for (Base *base_old : bases) {
     Object *ob_old = base_old->object;
@@ -1075,6 +1085,7 @@ static void editbone_clear_parent(EditBone *ebone, int mode)
 
 static wmOperatorStatus armature_parent_clear_exec(bContext *C, wmOperator *op)
 {
+  const Main *bmain = CTX_data_main(C);
   const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   const int val = RNA_enum_get(op->ptr, "type");
@@ -1085,7 +1096,7 @@ static wmOperatorStatus armature_parent_clear_exec(bContext *C, wmOperator *op)
   CTX_DATA_END;
 
   Vector<Object *> objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      scene, view_layer, CTX_wm_view3d(C));
+      *bmain, scene, view_layer, CTX_wm_view3d(C));
   for (Object *ob : objects) {
     bArmature *arm = id_cast<bArmature *>(ob->data);
     bool changed = false;

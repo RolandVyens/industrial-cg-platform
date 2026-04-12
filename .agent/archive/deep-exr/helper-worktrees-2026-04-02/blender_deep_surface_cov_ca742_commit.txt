@@ -1,0 +1,19 @@
+commit ca742cc58b8f02cd8579943560dd56d43d582f94
+Author: RolandVyens <leiersai@sina.com>
+Date:   Thu Mar 19 17:31:08 2026 +0800
+
+    Cycles: sync GPU split-pass fix into deep surface branch
+
+ .agent/AGENT.md                               |   9 ++
+ .agent/DEEP_EXR_BRANCH_SYNC_2026-03-19.md     |  34 ++++++++
+ .agent/check_feature4_gpu_flat_alpha_hole.py  |  65 +++++++++++++++
+ .agent/check_feature4_lightgroup_subimages.py | 113 ++++++++++++++++++++++++++
+ intern/cycles/kernel/data_template.h          |   3 +
+ intern/cycles/kernel/film/light_passes.h      | 110 ++++++++++++++++++-------
+ intern/cycles/scene/devicescene.cpp           |   1 +
+ intern/cycles/scene/devicescene.h             |   1 +
+ intern/cycles/scene/film.cpp                  |  54 ++++++++++++
+ 9 files changed, 360 insertions(+), 30 deletions(-)
+ create mode 100644 .agent/DEEP_EXR_BRANCH_SYNC_2026-03-19.md
+ create mode 100644 .agent/check_feature4_gpu_flat_alpha_hole.py
+ create mode 100644 .agent/check_feature4_lightgroup_subimages.py

@@ -54,7 +54,7 @@ bool operator!=(const ClosureSignature &a, const ClosureSignature &b)
 ClosureSignature ClosureSignature::from_closure_output_node(const bNode &node,
                                                             const bool allow_auto_structure_type)
 {
-  BLI_assert(node.is_type("NodeClosureOutput"));
+  BLI_assert(node.is_type("NodeClosureOutput"_ustr));
   const bNodeTree &tree = node.owner_tree();
   const bNode *input_node =
       bke::zone_type_by_node_type(node.type_legacy)->get_corresponding_input(tree, node);
@@ -93,7 +93,7 @@ ClosureSignature ClosureSignature::from_closure_output_node(const bNode &node,
 ClosureSignature ClosureSignature::from_evaluate_closure_node(const bNode &node,
                                                               const bool allow_auto_structure_type)
 {
-  BLI_assert(node.is_type("NodeEvaluateClosure"));
+  BLI_assert(node.is_type("NodeEvaluateClosure"_ustr));
   const auto &storage = *static_cast<const NodeEvaluateClosure *>(node.storage);
   nodes::ClosureSignature signature;
   for (const int i : IndexRange(storage.input_items.items_num)) {

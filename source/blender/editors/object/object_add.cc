@@ -543,7 +543,7 @@ void add_generic_get_opts(bContext *C,
 
     if (RNA_struct_property_is_set(op->ptr, "rotation")) {
       /* If rotation is set, always use it. Alignment (and corresponding user preference)
-       * can be ignored since this is in world space anyways.
+       * can be ignored since this is in world space anyway.
        * To not confuse (e.g. on redo), don't set it to #ALIGN_WORLD in the op UI though. */
       *r_is_view_aligned = false;
       RNA_float_get_array(op->ptr, "rotation", r_rot);
@@ -629,7 +629,7 @@ Object *add_type_with_obdata(bContext *C,
   ViewLayer *view_layer = CTX_data_view_layer(C);
 
   {
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     Object *obedit = BKE_view_layer_edit_object_get(view_layer);
     if (obedit != nullptr) {
       editmode_exit_ex(bmain, scene, obedit, EM_FREEDATA);
@@ -650,7 +650,7 @@ Object *add_type_with_obdata(bContext *C,
     ob = BKE_object_add(bmain, scene, view_layer, type, name);
   }
 
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Base *ob_base_act = BKE_view_layer_active_base_get(view_layer);
   /* While not getting a valid base is not a good thing, it can happen in convoluted corner cases,
    * better not crash on it in releases. */
@@ -1256,7 +1256,7 @@ static wmOperatorStatus object_metaball_add_exec(bContext *C, wmOperator *op)
   add_generic_get_opts(C, op, 'Z', loc, rot, nullptr, &enter_editmode, &local_view_bits, nullptr);
 
   bool newob = false;
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit == nullptr || obedit->type != OB_MBALL) {
     obedit = add_type(C, OB_MBALL, nullptr, loc, rot, true, local_view_bits);
@@ -1364,7 +1364,7 @@ static wmOperatorStatus object_armature_add_exec(bContext *C, wmOperator *op)
   Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Object *obedit = BKE_view_layer_edit_object_get(view_layer);
 
   RegionView3D *rv3d = CTX_wm_region_view3d(C);
@@ -2795,7 +2795,7 @@ static void make_object_duplilist_real(bContext *C,
     }
 
     BKE_collection_object_add_from(bmain, scene, base->object, ob_dst);
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     Base *base_dst = BKE_view_layer_base_find(view_layer, ob_dst);
     BLI_assert(base_dst != nullptr);
 
@@ -3053,6 +3053,9 @@ static void object_data_convert_curve_to_mesh(Main *bmain, Depsgraph *depsgraph,
   }
 
   BKE_object_free_modifiers(ob, 0);
+
+  bke::mesh_ensure_active_uv_map(*mesh);
+
   /* Replace curve used by the object itself. */
   ob->data = id_cast<ID *>(mesh);
   ob->type = OB_MESH;
@@ -3076,12 +3079,13 @@ static void object_data_convert_curve_to_mesh(Main *bmain, Depsgraph *depsgraph,
 
 static bool object_convert_poll(bContext *C)
 {
+  const Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
   if (!ID_IS_EDITABLE(scene)) {
     return false;
   }
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   /* Don't use `active_object` in the context, it's important this value
    * is from the view-layer as it's used to check if Blender is in object mode. */
   Object *obact = BKE_view_layer_active_object_get(view_layer);
@@ -3107,7 +3111,7 @@ static Base *duplibase_for_convert(
   DEG_id_tag_update(&obn->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_ANIMATION);
   BKE_collection_object_add_from(bmain, scene, ob, obn);
 
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Base *basen = BKE_view_layer_base_find(view_layer, obn);
   base_select(basen, BA_SELECT);
   base_select(base, BA_DESELECT);
@@ -3361,6 +3365,8 @@ static Object *convert_mesh_to_mesh(Base &base, ObjectConversionInfo &info, Base
     }
   }
   BKE_mesh_nomain_to_mesh(new_mesh, ob_data_mesh, newob);
+
+  bke::mesh_ensure_active_uv_map(*ob_data_mesh);
 
   BKE_object_free_modifiers(newob, 0); /* after derivedmesh calls! */
 
@@ -3683,6 +3689,8 @@ static Object *convert_curves_to_mesh(Base &base, ObjectConversionInfo &info, Ba
   BKE_object_free_derived_caches(newob);
   BKE_object_free_modifiers(newob, 0);
 
+  bke::mesh_ensure_active_uv_map(*new_mesh);
+
   return newob;
 }
 
@@ -3844,6 +3852,8 @@ static Object *convert_grease_pencil_to_mesh(Base &base,
 
     BKE_object_free_derived_caches(newob);
     BKE_object_free_modifiers(newob, 0);
+
+    bke::mesh_ensure_active_uv_map(*new_mesh);
   }
   else {
     BKE_reportf(
@@ -4010,8 +4020,7 @@ static void create_grease_pencil_fills(bke::greasepencil::Drawing &drawing)
   bke::SpanAttributeWriter<int> fill_ids = attributes.lookup_or_add_for_write_only_span<int>(
       "fill_id", bke::AttrDomain::Curve);
   /* Hide all the strokes, only show fills. */
-  bke::SpanAttributeWriter<bool> hide_stroke = attributes.lookup_or_add_for_write_span<bool>(
-      "hide_stroke", bke::AttrDomain::Curve, bke::AttributeInitValue(true));
+  attributes.add<bool>("hide_stroke", bke::AttrDomain::Curve, bke::AttributeInitValue(true));
 
   /* Mark all the strokes in the same material as the same fill. */
   for (const int curve_i : curves.curves_range()) {
@@ -4019,7 +4028,6 @@ static void create_grease_pencil_fills(bke::greasepencil::Drawing &drawing)
   }
 
   fill_ids.finish();
-  hide_stroke.finish();
 }
 
 static Object *convert_font_to_grease_pencil(Base &base,
@@ -4221,7 +4229,7 @@ static Object *convert_mball_to_mesh(Base &base,
   base.flag &= ~BASE_SELECTED;
   base.object->base_flag &= ~BASE_SELECTED;
 
-  baseob = BKE_mball_basis_find(info.scene, ob);
+  baseob = BKE_mball_basis_find(*info.bmain, info.scene, ob);
 
   if (ob != baseob) {
     /* If mother-ball is converting it would be marked as done later. */
@@ -4243,6 +4251,8 @@ static Object *convert_mball_to_mesh(Base &base,
     id_us_plus(&mesh->id);
     newob->data = id_cast<ID *>(mesh);
     newob->type = OB_MESH;
+
+    bke::mesh_ensure_active_uv_map(*mesh);
 
     if (info.obact && (info.obact->type == OB_MBALL)) {
       *r_act_base = *r_new_base;
@@ -4348,7 +4358,7 @@ static wmOperatorStatus object_convert_exec(bContext *C, wmOperator *op)
       if (ob->type == OB_MBALL && target == OB_MESH) {
         if (BKE_mball_is_basis(ob) == false) {
           Object *ob_basis;
-          ob_basis = BKE_mball_basis_find(scene, ob);
+          ob_basis = BKE_mball_basis_find(*bmain, scene, ob);
           if (ob_basis) {
             ob_basis->flag &= ~OB_DONE;
           }
@@ -4495,7 +4505,8 @@ static wmOperatorStatus object_convert_exec(bContext *C, wmOperator *op)
         if (ob_mball->type == OB_MBALL) {
           Object *ob_basis = nullptr;
           if (!BKE_mball_is_basis(ob_mball) &&
-              ((ob_basis = BKE_mball_basis_find(scene, ob_mball)) && (ob_basis->flag & OB_DONE)))
+              ((ob_basis = BKE_mball_basis_find(*bmain, scene, ob_mball)) &&
+               (ob_basis->flag & OB_DONE)))
           {
             base_free_and_unlink(bmain, scene, ob_mball);
           }
@@ -4524,7 +4535,7 @@ static wmOperatorStatus object_convert_exec(bContext *C, wmOperator *op)
     view_layer->basact = act_base;
   }
   else {
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     if (Object *object = BKE_view_layer_active_object_get(view_layer)) {
       if (object->flag & OB_DONE) {
         WM_event_add_notifier(C, NC_OBJECT | ND_MODIFIER, object);
@@ -4710,10 +4721,10 @@ static Base *object_add_duplicate_internal(Main *bmain,
     return nullptr;
   }
 
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Base *base_src = BKE_view_layer_base_find(view_layer, ob);
   object_add_sync_base_collection(bmain, scene, view_layer, base_src, object_new);
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   Base *base_new = BKE_view_layer_base_find(view_layer, object_new);
   if (base_src && base_new) {
     object_add_sync_local_view(base_src, base_new);
@@ -4816,7 +4827,7 @@ static wmOperatorStatus duplicate_exec(bContext *C, wmOperator *op)
   }
 
   /* Sync the view layer. Everything else should not tag the view_layer out of sync. */
-  BKE_view_layer_synced_ensure(scene, view_layer);
+  BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
   const Base *active_base = BKE_view_layer_active_base_get(view_layer);
   for (DuplicateObjectLink &link : object_base_links) {
     if (!link.object_new) {
@@ -4936,7 +4947,7 @@ static wmOperatorStatus object_add_named_exec(bContext *C, wmOperator *op)
 
   /* #object_add_duplicate_internal() doesn't deselect other objects,
    * unlike #object_add_common() or #BKE_view_layer_base_deselect_all(). */
-  base_deselect_all(scene, view_layer, nullptr, SEL_DESELECT);
+  base_deselect_all(*bmain, scene, view_layer, nullptr, SEL_DESELECT);
   base_select(basen, BA_SELECT);
   base_activate(C, basen);
 
@@ -5021,7 +5032,7 @@ static wmOperatorStatus object_transform_to_mouse_exec(bContext *C, wmOperator *
       WM_operator_properties_id_lookup_from_name_or_session_uid(bmain, op->ptr, ID_OB));
 
   if (!ob) {
-    BKE_view_layer_synced_ensure(scene, view_layer);
+    BKE_view_layer_synced_ensure(*bmain, scene, view_layer);
     ob = BKE_view_layer_active_object_get(view_layer);
   }
 

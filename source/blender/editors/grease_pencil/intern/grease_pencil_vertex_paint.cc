@@ -8,6 +8,8 @@
 
 #include "BLI_math_color.h"
 
+#include "BLT_translation.hh"
+
 #include "BKE_brush.hh"
 #include "BKE_context.hh"
 #include "BKE_curves.hh"
@@ -58,12 +60,14 @@ static bool apply_color_operation_for_mode(const VertexColorMode mode,
                                        object, info.drawing, info.layer_index, memory);
       if (!points.is_empty()) {
         MutableSpan<ColorGeometry4f> vertex_colors = info.drawing.vertex_colors_for_write();
-        points.foreach_index(GrainSize(4096), [&](const int64_t point_i) {
-          ColorGeometry4f &color = vertex_colors[point_i];
-          if (color.a > 0.0f) {
-            color = fn(color);
-          }
-        });
+        points.foreach_index(
+            [&](const int64_t point_i) {
+              ColorGeometry4f &color = vertex_colors[point_i];
+              if (color.a > 0.0f) {
+                color = fn(color);
+              }
+            },
+            exec_mode::grain_size(4096));
         changed = true;
       }
     }
@@ -77,12 +81,14 @@ static bool apply_color_operation_for_mode(const VertexColorMode mode,
                                         object, info.drawing, info.layer_index, memory);
       if (!strokes.is_empty()) {
         MutableSpan<ColorGeometry4f> fill_colors = info.drawing.fill_colors_for_write();
-        strokes.foreach_index(GrainSize(1024), [&](const int64_t curve_i) {
-          ColorGeometry4f &color = fill_colors[curve_i];
-          if (color.a > 0.0f) {
-            color = fn(color);
-          }
-        });
+        strokes.foreach_index(
+            [&](const int64_t curve_i) {
+              ColorGeometry4f &color = fill_colors[curve_i];
+              if (color.a > 0.0f) {
+                color = fn(color);
+              }
+            },
+            exec_mode::grain_size(1024));
         changed = true;
       }
     }
@@ -237,7 +243,9 @@ static void GREASE_PENCIL_OT_vertex_color_hsv(wmOperatorType *ot)
       ot->srna, "mode", prop_grease_pencil_vertex_mode, int(VertexColorMode::Both), "Mode", "");
   RNA_def_float(ot->srna, "h", 0.5f, 0.0f, 1.0f, "Hue", "", 0.0f, 1.0f);
   RNA_def_float(ot->srna, "s", 1.0f, 0.0f, 2.0f, "Saturation", "", 0.0f, 2.0f);
-  RNA_def_float(ot->srna, "v", 1.0f, 0.0f, 2.0f, "Value", "", 0.0f, 2.0f);
+
+  ot->prop = RNA_def_float(ot->srna, "v", 1.0f, 0.0f, 2.0f, "Value", "", 0.0f, 2.0f);
+  RNA_def_property_translation_context(ot->prop, BLT_I18NCONTEXT_COLOR);
 }
 
 static wmOperatorStatus grease_pencil_vertex_paint_invert_exec(bContext *C, wmOperator *op)

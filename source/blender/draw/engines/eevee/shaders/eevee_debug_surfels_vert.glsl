@@ -7,7 +7,7 @@
 VERTEX_SHADER_CREATE_INFO(eevee_debug_surfels)
 
 #include "draw_view_lib.glsl"
-#include "eevee_reverse_z_lib.glsl"
+#include "eevee_reverse_z_lib.bsl.hh"
 #include "gpu_shader_math_matrix_construct_lib.glsl"
 
 void main()

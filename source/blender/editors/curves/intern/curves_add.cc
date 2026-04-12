@@ -31,7 +31,7 @@ namespace blender::ed::curves {
 
 static bool has_surface_deformation_node(const bNodeTree &ntree)
 {
-  if (!ntree.nodes_by_type("GeometryNodeDeformCurvesOnSurface").is_empty()) {
+  if (!ntree.nodes_by_type("GeometryNodeDeformCurvesOnSurface"_ustr).is_empty()) {
     return true;
   }
   for (const bNode *node : ntree.group_nodes()) {
@@ -51,7 +51,7 @@ static bool has_surface_deformation_node(const Object &curves_ob)
       continue;
     }
     const NodesModifierData *nmd = reinterpret_cast<const NodesModifierData *>(&md);
-    if (nmd->node_group == nullptr) {
+    if (nmd->node_group == nullptr || ID_MISSING(nmd->node_group)) {
       continue;
     }
     if (has_surface_deformation_node(*nmd->node_group)) {

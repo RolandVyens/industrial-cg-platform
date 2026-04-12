@@ -67,7 +67,8 @@ class FileListWrapper {
 
  public:
   explicit FileListWrapper(eFileSelectType filesel_type)
-      : file_list_(filelist_new(filesel_type), filelist_free_fn)
+      : file_list_(filelist_new(filesel_type, /*is_from_global_asset_list=*/true),
+                   filelist_free_fn)
   {
   }
   FileListWrapper(FileListWrapper &&other) = default;
@@ -85,10 +86,10 @@ class FileListWrapper {
 };
 
 class AssetList : NonCopyable {
+ public:
   FileListWrapper filelist_;
   AssetLibraryReference library_ref_;
 
- public:
   AssetList() = delete;
   AssetList(eFileSelectType filesel_type, const AssetLibraryReference &asset_library_ref);
   AssetList(AssetList &&other) = default;
@@ -266,7 +267,7 @@ bool AssetList::listen(const wmNotifier &notifier)
       if (ELEM(notifier.data, ND_ASSET_LIST, ND_ASSET_LIST_READING, ND_ASSET_LIST_PREVIEW)) {
         return true;
       }
-      if (ELEM(notifier.action, NA_ADDED, NA_REMOVED, NA_EDITED)) {
+      if (ELEM(notifier.action, NA_ADDED, NA_REMOVED, NA_EDITED, NA_DOWNLOAD_FINISHED)) {
         return true;
       }
       break;
@@ -286,7 +287,12 @@ int AssetList::size() const
 void AssetList::tag_main_data_dirty() const
 {
   if (filelist_needs_reset_on_main_changes(filelist_)) {
-    filelist_tag_force_reset_mainfiles(filelist_);
+    if (!filelist_is_ready(filelist_)) {
+      filelist_tag_force_reset(filelist_);
+    }
+    else {
+      filelist_tag_force_reset_mainfiles(filelist_);
+    }
   }
 }
 
@@ -360,6 +366,7 @@ static std::optional<eFileSelectType> asset_library_reference_to_fileselect_type
     case ASSET_LIBRARY_ALL:
       return FILE_ASSET_LIBRARY_ALL;
     case ASSET_LIBRARY_ESSENTIALS:
+      return FILE_ASSET_LIBRARY;
     case ASSET_LIBRARY_CUSTOM: {
       const bUserAssetLibrary *user_library = BKE_preferences_asset_library_find_index(
           &U, library_reference.custom_library_index);
@@ -532,6 +539,29 @@ void clear_all_library(const bContext *C)
 {
   const AssetLibraryReference all_lib_ref = asset_system::all_library_reference();
   clear(&all_lib_ref, CTX_wm_manager(C));
+}
+
+void on_remote_assets_downloaded(wmWindowManager &wm, const StringRef library_url)
+{
+  for (const wmWindow &win : wm.windows) {
+    const bScreen *screen = WM_window_get_active_screen(&win);
+    for (const ScrArea &area : screen->areabase) {
+      /* Only needs to cover visible file/asset browsers, since others are already cleared through
+       * area exiting. */
+      if (area.spacetype == SPACE_FILE) {
+        SpaceFile *sfile = reinterpret_cast<SpaceFile *>(area.spacedata.first);
+        if (sfile->browse_mode == FILE_BROWSE_MODE_ASSETS) {
+          filelist_remote_asset_library_refresh_online_assets_status(sfile->files, library_url);
+        }
+      }
+    }
+  }
+
+  for (AssetList &list : libraries_map().values()) {
+    filelist_remote_asset_library_refresh_online_assets_status(list.filelist_, library_url);
+  }
+
+  WM_event_add_notifier_ex(&wm, nullptr, NC_ASSET | NA_DOWNLOAD_FINISHED, nullptr);
 }
 
 bool has_list_storage_for_library(const AssetLibraryReference *library_reference)

@@ -469,12 +469,6 @@ static bool poselib_blend_init_data(bContext *C, wmOperator *op, const wmEvent *
   /* Make backups for blending and restoring the pose. */
   poselib_backup_posecopy(pbd);
 
-  /* Set pose flags to ensure the depsgraph evaluation doesn't overwrite it. */
-  for (Object *ob : selected_pose_objects) {
-    ob->pose->flag &= ~POSE_DO_UNLOCK;
-    ob->pose->flag |= POSE_LOCKED;
-  }
-
   return true;
 }
 
@@ -489,12 +483,6 @@ static void poselib_blend_cleanup(bContext *C, wmOperator *op)
 
   if (pbd->slider) {
     ED_slider_destroy(C, pbd->slider);
-  }
-
-  /* This signals the depsgraph to unlock and reevaluate the pose on the next evaluation. */
-  for (Object *ob : pbd->objects) {
-    bPose *pose = ob->pose;
-    pose->flag |= POSE_DO_UNLOCK;
   }
 
   switch (pbd->state) {

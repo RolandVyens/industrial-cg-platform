@@ -27,7 +27,9 @@ CCL_NAMESPACE_BEGIN
 
 class Device;
 class DeviceScene;
+class ImageHandle;
 class ImageManager;
+class ImageSingle;
 class OSLRenderServices;
 struct OSLGlobals;
 class Scene;
@@ -92,9 +94,6 @@ class OSLManager {
 
  private:
 #ifdef WITH_OSL
-  void texture_system_init();
-  void texture_system_free();
-
   void shading_system_free();
 
   void foreach_shading_system(const std::function<void(OSL::ShadingSystem *)> &callback);
@@ -103,7 +102,6 @@ class OSLManager {
   Device *device_;
   map<string, OSLShaderInfo> loaded_shaders;
 
-  std::shared_ptr<OSL::TextureSystem> ts;
   map<DeviceType, std::shared_ptr<OSL::ShadingSystem>> ss_map;
 
   bool need_update_;
@@ -140,8 +138,10 @@ class OSLShaderManager : public ShaderManager {
                            const std::string &bytecode_hash = "",
                            const std::string &bytecode = "");
 
-  /* Get image slots used by OSL services on device. */
-  static void osl_image_slots(Device *device, ImageManager *image_manager, set<int> &image_slots);
+  /* Get image handles used by OSL services on device. */
+  static void osl_image_handles(Device *device,
+                                ImageManager *image_manager,
+                                set<const ImageSingle *> &image_handles);
 };
 
 #endif
@@ -151,7 +151,7 @@ class OSLShaderManager : public ShaderManager {
 class OSLCompiler {
  public:
 #ifdef WITH_OSL
-  OSLCompiler(OSL::ShadingSystem *ss, Scene *scene, Device *device);
+  OSLCompiler(OSL::ShadingSystem *ss, Scene *scene, Progress &progress, Device *device);
 #endif
   void compile(Shader *shader);
 
@@ -174,7 +174,6 @@ class OSLCompiler {
 
   void parameter_attribute(const char *name, ustring s);
 
-  void parameter_texture(const char *name, ustring filename, ustring colorspace);
   void parameter_texture(const char *name, const ImageHandle &handle);
   void parameter_texture_ies(const char *name, const int svm_slot);
 
@@ -185,6 +184,8 @@ class OSLCompiler {
 
   bool background;
   Scene *scene;
+  Progress &progress;
+  ShaderGraph *current_graph = nullptr;
 
  private:
 #ifdef WITH_OSL

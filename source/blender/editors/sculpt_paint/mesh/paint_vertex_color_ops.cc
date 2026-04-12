@@ -17,6 +17,8 @@
 #include "BLI_math_color.h"
 #include "BLI_vector.hh"
 
+#include "BLT_translation.hh"
+
 #include "BKE_attribute_math.hh"
 #include "BKE_context.hh"
 #include "BKE_geometry_set.hh"
@@ -257,25 +259,27 @@ static void transform_active_color_data(
   IndexMaskMemory memory;
   const IndexMask selection = get_selected_indices(mesh, color_attribute.domain, memory);
 
-  selection.foreach_segment(GrainSize(1024), [&](const IndexMaskSegment segment) {
-    color_attribute.varray.type().to_static_type<ColorGeometry4f, ColorGeometry4b>(
-        [&]<typename T>() {
-          for ([[maybe_unused]] const int i : segment) {
-            if constexpr (std::is_same_v<T, ColorGeometry4f>) {
-              ColorGeometry4f color = color_attribute.varray.get<ColorGeometry4f>(i);
-              transform_fn(color);
-              color_attribute.varray.set_by_copy(i, &color);
-            }
-            else if constexpr (std::is_same_v<T, ColorGeometry4b>) {
-              ColorGeometry4f color = color::decode(
-                  color_attribute.varray.get<ColorGeometry4b>(i));
-              transform_fn(color);
-              ColorGeometry4b color_encoded = color::encode(color);
-              color_attribute.varray.set_by_copy(i, &color_encoded);
-            }
-          }
-        });
-  });
+  selection.foreach_segment(
+      [&](const IndexMaskSegment segment) {
+        color_attribute.varray.type().to_static_type<ColorGeometry4f, ColorGeometry4b>(
+            [&]<typename T>() {
+              for ([[maybe_unused]] const int i : segment) {
+                if constexpr (std::is_same_v<T, ColorGeometry4f>) {
+                  ColorGeometry4f color = color_attribute.varray.get<ColorGeometry4f>(i);
+                  transform_fn(color);
+                  color_attribute.varray.set_by_copy(i, &color);
+                }
+                else if constexpr (std::is_same_v<T, ColorGeometry4b>) {
+                  ColorGeometry4f color = color::decode(
+                      color_attribute.varray.get<ColorGeometry4b>(i));
+                  transform_fn(color);
+                  ColorGeometry4b color_encoded = color::encode(color);
+                  color_attribute.varray.set_by_copy(i, &color_encoded);
+                }
+              }
+            });
+      },
+      exec_mode::grain_size(1024));
 
   color_attribute.finish();
 
@@ -422,7 +426,9 @@ void PAINT_OT_vertex_color_hsv(wmOperatorType *ot)
   /* params */
   RNA_def_float(ot->srna, "h", 0.5f, 0.0f, 1.0f, "Hue", "", 0.0f, 1.0f);
   RNA_def_float(ot->srna, "s", 1.0f, 0.0f, 2.0f, "Saturation", "", 0.0f, 2.0f);
-  RNA_def_float(ot->srna, "v", 1.0f, 0.0f, 2.0f, "Value", "", 0.0f, 2.0f);
+
+  ot->prop = RNA_def_float(ot->srna, "v", 1.0f, 0.0f, 2.0f, "Value", "", 0.0f, 2.0f);
+  RNA_def_property_translation_context(ot->prop, BLT_I18NCONTEXT_COLOR);
 }
 
 static wmOperatorStatus vertex_color_invert_exec(bContext *C, wmOperator * /*op*/)

@@ -2,12 +2,19 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+/** \file
+ * \ingroup bgrease_pencil
+ */
+
+#pragma once
+
 #include "BLI_bounds_types.hh"
 #include "BLI_color_types.hh"
 #include "BLI_function_ref.hh"
 #include "BLI_math_matrix_types.hh"
 #include "BLI_string_ref.hh"
 #include "BLI_vector.hh"
+#include "BLI_virtual_array.hh"
 
 #include "grease_pencil_io.hh"
 
@@ -16,16 +23,12 @@
 
 namespace blender {
 
-#pragma once
-
-/** \file
- * \ingroup bgrease_pencil
- */
-
 struct Scene;
 struct Object;
 struct Material;
 struct RegionView3D;
+struct GreasePencil;
+
 namespace bke::greasepencil {
 class Layer;
 class Drawing;
@@ -90,6 +93,7 @@ class GreasePencilExporter {
                                         const ColorGeometry4f &color,
                                         float opacity,
                                         std::optional<float> width,
+                                        std::optional<float> miter_limit_angle,
                                         bool round_cap,
                                         bool is_outline)>;
 

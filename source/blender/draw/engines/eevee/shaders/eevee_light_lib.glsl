@@ -5,7 +5,8 @@
 #pragma once
 
 #include "draw_math_geom_lib.glsl"
-#include "eevee_ltc_lib.glsl"
+#include "eevee_ltc_lib.bsl.hh"
+#include "eevee_ltc_lut_lib.bsl.hh"
 
 /* Attenuation cutoff needs to be the same in the shadow loop and the light eval loop. */
 #define LIGHT_ATTENUATION_THRESHOLD 1e-6f
@@ -220,9 +221,8 @@ float light_ltc(
     corners[2] += L;
     corners[3] += L;
 
-    ltc_transform_quad(N, V, ltc_matrix(ltc_mat), corners);
-
-    return ltc_evaluate_quad(utility_tx, corners, float3(0.0f, 0.0f, 1.0f));
+    float3x3 Minv = eevee::lut::ltc::unpack(ltc_mat);
+    return eevee::ltc::evaluate_quad(utility_tx, corners, N, V, Minv);
   }
   else {
     if (!is_area_light(light.type)) {
@@ -256,7 +256,8 @@ float light_ltc(
     points[1] += L;
     points[2] += L;
 
-    return ltc_evaluate_disk(utility_tx, N, V, ltc_matrix(ltc_mat), points);
+    float3x3 Minv = eevee::lut::ltc::unpack(ltc_mat);
+    return eevee::ltc::evaluate_disk(utility_tx, N, V, Minv, points);
   }
 }
 

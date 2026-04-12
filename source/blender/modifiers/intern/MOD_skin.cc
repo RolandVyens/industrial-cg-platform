@@ -38,6 +38,8 @@
  *   cases.
  */
 
+#include <algorithm>
+
 #include "MEM_guardedalloc.h"
 
 #include "BLI_array_utils.hh"
@@ -1451,6 +1453,19 @@ static void skin_hole_detach_partially_attached_frame(BMesh *bm, Frame *frame)
 }
 
 /**
+ * Check if any frame vertex was detected as interior.
+ */
+static bool skin_frame_has_interior_hull_vertex(const Frame *frame)
+{
+  for (const int k : IndexRange(4)) {
+    if (frame->inside_hull[k]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Check if any frame vertex is shared with the target face.
  *
  * When frame vertices are at the same position as (or very close to) branch node vertices,
@@ -1658,12 +1673,16 @@ static void skin_fix_hull_topology(BMesh *bm, SkinNode *skin_nodes, int verts_nu
          * so the call order doesn't matter for it - but the coincidence check requires the
          * original vertex pointers. */
         BMFace *target_face = skin_hole_target_face(bm, f);
-        const bool has_coincident = target_face &&
-                                    skin_frame_has_coincident_hull_vertex(f, target_face);
+        const bool has_degenerate_coincidence =
+            (target_face &&
+             /* The frame would only create a degenerate edge (using two of the same vertex)
+              * when all its vertices are on the hull. */
+             !skin_frame_has_interior_hull_vertex(f) &&
+             skin_frame_has_coincident_hull_vertex(f, target_face));
 
         skin_hole_detach_partially_attached_frame(bm, f);
 
-        if (target_face && LIKELY(!has_coincident)) {
+        if (target_face && LIKELY(!has_degenerate_coincidence)) {
           if (skin_fix_hole_no_good_verts(bm, f, target_face)) {
             continue;
           }
@@ -1943,7 +1962,7 @@ static void skin_set_orig_indices(Mesh *mesh)
 {
   int *orig = static_cast<int *>(
       CustomData_add_layer(&mesh->face_data, CD_ORIGINDEX, CD_CONSTRUCT, mesh->faces_num));
-  copy_vn_i(orig, mesh->faces_num, ORIGINDEX_NONE);
+  std::fill_n(orig, mesh->faces_num, ORIGINDEX_NONE);
 }
 
 /*

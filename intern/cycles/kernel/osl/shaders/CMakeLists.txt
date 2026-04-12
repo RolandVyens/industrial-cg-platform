@@ -107,6 +107,43 @@ set(SRC_OSL
   node_rgb_to_bw.osl
 )
 
+get_filename_component(OSL_SHADER_HINT ${OSL_COMPILER} DIRECTORY)
+
+set(_osl_SEARCH_DIRS
+  ${OSL_SHADER_HINT}
+  ${OSL_SHADER_HINT}/../
+  /usr/share/OSL/
+  /usr/include/OSL/
+)
+
+if(DEFINED OSL_ROOT_DIR)
+  list(APPEND _osl_SEARCH_DIRS ${OSL_ROOT_DIR})
+endif()
+
+if(DEFINED OSL_HOME_DIR)
+  list(APPEND _osl_SEARCH_DIRS ${OSL_HOME_DIR})
+endif()
+
+find_path(OSL_SHADER_DIR
+  NAMES
+    stdosl.h
+  HINTS
+    ${_osl_SEARCH_DIRS}
+  PATH_SUFFIXES
+    share/OSL/shaders
+    shaders
+)
+mark_as_advanced(OSL_SHADER_DIR)
+unset(_osl_SEARCH_DIRS)
+
+if(NOT EXISTS "${OSL_SHADER_DIR}")
+  if(WITH_STRICT_BUILD_OPTIONS)
+    message(SEND_ERROR "Precompiled OSL shader headers are not found, stopping")
+  else()
+    message(STATUS "Precompiled OSL shader headers are not found, continuing without")
+  endif()
+endif()
+
 # The headers that OSL ships differs per release so we can not
 # hard-code this.
 file(GLOB SRC_OSL_HEADER_DIST ${OSL_SHADER_DIR}/*.h)
