@@ -1,12 +1,10 @@
 # generic files to ignore
 .*
 
-# allow tracking agent docs
-!.agent/
-!.agent/**
-
-# agent local logs
-.agent/last_render_log.txt
+# agent operational docs are local-only and must not be tracked
+/.agent/**/*.md
+/.agent/**/*.txt
+/.agent/last_render_log.txt
 
 # python temp paths
 __pycache__/

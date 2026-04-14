@@ -14,6 +14,7 @@
 #include "DNA_node_types.h"
 
 #include "BKE_node.hh"
+#include "BKE_node_legacy_types.hh"
 #include "BKE_node_runtime.hh"
 
 #include "COM_context.hh"
@@ -41,6 +42,17 @@ static bool has_file_output_recursive(const bNodeTree &node_group)
   }
 
   return false;
+}
+
+static bool is_deep_exr_file_output_node(const bNode &node)
+{
+  if (node.type_legacy != CMP_NODE_OUTPUT_FILE || node.storage == nullptr) {
+    return false;
+  }
+
+  const NodeCompositorFileOutput *storage = static_cast<const NodeCompositorFileOutput *>(
+      node.storage);
+  return storage->format.imtype == R_IMF_IMTYPE_DEEP_EXR;
 }
 
 /* Checks if the node group with the given instance key has a Viewer node in it or in one of its
@@ -237,7 +249,13 @@ static NeededBuffers compute_number_of_needed_buffers(Stack<const bNode *> &outp
     /* Go over the node dependencies connected to the inputs of the node and push them to the node
      * stack if they were not computed already. */
     Set<const bNode *> pushed_nodes;
+    if (is_deep_exr_file_output_node(node)) {
+      pushed_nodes.clear();
+    }
     for (const bNodeSocket *input : node.input_sockets()) {
+      if (is_deep_exr_file_output_node(node)) {
+        break;
+      }
       if (!is_socket_available(input)) {
         continue;
       }
@@ -279,6 +297,7 @@ static NeededBuffers compute_number_of_needed_buffers(Stack<const bNode *> &outp
      * buffers needed to compute the most demanding of the node dependencies. */
     int number_of_input_buffers = 0;
     int buffers_needed_by_dependencies = 0;
+    if (!is_deep_exr_file_output_node(node)) {
     for (const bNodeSocket *input : node.input_sockets()) {
       if (!is_socket_available(input)) {
         continue;
@@ -307,6 +326,7 @@ static NeededBuffers compute_number_of_needed_buffers(Stack<const bNode *> &outp
       const int buffers_needed_by_dependency = needed_buffers.lookup(&output->owner_node());
       buffers_needed_by_dependencies = std::max(buffers_needed_by_dependency,
                                                 buffers_needed_by_dependencies);
+    }
     }
 
     /* Compute the number of buffers that will be computed/output by this node. */
@@ -406,7 +426,13 @@ VectorSet<const bNode *> compute_schedule(const Context &context,
      * want the node with the highest number of needed buffers to be schedule first, but since
      * those are pushed to the traversal stack, we need to push them in reverse order. */
     Vector<const bNode *> sorted_dependency_nodes;
+    if (is_deep_exr_file_output_node(node)) {
+      sorted_dependency_nodes.clear();
+    }
     for (const bNodeSocket *input : node.input_sockets()) {
+      if (is_deep_exr_file_output_node(node)) {
+        break;
+      }
       if (!is_socket_available(input)) {
         continue;
       }
