@@ -42,7 +42,35 @@ bool PathTraceTile::get_pass_pixels(const string_view pass_name,
     return false;
   }
 
-  return get_pass_pixels(pass->type, num_channels, pixels);
+  const bool has_denoised_result = path_trace_.has_denoised_result() ||
+                                   is_volume_guiding_pass(pass->type);
+  if (pass->mode == PassMode::DENOISED && !has_denoised_result) {
+    pass = buffer_params.find_pass(pass->type);
+    if (pass == nullptr) {
+      /* Happens when denoised result pass is requested but is never written by the kernel. */
+      return false;
+    }
+  }
+
+  pass = buffer_params.get_actual_display_pass(pass);
+  if (pass == nullptr) {
+    /* Happens when interactive session changes display pass but render
+     * buffer does not contain it yet. */
+    return false;
+  }
+
+  const float exposure = buffer_params.exposure;
+  const int num_samples = path_trace_.get_num_render_tile_samples();
+
+  PassAccessor::PassAccessInfo pass_access_info(*pass);
+  pass_access_info.use_approximate_shadow_catcher = buffer_params.use_approximate_shadow_catcher;
+  pass_access_info.use_approximate_shadow_catcher_background =
+      pass_access_info.use_approximate_shadow_catcher && !buffer_params.use_transparent_background;
+
+  const PassAccessorCPU pass_accessor(pass_access_info, exposure, num_samples);
+  const PassAccessor::Destination destination(pixels, num_channels);
+
+  return path_trace_.get_render_tile_pixels(pass_accessor, destination);
 }
 
 bool PathTraceTile::get_pass_pixels(const PassType pass_type,

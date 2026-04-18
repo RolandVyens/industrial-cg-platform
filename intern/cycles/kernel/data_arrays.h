@@ -57,6 +57,7 @@ KERNEL_DATA_ARRAY(packed_normal, attributes_normal)
 /* lights */
 KERNEL_DATA_ARRAY(KernelLightDistribution, light_distribution)
 KERNEL_DATA_ARRAY(KernelLight, lights)
+KERNEL_DATA_ARRAY(int, lightgroup_split_index)
 KERNEL_DATA_ARRAY(float2, light_background_marginal_cdf)
 KERNEL_DATA_ARRAY(float2, light_background_conditional_cdf)
 

@@ -248,7 +248,6 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->pass_lightgroup_volume_direct = PASS_UNUSED;
   kfilm->pass_lightgroup_volume_indirect = PASS_UNUSED;
   kfilm->lightgroup_split_index_count = 0;
-  kfilm->lightgroup_split_index_ptr = 0;
 
   /* Mark passes as unused so that the kernel knows the pass is inaccessible. */
   kfilm->pass_denoising_albedo = PASS_UNUSED;
@@ -572,7 +571,6 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   }
 
   kfilm->lightgroup_split_index_count = static_cast<int>(split_index_map.size());
-  kfilm->lightgroup_split_index_ptr = dscene->lightgroup_split_index.device_pointer;
 
   clear_modified();
 }

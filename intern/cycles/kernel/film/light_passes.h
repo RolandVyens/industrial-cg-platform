@@ -179,13 +179,7 @@ ccl_device_inline int film_get_split_lightgroup_index(KernelGlobals kg, const in
     return LIGHTGROUP_NONE;
   }
 
-  ccl_global const int *split_index_map = (ccl_global const int *)
-      kernel_data.film.lightgroup_split_index_ptr;
-  if (split_index_map == nullptr) {
-    return LIGHTGROUP_NONE;
-  }
-
-  const int split_lightgroup = split_index_map[lightgroup];
+  const int split_lightgroup = kernel_data_fetch(lightgroup_split_index, lightgroup);
   return (split_lightgroup >= 0) ? split_lightgroup : LIGHTGROUP_NONE;
 }
 
