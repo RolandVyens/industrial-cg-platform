@@ -638,7 +638,9 @@ GPUSecondaryContextData GPU_create_secondary_context()
 
   /* Restore the main thread contexts.
    * (required as the above context creation also makes it active). */
-  main_thread_ghost_context->activateDrawingContext();
+  if (main_thread_ghost_context != nullptr) {
+    main_thread_ghost_context->activateDrawingContext();
+  }
   GPU_context_active_set(main_thread_gpu_context);
 
   return GPUSecondaryContextData{.ghost_context = ghost_context, .gpu_context = gpu_context};
