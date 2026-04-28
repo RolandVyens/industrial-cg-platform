@@ -528,6 +528,15 @@ ccl_device_inline void film_write_emission_or_background_pass(
   }
 
   if (!(path_flag & PATH_RAY_ANY_PASS)) {
+    if (!is_shadowcatcher && pass == kernel_data.film.pass_background) {
+      /* Camera-visible world background has no native surface/volume lobe label.
+       * Keep Combined_<world> reconstructable by assigning it to the least-wrong existing bucket:
+       * diffuse direct. */
+      film_write_lightgroup_split_pass(
+          kg, buffer, kernel_data.film.pass_lightgroup_diffuse, lightgroup, contribution);
+      film_write_lightgroup_split_pass(
+          kg, buffer, kernel_data.film.pass_lightgroup_diffuse_direct, lightgroup, contribution);
+    }
     /* Directly visible, write to emission or background pass. */
     pass_offset = pass;
   }
