@@ -499,6 +499,7 @@ ccl_device_inline void film_write_emission_or_background_pass(
     Spectrum contribution,
     ccl_global float *ccl_restrict buffer,
     const int pass,
+    const bool is_background,
     const int lightgroup = LIGHTGROUP_NONE)
 {
   if (!(kernel_data.film.light_pass_flag & PASS_ANY)) {
@@ -528,7 +529,7 @@ ccl_device_inline void film_write_emission_or_background_pass(
   }
 
   if (!(path_flag & PATH_RAY_ANY_PASS)) {
-    if (!is_shadowcatcher && pass == kernel_data.film.pass_background) {
+    if (!is_shadowcatcher && is_background) {
       /* Camera-visible world background has no native surface/volume lobe label.
        * Keep Combined_<world> reconstructable by assigning it to the least-wrong existing bucket:
        * diffuse direct. */
@@ -546,8 +547,13 @@ ccl_device_inline void film_write_emission_or_background_pass(
     return;
   }
   else if (kernel_data.kernel_features & KERNEL_FEATURE_LIGHT_PASSES) {
-    /* Keep emission events in Combined_<lg> only: do not split into lightgroup lobe channels. */
-    const bool split_lightgroup_lobes = (pass != kernel_data.film.pass_emission);
+    /* Keep emission events in Combined_<lg> only: do not split into lightgroup lobe channels.
+     *
+     * Use explicit contribution kind instead of comparing pass offsets: when both the background
+     * pass and emission pass are disabled they both become PASS_UNUSED, and pass equality no
+     * longer identifies whether this came from the world background or from emissive geometry.
+     */
+    const bool split_lightgroup_lobes = is_background;
 
     if (path_flag & PATH_RAY_SURFACE_PASS) {
       /* Indirectly visible through reflection. */
@@ -887,6 +893,7 @@ ccl_device_inline void film_write_background(KernelGlobals kg,
                                          contribution,
                                          buffer,
                                          kernel_data.film.pass_background,
+                                         true,
                                          kernel_data.background.lightgroup);
 }
 
@@ -909,7 +916,7 @@ ccl_device_inline void film_write_volume_emission(KernelGlobals kg,
   /* Write deep sample if depth is valid (>= 0). */
   film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
   film_write_emission_or_background_pass(
-      kg, state, contribution, buffer, kernel_data.film.pass_emission, lightgroup);
+      kg, state, contribution, buffer, kernel_data.film.pass_emission, false, lightgroup);
 }
 
 ccl_device_inline void film_write_surface_emission(KernelGlobals kg,
@@ -945,7 +952,7 @@ ccl_device_inline void film_write_surface_emission(KernelGlobals kg,
   film_accumulate_deep_surface_rgb_path(kg, state, contribution);
 #endif
   film_write_emission_or_background_pass(
-      kg, state, contribution, buffer, kernel_data.film.pass_emission, lightgroup);
+      kg, state, contribution, buffer, kernel_data.film.pass_emission, false, lightgroup);
 }
 
 CCL_NAMESPACE_END
