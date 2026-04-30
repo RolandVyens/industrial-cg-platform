@@ -70,7 +70,13 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
   guiding_record_surface_emission(kg, state, eval, mis_weight);
   const ccl_global KernelLight *klight = &kernel_data_fetch(lights, isect.prim);
   film_write_surface_emission(
-      kg, state, eval, mis_weight, render_buffer, object_lightgroup(kg, klight->object_id));
+      kg,
+      state,
+      eval,
+      mis_weight,
+      render_buffer,
+      object_lightgroup(kg, klight->object_id),
+      true);
   return SHADER_EVAL_OK;
 }
 
