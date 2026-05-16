@@ -99004,3 +99004,143 @@ msgstr "修剪毛髮曲線"
 msgid "Replace Length"
 msgstr "替換長度"
 
+
+msgid "Deep Output"
+msgstr "Deep 輸出"
+
+
+msgid "Deep EXR (.exr)"
+msgstr "Deep EXR (.exr)"
+
+
+msgid "Output deep image with per-sample depth for compositing"
+msgstr "輸出帶有逐樣本深度的 Deep 影像以用於合成"
+
+
+msgid "Deep Tile Budget"
+msgstr "Deep 分塊預算"
+
+
+msgid "Limit Deep EXR tile buffer memory per device in megabytes. Set to 0 to disable the limit."
+msgstr "限制每個裝置的 Deep EXR 分塊緩衝記憶體（MB）。設為 0 可停用限制。"
+
+
+msgid "Deep Max Samples"
+msgstr "Deep 最大樣本數"
+
+
+msgid "(Deprecated) Deep output is automatically enabled when needed"
+msgstr "（已棄用）Deep 輸出會在需要時自動啟用"
+
+
+msgid "(Deprecated) Maximum number of deep samples to store per pixel"
+msgstr "（已棄用）每像素可儲存的最大 Deep 樣本數"
+
+
+msgid "Deep Merge Tolerance"
+msgstr "Deep 合併容差"
+
+
+msgid "Merge similar samples within this depth distance. Smaller values keep more samples."
+msgstr "合併此深度距離內的相似樣本。值越小，保留的樣本越多。"
+
+
+msgid "Alpha Merge Tolerance"
+msgstr "Alpha 合併容差"
+
+
+msgid "Merge similar samples within this alpha difference. Smaller values keep more samples."
+msgstr "合併此 Alpha 差異範圍內的相似樣本。值越小，保留的樣本越多。"
+
+
+msgid "Light Pass AOVs"
+msgstr "燈光通道 AOV"
+
+
+msgid "Light Group Light Pass AOVs"
+msgstr "燈光群組燈光通道 AOV"
+
+
+msgid "Deliver per-light-group light pass AOVs"
+msgstr "輸出每個燈光群組的燈光通道 AOV"
+
+
+msgid "Add light groups to enable light pass AOV outputs"
+msgstr "新增燈光群組後才能啟用燈光通道 AOV 輸出"
+
+
+msgid "Memory scales with light groups x enabled light pass AOVs"
+msgstr "記憶體占用會隨燈光群組數量與啟用的燈光通道 AOV 一起成長"
+
+
+msgid "Enable all diffuse per-light-group light pass AOV variants"
+msgstr "啟用所有漫射燈光群組燈光通道 AOV 變體"
+
+
+msgid "Deliver diffuse per-light-group combined light pass AOV"
+msgstr "輸出漫射燈光群組合成燈光通道 AOV"
+
+
+msgid "Deliver diffuse per-light-group direct light pass AOV"
+msgstr "輸出漫射燈光群組直接光通道 AOV"
+
+
+msgid "Deliver diffuse per-light-group indirect light pass AOV"
+msgstr "輸出漫射燈光群組間接光通道 AOV"
+
+
+msgid "Enable all glossy per-light-group light pass AOV variants"
+msgstr "啟用所有光澤燈光群組燈光通道 AOV 變體"
+
+
+msgid "Deliver glossy per-light-group combined light pass AOV"
+msgstr "輸出光澤燈光群組合成燈光通道 AOV"
+
+
+msgid "Deliver glossy per-light-group direct light pass AOV"
+msgstr "輸出光澤燈光群組直接光通道 AOV"
+
+
+msgid "Deliver glossy per-light-group indirect light pass AOV"
+msgstr "輸出光澤燈光群組間接光通道 AOV"
+
+
+msgid "Enable all transmission per-light-group light pass AOV variants"
+msgstr "啟用所有穿透燈光群組燈光通道 AOV 變體"
+
+
+msgid "Deliver transmission per-light-group combined light pass AOV"
+msgstr "輸出穿透燈光群組合成燈光通道 AOV"
+
+
+msgid "Deliver transmission per-light-group direct light pass AOV"
+msgstr "輸出穿透燈光群組直接光通道 AOV"
+
+
+msgid "Deliver transmission per-light-group indirect light pass AOV"
+msgstr "輸出穿透燈光群組間接光通道 AOV"
+
+
+msgid "Enable all volume per-light-group light pass AOV variants"
+msgstr "啟用所有體積燈光群組燈光通道 AOV 變體"
+
+
+msgid "Deliver volume per-light-group combined light pass AOV"
+msgstr "輸出體積燈光群組合成燈光通道 AOV"
+
+
+msgid "Deliver volume per-light-group direct light pass AOV"
+msgstr "輸出體積燈光群組直接光通道 AOV"
+
+
+msgid "Deliver volume per-light-group indirect light pass AOV"
+msgstr "輸出體積燈光群組間接光通道 AOV"
+
+
+msgid "Tint shadows cast by this light"
+msgstr "為此燈光投射的陰影著色"
+
+
+msgid "Color of shadows cast by the world background light"
+msgstr "世界背景光投射陰影的顏色"
+

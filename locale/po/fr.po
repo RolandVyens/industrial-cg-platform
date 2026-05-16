@@ -157794,3 +157794,143 @@ msgstr "Redimensionner chaque courbe uniformément jusqu’à atteindre la longu
 msgid "Distance from the ground plane"
 msgstr "Distance au plan du sol"
 
+
+msgid "Deep Output"
+msgstr "Sortie Deep"
+
+
+msgid "Deep EXR (.exr)"
+msgstr "Deep EXR (.exr)"
+
+
+msgid "Output deep image with per-sample depth for compositing"
+msgstr "Sortir une image Deep avec profondeur par échantillon pour le compositing"
+
+
+msgid "Deep Tile Budget"
+msgstr "Budget de tuiles Deep"
+
+
+msgid "Limit Deep EXR tile buffer memory per device in megabytes. Set to 0 to disable the limit."
+msgstr "Limiter la mémoire du tampon de tuiles Deep EXR par périphérique en mégaoctets. Définir à 0 pour désactiver la limite."
+
+
+msgid "Deep Max Samples"
+msgstr "Nombre maximal d’échantillons Deep"
+
+
+msgid "(Deprecated) Deep output is automatically enabled when needed"
+msgstr "(Obsolète) La sortie Deep est activée automatiquement si nécessaire"
+
+
+msgid "(Deprecated) Maximum number of deep samples to store per pixel"
+msgstr "(Obsolète) Nombre maximal d’échantillons Deep à stocker par pixel"
+
+
+msgid "Deep Merge Tolerance"
+msgstr "Tolérance de fusion Deep"
+
+
+msgid "Merge similar samples within this depth distance. Smaller values keep more samples."
+msgstr "Fusionner les échantillons similaires dans cette distance de profondeur. Les valeurs plus petites conservent plus d’échantillons."
+
+
+msgid "Alpha Merge Tolerance"
+msgstr "Tolérance de fusion alpha"
+
+
+msgid "Merge similar samples within this alpha difference. Smaller values keep more samples."
+msgstr "Fusionner les échantillons similaires dans cet écart alpha. Les valeurs plus petites conservent plus d’échantillons."
+
+
+msgid "Light Pass AOVs"
+msgstr "AOV de passes d’éclairage"
+
+
+msgid "Light Group Light Pass AOVs"
+msgstr "AOV de passes d’éclairage par groupe d’éclairage"
+
+
+msgid "Deliver per-light-group light pass AOVs"
+msgstr "Produit des AOV de passes d’éclairage par groupe d’éclairage"
+
+
+msgid "Add light groups to enable light pass AOV outputs"
+msgstr "Ajoutez des groupes d’éclairage pour activer les sorties AOV de passes d’éclairage"
+
+
+msgid "Memory scales with light groups x enabled light pass AOVs"
+msgstr "L’utilisation de la mémoire augmente avec le nombre de groupes d’éclairage et les AOV de passes d’éclairage activées"
+
+
+msgid "Enable all diffuse per-light-group light pass AOV variants"
+msgstr "Active toutes les variantes d’AOV de passes d’éclairage diffuses par groupe d’éclairage"
+
+
+msgid "Deliver diffuse per-light-group combined light pass AOV"
+msgstr "Produit l’AOV combinée de passe d’éclairage diffuse par groupe d’éclairage"
+
+
+msgid "Deliver diffuse per-light-group direct light pass AOV"
+msgstr "Produit l’AOV directe de passe d’éclairage diffuse par groupe d’éclairage"
+
+
+msgid "Deliver diffuse per-light-group indirect light pass AOV"
+msgstr "Produit l’AOV indirecte de passe d’éclairage diffuse par groupe d’éclairage"
+
+
+msgid "Enable all glossy per-light-group light pass AOV variants"
+msgstr "Active toutes les variantes d’AOV de passes d’éclairage brillantes par groupe d’éclairage"
+
+
+msgid "Deliver glossy per-light-group combined light pass AOV"
+msgstr "Produit l’AOV combinée de passe d’éclairage brillante par groupe d’éclairage"
+
+
+msgid "Deliver glossy per-light-group direct light pass AOV"
+msgstr "Produit l’AOV directe de passe d’éclairage brillante par groupe d’éclairage"
+
+
+msgid "Deliver glossy per-light-group indirect light pass AOV"
+msgstr "Produit l’AOV indirecte de passe d’éclairage brillante par groupe d’éclairage"
+
+
+msgid "Enable all transmission per-light-group light pass AOV variants"
+msgstr "Active toutes les variantes d’AOV de passes d’éclairage de transmission par groupe d’éclairage"
+
+
+msgid "Deliver transmission per-light-group combined light pass AOV"
+msgstr "Produit l’AOV combinée de passe d’éclairage de transmission par groupe d’éclairage"
+
+
+msgid "Deliver transmission per-light-group direct light pass AOV"
+msgstr "Produit l’AOV directe de passe d’éclairage de transmission par groupe d’éclairage"
+
+
+msgid "Deliver transmission per-light-group indirect light pass AOV"
+msgstr "Produit l’AOV indirecte de passe d’éclairage de transmission par groupe d’éclairage"
+
+
+msgid "Enable all volume per-light-group light pass AOV variants"
+msgstr "Active toutes les variantes d’AOV de passes d’éclairage de volume par groupe d’éclairage"
+
+
+msgid "Deliver volume per-light-group combined light pass AOV"
+msgstr "Produit l’AOV combinée de passe d’éclairage de volume par groupe d’éclairage"
+
+
+msgid "Deliver volume per-light-group direct light pass AOV"
+msgstr "Produit l’AOV directe de passe d’éclairage de volume par groupe d’éclairage"
+
+
+msgid "Deliver volume per-light-group indirect light pass AOV"
+msgstr "Produit l’AOV indirecte de passe d’éclairage de volume par groupe d’éclairage"
+
+
+msgid "Tint shadows cast by this light"
+msgstr "Teinte les ombres projetées par cette lumière"
+
+
+msgid "Color of shadows cast by the world background light"
+msgstr "Couleur des ombres projetées par l’éclairage d’arrière-plan du monde"
+
