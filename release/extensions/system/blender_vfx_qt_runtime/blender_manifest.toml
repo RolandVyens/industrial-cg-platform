@@ -1,0 +1,41 @@
+schema_version = "1.0.0"
+
+id = "blender_vfx_qt_runtime"
+version = "0.1.0"
+name = "Blender VFX Qt Runtime"
+tagline = "Shared Qt runtime payload for Blender VFX system extensions"
+maintainer = "Blender VFX Fork"
+type = "add-on"
+tags = ["Render"]
+blender_version_min = "4.2.0"
+platforms = ["windows-x64"]
+wheels = [
+  "./wheels/bqt-2.2.0-py3-none-any.whl",
+  "./wheels/blender_qt_stylesheet-0.0.3-py3-none-any.whl",
+  "./wheels/qtpy-2.4.3-py3-none-any.whl",
+  "./wheels/packaging-26.2-py3-none-any.whl",
+  "./wheels/pyside6-6.11.0-cp310-abi3-win_amd64.whl",
+  "./wheels/pyside6_essentials-6.11.0-cp310-abi3-win_amd64.whl",
+  "./wheels/pyside6_addons-6.11.0-cp310-abi3-win_amd64.whl",
+  "./wheels/shiboken6-6.11.0-cp310-abi3-win_amd64.whl",
+]
+license = [
+  "SPDX:GPL-2.0-or-later",
+  "SPDX:MPL-2.0",
+  "SPDX:MIT",
+  "SPDX:Apache-2.0",
+  "SPDX:BSD-2-Clause",
+  "SPDX:LGPL-3.0-only",
+  "SPDX:GPL-2.0-only",
+  "SPDX:GPL-3.0-only",
+]
+copyright = [
+  "2026 Blender Authors",
+]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/.git/",
+  "/*.zip",
+]

@@ -1,0 +1,24 @@
+schema_version = "1.0.0"
+
+id = "blender_vfx_viewlayer_manager"
+version = "0.1.0"
+name = "Blender VFX ViewLayer Manager"
+tagline = "Manage ViewLayers from a shared BQt runtime window"
+maintainer = "Blender VFX Fork"
+type = "add-on"
+tags = ["Render"]
+blender_version_min = "4.2.0"
+platforms = ["windows-x64"]
+license = [
+  "SPDX:GPL-2.0-or-later",
+]
+copyright = [
+  "2026 Blender Authors",
+]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/.git/",
+  "/*.zip",
+]

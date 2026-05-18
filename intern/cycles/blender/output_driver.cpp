@@ -1,0 +1,157 @@
+/* SPDX-FileCopyrightText: 2021-2022 Blender Foundation
+ *
+ * SPDX-License-Identifier: Apache-2.0 */
+
+#include <cstring>
+
+#include "blender/output_driver.h"
+
+#include "BLI_listbase.h"
+#include "IMB_imbuf_types.hh"
+#include "RE_engine.h"
+
+CCL_NAMESPACE_BEGIN
+
+BlenderOutputDriver::BlenderOutputDriver(blender::RenderEngine &b_engine) : b_engine_(b_engine) {}
+
+BlenderOutputDriver::~BlenderOutputDriver() = default;
+
+bool BlenderOutputDriver::read_render_tile(const Tile &tile)
+{
+  /* Get render result. */
+  blender::RenderResult *b_rr = RE_engine_begin_result(&b_engine_,
+                                                       tile.offset.x,
+                                                       tile.offset.y,
+                                                       tile.size.x,
+                                                       tile.size.y,
+                                                       tile.layer.c_str(),
+                                                       tile.view.c_str());
+
+  /* Can happen if the intersected rectangle gives 0 width or height. */
+  if (b_rr == nullptr) {
+    return false;
+  }
+
+  /* layer will be missing if it was disabled in the UI */
+  if (BLI_listbase_is_empty(&b_rr->layers)) {
+    return false;
+  }
+
+  blender::RenderLayer *b_rlay = static_cast<blender::RenderLayer *>(b_rr->layers.first);
+
+  /* Copy each pass.
+   * TODO:copy only the required ones for better performance? */
+  for (blender::RenderPass &b_pass : b_rlay->passes) {
+    if (b_pass.ibuf && b_pass.ibuf->float_data()) {
+      const float *rect = b_pass.ibuf->float_data();
+      tile.set_pass_pixels(b_pass.name, b_pass.channels, rect);
+    }
+    else {
+      blender::Array<float> rect(int64_t(b_pass.channels) * b_pass.rectx * b_pass.recty, 0.0f);
+      tile.set_pass_pixels(b_pass.name, b_pass.channels, rect.data());
+    }
+  }
+
+  RE_engine_end_result(&b_engine_, b_rr, false, false, false);
+
+  return true;
+}
+
+bool BlenderOutputDriver::update_render_tile(const Tile &tile)
+{
+  /* Use final write for preview renders, otherwise render result wouldn't be updated
+   * quickly on Blender side. For all other cases we use the display driver. */
+  if (b_engine_.flag & blender::RE_ENGINE_PREVIEW) {
+    write_render_tile(tile);
+    return true;
+  }
+
+  /* Don't highlight full-frame tile. */
+  if (!(tile.size == tile.full_size)) {
+    RE_engine_tile_highlight_clear_all(&b_engine_);
+    RE_engine_tile_highlight_set(
+        &b_engine_, tile.offset.x, tile.offset.y, tile.size.x, tile.size.y, true);
+  }
+
+  return false;
+}
+
+void BlenderOutputDriver::write_render_tile(const Tile &tile)
+{
+  RE_engine_tile_highlight_clear_all(&b_engine_);
+
+  /* Get render result. */
+  blender::RenderResult *b_rr = RE_engine_begin_result(&b_engine_,
+                                                       tile.offset.x,
+                                                       tile.offset.y,
+                                                       tile.size.x,
+                                                       tile.size.y,
+                                                       tile.layer.c_str(),
+                                                       tile.view.c_str());
+
+  /* Can happen if the intersected rectangle gives 0 width or height. */
+  if (b_rr == nullptr) {
+    return;
+  }
+
+  /* Layer will be missing if it was disabled in the UI. */
+  if (BLI_listbase_is_empty(&b_rr->layers)) {
+    return;
+  }
+
+  blender::RenderLayer *b_rlay = static_cast<blender::RenderLayer *>(b_rr->layers.first);
+
+  vector<float> pixels(static_cast<size_t>(tile.size.x) * tile.size.y * 4);
+
+  /* Copy each pass. */
+  for (blender::RenderPass &b_pass : b_rlay->passes) {
+    if (!tile.get_pass_pixels(b_pass.name, b_pass.channels, pixels.data())) {
+      memset(pixels.data(), 0, pixels.size() * sizeof(float));
+    }
+    /* Capture Combined pass for deep recolor (post-render beauty buffer). */
+    if (strcmp(b_pass.name, "Combined") == 0 && b_pass.channels == 4) {
+      const int full_width = tile.full_size.x;
+      const int full_height = tile.full_size.y;
+
+      if (combined_pass_buffer_.empty() || combined_width_ != full_width ||
+          combined_height_ != full_height) {
+        combined_width_ = full_width;
+        combined_height_ = full_height;
+        combined_pass_buffer_.assign(
+            static_cast<size_t>(combined_width_) * combined_height_ * 4, 0.0f);
+      }
+
+      for (int y = 0; y < tile.size.y; y++) {
+        const int dst_y = tile.offset.y + y;
+        const size_t src_offset = static_cast<size_t>(y) * tile.size.x * 4;
+        const size_t dst_offset =
+            (static_cast<size_t>(dst_y) * combined_width_ + tile.offset.x) * 4;
+        memcpy(combined_pass_buffer_.data() + dst_offset,
+               pixels.data() + src_offset,
+               sizeof(float) * tile.size.x * 4);
+      }
+    }
+
+    if (b_pass.ibuf && b_pass.ibuf->float_data()) {
+      float *rect = b_pass.ibuf->float_data_for_write();
+      const size_t size_in_bytes = sizeof(float) * b_pass.rectx * b_pass.recty * b_pass.channels;
+      memcpy(rect, pixels.data(), size_in_bytes);
+    }
+  }
+
+  RE_engine_end_result(&b_engine_, b_rr, false, false, true);
+}
+
+const float *BlenderOutputDriver::get_combined_pass(int &width, int &height) const
+{
+  if (combined_pass_buffer_.empty()) {
+    width = 0;
+    height = 0;
+    return nullptr;
+  }
+  width = combined_width_;
+  height = combined_height_;
+  return combined_pass_buffer_.data();
+}
+
+CCL_NAMESPACE_END
