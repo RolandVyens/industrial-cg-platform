@@ -435,7 +435,10 @@ void rna_collection_search_update_fn(
     const bContext *C, void *arg, const char *str, SearchItems *items, const bool is_first)
 {
   RNACollectionSearch *data = static_cast<RNACollectionSearch *>(arg);
-  const int flag = RNA_property_flag(data->target_prop);
+  const int target_flag = RNA_property_flag(data->target_prop);
+  const int search_flag = data->search_prop ? RNA_property_flag(data->search_prop) : 0;
+  const bool keep_initial_collection_order =
+      is_first && ((search_flag & PROP_COLLECTION_SEARCH_KEEP_ORDER) != 0);
   const bool is_ptr_target = (RNA_property_type(data->target_prop) == PROP_POINTER);
   /* For non-pointer properties, UI code acts entirely based on the item's name. So the name has to
    * match the RNA name exactly. So only for pointer properties, the name can be modified to add
@@ -451,7 +454,7 @@ void rna_collection_search_update_fn(
   if (data->search_prop != nullptr) {
     /* build a temporary list of relevant items first */
     RNA_PROP_BEGIN (&data->search_ptr, itemptr, data->search_prop) {
-      if (flag & PROP_ID_SELF_CHECK) {
+      if (target_flag & PROP_ID_SELF_CHECK) {
         if (itemptr.data == data->target_ptr.owner_id) {
           continue;
         }
@@ -532,14 +535,18 @@ void rna_collection_search_update_fn(
     }
     RNA_PROP_END;
 
-    /* Sort alphabetically (matches other search layouts). */
-    std::ranges::sort(
-        items_list,
-        [](const std::unique_ptr<CollItemSearch> &a, const std::unique_ptr<CollItemSearch> &b) {
-          return BLI_strcasecmp_natural(a->name.c_str(), b->name.c_str()) < 0;
-        });
-    for (const int i : items_list.index_range()) {
-      items_list[i]->index = i;
+    /* Keep source collection order for initial menus when it is user-visible state, such as view
+     * layers. Otherwise retain the default alphabetical search order. */
+    if (!keep_initial_collection_order) {
+      /* Sort alphabetically (matches other search layouts). */
+      std::ranges::sort(
+          items_list,
+          [](const std::unique_ptr<CollItemSearch> &a, const std::unique_ptr<CollItemSearch> &b) {
+            return BLI_strcasecmp_natural(a->name.c_str(), b->name.c_str()) < 0;
+          });
+      for (const int i : items_list.index_range()) {
+        items_list[i]->index = i;
+      }
     }
   }
   else {

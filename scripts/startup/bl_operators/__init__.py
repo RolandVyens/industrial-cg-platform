@@ -14,6 +14,7 @@ _modules = [
     "add_mesh_torus",
     "anim",
     "assets",
+    "blender_vfx_viewlayer_manager",
     "bone_selection_sets",
     "clip",
     "connect_to_output",
@@ -61,6 +62,7 @@ del _namespace
 def register():
     from bpy.utils import register_class
     from . import (
+        blender_vfx_viewlayer_manager,
         bone_selection_sets,
         copy_global_transform,
     )
@@ -69,6 +71,7 @@ def register():
         for cls in mod.classes:
             register_class(cls)
 
+    blender_vfx_viewlayer_manager.register()
     bone_selection_sets.register()
     copy_global_transform.register()
 
@@ -76,10 +79,12 @@ def register():
 def unregister():
     from bpy.utils import unregister_class
     from . import (
+        blender_vfx_viewlayer_manager,
         bone_selection_sets,
         copy_global_transform,
     )
 
+    blender_vfx_viewlayer_manager.unregister()
     bone_selection_sets.unregister()
     copy_global_transform.unregister()
 

@@ -5077,6 +5077,17 @@ void rna_def_view_layer_common(BlenderRNA *brna, StructRNA *srna, const bool sce
         "alpha transparency equal to or higher than this threshold");
     RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
 
+    prop = RNA_def_property(srna, "use_deep", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(
+        prop, nullptr, "flag", VIEW_LAYER_INDUSTRIAL_AOV_CONNECTOR_DEEP);
+    RNA_def_property_boolean_default(prop, false);
+    RNA_def_property_ui_text(
+        prop,
+        "Deep",
+        "Mark this ViewLayer for Industrial AOV Connector deep node creation; this is not a "
+        "render pass");
+    RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, "rna_Scene_render_update");
+
     prop = RNA_def_property(srna, "eevee", PROP_POINTER, PROP_NONE);
     RNA_def_property_flag(prop, PROP_NEVER_NULL);
     RNA_def_property_struct_type(prop, "ViewLayerEEVEE");
@@ -9417,6 +9428,7 @@ void RNA_def_scene(BlenderRNA *brna)
 
   /* Layer and Collections */
   prop = RNA_def_property(srna, "view_layers", PROP_COLLECTION, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_COLLECTION_SEARCH_KEEP_ORDER);
   RNA_def_property_collection_sdna(prop, nullptr, "view_layers", nullptr);
   RNA_def_property_struct_type(prop, "ViewLayer");
   RNA_def_property_ui_text(prop, "View Layers", "");

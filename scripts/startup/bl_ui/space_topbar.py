@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import sys
+
 import bpy
 from bpy.types import Header, Menu, Panel
 
@@ -59,6 +61,11 @@ class TOPBAR_HT_upper_bar(Header):
             new="scene.view_layer_add",
             unlink="scene.view_layer_remove",
         )
+        if sys.platform == "win32":
+            row.operator(
+                "wm.blender_vfx_viewlayer_manager_show",
+                text=iface_("ViewLayer Manager"),
+            )
 
 
 class TOPBAR_PT_tool_settings_extra(Panel):

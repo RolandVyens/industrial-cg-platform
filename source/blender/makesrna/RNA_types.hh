@@ -311,7 +311,7 @@ inline int operator&(const PropertySubType subtype, const PropertyUnit unit)
 
 /* Make sure enums are updated with these */
 /* HIGHEST FLAG IN USE: 1u << 31
- * FREE FLAGS: 13. */
+ * FREE FLAGS: none. */
 enum PropertyFlag {
   /**
    * Editable means the property is editable in the user
@@ -339,6 +339,13 @@ enum PropertyFlag {
    * for search/filter properties, but this works just fine for now.
    */
   PROP_TEXTEDIT_UPDATE = (1u << 31),
+
+  /* Collection search UI. */
+  /**
+   * Keep initial collection-search UI results in source collection order instead of
+   * alphabetically re-sorting them. Useful when the collection order is user-visible state.
+   */
+  PROP_COLLECTION_SEARCH_KEEP_ORDER = (1 << 13),
 
   /* icon */
   PROP_ICONS_CONSECUTIVE = (1 << 12),
