@@ -71,7 +71,7 @@ EffectorWeights *BKE_effector_add_weights(Collection *collection)
 
   return weights;
 }
-PartDeflect *BKE_partdeflect_new(ePFieldType type)
+PartDeflect *BKE_partdeflect_new(int type)
 {
   PartDeflect *pd;
 
@@ -101,8 +101,6 @@ PartDeflect *BKE_partdeflect_new(ePFieldType type)
       break;
     case PFIELD_FLUIDFLOW:
       pd->f_flow = 1.0f;
-      break;
-    default:
       break;
   }
   pd->flag = PFIELD_DO_LOCATION | PFIELD_DO_ROTATION | PFIELD_CLOTH_USE_CULLING;
@@ -1088,8 +1086,6 @@ static void do_physical_effector(EffectorCache *eff,
         }
       }
 #endif
-      break;
-    default:
       break;
   }
 

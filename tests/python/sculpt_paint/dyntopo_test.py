@@ -1,19 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Blender Authors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later */
-"""
-blender -b --factory-startup --python tests/python/dyntopo_test.py -- --testdir tests/files/sculpting/
-"""
 
 __all__ = (
     "main",
 )
 
-import pathlib
-import sys
 import unittest
+import sys
+import pathlib
+import numpy as np
 
 import bpy
+
+"""
+blender -b --factory-startup --python tests/python/dyntopo_test.py -- --testdir tests/files/sculpting/
+"""
+
 args = None
 
 

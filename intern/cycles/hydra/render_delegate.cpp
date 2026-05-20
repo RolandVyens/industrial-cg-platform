@@ -108,9 +108,6 @@ SessionParams GetSessionParams(const HdRenderSettingsMap &settings)
     params.device = Device::get_multi_device(devices, params.threads, params.background);
   }
 
-  /* Set same device for denoising for now. */
-  params.denoise_device = params.device;
-
   return params;
 }
 

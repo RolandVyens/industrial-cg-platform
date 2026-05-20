@@ -12,11 +12,7 @@
 
 #include "transform.hh"
 
-namespace blender {
-
-enum eSnapFlag : short;
-
-namespace ed::transform {
+namespace blender::ed::transform {
 
 bool peelObjectsTransform(TransInfo *t,
                           const float mval[2],
@@ -54,8 +50,7 @@ void drawSnapping(TransInfo *t);
 bool usingSnappingNormal(const TransInfo *t);
 bool validSnappingNormal(const TransInfo *t);
 
-blender::eSnapFlag *transform_snap_flag_from_spacetype_ptr(TransInfo *t,
-                                                           const struct PropertyRNA **r_prop);
+short *transform_snap_flag_from_spacetype_ptr(TransInfo *t, const struct PropertyRNA **r_prop);
 
 void getSnapPoint(const TransInfo *t, float vec[3]);
 void addSnapPoint(TransInfo *t);
@@ -85,5 +80,4 @@ void transform_snap_anim_flush_data(TransInfo *t,
                                     float *r_val_final);
 bool transform_snap_nla_calc(TransInfo *t, float *vec);
 
-}  // namespace ed::transform
-}  // namespace blender
+}  // namespace blender::ed::transform

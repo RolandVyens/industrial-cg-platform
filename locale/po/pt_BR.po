@@ -1,18 +1,18 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: Leandro Paganelli <leandrobp@fastmail.com>\n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
-"PO-Revision-Date: 2026-04-13 10:12+0000\n"
-"Last-Translator: Gilberto Rodrigues <gilbertorodrigues@outlook.com>\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
+"PO-Revision-Date: 2025-11-11 12:13+0000\n"
+"Last-Translator: Rafael Teixeira de Avila Soares <rafaeltas@gmail.com>\n"
 "Language-Team: Portuguese (Brazil) <https://translate.blender.org/projects/blender-ui/ui/pt_BR/>\n"
 "Language: pt_BR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n > 1;\n"
-"X-Generator: Weblate 5.16.2\n"
+"X-Generator: Weblate 5.12.1\n"
 "X-Poedit-SourceCharset: utf-8"
 
 
@@ -137,15 +137,15 @@ msgstr "Cores padrão"
 
 
 msgid "01 - Theme Color Set"
-msgstr "01 - Conjunto de Cores de Tema"
+msgstr "CJ de cores de tema - 01"
 
 
 msgid "02 - Theme Color Set"
-msgstr "02 - Conjunto de Cores do Tema"
+msgstr "CJ de cores de tema - 02"
 
 
 msgid "03 - Theme Color Set"
-msgstr "03 - Conjunto de Cores do Tema"
+msgstr "CJ de cores de tema - 03"
 
 
 msgid "04 - Theme Color Set"
@@ -12079,6 +12079,10 @@ msgid "When this is disabled, lock alpha while painting"
 msgstr "Caso esta opção esteja desabilitada, impede modificações do alfa durante a pintura."
 
 
+msgid "Cavity Mask"
+msgstr "Máscara de cavidade"
+
+
 msgid "Use Cursor Overlay"
 msgstr "Usar sobreposição de cursor"
 
@@ -21176,10 +21180,6 @@ msgid "UV Factor"
 msgstr "Fator UV"
 
 
-msgid "Placement"
-msgstr "Posicionamento"
-
-
 msgid "Material slot in an object"
 msgstr "Compartimentos de material dentro de um objeto."
 
@@ -21194,6 +21194,14 @@ msgstr "Blocos de dados de materiais usados por este compartimento de material."
 
 msgid "Material slot name"
 msgstr "Nome do compartimento do material."
+
+
+msgid "Math"
+msgstr "Matemática"
+
+
+msgid "Mirror"
+msgstr "Espelhar"
 
 
 msgid "Snap"
@@ -21248,12 +21256,16 @@ msgid "Select Loops"
 msgstr "Selecionar anéis"
 
 
-msgid "Math"
-msgstr "Matemática"
+msgid "Instances"
+msgstr "Instâncias"
 
 
 msgid "Metaball"
 msgstr "Meta-esfera"
+
+
+msgid "Import"
+msgstr "Importar"
 
 
 msgid "Light"
@@ -21276,12 +21288,12 @@ msgid "Rigid Body"
 msgstr "Corpo rígido"
 
 
+msgid "UV"
+msgstr "UV"
+
+
 msgid "Apply"
 msgstr "Aplicar"
-
-
-msgid "Instances"
-msgstr "Instâncias"
 
 
 msgid "Track"
@@ -21300,10 +21312,6 @@ msgid "Clean Up"
 msgstr "Limpeza"
 
 
-msgid "Import"
-msgstr "Importar"
-
-
 msgid "Make Single User"
 msgstr "Tornar usuário único"
 
@@ -21314,10 +21322,6 @@ msgstr "Converter"
 
 msgid "Hooks"
 msgstr "Ganchos"
-
-
-msgid "UV"
-msgstr "UV"
 
 
 msgid "Random Mask"
@@ -21364,20 +21368,20 @@ msgid "Merge"
 msgstr "Fundir"
 
 
-msgid "Special Characters"
-msgstr "Caracteres especiais"
-
-
 msgid "Layout"
 msgstr "Organizar"
 
 
-msgid "Bone Roll"
-msgstr "Rolagem dos ossos"
+msgid "Special Characters"
+msgstr "Caracteres especiais"
 
 
 msgid "Keying"
 msgstr "Inserção de chaves"
+
+
+msgid "Bone Roll"
+msgstr "Rolagem dos ossos"
 
 
 msgid "Tracking"
@@ -21390,10 +21394,6 @@ msgstr "Pontos de pivô"
 
 msgid "Proportional Editing Falloff"
 msgstr "Tipo de decaimento para edição proporcional"
-
-
-msgid "Mirror"
-msgstr "Espelhar"
 
 
 msgid "Basic"
@@ -21643,10 +21643,6 @@ msgstr "Sobre"
 
 msgid "Quick Setup"
 msgstr "Configuração Rápida"
-
-
-msgid "Cavity Mask"
-msgstr "Máscara de cavidade"
 
 
 msgid "Mesh Edge"
@@ -28643,6 +28639,11 @@ msgid "Load a SVG file"
 msgstr "Carrega um arquivo de gráficos vetoriais escalonáveis (.svg)."
 
 
+msgctxt "Operator"
+msgid "Import SVG"
+msgstr "Importar SVG"
+
+
 msgid "Load a FBX file"
 msgstr "Carrega um arquivo FBX"
 
@@ -29776,12 +29777,12 @@ msgid "Flip times of selected keyframes using the current frame as the mirror li
 msgstr "Vira os tempos dos quadros-chave selecionados usando o quadro atual como linha de espelhamento."
 
 
-msgid "Flip times of selected keyframes using the first selected marker as the reference point"
-msgstr "Vira os tempos dos quadros-chave selecionados usando o primeiro marcador selecionado como ponto de referência."
-
-
 msgid "Flip values of selected keyframes (i.e. negative values become positive, and vice versa)"
 msgstr "Vira os valores dos quadros-chave selecionados (por exemplo, os valores negativos tornam-se positivos, e vice-versa)."
+
+
+msgid "Flip times of selected keyframes using the first selected marker as the reference point"
+msgstr "Vira os tempos dos quadros-chave selecionados usando o primeiro marcador selecionado como ponto de referência."
 
 
 msgctxt "Operator"
@@ -31490,6 +31491,10 @@ msgstr "São consideradas somente as funcionalidades que estão além das margen
 
 msgid "Minimal distance accepted between two features"
 msgstr "Distância mínima aceita entre duas funcionalidades."
+
+
+msgid "Placement"
+msgstr "Posicionamento"
 
 
 msgid "Placement for detected features"
@@ -34555,12 +34560,12 @@ msgid "Next Keyframe"
 msgstr "Próximo quadro-chave"
 
 
-msgid "Flip times of selected keyframes, effectively reversing the order they appear in"
-msgstr "Vira os tempos dos quadros-chave selecionados, efetivamente revertendo a ordem na qual eles aparecem."
-
-
 msgid "Flip values of selected keyframes using the cursor value (Y/Horizontal component) as the mirror line"
 msgstr "Inverte os valores dos quadros-chave selecionados usando o valor do cursor (componente Horizontal / Y) como a linha de espelhamento."
+
+
+msgid "Flip times of selected keyframes, effectively reversing the order they appear in"
+msgstr "Vira os tempos dos quadros-chave selecionados, efetivamente revertendo a ordem na qual eles aparecem."
 
 
 msgctxt "Operator"
@@ -43356,6 +43361,11 @@ msgid "Move selected area edges"
 msgstr "Move as arestas da área selecionada."
 
 
+msgctxt "Operator"
+msgid "Area Options"
+msgstr "Opções para as áreas"
+
+
 msgid "Operations for splitting and merging"
 msgstr "Mostra as operações disponíveis para divisão e fusão das áreas dos editores."
 
@@ -45522,6 +45532,14 @@ msgstr "Escalonar as ilhas por uma média"
 
 msgid "Average the size of separate UV islands, based on their area in 3D space"
 msgstr "Escalona as ilhas para uma média das faces UV separadas, com base em sua área no espaço 3D."
+
+
+msgid "Copy mirror UV coordinates on the X axis based on a mirrored mesh"
+msgstr "Copia as coordenadas de espelhamento de UV no eixo X com base em uma malha espelhada."
+
+
+msgid "Axis Direction"
+msgstr "Direção do eixo"
 
 
 msgid "Tolerance for finding vertex duplicates"
@@ -48020,6 +48038,14 @@ msgid "Active Palette Color"
 msgstr "Cor ativa da paleta"
 
 
+msgid "Render Pass"
+msgstr "Passo de renderização"
+
+
+msgid "Motion Tracking"
+msgstr "Captura de movimentos"
+
+
 msgid "Transform Orientations"
 msgstr "Orientações de transformação"
 
@@ -48030,14 +48056,6 @@ msgstr "Exibição Quadrante"
 
 msgid "Stereoscopy"
 msgstr "Estereoscopia"
-
-
-msgid "Render Pass"
-msgstr "Passo de renderização"
-
-
-msgid "Motion Tracking"
-msgstr "Captura de movimentos"
 
 
 msgid "Bone Constraints"
@@ -50721,6 +50739,14 @@ msgstr "Limita o tamanho de textura para poupar memória gráfica."
 
 msgid "Device"
 msgstr "Dispositivo"
+
+
+msgid "Method used for displaying images on the screen"
+msgstr "Método usado para mostrar imagens na tela."
+
+
+msgid "2D Texture"
+msgstr "Textura 2D"
 
 
 msgid "Legacy Compute Device Type"
@@ -63153,6 +63179,10 @@ msgid "Non-Keyboard Shortcut"
 msgstr "Atalhos não relacionados ao teclado"
 
 
+msgid "Pin"
+msgstr "Afixar"
+
+
 msgid "Only keyboard shortcuts can be edited that way, please use User Preferences otherwise"
 msgstr "Somente atalhos relacionados ao teclado podem ser editados desta maneira. Em caso contrário, por favor, utilize as \"Preferências de usuário\"."
 
@@ -64882,6 +64912,10 @@ msgid "Dynamic Topology found: %s, disabled"
 msgstr "Topologia dinâmica encontrada: %s, desabilitados(as)."
 
 
+msgid "Palette created"
+msgstr "Paleta Criada"
+
+
 msgid "Sample color for %s"
 msgstr "Amostragem de cor para %s."
 
@@ -64892,10 +64926,6 @@ msgstr "O pincel atual. Clique com o BEM para obter amostras para a paleta ao in
 
 msgid "Palette. Use Left Click to sample more colors"
 msgstr "A paleta atual. Clique com o BEM para obter mais amostras de cor."
-
-
-msgid "Palette created"
-msgstr "Paleta Criada"
 
 
 msgid "Compiled without sound support"
@@ -67316,6 +67346,10 @@ msgstr "Nenhuma visualização ativa encontrada na cena \"%s\""
 
 msgid "%s: no Combined pass found in the render layer '%s'"
 msgstr "%s: Nenhum passo combinado foi encontrado dentro da camada de renderização '%s'"
+
+
+msgid "%s: failed to allocate clip buffer '%s'"
+msgstr "%s: falha ao alocar o buffer de corte '%s'"
 
 
 msgid "%s: incorrect dimensions for partial copy '%s'"

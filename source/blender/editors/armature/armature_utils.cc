@@ -277,7 +277,7 @@ EditBone *ED_armature_ebone_get_mirrored(const ListBaseT<EditBone> *edbo, EditBo
 
 /* ------------------------------------- */
 
-void armature_select_mirrored_ex(bArmature *arm, const eBone_Flag flag)
+void armature_select_mirrored_ex(bArmature *arm, const int flag)
 {
   BLI_assert((flag & ~(BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) == 0);
   /* Select mirrored bones */
@@ -666,8 +666,6 @@ void ED_armature_from_edit(Main *bmain, bArmature *arm)
   /* armature bones */
   BKE_armature_bone_hash_free(arm);
   BKE_armature_bonelist_free(&arm->bonebase, true);
-  arm->runtime->bones_tag_rebuild();
-
   arm->act_bone = nullptr;
 
   /* Avoid (almost) zero sized bones, this gives unstable rest-poses. */
@@ -961,7 +959,7 @@ int ED_armature_ebone_selectflag_get(const EditBone *ebone)
   return (ebone->flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL));
 }
 
-void ED_armature_ebone_selectflag_set(EditBone *ebone, eBone_Flag flag)
+void ED_armature_ebone_selectflag_set(EditBone *ebone, int flag)
 {
   flag = flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL);
 
@@ -970,7 +968,7 @@ void ED_armature_ebone_selectflag_set(EditBone *ebone, eBone_Flag flag)
     ebone->parent->flag &= ~BONE_TIPSEL;
 
     ebone->flag |= flag;
-    ebone->parent->flag |= (flag & BONE_ROOTSEL) ? BONE_TIPSEL : eBone_Flag{};
+    ebone->parent->flag |= (flag & BONE_ROOTSEL) ? BONE_TIPSEL : 0;
   }
   else {
     ebone->flag &= ~(BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL);
@@ -978,15 +976,15 @@ void ED_armature_ebone_selectflag_set(EditBone *ebone, eBone_Flag flag)
   }
 }
 
-void ED_armature_ebone_selectflag_enable(EditBone *ebone, eBone_Flag flag)
+void ED_armature_ebone_selectflag_enable(EditBone *ebone, int flag)
 {
-  BLI_assert((flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) != eBone_Flag{});
+  BLI_assert((flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) != 0);
   ED_armature_ebone_selectflag_set(ebone, ebone->flag | flag);
 }
 
-void ED_armature_ebone_selectflag_disable(EditBone *ebone, eBone_Flag flag)
+void ED_armature_ebone_selectflag_disable(EditBone *ebone, int flag)
 {
-  BLI_assert((flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) != eBone_Flag{});
+  BLI_assert((flag & (BONE_SELECTED | BONE_ROOTSEL | BONE_TIPSEL)) != 0);
   ED_armature_ebone_selectflag_set(ebone, ebone->flag & ~flag);
 }
 
@@ -994,13 +992,13 @@ void ED_armature_ebone_select_set(EditBone *ebone, bool select)
 {
   /* NOTE: this function could be used in more places. */
 
-  eBone_Flag flag;
+  int flag;
   if (select) {
     BLI_assert((ebone->flag & BONE_UNSELECTABLE) == 0);
     flag = (BONE_SELECTED | BONE_TIPSEL | BONE_ROOTSEL);
   }
   else {
-    flag = eBone_Flag{};
+    flag = 0;
   }
   ED_armature_ebone_selectflag_set(ebone, flag);
 }

@@ -809,8 +809,6 @@ static void trim_evaluated_curves(const bke::CurvesGeometry &src_curves,
   }
 }
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
 /** \name Compute trim parameters
  * \{ */
@@ -946,10 +944,6 @@ static void compute_curve_trim_parameters(const bke::CurvesGeometry &curves,
 }
 
 /** \} */
-
-/* -------------------------------------------------------------------- */
-/** \name Public API
- * \{ */
 
 bke::CurvesGeometry trim_curves(const bke::CurvesGeometry &src_curves,
                                 const IndexMask &selection,

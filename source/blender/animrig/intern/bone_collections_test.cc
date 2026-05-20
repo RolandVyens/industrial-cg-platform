@@ -7,14 +7,10 @@
 
 #include "BLT_translation.hh"
 
-#include "BKE_armature.hh"
 #include "BKE_global.hh"
-#include "BKE_gtest_base.hh"
 #include "BKE_idtype.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_main.hh"
-
-#include "MEM_guardedalloc.h"
 
 #include "ANIM_bone_collections.hh"
 #include "intern/bone_collections_internal.hh"
@@ -23,9 +19,7 @@
 
 namespace blender::animrig::tests {
 
-class AnimBoneCollectionTest : public bke::BlenderGTestBase {};
-
-TEST_F(AnimBoneCollectionTest, bonecoll_new_free)
+TEST(ANIM_bone_collections, bonecoll_new_free)
 {
   BoneCollection *bcoll = ANIM_bonecoll_new("some name");
   EXPECT_NE(nullptr, bcoll);
@@ -37,7 +31,7 @@ TEST_F(AnimBoneCollectionTest, bonecoll_new_free)
   ANIM_bonecoll_free(bcoll);
 }
 
-TEST_F(AnimBoneCollectionTest, bonecoll_default_name)
+TEST(ANIM_bone_collections, bonecoll_default_name)
 {
   {
     BoneCollection *bcoll = ANIM_bonecoll_new("");
@@ -52,7 +46,7 @@ TEST_F(AnimBoneCollectionTest, bonecoll_default_name)
   }
 }
 
-class ArmatureBoneCollections : public bke::BlenderGTestBase {
+class ArmatureBoneCollections : public testing::Test {
  protected:
   bArmature arm = {};
   Bone bone1 = {}, bone2 = {}, bone3 = {};
@@ -71,7 +65,6 @@ class ArmatureBoneCollections : public bke::BlenderGTestBase {
     BLI_addtail(&arm.bonebase, &bone2);    /* bone2 is root bone. */
     BLI_addtail(&bone2.childbase, &bone3); /* bone3 has bone2 as parent. */
 
-    arm.runtime = MEM_new<bke::bArmature_Runtime>(__func__);
     BKE_armature_bone_hash_make(&arm);
   }
 
@@ -81,6 +74,7 @@ class ArmatureBoneCollections : public bke::BlenderGTestBase {
      * the armature. */
     BLI_listbase_clear(&arm.bonebase);
 
+    BKE_idtype_init();
     BKE_libblock_free_datablock(&arm.id, 0);
 
     BKE_main_free(bmain);
@@ -579,23 +573,23 @@ TEST_F(ArmatureBoneCollections, active_set_clear_by_pointer)
   BoneCollection *bcoll3 = ANIM_bonecoll_new("Alien Bones");
 
   ANIM_armature_bonecoll_active_set(&arm, bcoll1);
-  EXPECT_EQ(0, arm.runtime->active_collection_index);
-  EXPECT_EQ(bcoll1, arm.runtime->active_collection);
+  EXPECT_EQ(0, arm.runtime.active_collection_index);
+  EXPECT_EQ(bcoll1, arm.runtime.active_collection);
   EXPECT_STREQ(bcoll1->name, arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_set(&arm, nullptr);
-  EXPECT_EQ(-1, arm.runtime->active_collection_index);
-  EXPECT_EQ(nullptr, arm.runtime->active_collection);
+  EXPECT_EQ(-1, arm.runtime.active_collection_index);
+  EXPECT_EQ(nullptr, arm.runtime.active_collection);
   EXPECT_STREQ("", arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_set(&arm, bcoll2);
-  EXPECT_EQ(1, arm.runtime->active_collection_index);
-  EXPECT_EQ(bcoll2, arm.runtime->active_collection);
+  EXPECT_EQ(1, arm.runtime.active_collection_index);
+  EXPECT_EQ(bcoll2, arm.runtime.active_collection);
   EXPECT_STREQ(bcoll2->name, arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_set(&arm, bcoll3);
-  EXPECT_EQ(-1, arm.runtime->active_collection_index);
-  EXPECT_EQ(nullptr, arm.runtime->active_collection);
+  EXPECT_EQ(-1, arm.runtime.active_collection_index);
+  EXPECT_EQ(nullptr, arm.runtime.active_collection);
   EXPECT_STREQ("", arm.active_collection_name);
 
   ANIM_bonecoll_free(bcoll3);
@@ -607,23 +601,23 @@ TEST_F(ArmatureBoneCollections, active_set_clear_by_index)
   BoneCollection *bcoll2 = ANIM_armature_bonecoll_new(&arm, "Bones 2");
 
   ANIM_armature_bonecoll_active_index_set(&arm, 0);
-  EXPECT_EQ(0, arm.runtime->active_collection_index);
-  EXPECT_EQ(bcoll1, arm.runtime->active_collection);
+  EXPECT_EQ(0, arm.runtime.active_collection_index);
+  EXPECT_EQ(bcoll1, arm.runtime.active_collection);
   EXPECT_STREQ(bcoll1->name, arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_index_set(&arm, -1);
-  EXPECT_EQ(-1, arm.runtime->active_collection_index);
-  EXPECT_EQ(nullptr, arm.runtime->active_collection);
+  EXPECT_EQ(-1, arm.runtime.active_collection_index);
+  EXPECT_EQ(nullptr, arm.runtime.active_collection);
   EXPECT_STREQ("", arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_index_set(&arm, 1);
-  EXPECT_EQ(1, arm.runtime->active_collection_index);
-  EXPECT_EQ(bcoll2, arm.runtime->active_collection);
+  EXPECT_EQ(1, arm.runtime.active_collection_index);
+  EXPECT_EQ(bcoll2, arm.runtime.active_collection);
   EXPECT_STREQ(bcoll2->name, arm.active_collection_name);
 
   ANIM_armature_bonecoll_active_index_set(&arm, 47);
-  EXPECT_EQ(-1, arm.runtime->active_collection_index);
-  EXPECT_EQ(nullptr, arm.runtime->active_collection);
+  EXPECT_EQ(-1, arm.runtime.active_collection_index);
+  EXPECT_EQ(nullptr, arm.runtime.active_collection);
   EXPECT_STREQ("", arm.active_collection_name);
 }
 
@@ -1292,7 +1286,7 @@ TEST_F(ArmatureBoneCollections, internal__bonecolls_rotate_block)
   EXPECT_EQ(0, arm.collection_array[5]->child_index);
 }
 
-class ArmatureBoneCollectionsTestList : public bke::BlenderGTestBase {
+class ArmatureBoneCollectionsTestList : public testing::Test {
  protected:
   bArmature arm = {};
 
@@ -1305,7 +1299,6 @@ class ArmatureBoneCollectionsTestList : public bke::BlenderGTestBase {
   void SetUp() override
   {
     STRNCPY(arm.id.name, "ARArmature");
-    arm.runtime = MEM_new<bke::bArmature_Runtime>(__func__);
 
     root = ANIM_armature_bonecoll_new(&arm, "root");
     child0 = ANIM_armature_bonecoll_new(&arm, "child0", 0);
@@ -1322,6 +1315,7 @@ class ArmatureBoneCollectionsTestList : public bke::BlenderGTestBase {
 
   void TearDown() override
   {
+    BKE_idtype_init();
     BKE_libblock_free_datablock(&arm.id, 0);
   }
 
@@ -1364,15 +1358,15 @@ TEST_F(ArmatureBoneCollectionsTestList, move_before_after_index__before_first_si
 {
   /* Set the active index to be one of the affected bone collections. */
   ANIM_armature_bonecoll_active_name_set(&arm, "child2");
-  ASSERT_EQ(3, arm.runtime->active_collection_index);
+  ASSERT_EQ(3, arm.runtime.active_collection_index);
 
   EXPECT_EQ(1, ANIM_armature_bonecoll_move_before_after_index(&arm, 3, 1, MoveLocation::Before));
   EXPECT_TRUE(expect_bcolls({"root", "child2", "child0", "child1", "child1_0"}));
   EXPECT_EQ(0, armature_bonecoll_find_parent_index(&arm, 1));
 
   /* The three indicators of the active collection should still be in sync. */
-  EXPECT_EQ(1, arm.runtime->active_collection_index);
-  EXPECT_EQ(child2, arm.runtime->active_collection);
+  EXPECT_EQ(1, arm.runtime.active_collection_index);
+  EXPECT_EQ(child2, arm.runtime.active_collection);
   EXPECT_STREQ("child2", arm.active_collection_name);
 }
 
@@ -1387,15 +1381,15 @@ TEST_F(ArmatureBoneCollectionsTestList, move_before_after_index__before_last_sib
 {
   /* Set the active index to be one of the affected bone collections. */
   ANIM_armature_bonecoll_active_name_set(&arm, "child1");
-  ASSERT_EQ(2, arm.runtime->active_collection_index);
+  ASSERT_EQ(2, arm.runtime.active_collection_index);
 
   EXPECT_EQ(2, ANIM_armature_bonecoll_move_before_after_index(&arm, 1, 3, MoveLocation::Before));
   EXPECT_TRUE(expect_bcolls({"root", "child1", "child0", "child2", "child1_0"}));
   EXPECT_EQ(0, armature_bonecoll_find_parent_index(&arm, 2));
 
   /* The three indicators of the active collection should still be in sync. */
-  EXPECT_EQ(1, arm.runtime->active_collection_index);
-  EXPECT_EQ(child1, arm.runtime->active_collection);
+  EXPECT_EQ(1, arm.runtime.active_collection_index);
+  EXPECT_EQ(child1, arm.runtime.active_collection);
   EXPECT_STREQ("child1", arm.active_collection_name);
 }
 
@@ -1547,7 +1541,6 @@ class ArmatureBoneCollectionsLiboverrides : public ArmatureBoneCollectionsTestLi
     /* TODO: make this clone `arm` into `dst_arm`, instead of assuming the below
      * code is still in sync with the super-class. */
     STRNCPY(dst_arm.id.name, "ARArmatureDST");
-    dst_arm.runtime = MEM_new<bke::bArmature_Runtime>(__func__);
 
     dst_root = ANIM_armature_bonecoll_new(&dst_arm, "root");
     dst_child0 = ANIM_armature_bonecoll_new(&dst_arm, "child0", 0);

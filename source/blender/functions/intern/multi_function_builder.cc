@@ -39,11 +39,9 @@ void CustomMF_GenericConstant::call(const IndexMask &mask,
   type_.fill_construct_indices(value_, output.data(), mask);
 }
 
-void CustomMF_GenericConstant::hash_unique(UniqueHashBytes &hash) const
+uint64_t CustomMF_GenericConstant::hash() const
 {
-  hash.add(&HASH_ID);
-  type_.hash_unique(value_, hash);
-  hash.add(&type_);
+  return type_.hash_or_fallback(value_, uintptr_t(this));
 }
 
 bool CustomMF_GenericConstant::equals(const MultiFunction &other) const

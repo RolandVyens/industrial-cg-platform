@@ -263,8 +263,7 @@ static wmOperatorStatus add_keyingset_button_exec(bContext *C, wmOperator *op)
 {
   PropertyRNA *prop = nullptr;
   PointerRNA ptr = {};
-  int index = 0;
-  eKSP_Settings pflag{};
+  int index = 0, pflag = 0;
 
   if (!ui::context_active_but_prop_get(C, &ptr, &prop, &index)) {
     /* Pass event on if no active button found. */

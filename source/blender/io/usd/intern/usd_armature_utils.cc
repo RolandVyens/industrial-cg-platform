@@ -44,7 +44,7 @@ void set_fcurve_sample(FCurve *fcu, int64_t sample_index, const float frame, con
   bez.vec[1][0] = frame;
   bez.vec[1][1] = value;
   bez.ipo = BEZT_IPO_LIN;
-  bez.f1 = bez.f2 = bez.f3 = BEZT_FLAG_SELECT;
+  bez.f1 = bez.f2 = bez.f3 = SELECT;
   bez.h1 = bez.h2 = HD_AUTO;
 }
 
@@ -151,19 +151,16 @@ void create_pose_joints(pxr::UsdSkelAnimation &skel_anim,
   pxr::VtTokenArray joints;
 
   const bPose *pose = obj.pose;
-  const bArmature &arm = *id_cast<bArmature *>(obj.data);
-  BKE_pose_ensure_bone_indices(obj);
 
   for (const bPoseChannel &pchan : pose->chanbase) {
-    const Bone *pchan_bone = pchan.bone_get(arm);
-    if (pchan_bone) {
-      if (deform_map && !deform_map->contains(pchan.name)) {
+    if (pchan.bone) {
+      if (deform_map && !deform_map->contains(pchan.bone->name)) {
         /* If deform_map is passed in, assume we're going deform-only.
          * Bones not found in the map should be skipped. */
         continue;
       }
 
-      joints.push_back(build_usd_joint_path(pchan_bone, allow_unicode));
+      joints.push_back(build_usd_joint_path(pchan.bone, allow_unicode));
     }
   }
 

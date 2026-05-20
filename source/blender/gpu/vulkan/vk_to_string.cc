@@ -75,7 +75,6 @@ std::string to_string(VkBuffer vk_handle)
   return to_string_handle(uint64_t(vk_handle));
 }
 
-#if VK_USE_64_BIT_PTR_DEFINES == 1
 std::string to_string(VkImage vk_handle)
 {
   return to_string_handle(uint64_t(vk_handle));
@@ -110,7 +109,6 @@ std::string to_string(VkDescriptorSet vk_handle)
 {
   return to_string_handle(uint64_t(vk_handle));
 }
-#endif
 
 const char *to_string(const VkAttachmentLoadOp vk_attachment_load_op)
 {

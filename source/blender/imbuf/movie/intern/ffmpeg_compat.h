@@ -210,27 +210,27 @@ FFMPEG_INLINE int ffmpeg_get_video_rotation(const AVStream *stream)
 FFMPEG_INLINE const enum AVPixelFormat *ffmpeg_get_pix_fmts(struct AVCodecContext *context,
                                                             const AVCodec *codec)
 {
-  const enum AVPixelFormat *pix_fmts = nullptr;
+  const enum AVPixelFormat *pix_fmts = NULL;
   avcodec_get_supported_config(
-      context, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void **)&pix_fmts, nullptr);
+      context, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, (const void **)&pix_fmts, NULL);
   return pix_fmts;
 }
 
 FFMPEG_INLINE const enum AVSampleFormat *ffmpeg_get_sample_fmts(struct AVCodecContext *context,
                                                                 const AVCodec *codec)
 {
-  const enum AVSampleFormat *sample_fmts = nullptr;
+  const enum AVSampleFormat *sample_fmts = NULL;
   avcodec_get_supported_config(
-      context, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void **)&sample_fmts, nullptr);
+      context, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void **)&sample_fmts, NULL);
   return sample_fmts;
 }
 
 FFMPEG_INLINE const int *ffmpeg_get_sample_rates(struct AVCodecContext *context,
                                                  const AVCodec *codec)
 {
-  const int *sample_rates = nullptr;
+  const int *sample_rates = NULL;
   avcodec_get_supported_config(
-      context, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0, (const void **)&sample_rates, nullptr);
+      context, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0, (const void **)&sample_rates, NULL);
   return sample_rates;
 }
 #else

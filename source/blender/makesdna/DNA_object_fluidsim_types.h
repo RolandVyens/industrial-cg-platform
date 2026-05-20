@@ -8,13 +8,12 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
 #include "DNA_defs.h"
 
 namespace blender {
 
-/** #FluidsimSettings::type */
-enum eFluidsim_Type : short {
+/** #Object::fluidsimSettings */
+enum {
   OB_FLUIDSIM_ENABLE = 1,
   OB_FLUIDSIM_DOMAIN = 1 << 1,
   OB_FLUIDSIM_FLUID = 1 << 2,
@@ -24,15 +23,13 @@ enum eFluidsim_Type : short {
   OB_FLUIDSIM_PARTICLE = 1 << 6,
   OB_FLUIDSIM_CONTROL = 1 << 7,
 };
-ENUM_OPERATORS(eFluidsim_Type)
 
-/** #FluidsimSettings::flag. */
-enum eFluidsim_Flag : int {
+/** #FluidsimSettings::flags. */
+enum {
   OB_FLUIDSIM_REVERSE = 1 << 0,
   OB_FLUIDSIM_ACTIVE = 1 << 1,
   OB_FLUIDSIM_OVERRIDE_TIME = 1 << 2,
 };
-ENUM_OPERATORS(eFluidsim_Flag)
 
 struct FluidVertexVelocity {
   float vel[3] = {};
@@ -45,7 +42,7 @@ struct FluidsimSettings {
   int threads = 0;
   char _pad1[4] = {};
   /* domain, fluid or obstacle */
-  eFluidsim_Type type = {};
+  short type = 0;
   /* Display advanced options in fluid sim tab (on=1, off=0). */
   short show_advancedoptions = 0;
 
@@ -111,7 +108,7 @@ struct FluidsimSettings {
   /** Number of surface subdivisions. */
   int surfaceSubdivs = 0;
   /** GUI flags. */
-  eFluidsim_Flag flag = {};
+  int flag = 0;
 
   /** Particle display - size scaling, and alpha influence. */
   float particleInfSize = 0, particleInfAlpha = 0;

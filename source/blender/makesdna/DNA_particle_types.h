@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 #include "DNA_ID.h"
 #include "DNA_boid_types.h"
 #include "DNA_defs.h"
@@ -27,7 +25,7 @@ struct ParticleBatchCache;
 };
 
 /** #SPHFluidSettings::flag */
-enum eSPH_Flag : int {
+enum {
   SPH_VISCOELASTIC_SPRINGS = 1 << 0,
   SPH_CURRENT_REST_LENGTH = 1 << 1,
   SPH_FAC_REPULSION = 1 << 2,
@@ -36,15 +34,14 @@ enum eSPH_Flag : int {
   SPH_FAC_VISCOSITY = 1 << 5,
   SPH_FAC_REST_LENGTH = 1 << 6,
 };
-ENUM_OPERATORS(eSPH_Flag)
 
 /** #SPHFluidSettings::solver (numerical ID field, not bit-field). */
-enum eSPH_Solver : short {
+enum {
   SPH_SOLVER_DDR = 0,
   SPH_SOLVER_CLASSICAL = 1,
 };
 
-enum eParticleDrawFlag : int {
+enum eParticleDrawFlag {
   PART_DRAW_VEL = (1 << 0),
   PART_DRAW_GLOBAL_OB = (1 << 1),
   PART_DRAW_SIZE = (1 << 2),
@@ -70,14 +67,13 @@ enum eParticleDrawFlag : int {
   PART_DRAW_GUIDE_HAIRS = (1 << 17),
   PART_DRAW_HAIR_GRID = (1 << 18),
 };
-ENUM_OPERATORS(eParticleDrawFlag)
 
 /**
  * #ParticleSettings.type
  * Hair is always baked static in object/geometry space.
  * Other types (normal particles) are in global space and not static baked.
  */
-enum eParticleType : short {
+enum {
   PART_EMITTER = 0,
   /* REACTOR type currently unused */
   /* PART_REACTOR = 1, */
@@ -95,7 +91,7 @@ enum eParticleType : short {
 };
 
 /** Mirroring Mantaflow particle types from particle.h (Mantaflow header). */
-enum eMantaflowParticleType : int {
+enum {
   /* PARTICLE_TYPE_NONE = (0 << 0), */ /* UNUSED */
   /* PARTICLE_TYPE_NEW = (1 << 0), */  /* UNUSED */
   PARTICLE_TYPE_SPRAY = (1 << 1),
@@ -105,10 +101,9 @@ enum eMantaflowParticleType : int {
   PARTICLE_TYPE_DELETE = (1 << 10),
   /* PARTICLE_TYPE_INVALID = (1 << 30), */ /* UNUSED */
 };
-ENUM_OPERATORS(eMantaflowParticleType)
 
 /** #ParticleSettings.flag */
-enum eParticleFlag : int {
+enum {
   PART_REACT_STA_END = 1 << 0,
   PART_REACT_MULTIPLE = 1 << 1,
 
@@ -157,13 +152,12 @@ enum eParticleFlag : int {
   PART_CHILD_EFFECT = 1 << 27,
   PART_CHILD_LONG_HAIR = 1 << 28,
   // PART_CHILD_RENDER = 1 << 29, /* UNUSED */
-  PART_CHILD_GUIDE = int(1u << 30),
+  PART_CHILD_GUIDE = 1 << 30,
 
 };
-ENUM_OPERATORS(eParticleFlag)
 
 /** #ParticleSettings::from */
-enum eParticleFrom : short {
+enum {
   PART_FROM_VERT = 0,
   PART_FROM_FACE = 1,
   PART_FROM_VOLUME = 2,
@@ -172,14 +166,14 @@ enum eParticleFrom : short {
 };
 
 /** #ParticleSettings::distr */
-enum eParticleDistribution : short {
+enum {
   PART_DISTR_JIT = 0,
   PART_DISTR_RAND = 1,
   PART_DISTR_GRID = 2,
 };
 
 /** #ParticleSettings::phystype */
-enum eParticlePhysicsType : short {
+enum {
   PART_PHYS_NO = 0,
   PART_PHYS_NEWTON = 1,
   PART_PHYS_KEYED = 2,
@@ -188,7 +182,7 @@ enum eParticlePhysicsType : short {
 };
 
 /** #ParticleSettings::kink */
-enum eParticleKink : short {
+enum eParticleKink {
   PART_KINK_NO = 0,
   PART_KINK_CURL = 1,
   PART_KINK_RADIAL = 2,
@@ -198,22 +192,20 @@ enum eParticleKink : short {
 };
 
 /** #ParticleSettings::child_flag */
-enum eParticleChildFlag : int {
+enum eParticleChildFlag {
   PART_CHILD_USE_CLUMP_NOISE = (1 << 0),
   PART_CHILD_USE_CLUMP_CURVE = (1 << 1),
   PART_CHILD_USE_ROUGH_CURVE = (1 << 2),
   PART_CHILD_USE_TWIST_CURVE = (1 << 3),
 };
-ENUM_OPERATORS(eParticleChildFlag)
 
 /** #ParticleSettings::shape_flag */
-enum eParticleShapeFlag : short {
+enum eParticleShapeFlag {
   PART_SHAPE_CLOSE_TIP = (1 << 0),
 };
-ENUM_OPERATORS(eParticleShapeFlag)
 
 /** #ParticleSettings::draw_col */
-enum eParticleDrawCol : short {
+enum {
   PART_DRAW_COL_NONE = 0,
   PART_DRAW_COL_MAT = 1,
   PART_DRAW_COL_VEL = 2,
@@ -221,14 +213,13 @@ enum eParticleDrawCol : short {
 };
 
 /** #ParticleSettings::time_flag */
-enum eParticleTimeFlag : short {
+enum {
   /** Automatic sub-frames. */
   PART_TIME_AUTOSF = 1 << 0,
 };
-ENUM_OPERATORS(eParticleTimeFlag)
 
 /** #ParticleSettings::draw_as, #ParticleSettings::ren_as */
-enum eParticleDrawAs : short {
+enum {
   PART_DRAW_NOT = 0,
   PART_DRAW_DOT = 1,
   PART_DRAW_HALO = 1,
@@ -244,7 +235,7 @@ enum eParticleDrawAs : short {
 };
 
 /** #ParticleSettings::integrator */
-enum eParticleIntegrator : short {
+enum {
   PART_INT_EULER = 0,
   PART_INT_MIDPOINT = 1,
   PART_INT_RK4 = 2,
@@ -252,7 +243,7 @@ enum eParticleIntegrator : short {
 };
 
 /** #ParticleSettings::rotmode */
-enum eParticleRotationMode : short {
+enum {
   PART_ROT_NOR = 1,
   PART_ROT_VEL = 2,
   PART_ROT_GLOB_X = 3,
@@ -265,7 +256,7 @@ enum eParticleRotationMode : short {
 };
 
 /** #ParticleSettings::avemode */
-enum eParticleAngularVelocityMode : short {
+enum {
   PART_AVE_VELOCITY = 1,
   PART_AVE_RAND = 2,
   PART_AVE_HORIZONTAL = 3,
@@ -276,20 +267,20 @@ enum eParticleAngularVelocityMode : short {
 };
 
 /** #ParticleSettings::reactevent */
-enum eParticleReactEvent : short {
+enum {
   PART_EVENT_DEATH = 0,
   PART_EVENT_COLLIDE = 1,
   PART_EVENT_NEAR = 2,
 };
 
 /** #ParticleSettings::childtype */
-enum eParticleChildType : short {
+enum {
   PART_CHILD_PARTICLES = 1,
   PART_CHILD_FACES = 2,
 };
 
 /** #PartialSystem::flag */
-enum eParticleSystem_Flag : int {
+enum {
   PSYS_CURRENT = 1 << 0,
   PSYS_GLOBAL_HAIR = 1 << 1,
   PSYS_HAIR_DYNAMICS = 1 << 2,
@@ -310,19 +301,17 @@ enum eParticleSystem_Flag : int {
   PSYS_OB_ANIM_RESTORE = 1 << 14,
   PSYS_SHARED_CACHES = 1 << 15,
 };
-ENUM_OPERATORS(eParticleSystem_Flag)
 
 /** #ParticleData::flag */
-enum eParticle_Flag : short {
+enum {
   PARS_UNEXIST = 1 << 0,
   PARS_NO_DISP = 1 << 1,
   // PARS_STICKY = 1 << 2, /* deprecated */
   PARS_REKEY = 1 << 3,
 };
-ENUM_OPERATORS(eParticle_Flag)
 
 /** #ParticleData::alive */
-enum eParticle_AliveState : short {
+enum {
   PARS_KILLED = 0, /* Deprecated. */
   PARS_DEAD = 1,
   PARS_UNBORN = 2,
@@ -331,13 +320,17 @@ enum eParticle_AliveState : short {
 };
 
 /** #ParticleDupliWeight::flag */
-enum eParticleDupliWeight_Flag : short {
+enum {
   PART_DUPLIW_CURRENT = 1,
 };
-ENUM_OPERATORS(eParticleDupliWeight_Flag)
+
+/** #PartialSystem::vg */
+enum {
+  PSYS_TOT_VG = 13,
+};
 
 /** #PartialSystem::vgroup (indices into this array). */
-enum eParticleSystem_Vgroup : short {
+enum {
   PSYS_VG_DENSITY = 0,
   PSYS_VG_VEL = 1,
   PSYS_VG_LENGTH = 2,
@@ -351,26 +344,23 @@ enum eParticleSystem_Vgroup : short {
   PSYS_VG_ROT = 10,
   PSYS_VG_EFFECTOR = 11,
   PSYS_VG_TWIST = 12,
-
-  PSYS_TOT_VG = 13,
 };
 
 /** #ParticleTarget::flag */
-enum eParticleTarget_Flag : short {
+enum {
   PTARGET_CURRENT = 1,
   PTARGET_VALID = 2,
 };
-ENUM_OPERATORS(eParticleTarget_Flag)
 
 /** #ParticleTarget::mode */
-enum eParticleTarget_Mode : short {
+enum {
   PTARGET_MODE_NEUTRAL = 0,
   PTARGET_MODE_FRIEND = 1,
   PTARGET_MODE_ENEMY = 2,
 };
 
 /** #MTex::mapto */
-enum eParticleTextureInfluence : int {
+enum eParticleTextureInfluence {
   /* init */
   PAMAP_TIME = (1 << 0), /* emission time */
   PAMAP_LIFE = (1 << 1), /* life time */
@@ -394,7 +384,6 @@ enum eParticleTextureInfluence : int {
   PAMAP_CHILD = (PAMAP_CLUMP | PAMAP_KINK_FREQ | PAMAP_KINK_AMP | PAMAP_ROUGH | PAMAP_LENGTH |
                  PAMAP_TWIST),
 };
-ENUM_OPERATORS(eParticleTextureInfluence)
 
 struct HairKey {
   /** Location of hair vertex. */
@@ -453,8 +442,7 @@ struct ParticleTarget {
   struct ParticleTarget *next = nullptr, *prev = nullptr;
   struct Object *ob = nullptr;
   int psys = 0;
-  eParticleTarget_Flag flag = {};
-  eParticleTarget_Mode mode = {};
+  short flag = 0, mode = 0;
   float time = 0, duration = 0;
 };
 
@@ -462,7 +450,7 @@ struct ParticleDupliWeight {
   struct ParticleDupliWeight *next = nullptr, *prev = nullptr;
   struct Object *ob = nullptr;
   short count = 0;
-  eParticleDupliWeight_Flag flag = {};
+  short flag = 0;
   /** Only updated on file save and used on file load. */
   short index = 0;
   char _pad0[2] = {};
@@ -521,9 +509,9 @@ struct ParticleData {
   char _pad[4] = {};
 
   int hair_index = 0;
-  eParticle_Flag flag = {};
+  short flag = 0;
   /** The life state of a particle. */
-  eParticle_AliveState alive = {};
+  short alive = 0;
 };
 
 struct SPHFluidSettings {
@@ -534,9 +522,8 @@ struct SPHFluidSettings {
   float viscosity_omega = 0, viscosity_beta = 0;
   float stiffness_k = 0, stiffness_knear = 0, rest_density = 0;
   float buoyancy = 0;
-  eSPH_Flag flag = {};
-  int spring_frames = 0;
-  eSPH_Solver solver = {};
+  int flag = 0, spring_frames = 0;
+  short solver = 0;
   char _pad[6] = {};
 };
 
@@ -555,25 +542,17 @@ struct ParticleSettings {
   struct EffectorWeights *effector_weights = nullptr;
   struct Collection *collision_group = nullptr;
 
-  eParticleFlag flag = PART_EDISTR | PART_TRAND | PART_HIDE_ADVANCED_HAIR;
+  int flag = PART_EDISTR | PART_TRAND | PART_HIDE_ADVANCED_HAIR;
   char _pad1[4] = {};
-  eParticleType type = PART_EMITTER;
-  eParticleFrom from = PART_FROM_FACE;
-  eParticleDistribution distr = PART_DISTR_JIT;
-  short texact = 0;
+  short type = PART_EMITTER, from = PART_FROM_FACE, distr = PART_DISTR_JIT, texact = 0;
   /* physics modes */
-  eParticlePhysicsType phystype = PART_PHYS_NEWTON;
-  eParticleRotationMode rotmode = PART_ROT_VEL;
-  eParticleAngularVelocityMode avemode = PART_AVE_VELOCITY;
-  eParticleReactEvent reactevent = PART_EVENT_DEATH;
-  eParticleDrawFlag draw = {};
+  short phystype = PART_PHYS_NEWTON, rotmode = PART_ROT_VEL, avemode = PART_AVE_VELOCITY,
+        reactevent = PART_EVENT_DEATH;
+  int draw = 0;
   float draw_size = 0.1f;
-  eParticleDrawAs draw_as = PART_DRAW_REND;
-  eParticleChildType childtype = {};
+  short draw_as = PART_DRAW_REND, childtype = 0;
   char _pad2[4] = {};
-  eParticleDrawAs ren_as = PART_DRAW_HALO;
-  short subframes = 0;
-  eParticleDrawCol draw_col = PART_DRAW_COL_MAT;
+  short ren_as = PART_DRAW_HALO, subframes = 0, draw_col = PART_DRAW_COL_MAT;
   /* number of path segments, power of 2 except */
   short draw_step = 2, ren_step = 3;
   short hair_step = 5, keys_step = 5;
@@ -581,11 +560,9 @@ struct ParticleSettings {
   /* adaptive path rendering */
   short adapt_angle = 5, adapt_pix = 3;
 
-  short disp = 100, omat = 1, interpolation = 0;
-  eParticleIntegrator integrator = PART_INT_MIDPOINT;
+  short disp = 100, omat = 1, interpolation = 0, integrator = PART_INT_MIDPOINT;
   DNA_DEPRECATED short rotfrom = 0;
-  eParticleKink kink = PART_KINK_NO;
-  short kink_axis = 2;
+  short kink = 0, kink_axis = 2;
 
   /* billboards */
   DNA_DEPRECATED short bb_align = 0, bb_uv_split = 1, bb_anim = 0, bb_split_offset = 0;
@@ -601,7 +578,7 @@ struct ParticleSettings {
   float timetweak = 1.0f, courant_target = 0.2f;
   float jitfac = 1.0f, eff_hair = 0, grid_rand = 0, ps_offset[1] = {};
   int totpart = 1000, userjit = 0, grid_res = 10, effector_amount = 0;
-  eParticleTimeFlag time_flag = {};
+  short time_flag = 0;
   char _pad0[6] = {};
 
   /* initial velocity factors */
@@ -616,7 +593,7 @@ struct ParticleSettings {
   /* length */
   float randlength = 0;
   /* children */
-  eParticleChildFlag child_flag = {};
+  int child_flag = 0;
   char _pad3[4] = {};
   int child_percent = 10, child_render_percent = 100;
   float parents = 0, childsize = 1.0f, childrandsize = 0;
@@ -670,7 +647,7 @@ struct ParticleSettings {
   char _pad5[2] = {};
 
   /* hair shape */
-  eParticleShapeFlag shape_flag = PART_SHAPE_CLOSE_TIP;
+  short shape_flag = PART_SHAPE_CLOSE_TIP;
   char _pad6[2] = {};
 
   float twist = 0;
@@ -737,8 +714,7 @@ struct ParticleSystem {
   float imat[4][4] = {};
   float cfra = 0, tree_frame = 0, bvhtree_frame = 0;
   int seed = 0, child_seed = 0;
-  eParticleSystem_Flag flag = {};
-  int totpart = 0, totunexist = 0, totchild = 0, totcached = 0, totchildcache = 0;
+  int flag = 0, totpart = 0, totunexist = 0, totchild = 0, totcached = 0, totchildcache = 0;
   /* NOTE: Recalc is one of ID_RECALC_PSYS_ALL flags.
    *
    * TODO(sergey): Use #ParticleSettings.id.recalc instead of this duplicated flag somehow. */
@@ -752,8 +728,7 @@ struct ParticleSystem {
   char _pad2[4] = {};
   /* if you change these remember to update array lengths to PSYS_TOT_VG! */
   /** Vertex groups, 0==disable, 1==starting index. */
-  short vgroup[/*PSYS_TOT_VG*/ 13] = {};
-  short vg_neg = 0, rt3 = 0;
+  short vgroup[13] = {}, vg_neg = 0, rt3 = 0;
   char _pad3[6] = {};
 
   /* point cache */

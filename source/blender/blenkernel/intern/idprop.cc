@@ -395,7 +395,7 @@ IDProperty *IDP_NewStringMaxSize(const char *st,
 
   prop->type = IDP_STRING;
   name.copy_utf8_truncated(prop->name);
-  prop->flag = flags;
+  prop->flag = short(flags);
 
   return prop;
 }
@@ -1165,9 +1165,9 @@ IDProperty *IDP_New(const char type,
     }
   }
 
-  prop->type = eIDPropertyType(type);
+  prop->type = type;
   name.copy_utf8_truncated(prop->name);
-  prop->flag = flags;
+  prop->flag = short(flags);
 
   return prop;
 }
@@ -1281,11 +1281,6 @@ void IDP_ui_data_free(IDProperty *prop)
 void IDP_FreePropertyContent_ex(IDProperty *prop, const bool do_id_user)
 {
   switch (prop->type) {
-    case IDP_INT:
-    case IDP_FLOAT:
-    case IDP_DOUBLE:
-    case IDP_BOOLEAN:
-      break;
     case IDP_ARRAY:
       IDP_FreeArray(prop);
       break;
@@ -1508,12 +1503,6 @@ static void IDP_WriteGroup(const IDProperty *prop, BlendWriter *writer)
 void IDP_WriteProperty_OnlyData(const IDProperty *prop, BlendWriter *writer)
 {
   switch (prop->type) {
-    case IDP_INT:
-    case IDP_FLOAT:
-    case IDP_DOUBLE:
-    case IDP_BOOLEAN:
-    case IDP_ID:
-      break;
     case IDP_GROUP:
       IDP_WriteGroup(prop, writer);
       break;
@@ -1563,15 +1552,17 @@ static void read_ui_data(IDProperty *prop, BlendDataReader *reader)
       BLO_read_struct(reader, IDPropertyUIDataInt, &prop->ui_data);
       IDPropertyUIDataInt *ui_data_int = reinterpret_cast<IDPropertyUIDataInt *>(prop->ui_data);
       if (prop->type == IDP_ARRAY) {
-        BLO_read_array_and_validate_size(
-            reader, &ui_data_int->default_array, &ui_data_int->default_array_len);
+        BLO_read_int32_array(
+            reader, ui_data_int->default_array_len, (&ui_data_int->default_array));
       }
       else {
         ui_data_int->default_array = nullptr;
         ui_data_int->default_array_len = 0;
       }
-      BLO_read_array_and_validate_size(
-          reader, &ui_data_int->enum_items, &ui_data_int->enum_items_num);
+      BLO_read_struct_array(reader,
+                            IDPropertyUIDataEnumItem,
+                            size_t(ui_data_int->enum_items_num),
+                            &ui_data_int->enum_items);
       for (const int64_t i : IndexRange(ui_data_int->enum_items_num)) {
         IDPropertyUIDataEnumItem &item = ui_data_int->enum_items[i];
         BLO_read_string(reader, &item.identifier);
@@ -1584,8 +1575,8 @@ static void read_ui_data(IDProperty *prop, BlendDataReader *reader)
       BLO_read_struct(reader, IDPropertyUIDataBool, &prop->ui_data);
       IDPropertyUIDataBool *ui_data_bool = reinterpret_cast<IDPropertyUIDataBool *>(prop->ui_data);
       if (prop->type == IDP_ARRAY) {
-        BLO_read_array_and_validate_size(
-            reader, &ui_data_bool->default_array, &ui_data_bool->default_array_len);
+        BLO_read_int8_array(
+            reader, ui_data_bool->default_array_len, (&ui_data_bool->default_array));
       }
       else {
         ui_data_bool->default_array = nullptr;
@@ -1598,8 +1589,8 @@ static void read_ui_data(IDProperty *prop, BlendDataReader *reader)
       IDPropertyUIDataFloat *ui_data_float = reinterpret_cast<IDPropertyUIDataFloat *>(
           prop->ui_data);
       if (prop->type == IDP_ARRAY) {
-        BLO_read_array_and_validate_size(
-            reader, &ui_data_float->default_array, &ui_data_float->default_array_len);
+        BLO_read_double_array(
+            reader, ui_data_float->default_array_len, (&ui_data_float->default_array));
       }
       else {
         ui_data_float->default_array = nullptr;
@@ -1624,8 +1615,7 @@ static void IDP_DirectLinkIDPArray(IDProperty *prop, BlendDataReader *reader)
 {
   /* since we didn't save the extra buffer, set totallen to len */
   prop->totallen = prop->len;
-  BLO_read_array_and_validate_size(
-      reader, reinterpret_cast<IDProperty **>(&prop->data.pointer), &prop->len);
+  BLO_read_struct_array(reader, IDProperty, size_t(prop->len), &prop->data.pointer);
 
   IDProperty *array = static_cast<IDProperty *>(prop->data.pointer);
 
@@ -1648,7 +1638,7 @@ static void IDP_DirectLinkArray(IDProperty *prop, BlendDataReader *reader)
 
   switch (eIDPropertyType(prop->subtype)) {
     case IDP_GROUP: {
-      BLO_read_pointer_array_and_validate_size(reader, &prop->data.pointer, &prop->len);
+      BLO_read_pointer_array(reader, prop->len, &prop->data.pointer);
       IDProperty **array = static_cast<IDProperty **>(prop->data.pointer);
       for (int i = 0; i < prop->len; i++) {
         IDP_DirectLinkProperty(array[i], reader);
@@ -1656,20 +1646,16 @@ static void IDP_DirectLinkArray(IDProperty *prop, BlendDataReader *reader)
       break;
     }
     case IDP_DOUBLE:
-      BLO_read_array_and_validate_size(
-          reader, reinterpret_cast<double **>(&prop->data.pointer), &prop->len);
+      BLO_read_double_array(reader, prop->len, reinterpret_cast<double **>(&prop->data.pointer));
       break;
     case IDP_INT:
-      BLO_read_array_and_validate_size(
-          reader, reinterpret_cast<int **>(&prop->data.pointer), &prop->len);
+      BLO_read_int32_array(reader, prop->len, reinterpret_cast<int **>(&prop->data.pointer));
       break;
     case IDP_FLOAT:
-      BLO_read_array_and_validate_size(
-          reader, reinterpret_cast<float **>(&prop->data.pointer), &prop->len);
+      BLO_read_float_array(reader, prop->len, reinterpret_cast<float **>(&prop->data.pointer));
       break;
     case IDP_BOOLEAN:
-      BLO_read_array_and_validate_size(
-          reader, reinterpret_cast<int8_t **>(&prop->data.pointer), &prop->len);
+      BLO_read_int8_array(reader, prop->len, reinterpret_cast<int8_t **>(&prop->data.pointer));
       break;
     case IDP_STRING:
     case IDP_ARRAY:
@@ -1678,19 +1664,13 @@ static void IDP_DirectLinkArray(IDProperty *prop, BlendDataReader *reader)
       BLI_assert_unreachable();
       break;
   }
-
-  if (prop->data.pointer == nullptr) {
-    prop->len = 0;
-    prop->totallen = 0;
-  }
 }
 
 static void IDP_DirectLinkString(IDProperty *prop, BlendDataReader *reader)
 {
-  BLO_read_array_and_validate_size(
-      reader, reinterpret_cast<char **>(&prop->data.pointer), &prop->len);
   /* Since we didn't save the extra string buffer, set totallen to len. */
   prop->totallen = prop->len;
+  BLO_read_char_array(reader, prop->len, reinterpret_cast<char **>(&prop->data.pointer));
 }
 
 static void IDP_DirectLinkGroup(IDProperty *prop, BlendDataReader *reader)

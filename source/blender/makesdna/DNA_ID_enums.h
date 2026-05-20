@@ -9,8 +9,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 enum eIconSizes {
@@ -21,7 +19,7 @@ enum eIconSizes {
 };
 
 /** #IDProperty.type */
-enum eIDPropertyType : char {
+enum eIDPropertyType {
   IDP_STRING = 0,
   IDP_INT = 1,
   IDP_FLOAT = 2,
@@ -40,7 +38,7 @@ enum eIDPropertyType : char {
 #define IDP_NUMTYPES 11
 
 /** Used by some IDP utils, keep values in sync with type enum above. */
-enum eIDPropertyTypeFilter : int {
+enum {
   IDP_TYPE_FILTER_STRING = 1 << IDP_STRING,
   IDP_TYPE_FILTER_INT = 1 << IDP_INT,
   IDP_TYPE_FILTER_FLOAT = 1 << IDP_FLOAT,
@@ -51,7 +49,6 @@ enum eIDPropertyTypeFilter : int {
   IDP_TYPE_FILTER_IDPARRAY = 1 << IDP_IDPARRAY,
   IDP_TYPE_FILTER_BOOLEAN = 1 << IDP_BOOLEAN,
 };
-ENUM_OPERATORS(eIDPropertyTypeFilter)
 
 /** #IDProperty.subtype for #IDP_STRING properties. */
 enum eIDPropertySubType {
@@ -60,7 +57,7 @@ enum eIDPropertySubType {
 };
 
 /** #IDProperty.flag. */
-enum eIDPropertyFlag : short {
+enum eIDPropertyFlag {
   /**
    * This #IDProperty may be library-overridden.
    * Should only be used/be relevant for custom properties.
@@ -91,7 +88,6 @@ enum eIDPropertyFlag : short {
    */
   IDP_FLAG_GHOST = 1 << 7,
 };
-ENUM_OPERATORS(eIDPropertyFlag)
 
 /**
  * #Library.flag
@@ -99,8 +95,6 @@ ENUM_OPERATORS(eIDPropertyFlag)
  * Some of these flags define a 'virtual' library, which may not be an actual blendfile, store
  * 'archived' embedded data, etc. IDs contained in these virtual libraries are _not_ managed by
  * regular linking code.
- *
- * Warning: 16 bits only (uint16_t) currently!
  */
 enum LibraryFlag {
   /** The library is an 'archive' that only contains embedded linked data. */

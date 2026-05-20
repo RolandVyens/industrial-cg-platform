@@ -69,7 +69,7 @@ class StepDrawingGeometryBase {
   int index_;
 
   /* Data from #GreasePencilDrawingBase that needs to be saved in undo steps. */
-  GreasePencilDrawingBaseFlag flag_;
+  uint32_t flag_;
 
   /**
    * Ensures that the drawing from the given array at the current index exists,

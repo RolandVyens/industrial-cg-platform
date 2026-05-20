@@ -39,7 +39,7 @@ static ImBuf *do_multicam(const RenderData *context,
   }
 
   ed = context->scene->ed;
-  if (!ed || state->strips_in_progress.contains(strip)) {
+  if (!ed || state->strips_rendering_seqbase.contains(strip)) {
     return nullptr;
   }
   ListBaseT<Strip> *seqbasep = get_seqbase_by_strip(context->scene, strip);
@@ -48,10 +48,9 @@ static ImBuf *do_multicam(const RenderData *context,
     return nullptr;
   }
 
-  state->strips_in_progress.add(strip);
+  state->strips_rendering_seqbase.add(strip);
   out = seq_render_give_ibuf_seqbase(
       context, state, timeline_frame, strip->multicam_source, channels, seqbasep);
-  state->strips_in_progress.remove(strip);
 
   return out;
 }

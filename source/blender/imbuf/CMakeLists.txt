@@ -17,7 +17,6 @@ set(INC_SYS
 
 set(SRC
   intern/allocimbuf.cc
-  intern/cache.cc
   intern/colormanagement.cc
   intern/colormanagement_inline.h
   intern/conversion.cc
@@ -38,6 +37,7 @@ set(SRC
   intern/interp.cc
   intern/metadata.cc
   intern/module.cc
+  intern/moviecache.cc
   intern/readimage.cc
   intern/rectop.cc
   intern/rotate.cc
@@ -51,7 +51,6 @@ set(SRC
   intern/util_gpu.cc
   intern/writeimage.cc
 
-  IMB_cache.hh
   IMB_colormanagement.hh
   IMB_deep_sample.hh
   IMB_deep_sample_merge.hh
@@ -60,8 +59,10 @@ set(SRC
   IMB_imbuf_types.hh
   IMB_interp.hh
   IMB_metadata.hh
+  IMB_moviecache.hh
   IMB_openexr.hh
   IMB_thumbs.hh
+  intern/IMB_allocimbuf.hh
   intern/IMB_colormanagement_intern.hh
   intern/IMB_filetype.hh
   intern/IMB_filter.hh
@@ -76,7 +77,6 @@ set(LIB
   PRIVATE bf::dna
   PRIVATE bf::gpu
   bf_imbuf_openimageio
-  bf_imbuf_openexr
   PRIVATE bf::intern::atomic
   PRIVATE bf::intern::clog
   PRIVATE bf::intern::guardedalloc
@@ -89,6 +89,17 @@ set(LIB
   PRIVATE bf::dependencies::openimageio
   PRIVATE bf::dependencies::jpeg
 )
+
+if(WITH_IMAGE_OPENEXR)
+  list(APPEND LIB
+    bf_imbuf_openexr
+  )
+  add_definitions(-DWITH_IMAGE_OPENEXR)
+else()
+  list(APPEND SRC
+    intern/openexr/openexr_stub.cpp
+  )
+endif()
 
 if(WITH_IMAGE_OPENJPEG)
   list(APPEND SRC

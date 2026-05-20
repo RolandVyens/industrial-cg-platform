@@ -28,13 +28,13 @@ namespace blender {
 /** Blender release type suffix. LTS or blank. */
 #define BLENDER_VERSION_SUFFIX
 /** User-facing release date suffix appended to branded release builds. */
-#define BLENDER_VERSION_DATE_SUFFIX "-2026-05-19"
+#define BLENDER_VERSION_DATE_SUFFIX "-2026-05-20"
 /** Branch brand suffix appended to Goo-style user-facing version strings. */
 #define BLENDER_VERSION_BRAND_SUFFIX "Industrial CG Platform"
 
 /* Blender file format version. */
 #define BLENDER_FILE_VERSION BLENDER_VERSION
-#define BLENDER_FILE_SUBVERSION 29
+#define BLENDER_FILE_SUBVERSION 18
 
 /* Minimum Blender version that supports reading file written with the current
  * version. Older Blender versions will test this and cancel loading the file, showing a warning to
@@ -47,16 +47,16 @@ namespace blender {
 #define BLENDER_FILE_MIN_SUBVERSION 85
 
 /** User readable version string. */
-const char *BKE_blender_version_string();
+const char *BKE_blender_version_string(void);
 
 /** As above but does not show patch version. */
-const char *BKE_blender_version_string_compact();
+const char *BKE_blender_version_string_compact(void);
 
 /** Returns true when version cycle is alpha, otherwise (beta, rc) returns false. */
-bool BKE_blender_version_is_alpha();
+bool BKE_blender_version_is_alpha(void);
 
 /** Returns true when version suffix is LTS, otherwise returns false. */
-bool BKE_blender_version_is_lts();
+bool BKE_blender_version_is_lts(void);
 
 /**
  * Fill in given string buffer with user-readable formatted file version and subversion (if

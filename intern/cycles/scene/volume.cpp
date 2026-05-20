@@ -381,10 +381,9 @@ bool VolumeMeshBuilder::empty_grid() const
 }
 
 /* -------------------------------------------------------------------- */
-/** \name NanoVDB Grid Statistics
- *
- * Compute the average and variance of active values in a nanovdb grid, separately in all
+/* Compute the average and variance of active values in a nanovdb grid, separately in all
  * dimensions. Adapted from `nanovdb/tools/GridStats.h`.
+ *
  * \{ */
 
 struct Vec3Stats {
@@ -984,7 +983,7 @@ void VolumeManager::initialize_octree(const Scene *scene, Progress &progress)
         continue;
       }
 
-      if (!object_octrees_.contains({object, shader})) {
+      if (object_octrees_.find({object, shader}) == object_octrees_.end()) {
         if (geom->is_light()) {
           const Light *light = static_cast<const Light *>(geom);
           if (light->is_background_light()) {
@@ -1020,7 +1019,7 @@ void VolumeManager::initialize_octree(const Scene *scene, Progress &progress)
 
 #ifdef WITH_OPENVDB
       if (geom->is_mesh() && !VolumeManager::is_homogeneous_volume(object, shader) &&
-          !vdb_map_.contains({geom, shader}))
+          vdb_map_.find({geom, shader}) == vdb_map_.end())
       {
         const Mesh *mesh = static_cast<const Mesh *>(geom);
         const float3 dim = mesh->bounds.size();
@@ -1045,7 +1044,7 @@ void VolumeManager::update_num_octree_nodes()
   std::set<const Octree *> unique_octrees;
   for (const auto &it : object_octrees_) {
     const Octree *octree = it.second.get();
-    if (unique_octrees.contains(octree)) {
+    if (unique_octrees.find(octree) != unique_octrees.end()) {
       continue;
     }
 

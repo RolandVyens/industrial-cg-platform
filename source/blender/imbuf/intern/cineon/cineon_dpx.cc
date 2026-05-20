@@ -21,11 +21,8 @@
 
 namespace blender {
 
-static ImBuf *imb_load_dpx_cineon(const uchar *mem,
-                                  size_t size,
-                                  int use_cineon,
-                                  ImBufFlags flags,
-                                  ImFileColorSpace &r_colorspace)
+static ImBuf *imb_load_dpx_cineon(
+    const uchar *mem, size_t size, int use_cineon, int flags, ImFileColorSpace &r_colorspace)
 {
   ImBuf *ibuf;
   LogImageFile *image;
@@ -42,13 +39,13 @@ static ImBuf *imb_load_dpx_cineon(const uchar *mem,
 
   logImageGetSize(image, &width, &height, &depth);
 
-  ibuf = IMB_allocImBuf(width, height, ImBufFlags::FloatData | flags);
+  ibuf = IMB_allocImBuf(width, height, 32, IB_float_data | flags);
   if (ibuf == nullptr) {
     logImageClose(image);
     return nullptr;
   }
 
-  if (!flag_is_set(flags, ImBufFlags::Test)) {
+  if (!(flags & IB_test)) {
     if (logImageGetDataRGBA(image, ibuf->float_data_for_write(), 1) != 0) {
       logImageClose(image);
       IMB_freeImBuf(ibuf);
@@ -60,8 +57,8 @@ static ImBuf *imb_load_dpx_cineon(const uchar *mem,
   logImageClose(image);
   ibuf->ftype = use_cineon ? IMB_FTYPE_CINEON : IMB_FTYPE_DPX;
 
-  if (flag_is_set(flags, ImBufFlags::AlphaDetect)) {
-    ibuf->flags |= ImBufFlags::AlphaPremul;
+  if (flags & IB_alphamode_detect) {
+    ibuf->flags |= IB_alphamode_premul;
   }
 
   r_colorspace.is_hdr_float = true;
@@ -69,18 +66,24 @@ static ImBuf *imb_load_dpx_cineon(const uchar *mem,
   return ibuf;
 }
 
-static int imb_save_dpx_cineon(ImBuf *ibuf, const char *filepath, int use_cineon)
+static int imb_save_dpx_cineon(ImBuf *ibuf, const char *filepath, int use_cineon, int flags)
 {
   LogImageFile *logImage;
   float *fbuf;
   float *fbuf_ptr;
   const uchar *rect_ptr;
-  int x, y, bitspersample, rvalue;
+  int x, y, depth, bitspersample, rvalue;
+
+  if (flags & IB_mem) {
+    printf("DPX/Cineon: saving in memory is not supported.\n");
+    return 0;
+  }
 
   logImageSetVerbose((G.debug & G_DEBUG) ? 1 : 0);
 
-  if (!ELEM(ibuf->color_mode, ImColorMode::RGB, ImColorMode::RGBA)) {
-    printf("DPX/Cineon: only RGB/RGBA is supported, file: '%s'\n", filepath);
+  depth = (ibuf->planes + 7) >> 3;
+  if (depth > 4 || depth < 3) {
+    printf("DPX/Cineon: unsupported depth: %d for file: '%s'\n", depth, filepath);
     return 0;
   }
 
@@ -103,13 +106,12 @@ static int imb_save_dpx_cineon(ImBuf *ibuf, const char *filepath, int use_cineon
     }
   }
 
-  const bool has_alpha = ibuf->color_mode == ImColorMode::RGBA;
   logImage = logImageCreate(filepath,
                             use_cineon,
                             ibuf->x,
                             ibuf->y,
                             bitspersample,
-                            has_alpha,
+                            (depth == 4),
                             (ibuf->foptions.flag & CINEON_LOG),
                             -1,
                             -1,
@@ -159,7 +161,7 @@ static int imb_save_dpx_cineon(ImBuf *ibuf, const char *filepath, int use_cineon
         fbuf_ptr[0] = float(rect_ptr[0]) / 255.0f;
         fbuf_ptr[1] = float(rect_ptr[1]) / 255.0f;
         fbuf_ptr[2] = float(rect_ptr[2]) / 255.0f;
-        fbuf_ptr[3] = has_alpha ? (float(rect_ptr[3]) / 255.0f) : 1.0f;
+        fbuf_ptr[3] = (depth == 4) ? (float(rect_ptr[3]) / 255.0f) : 1.0f;
         fbuf_ptr += 4;
         rect_ptr += 4;
       }
@@ -172,9 +174,9 @@ static int imb_save_dpx_cineon(ImBuf *ibuf, const char *filepath, int use_cineon
   return rvalue;
 }
 
-bool imb_save_cineon(ImBuf *buf, const char *filepath, ImBufFlags /*flags*/)
+bool imb_save_cineon(ImBuf *buf, const char *filepath, int flags)
 {
-  return imb_save_dpx_cineon(buf, filepath, 1);
+  return imb_save_dpx_cineon(buf, filepath, 1, flags);
 }
 
 bool imb_is_a_cineon(const uchar *mem, size_t size)
@@ -182,10 +184,7 @@ bool imb_is_a_cineon(const uchar *mem, size_t size)
   return logImageIsCineon(mem, size);
 }
 
-ImBuf *imb_load_cineon(const uchar *mem,
-                       size_t size,
-                       ImBufFlags flags,
-                       ImFileColorSpace &r_colorspace)
+ImBuf *imb_load_cineon(const uchar *mem, size_t size, int flags, ImFileColorSpace &r_colorspace)
 {
   if (!imb_is_a_cineon(mem, size)) {
     return nullptr;

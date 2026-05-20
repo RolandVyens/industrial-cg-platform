@@ -35,10 +35,6 @@
 
 namespace gbuffer::detail {
 
-/* -------------------------------------------------------------------- */
-/** \name G-buffer Read
- * \{ */
-
 uint fetch_object_id(int2 texel)
 {
   return texelFetch(sampler_get(eevee_gbuffer_data, gbuf_header_tx), int3(texel, 1), 0).r;

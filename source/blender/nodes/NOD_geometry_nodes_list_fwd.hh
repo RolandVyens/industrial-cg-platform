@@ -4,12 +4,11 @@
 
 #pragma once
 
+#include "BLI_implicit_sharing_ptr.hh"
+
 namespace blender::nodes {
 
-class GList;
-class GListPtr;
-
-template<typename T> class List;
-template<typename T> class ListPtr;
+class List;
+using ListPtr = ImplicitSharingPtr<List>;
 
 }  // namespace blender::nodes

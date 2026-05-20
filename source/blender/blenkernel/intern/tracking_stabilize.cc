@@ -1375,6 +1375,7 @@ ImBuf *BKE_tracking_stabilize_frame(
   int width = ibuf->x, height = ibuf->y;
   float pixel_aspect = tracking->camera.pixel_aspect;
   float mat[4][4];
+  int ibuf_flags;
 
   if (translation) {
     copy_v2_v2(tloc, translation);
@@ -1402,16 +1403,15 @@ ImBuf *BKE_tracking_stabilize_frame(
   }
 
   /* Allocate frame for stabilization result, copy alpha mode and color-space. */
-  ImBufFlags ibuf_flags = ImBufFlags::Zero;
+  ibuf_flags = 0;
   if (ibuf->byte_data()) {
-    ibuf_flags |= ImBufFlags::ByteData;
+    ibuf_flags |= IB_byte_data;
   }
   if (ibuf->float_data()) {
-    ibuf_flags |= ImBufFlags::FloatData;
+    ibuf_flags |= IB_float_data;
   }
 
-  tmpibuf = IMB_allocImBuf(ibuf->x, ibuf->y, ibuf_flags);
-  tmpibuf->color_mode = ibuf->color_mode;
+  tmpibuf = IMB_allocImBuf(ibuf->x, ibuf->y, ibuf->planes, ibuf_flags);
   IMB_colormanagement_copy_settings(ibuf, tmpibuf);
 
   /* Calculate stabilization matrix. */

@@ -114,7 +114,7 @@ Geometry *BlenderSync::sync_geometry(BObjectInfo &b_ob_info,
   /* Ensure we only sync instanced geometry once. */
   Geometry *geom = geometry_map.find(key);
   if (geom) {
-    if (geometry_synced.contains(geom)) {
+    if (geometry_synced.find(geom) != geometry_synced.end()) {
       return geom;
     }
   }
@@ -239,7 +239,9 @@ void BlenderSync::sync_geometry_motion(BObjectInfo &b_ob_info,
   /* Ensure we only sync instanced geometry once. */
   Geometry *geom = object->get_geometry();
 
-  if (geometry_motion_synced.contains(geom) || geometry_motion_attribute_synced.contains(geom)) {
+  if (geometry_motion_synced.find(geom) != geometry_motion_synced.end() ||
+      geometry_motion_attribute_synced.find(geom) != geometry_motion_attribute_synced.end())
+  {
     return;
   }
 
@@ -247,7 +249,7 @@ void BlenderSync::sync_geometry_motion(BObjectInfo &b_ob_info,
 
   /* Ensure we only motion sync geometry that also had geometry synced, to avoid
    * unnecessary work and to ensure that its attributes were clear. */
-  if (!geometry_synced.contains(geom)) {
+  if (geometry_synced.find(geom) == geometry_synced.end()) {
     return;
   }
 

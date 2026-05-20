@@ -70,19 +70,19 @@ void LightProbeModule::begin_sync()
                        (inst_.scene->eevee.flag & SCE_EEVEE_GI_AUTOBAKE) != 0;
 }
 
-void LightProbeModule::sync_volume(const ObjectRef &ob_ref)
+void LightProbeModule::sync_volume(const Object *ob, ObjectHandle &handle)
 {
-  VolumeProbe &grid = volume_map_.lookup_or_add_default(ObjectKey(ob_ref));
+  VolumeProbe &grid = volume_map_.lookup_or_add_default(handle.object_key);
   grid.used = true;
-  if (inst_.get_recalc_flags(ob_ref) != 0 || grid.initialized == false) {
+  if (handle.recalc != 0 || grid.initialized == false) {
     const blender::LightProbe &lightprobe =
-        DRW_object_get_data_for_drawing<const blender::LightProbe>(*ob_ref.object);
+        DRW_object_get_data_for_drawing<const blender::LightProbe>(*ob);
 
     grid.initialized = true;
     grid.updated = true;
     grid.surfel_density = lightprobe.grid_surfel_density;
-    grid.object_to_world = ob_ref.object_to_world();
-    grid.cache = ob_ref.object->lightprobe_cache;
+    grid.object_to_world = ob->object_to_world();
+    grid.cache = ob->lightprobe_cache;
 
     grid.world_to_object = float4x4(
         math::normalize(math::transpose(float3x3(grid.object_to_world))));
@@ -100,7 +100,7 @@ void LightProbeModule::sync_volume(const ObjectRef &ob_ref)
     grid.viewport_display = has_valid_cache && (lightprobe.flag & LIGHTPROBE_FLAG_SHOW_DATA);
     if (grid.viewport_display) {
       int3 cache_size = grid.cache->grid_static_cache->size;
-      float3 scale = math::transform_direction(ob_ref.object_to_world(),
+      float3 scale = math::transform_direction(ob->object_to_world(),
                                                1.0f / float3(cache_size + 1));
       grid.viewport_display_size = math::reduce_min(scale) * lightprobe.data_display_size;
     }
@@ -110,13 +110,13 @@ void LightProbeModule::sync_volume(const ObjectRef &ob_ref)
   }
 }
 
-void LightProbeModule::sync_sphere(const ObjectRef &ob_ref)
+void LightProbeModule::sync_sphere(const Object *ob, ObjectHandle &handle)
 {
-  SphereProbe &cube = sphere_map_.lookup_or_add_default(ObjectKey(ob_ref));
+  SphereProbe &cube = sphere_map_.lookup_or_add_default(handle.object_key);
   cube.used = true;
-  if (inst_.get_recalc_flags(ob_ref) != 0 || cube.initialized == false) {
+  if (handle.recalc != 0 || cube.initialized == false) {
     const blender::LightProbe &light_probe = DRW_object_get_data_for_drawing<blender::LightProbe>(
-        *ob_ref.object);
+        *ob);
 
     cube.initialized = true;
     cube.updated = true;
@@ -150,7 +150,7 @@ void LightProbeModule::sync_sphere(const ObjectRef &ob_ref)
     cube.parallax_shape = to_eevee_shape(use_custom_parallax ? light_probe.parallax_type :
                                                                light_probe.attenuation_type);
 
-    float4x4 object_to_world = math::scale(ob_ref.object_to_world(), float3(influence_distance));
+    float4x4 object_to_world = math::scale(ob->object_to_world(), float3(influence_distance));
     cube.location = object_to_world.location();
     cube.volume = math::abs(math::determinant(object_to_world));
     cube.world_to_probe_transposed = float3x4(math::transpose(math::invert(object_to_world)));
@@ -159,45 +159,44 @@ void LightProbeModule::sync_sphere(const ObjectRef &ob_ref)
     cube.parallax_distance = parallax_distance / influence_distance;
     cube.clipping_distances = float2(light_probe.clipsta, light_probe.clipend);
 
-    float3 scale = influence_distance * math::to_scale(ob_ref.object_to_world());
+    float3 scale = influence_distance * math::to_scale(ob->object_to_world());
     cube.viewport_display = light_probe.flag & LIGHTPROBE_FLAG_SHOW_DATA;
     cube.viewport_display_size = light_probe.data_display_size * math::reduce_add(scale / 3.0f);
   }
 }
 
-void LightProbeModule::sync_planar(const ObjectRef &ob_ref)
+void LightProbeModule::sync_planar(const Object *ob, ObjectHandle &handle)
 {
-  PlanarProbe &plane = planar_map_.lookup_or_add_default(ObjectKey(ob_ref));
+  PlanarProbe &plane = planar_map_.lookup_or_add_default(handle.object_key);
   plane.used = true;
-  if (inst_.get_recalc_flags(ob_ref) != 0 || plane.initialized == false) {
+  if (handle.recalc != 0 || plane.initialized == false) {
     const blender::LightProbe &light_probe = DRW_object_get_data_for_drawing<blender::LightProbe>(
-        *ob_ref.object);
+        *ob);
 
     plane.initialized = true;
     plane.updated = true;
-    plane.plane_to_world = ob_ref.object_to_world();
+    plane.plane_to_world = ob->object_to_world();
     plane.plane_to_world.z_axis() = math::normalize(plane.plane_to_world.z_axis()) *
                                     light_probe.distinf;
     plane.world_to_plane = math::invert(plane.plane_to_world);
     plane.clipping_offset = light_probe.clipsta;
     plane.viewport_display = (light_probe.flag & LIGHTPROBE_FLAG_SHOW_DATA) != 0;
-    plane.parallax_distance = light_probe.distpar;
   }
 }
 
-void LightProbeModule::sync_probe(const ObjectRef &ob_ref)
+void LightProbeModule::sync_probe(const Object *ob, ObjectHandle &handle)
 {
   const blender::LightProbe &lightprobe =
-      DRW_object_get_data_for_drawing<const blender::LightProbe>(*ob_ref.object);
+      DRW_object_get_data_for_drawing<const blender::LightProbe>(*ob);
   switch (lightprobe.type) {
     case LIGHTPROBE_TYPE_SPHERE:
-      sync_sphere(ob_ref);
+      sync_sphere(ob, handle);
       return;
     case LIGHTPROBE_TYPE_PLANE:
-      sync_planar(ob_ref);
+      sync_planar(ob, handle);
       return;
     case LIGHTPROBE_TYPE_VOLUME:
-      sync_volume(ob_ref);
+      sync_volume(ob, handle);
       return;
   }
   BLI_assert_unreachable();

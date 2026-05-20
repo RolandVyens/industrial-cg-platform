@@ -4,11 +4,13 @@
 
 #pragma once
 
-#include "MEM_guardedalloc.h"
+#if defined(WITH_OPENCOLORIO)
 
-#include "OCIO_cpu_processor.hh"
+#  include "MEM_guardedalloc.h"
 
-#include "../opencolorio.hh"
+#  include "OCIO_cpu_processor.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -35,3 +37,5 @@ class LibOCIOCPUProcessor : public CPUProcessor {
 };
 
 }  // namespace blender::ocio
+
+#endif

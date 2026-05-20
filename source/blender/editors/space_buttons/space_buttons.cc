@@ -757,10 +757,6 @@ static void buttons_area_listener(const wmSpaceTypeListenerParams *params)
           break;
         case ND_RENDER_RESULT:
           break;
-        case ND_NODES:
-          /* For the compositor strip modifier interface. */
-          buttons_area_redraw(area, BCONTEXT_STRIP_MODIFIER);
-          break;
         case ND_SEQUENCER:
           ED_area_tag_redraw(area);
           break;
@@ -1133,7 +1129,7 @@ void ED_spacetype_buttons()
   /* Register the panel types from strip modifiers. The actual panels are built per strip modifier
    * rather than per modifier type. */
   for (int i = 0; i < NUM_STRIP_MODIFIER_TYPES; i++) {
-    const seq::StripModifierTypeInfo *mti = seq::modifier_type_info_get(eStripModifierType(i));
+    const seq::StripModifierTypeInfo *mti = seq::modifier_type_info_get(i);
     if (mti != nullptr && mti->panel_register != nullptr) {
       mti->panel_register(art);
     }

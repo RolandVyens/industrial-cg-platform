@@ -412,9 +412,7 @@ Scene::MotionType Scene::need_motion() const
   if (integrator->get_motion_blur()) {
     return MOTION_BLUR;
   }
-  if (Pass::contains(passes, PASS_MOTION) ||
-      Pass::contains(passes, PASS_DENOISING_BACKWARD_MOTION))
-  {
+  if (Pass::contains(passes, PASS_MOTION)) {
     return MOTION_PASS;
   }
   return MOTION_NONE;
@@ -428,7 +426,7 @@ float Scene::motion_shutter_time()
   return camera->get_shuttertime();
 }
 
-bool Scene::need_global_attribute(AttributeStandard std) const
+bool Scene::need_global_attribute(AttributeStandard std)
 {
   if (std == ATTR_STD_UV) {
     return Pass::contains(passes, PASS_UV);
@@ -451,10 +449,6 @@ void Scene::need_global_attributes(AttributeRequestSet &attributes)
     if (need_global_attribute((AttributeStandard)std)) {
       attributes.add((AttributeStandard)std);
     }
-  }
-
-  for (const Shader *shader : shaders) {
-    attributes.add(shader->global_attributes);
   }
 }
 
@@ -638,25 +632,15 @@ bool Scene::update(Progress &progress)
 
 bool Scene::update_camera_resolution(Progress &progress, int width, int height)
 {
-  bool update_data = false;
-
-  if (camera->set_screen_size(width, height)) {
-    camera->device_update(device, &dscene, this);
-    update_data = true;
+  if (!camera->set_screen_size(width, height)) {
+    return false;
   }
 
-  if (integrator->get_use_pixel_jitter()) {
-    integrator->tag_use_pixel_jitter_modified();
+  camera->device_update(device, &dscene, this);
 
-    integrator->device_update(device, &dscene, this);
-    update_data = true;
-  }
-
-  if (update_data) {
-    progress.set_status("Updating Device", "Writing constant memory");
-    device->const_copy_to("data", &dscene.data, sizeof(dscene.data));
-  }
-  return update_data;
+  progress.set_status("Updating Device", "Writing constant memory");
+  device->const_copy_to("data", &dscene.data, sizeof(dscene.data));
+  return true;
 }
 
 static void log_kernel_features(const uint features)

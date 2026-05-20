@@ -236,7 +236,7 @@ class FrameBuffer {
     scissor_set(scissor_rect);
   }
 
-  const GPUAttachment &depth_attachment() const
+  inline const GPUAttachment &depth_attachment() const
   {
     if (attachments_[GPU_FB_DEPTH_ATTACHMENT].tex) {
       return attachments_[GPU_FB_DEPTH_ATTACHMENT];

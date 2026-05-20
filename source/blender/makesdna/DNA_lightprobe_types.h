@@ -11,7 +11,6 @@
 #include "DNA_ID.h"
 
 #include "BLI_assert.h"
-#include "BLI_enum_flags.hh"
 
 namespace blender {
 
@@ -25,14 +24,14 @@ class Texture;
 #define LIGHTCACHE_STATIC_VERSION 2
 
 /* Probe->type */
-enum eLightProbeType : char {
+enum {
   LIGHTPROBE_TYPE_SPHERE = 0,
   LIGHTPROBE_TYPE_PLANE = 1,
   LIGHTPROBE_TYPE_VOLUME = 2,
 };
 
 /* Probe->flag */
-enum eLightProbe_Flag : char {
+enum {
   LIGHTPROBE_FLAG_CUSTOM_PARALLAX = (1 << 0),
   LIGHTPROBE_FLAG_SHOW_INFLUENCE = (1 << 1),
   LIGHTPROBE_FLAG_SHOW_PARALLAX = (1 << 2),
@@ -41,18 +40,16 @@ enum eLightProbe_Flag : char {
   LIGHTPROBE_FLAG_INVERT_GROUP = (1 << 5),
   LIGHTPROBE_DS_EXPAND = (1 << 6),
 };
-ENUM_OPERATORS(eLightProbe_Flag)
 
 /* Probe->grid_flag */
-enum eLightProbe_GridFlag : char {
+enum {
   LIGHTPROBE_GRID_CAPTURE_WORLD = (1 << 0),
   LIGHTPROBE_GRID_CAPTURE_INDIRECT = (1 << 1),
   LIGHTPROBE_GRID_CAPTURE_EMISSION = (1 << 2),
 };
-ENUM_OPERATORS(eLightProbe_GridFlag)
 
 /* Probe->display */
-enum eLightProbeDisplay : char {
+enum {
   LIGHTPROBE_DISP_WIRE = 0,
   LIGHTPROBE_DISP_SHADED = 1,
   LIGHTPROBE_DISP_DIFFUSE = 2,
@@ -60,18 +57,18 @@ enum eLightProbeDisplay : char {
 };
 
 /* Probe->parallax && Probe->attenuation_type. */
-enum eLightProbeShape : char {
+enum {
   LIGHTPROBE_SHAPE_ELIPSOID = 0,
   LIGHTPROBE_SHAPE_BOX = 1,
 };
 
 /* LightCache->type */
-enum eLightCacheType : int {
+enum {
   LIGHTCACHE_TYPE_STATIC = 0,
 };
 
 /* LightCache->flag */
-enum eLightCache_Flag : int {
+enum {
   LIGHTCACHE_BAKED = (1 << 0),
   LIGHTCACHE_BAKING = (1 << 1),
   LIGHTCACHE_CUBE_READY = (1 << 2),
@@ -86,18 +83,16 @@ enum eLightCache_Flag : int {
   /** The data present in the cache is valid but unusable on this GPU. */
   LIGHTCACHE_NOT_USABLE = (1 << 9),
 };
-ENUM_OPERATORS(eLightCache_Flag)
 
 /* EEVEE_LightCacheTexture->data_type */
-enum eLightCacheTexture_DataType : char {
+enum {
   LIGHTCACHETEX_BYTE = (1 << 0),
   LIGHTCACHETEX_FLOAT = (1 << 1),
   LIGHTCACHETEX_UINT = (1 << 2),
 };
-ENUM_OPERATORS(eLightCacheTexture_DataType)
 
 /** #LightProbeGridCacheFrame.data_layout (int) */
-enum eLightProbeGridCacheLayout : int {
+enum {
   /** Simple uniform grid. Raw output from GPU. Used during the baking process. */
   LIGHTPROBE_CACHE_UNIFORM_GRID = 0,
   /** Fills the space with different level of resolution. More efficient storage. */
@@ -105,7 +100,7 @@ enum eLightProbeGridCacheLayout : int {
 };
 
 /** #LightProbeObjectCache.type (int) */
-enum eLightProbeObjectCacheType : int {
+enum {
   /** Light cache was just created and is not yet baked. Keep as 0 for default value. */
   LIGHTPROBE_CACHE_TYPE_NONE = 0,
   /** Light cache is baked for one specific frame and capture all indirect lighting. */
@@ -123,16 +118,15 @@ struct LightProbe {
   struct AnimData *adt = nullptr;
 
   /** For realtime probe objects. */
-  eLightProbeType type = LIGHTPROBE_TYPE_SPHERE;
+  char type = 0;
   /** General purpose flags for probes. */
-  eLightProbe_Flag flag = LIGHTPROBE_FLAG_SHOW_INFLUENCE;
+  char flag = LIGHTPROBE_FLAG_SHOW_INFLUENCE;
   /** Attenuation type. */
-  eLightProbeShape attenuation_type = LIGHTPROBE_SHAPE_ELIPSOID;
+  char attenuation_type = 0;
   /** Parallax type. */
-  eLightProbeShape parallax_type = LIGHTPROBE_SHAPE_ELIPSOID;
+  char parallax_type = 0;
   /** Grid specific flags. */
-  eLightProbe_GridFlag grid_flag = LIGHTPROBE_GRID_CAPTURE_INDIRECT |
-                                   LIGHTPROBE_GRID_CAPTURE_EMISSION;
+  char grid_flag = LIGHTPROBE_GRID_CAPTURE_INDIRECT | LIGHTPROBE_GRID_CAPTURE_EMISSION;
   char _pad0[3] = {};
 
   /** Influence Radius. */
@@ -224,17 +218,17 @@ struct LightCacheTexture {
   /** Copy of GPU data to create gpu::Textures on file read. */
   char *data = nullptr;
   int tex_size[3] = {};
-  eLightCacheTexture_DataType data_type = {};
+  char data_type = 0;
   char components = 0;
   char _pad[2] = {};
 };
 
 struct LightCache {
-  eLightCache_Flag flag = {};
+  int flag = 0;
   /** Version number to know if the cache data is compatible with this version of blender. */
   int version = 0;
   /** Type of data this cache contains. */
-  eLightCacheType type = LIGHTCACHE_TYPE_STATIC;
+  int type = 0;
   /* only a single cache for now */
   /** Number of probes to use for rendering. */
   int cube_len = 0, grid_len = 0;
@@ -331,7 +325,7 @@ struct LightProbeGridCacheFrame {
   /** Number of samples in the highest level of detail. */
   int size[3] = {};
   /** Spatial layout type of the data stored inside the data arrays. */
-  eLightProbeGridCacheLayout data_layout = LIGHTPROBE_CACHE_UNIFORM_GRID;
+  int data_layout = 0;
 
   /** Sparse or adaptive layout only: number of blocks inside data arrays. */
   int block_len = 0;
@@ -361,7 +355,7 @@ struct LightProbeGridCacheFrame {
  */
 struct LightProbeObjectCache {
   /** Allow correct versioning / different types of data for the same layout. */
-  eLightProbeObjectCacheType cache_type = LIGHTPROBE_CACHE_TYPE_NONE;
+  int cache_type = 0;
   /** True if this cache references the original object's cache. */
   char shared = 0;
   /** True if the cache has been tagged for automatic baking. */

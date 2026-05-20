@@ -171,14 +171,12 @@ class GHOST_Wintab {
    */
   GHOST_TabletData getLastTabletData();
 
-  /**
-   * Sets Wintab debugging.
+  /* Sets Wintab debugging.
    * \param debug: True to enable Wintab debugging.
    */
   static void setDebug(bool debug);
 
-  /**
-   * Returns whether Wintab logging should occur.
+  /* Returns whether Wintab logging should occur.
    * \return True if Wintab logging should occur.
    */
   static bool getDebug();

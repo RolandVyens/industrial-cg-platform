@@ -534,7 +534,7 @@ static wmOperatorStatus geometry_color_attribute_add_exec(bContext *C, wmOperato
       {
         BKE_id_attributes_default_color_set(id, unique_name);
       }
-      sculpt_paint::object_active_color_init(*ob, color);
+      sculpt_paint::object_active_color_fill(*ob, color, false);
       DEG_id_tag_update(id, ID_RECALC_GEOMETRY);
       WM_main_add_notifier(NC_GEOM | ND_DATA, id);
       return OPERATOR_FINISHED;
@@ -551,7 +551,7 @@ static wmOperatorStatus geometry_color_attribute_add_exec(bContext *C, wmOperato
   if (!BKE_id_attributes_color_find(id, BKE_id_attributes_default_color_name(id).value_or(""))) {
     BKE_id_attributes_default_color_set(id, unique_name);
   }
-  sculpt_paint::object_active_color_init(*ob, color);
+  sculpt_paint::object_active_color_fill(*ob, color, false);
   DEG_id_tag_update(id, ID_RECALC_GEOMETRY);
   WM_main_add_notifier(NC_GEOM | ND_DATA, id);
 

@@ -390,8 +390,7 @@ static LineStyleModifier *rna_LineStyle_color_modifier_add(FreestyleLineStyle *l
                                                            const char *name,
                                                            int type)
 {
-  LineStyleModifier *modifier = BKE_linestyle_color_modifier_add(
-      linestyle, name, eLineStyleModifier_Type(type));
+  LineStyleModifier *modifier = BKE_linestyle_color_modifier_add(linestyle, name, type);
 
   if (!modifier) {
     BKE_report(reports, RPT_ERROR, "Failed to add the color modifier");
@@ -426,8 +425,7 @@ static LineStyleModifier *rna_LineStyle_alpha_modifier_add(FreestyleLineStyle *l
                                                            const char *name,
                                                            int type)
 {
-  LineStyleModifier *modifier = BKE_linestyle_alpha_modifier_add(
-      linestyle, name, eLineStyleModifier_Type(type));
+  LineStyleModifier *modifier = BKE_linestyle_alpha_modifier_add(linestyle, name, type);
 
   if (!modifier) {
     BKE_report(reports, RPT_ERROR, "Failed to add the alpha modifier");
@@ -462,8 +460,7 @@ static LineStyleModifier *rna_LineStyle_thickness_modifier_add(FreestyleLineStyl
                                                                const char *name,
                                                                int type)
 {
-  LineStyleModifier *modifier = BKE_linestyle_thickness_modifier_add(
-      linestyle, name, eLineStyleModifier_Type(type));
+  LineStyleModifier *modifier = BKE_linestyle_thickness_modifier_add(linestyle, name, type);
 
   if (!modifier) {
     BKE_report(reports, RPT_ERROR, "Failed to add the thickness modifier");
@@ -499,8 +496,7 @@ static LineStyleModifier *rna_LineStyle_geometry_modifier_add(FreestyleLineStyle
                                                               const char *name,
                                                               int type)
 {
-  LineStyleModifier *modifier = BKE_linestyle_geometry_modifier_add(
-      linestyle, name, eLineStyleModifier_Type(type));
+  LineStyleModifier *modifier = BKE_linestyle_geometry_modifier_add(linestyle, name, type);
 
   if (!modifier) {
     BKE_report(reports, RPT_ERROR, "Failed to add the geometry modifier");

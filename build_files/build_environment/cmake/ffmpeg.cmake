@@ -178,6 +178,7 @@ ExternalProject_Add(external_ffmpeg
       --disable-vaapi
       --disable-nonfree
       --enable-gpl
+      --disable-postproc
       --enable-libmp3lame
       --disable-librtmp
       --enable-libx264

@@ -292,16 +292,6 @@ std::optional<int64_t> DictionaryValue::lookup_int(const StringRef key) const
   return std::nullopt;
 }
 
-std::optional<bool> DictionaryValue::lookup_bool(const StringRef key) const
-{
-  if (const std::shared_ptr<Value> *value = this->lookup(key)) {
-    if (const BooleanValue *bool_value = (*value)->as_boolean_value()) {
-      return bool_value->value();
-    }
-  }
-  return std::nullopt;
-}
-
 std::optional<double> DictionaryValue::lookup_double(const StringRef key) const
 {
   if (const std::shared_ptr<Value> *value = this->lookup(key)) {
@@ -336,11 +326,6 @@ void DictionaryValue::append(std::string key, std::shared_ptr<Value> value)
 void DictionaryValue::append_int(std::string key, const int64_t value)
 {
   this->append(std::move(key), std::make_shared<IntValue>(value));
-}
-
-void DictionaryValue::append_bool(std::string key, const bool value)
-{
-  this->append(std::move(key), std::make_shared<BooleanValue>(value));
 }
 
 void DictionaryValue::append_double(std::string key, const double value)

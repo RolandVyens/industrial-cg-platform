@@ -41,10 +41,7 @@ bool imb_is_a_webp(const uchar *mem, size_t size)
   return imb_oiio_check(mem, size, "webp");
 }
 
-ImBuf *imb_loadwebp(const uchar *mem,
-                    size_t size,
-                    ImBufFlags flags,
-                    ImFileColorSpace &r_colorspace)
+ImBuf *imb_loadwebp(const uchar *mem, size_t size, int flags, ImFileColorSpace &r_colorspace)
 {
   ImageSpec config, spec;
   config.attribute("oiio:UnassociatedAlpha", 1);
@@ -57,7 +54,7 @@ ImBuf *imb_loadwebp(const uchar *mem,
 }
 
 ImBuf *imb_load_filepath_thumbnail_webp(const char *filepath,
-                                        const ImBufFlags /*flags*/,
+                                        const int /*flags*/,
                                         const size_t max_thumb_size,
                                         ImFileColorSpace & /*r_colorspace*/,
                                         size_t *r_width,
@@ -95,7 +92,7 @@ ImBuf *imb_load_filepath_thumbnail_webp(const char *filepath,
   const int dest_w = std::max(int(config.input.width * scale), 1);
   const int dest_h = std::max(int(config.input.height * scale), 1);
 
-  ImBuf *ibuf = IMB_allocImBuf(dest_w, dest_h, ImBufFlags::ByteData);
+  ImBuf *ibuf = IMB_allocImBuf(dest_w, dest_h, 32, IB_byte_data);
   if (ibuf == nullptr) {
     CLOG_ERROR(&LOG, "Failed to allocate image memory");
     BLI_mmap_free(mmap_file);
@@ -130,13 +127,9 @@ ImBuf *imb_load_filepath_thumbnail_webp(const char *filepath,
   return ibuf;
 }
 
-static std::tuple<WriteContext, ImageSpec> prepare_save_webp(ImBuf *ibuf, ImBufFlags flags)
+bool imb_savewebp(ImBuf *ibuf, const char *filepath, int flags)
 {
-  int file_channels = ibuf->color_mode_channels_get();
-  /* WebP does not support 2-channel (gray + alpha) writes; promote to RGBA. */
-  if (file_channels == 2) {
-    file_channels = 4;
-  }
+  const int file_channels = ibuf->planes >> 3;
   const TypeDesc data_format = TypeDesc::UINT8;
 
   WriteContext ctx = imb_create_write_context("webp", ibuf, flags, false);
@@ -157,19 +150,8 @@ static std::tuple<WriteContext, ImageSpec> prepare_save_webp(ImBuf *ibuf, ImBufF
     file_spec.attribute("compression",
                         std::string("webp:") + std::to_string(ibuf->foptions.quality));
   }
-  return {ctx, file_spec};
-}
 
-bool imb_savewebp(ImBuf *ibuf, const char *filepath, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_webp(ibuf, flags);
   return imb_oiio_write(ctx, filepath, file_spec);
-}
-
-Vector<uint8_t> imb_save_buffer_webp(ImBuf *ibuf, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_webp(ibuf, flags);
-  return imb_oiio_write_buffer(ctx, file_spec);
 }
 
 }  // namespace blender

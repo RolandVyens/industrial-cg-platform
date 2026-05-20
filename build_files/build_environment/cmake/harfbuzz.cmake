@@ -23,6 +23,7 @@ set(HARFBUZZ_EXTRA_OPTIONS
   # Only used for command line utilities,
   # disable as this would add an additional & unnecessary build-dependency.
   -Dcairo=disabled
+  ${MESON_BUILD_TYPE}
 )
 
 ExternalProject_Add(external_harfbuzz
@@ -33,11 +34,9 @@ ExternalProject_Add(external_harfbuzz
 
   CONFIGURE_COMMAND ${HARFBUZZ_CONFIGURE_ENV} &&
     ${CMAKE_COMMAND} -E env ${HARFBUZZ_PKG_ENV} ${MESON} setup
-      --prefix ${LIBDIR}/harfbuzz
-      --libdir lib
+      --prefix ${LIBDIR}/harfbuzz ${HARFBUZZ_EXTRA_OPTIONS}
       --default-library static
-      ${MESON_BUILD_TYPE}
-      ${HARFBUZZ_EXTRA_OPTIONS}
+      --libdir lib
       ${BUILD_DIR}/harfbuzz/src/external_harfbuzz-build
       ${BUILD_DIR}/harfbuzz/src/external_harfbuzz
 

@@ -22,7 +22,6 @@
 #include "draw_handle.hh"
 
 #include "eevee_defines.hh"
-#include "eevee_sync.hh"
 
 namespace blender {
 
@@ -60,7 +59,7 @@ class Cryptomatte {
   Cryptomatte(Instance &inst) : inst_(inst) {};
 
   void begin_sync();
-  void sync_object(const ObjectHandle &ob_handle);
+  void sync_object(Object *ob, ResourceHandleRange res_handle);
   void sync_material(const blender::Material *material);
   void end_sync();
 

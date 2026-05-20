@@ -139,7 +139,6 @@ set(SRC
   intern/grease_pencil_convert_legacy.cc
   intern/grease_pencil_fills.cc
   intern/grease_pencil_vertex_groups.cc
-  intern/gtest_setup.cc
   intern/icons.cc
   intern/icons_rasterize.cc
   intern/id_hash.cc
@@ -309,7 +308,6 @@ set(SRC
   intern/volume_grid.cc
   intern/volume_grid_fields.cc
   intern/volume_grid_file_cache.cc
-  intern/volume_grid_multi_function_eval.cc
   intern/volume_render.cc
   intern/volume_to_mesh.cc
   intern/wm_runtime.cc
@@ -330,7 +328,6 @@ set(SRC
   BKE_asset_edit.hh
   BKE_attribute.h
   BKE_attribute.hh
-  BKE_attribute_enums.hh
   BKE_attribute_filter.hh
   BKE_attribute_filters.hh
   BKE_attribute_legacy_convert.hh
@@ -417,8 +414,6 @@ set(SRC
   BKE_grease_pencil_fills.hh
   BKE_grease_pencil_legacy_convert.hh
   BKE_grease_pencil_vertex_groups.hh
-  BKE_gtest_base.hh
-  BKE_gtest_setup.hh
   BKE_icons.hh
   BKE_id_hash.hh
   BKE_idprop.hh
@@ -497,7 +492,6 @@ set(SRC
   BKE_path_templates.hh
   BKE_pointcache.h
   BKE_pointcloud.hh
-  BKE_pose.hh
   BKE_pose_backup.h
   BKE_preferences.h
   BKE_preview_image.hh
@@ -510,7 +504,6 @@ set(SRC
   BKE_shrinkwrap.hh
   BKE_softbody.h
   BKE_sound.hh
-  BKE_sound_sample.hh
   BKE_sound_types.hh
   BKE_speaker.hh
   BKE_studiolight.h
@@ -539,7 +532,6 @@ set(SRC
   BKE_volume_grid_fields.hh
   BKE_volume_grid_file_cache.hh
   BKE_volume_grid_fwd.hh
-  BKE_volume_grid_multi_function_eval.hh
   BKE_volume_grid_process.hh
   BKE_volume_grid_type_traits.hh
   BKE_volume_openvdb.hh
@@ -583,9 +575,7 @@ set(LIB
   PRIVATE bf::gpu
   bf_ikplugin
   PRIVATE bf::imbuf
-  PRIVATE bf::imbuf::opencolorio
   PRIVATE bf::imbuf::movie
-  PRIVATE bf::imbuf::opencolorio
   PRIVATE bf::intern::clog
   bf_intern_ghost
   PRIVATE bf::intern::guardedalloc
@@ -632,6 +622,10 @@ if(WITH_BULLET)
     bf_intern_rigidbody
     PRIVATE bf::dependencies::optional::bullet
   )
+endif()
+
+if(WITH_IMAGE_OPENEXR)
+  add_definitions(-DWITH_IMAGE_OPENEXR)
 endif()
 
 if(WITH_IMAGE_OPENJPEG)

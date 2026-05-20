@@ -17,7 +17,9 @@
 
 #include "oiio/openimageio_api.h"
 
-#include "openexr/openexr_api.h"
+#ifdef WITH_IMAGE_OPENEXR
+#  include "openexr/openexr_api.h"
+#endif
 
 namespace blender {
 
@@ -30,7 +32,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ imb_thumbnail_jpeg,
         /*save*/ imb_savejpeg,
-        /*save_buffer*/ nullptr,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ eImFileTypeCapability::File,
@@ -47,7 +48,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_png,
-        /*save_buffer*/ imb_save_buffer_png,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -64,7 +64,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_bmp,
-        /*save_buffer*/ imb_save_buffer_bmp,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -81,7 +80,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_tga,
-        /*save_buffer*/ imb_save_buffer_tga,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -98,10 +96,9 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_saveiris,
-        /*save_buffer*/ imb_save_buffer_iris,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
-        /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
+        /*capability_write*/ eImFileTypeCapability::File,
         /*filetype*/ IMB_FTYPE_IRIS,
         /*filetype_id*/ "IRIS",
         /*file_extensions*/ imb_file_extensions_iris,
@@ -116,7 +113,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_dpx,
-        /*save_buffer*/ imb_save_buffer_dpx,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -133,7 +129,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_cineon,
-        /*save_buffer*/ nullptr,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ eImFileTypeCapability::File,
@@ -151,7 +146,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_tiff,
-        /*save_buffer*/ imb_save_buffer_tiff,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -168,7 +162,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_hdr,
-        /*save_buffer*/ imb_save_buffer_hdr,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -177,6 +170,7 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*file_extensions*/ imb_file_extensions_hdr,
         /*default_save_role*/ COLOR_ROLE_DEFAULT_FLOAT,
     },
+#ifdef WITH_IMAGE_OPENEXR
     {
         /*init*/ imb_initopenexr,
         /*exit*/ imb_exitopenexr,
@@ -185,7 +179,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ imb_load_filepath_thumbnail_openexr,
         /*save*/ imb_save_openexr,
-        /*save_buffer*/ imb_save_buffer_openexr,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -194,6 +187,7 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*file_extensions*/ imb_file_extensions_openexr,
         /*default_save_role*/ COLOR_ROLE_DEFAULT_FLOAT,
     },
+#endif
 #ifdef WITH_IMAGE_OPENJPEG
     {
         /*init*/ nullptr,
@@ -203,7 +197,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_jp2,
-        /*save_buffer*/ nullptr,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ eImFileTypeCapability::File,
@@ -221,7 +214,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ nullptr,
-        /*save_buffer*/ nullptr,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ eImFileTypeCapability::Zero,
@@ -238,7 +230,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ nullptr,
-        /*save_buffer*/ nullptr,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ eImFileTypeCapability::Zero,
@@ -256,7 +247,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ imb_load_filepath_thumbnail_webp,
         /*save*/ imb_savewebp,
-        /*save_buffer*/ imb_save_buffer_webp,
         /*flag*/ 0,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -274,7 +264,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ nullptr,
         /*save*/ imb_save_avif,
-        /*save_buffer*/ imb_save_buffer_avif,
         /*flag*/ IM_FTYPE_FLOAT,
         /*capability_read*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
         /*capability_write*/ (eImFileTypeCapability::File | eImFileTypeCapability::Memory),
@@ -295,7 +284,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         /*load_filepath*/ nullptr,
         /*load_filepath_thumbnail*/ imb_load_filepath_thumbnail_svg,
         /*save*/ nullptr,
-        /*save_buffer*/ nullptr,
         /*flag*/ 0,
         /*capability_read*/ eImFileTypeCapability::Zero,
         /*capability_write*/ eImFileTypeCapability::Zero,
@@ -312,7 +300,6 @@ const ImFileType IMB_FILE_TYPES[] = {
         nullptr,
         nullptr,
         nullptr,
-        /*save_buffer*/ nullptr,
         0,
         eImFileTypeCapability::Zero,
         eImFileTypeCapability::Zero,

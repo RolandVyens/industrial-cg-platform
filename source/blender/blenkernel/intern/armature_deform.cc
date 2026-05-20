@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "MEM_guardedalloc.h"
+
 #include "BLI_listbase.h"
 #include "BLI_listbase_wrapper.hh"
 #include "BLI_math_matrix.h"
@@ -23,7 +25,6 @@
 #include "BLI_task.h"
 #include "BLI_task.hh"
 
-#include "DNA_action_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_lattice_types.h"
 #include "DNA_listBase.h"
@@ -38,9 +39,6 @@
 #include "BKE_editmesh.hh"
 #include "BKE_lattice.hh"
 #include "BKE_mesh.hh"
-#include "BKE_pose.hh"
-
-#include "MEM_guardedalloc.h"
 
 #include "CLG_log.h"
 
@@ -198,7 +196,7 @@ template<bool full_deform> struct BoneDeformDualQuaternionMixer {
 
 /* Add interpolated deformation along a b-bone segment of the pose channel. */
 template<typename MixerT>
-static void b_bone_deform(const bke::PChanBoneConst pchanbone,
+static void b_bone_deform(const bPoseChannel &pchan,
                           const float3 &co,
                           const float weight,
                           MixerT &mixer)
@@ -206,19 +204,17 @@ static void b_bone_deform(const bke::PChanBoneConst pchanbone,
   /* Calculate the indices of the 2 affecting b_bone segments. */
   int index;
   float blend;
-  BKE_pchan_bbone_deform_segment_index(pchanbone, co, &index, &blend);
+  BKE_pchan_bbone_deform_segment_index(&pchan, co, &index, &blend);
 
-  mixer.accumulate_bbone(*pchanbone.pchan, co, weight * (1.0f - blend), index);
-  mixer.accumulate_bbone(*pchanbone.pchan, co, weight * blend, index + 1);
+  mixer.accumulate_bbone(pchan, co, weight * (1.0f - blend), index);
+  mixer.accumulate_bbone(pchan, co, weight * blend, index + 1);
 }
 
 /* Add bone deformation based on envelope distance. */
 template<typename MixerT>
-static float dist_bone_deform(const bke::PChanBoneConst pchanbone, const float3 &co, MixerT &mixer)
+static float dist_bone_deform(const bPoseChannel &pchan, const float3 &co, MixerT &mixer)
 {
-  const Bone *bone = pchanbone.bone;
-  const bPoseChannel &pchan = *pchanbone.pchan;
-
+  const Bone *bone = pchan.bone;
   if (bone == nullptr || bone->weight == 0.0f) {
     return 0.0f;
   }
@@ -235,7 +231,7 @@ static float dist_bone_deform(const bke::PChanBoneConst pchanbone, const float3 
 
   const float weight = fac * bone->weight;
   if (bone->segments > 1 && pchan.runtime.bbone_segments == bone->segments) {
-    b_bone_deform(pchanbone, co, weight, mixer);
+    b_bone_deform(pchan, co, weight, mixer);
   }
   else {
     mixer.accumulate(pchan, co, weight);
@@ -246,22 +242,22 @@ static float dist_bone_deform(const bke::PChanBoneConst pchanbone, const float3 
 
 /* Add bone deformation based on vertex group weight. */
 template<typename MixerT>
-static float pchan_bone_deform(const PChanBone pchanbone,
+static float pchan_bone_deform(const bPoseChannel &pchan,
                                const float weight,
                                const float3 &co,
                                MixerT &mixer)
 {
-  const Bone *bone = pchanbone.bone;
+  const Bone *bone = pchan.bone;
 
   if (!weight) {
     return 0.0f;
   }
 
-  if (bone->segments > 1 && pchanbone.pchan->runtime.bbone_segments == bone->segments) {
-    b_bone_deform(pchanbone, co, weight, mixer);
+  if (bone->segments > 1 && pchan.runtime.bbone_segments == bone->segments) {
+    b_bone_deform(pchan, co, weight, mixer);
   }
   else {
-    mixer.accumulate(*pchanbone.pchan, co, weight);
+    mixer.accumulate(pchan, co, weight);
   }
 
   return weight;
@@ -280,7 +276,6 @@ static float pchan_bone_deform(const PChanBone pchanbone,
 namespace bke {
 
 struct ArmatureDeformParams {
-  bArmature *armature;
   MutableSpan<float3> vert_coords;
   std::optional<MutableSpan<float3x3>> vert_deform_mats;
   std::optional<Span<float3>> vert_coords_prev;
@@ -296,7 +291,7 @@ struct ArmatureDeformParams {
   /* Maps vertex group index (def_nr) to pose channels, if vertex groups are used.
    * Vertex groups used for deform can be different from the target object vertex groups list,
    * the def_nr needs to be mapped to the correct pose channel first. */
-  Array<bke::PChanBone> pose_channel_by_vertex_group;
+  Array<bPoseChannel *> pose_channel_by_vertex_group;
 
   float4x4 target_to_armature;
   float4x4 armature_to_target;
@@ -315,13 +310,7 @@ static ArmatureDeformParams get_armature_deform_params(
 {
   const bool dverts_supported = BKE_object_supports_vertex_groups(&ob_target);
 
-  /* TODO(Sybren): call the still-to-be-written function to assert that the pose is up to date. The
-   * armature deform code doesn't use pchan->bone_get(object) but rather takes the armature (for
-   * speed), and so cannot assert this itself. */
-
-  bArmature *armature = id_cast<bArmature *>(ob_arm.data);
   ArmatureDeformParams deform_params;
-  deform_params.armature = armature;
   deform_params.vert_coords = vert_coords;
   deform_params.vert_deform_mats = vert_deform_mats;
   deform_params.vert_coords_prev = vert_coords_prev;
@@ -338,14 +327,13 @@ static ArmatureDeformParams get_armature_deform_params(
      * - Check whether keeping this consistent across frames gives speedup.
      */
 
-    BKE_pose_ensure_bone_indices(ob_arm);
     for (const auto [i, dg] : (defbase)->enumerate()) {
       bPoseChannel *pchan = BKE_pose_channel_find_name(ob_arm.pose, dg.name);
       /* Exclude non-deforming bones. */
-      Bone *bone = pchan ? pchan->bone_get(*armature) : nullptr;
-      if (pchan && !(bone->flag & BONE_NO_DEFORM)) {
-        deform_params.pose_channel_by_vertex_group[i] = {pchan, bone};
-      }
+      deform_params.pose_channel_by_vertex_group[i] = (pchan &&
+                                                       !(pchan->bone->flag & BONE_NO_DEFORM)) ?
+                                                          pchan :
+                                                          nullptr;
     }
   }
 
@@ -410,10 +398,9 @@ static void armature_vert_task_with_mixer(const ArmatureDeformParams &params,
     const IndexRange def_nr_range = params.pose_channel_by_vertex_group.index_range();
     const Span<MDeformWeight> dweights(dvert->dw, dvert->totweight);
     for (const auto &dw : dweights) {
-      const PChanBone pchanbone = def_nr_range.contains(dw.def_nr) ?
+      const bPoseChannel *pchan = def_nr_range.contains(dw.def_nr) ?
                                       params.pose_channel_by_vertex_group[dw.def_nr] :
-                                      PChanBone(nullptr, nullptr);
-      const bPoseChannel *pchan = pchanbone.pchan;
+                                      nullptr;
       if (pchan == nullptr) {
         continue;
       }
@@ -421,7 +408,7 @@ static void armature_vert_task_with_mixer(const ArmatureDeformParams &params,
       float weight = dw.weight;
 
       /* Bone option to mix with envelope weight. */
-      const Bone *bone = pchanbone.bone;
+      const Bone *bone = pchan->bone;
       if (bone && bone->flag & BONE_MULT_VG_ENV) {
         weight *= distfactor_to_bone(co,
                                      float3(bone->arm_head),
@@ -431,16 +418,15 @@ static void armature_vert_task_with_mixer(const ArmatureDeformParams &params,
                                      bone->dist);
       }
 
-      contrib += pchan_bone_deform(pchanbone, weight, co, mixer);
+      contrib += pchan_bone_deform(*pchan, weight, co, mixer);
       deformed = true;
     }
   }
   /* Use envelope if enabled and no bone deformed the vertex yet. */
   if (!deformed && params.use_envelope) {
     for (const bPoseChannel *pchan : params.pose_channels) {
-      const Bone *bone = pchan->bone_get(*params.armature);
-      if (!(bone->flag & BONE_NO_DEFORM)) {
-        contrib += dist_bone_deform({pchan, bone}, co, mixer);
+      if (!(pchan->bone->flag & BONE_NO_DEFORM)) {
+        contrib += dist_bone_deform(*pchan, co, mixer);
       }
     }
   }

@@ -68,8 +68,8 @@ static void do_version_mix_node_mix_mode_compositor(bNodeTree &node_tree, bNode 
     return;
   }
 
-  bNodeSocket *first_input = bke::node_find_socket(node, SOCK_IN, "A_Color"_ustr);
-  bNodeSocket *output = bke::node_find_socket(node, SOCK_OUT, "Result_Color"_ustr);
+  bNodeSocket *first_input = bke::node_find_socket(node, SOCK_IN, "A_Color");
+  bNodeSocket *output = bke::node_find_socket(node, SOCK_OUT, "Result_Color");
 
   /* Find the link going into the inputs of the node. */
   bNodeLink *first_link = nullptr;
@@ -80,8 +80,6 @@ static void do_version_mix_node_mix_mode_compositor(bNodeTree &node_tree, bNode 
   }
 
   bNode &separate_node = version_node_add_empty(node_tree, "CompositorNodeSeparateColor");
-  /* Preserve the muted state on the new node so restoring all nodes later behaves the same way. */
-  SET_FLAG_FROM_TEST(separate_node.flag, node.flag & NODE_MUTED, NODE_MUTED);
   separate_node.parent = node.parent;
   separate_node.location[0] = node.location[0] - 10.0f;
   separate_node.location[1] = node.location[1];
@@ -102,7 +100,6 @@ static void do_version_mix_node_mix_mode_compositor(bNodeTree &node_tree, bNode 
   }
 
   bNode &set_alpha_node = version_node_add_empty(node_tree, "CompositorNodeSetAlpha");
-  SET_FLAG_FROM_TEST(set_alpha_node.flag, node.flag & NODE_MUTED, NODE_MUTED);
   set_alpha_node.parent = node.parent;
   set_alpha_node.location[0] = node.location[0] - 10.0f;
   set_alpha_node.location[1] = node.location[1];
@@ -149,8 +146,8 @@ static void do_version_mix_node_mix_mode_geometry(bNodeTree &node_tree, bNode &n
     return;
   }
 
-  bNodeSocket *first_input = bke::node_find_socket(node, SOCK_IN, "A_Color"_ustr);
-  bNodeSocket *output = bke::node_find_socket(node, SOCK_OUT, "Result_Color"_ustr);
+  bNodeSocket *first_input = bke::node_find_socket(node, SOCK_IN, "A_Color");
+  bNodeSocket *output = bke::node_find_socket(node, SOCK_OUT, "Result_Color");
 
   /* Find the link going into the inputs of the node. */
   bNodeLink *first_link = nullptr;
@@ -330,8 +327,8 @@ static void version_clear_unused_strip_flags(Main &bmain)
         constexpr int flag_delete = 1 << 10;
         constexpr int flag_ignore_channel_lock = 1 << 16;
         constexpr int flag_show_offsets = 1 << 20;
-        strip->flag &= ~eStripFlag(flag_overlap | flag_ipo_frame_locked | flag_effect_not_loaded |
-                                   flag_delete | flag_ignore_channel_lock | flag_show_offsets);
+        strip->flag &= ~(flag_overlap | flag_ipo_frame_locked | flag_effect_not_loaded |
+                         flag_delete | flag_ignore_channel_lock | flag_show_offsets);
         return true;
       });
     }
@@ -344,27 +341,27 @@ static void version_string_to_curves_node_inputs(bNodeTree &tree, bNode &node)
     return;
   }
   auto &storage = *reinterpret_cast<NodeGeometryStringToCurves *>(node.storage);
-  if (!blender::bke::node_find_socket(node, SOCK_IN, "Font"_ustr)) {
+  if (!blender::bke::node_find_socket(node, SOCK_IN, "Font")) {
     bNodeSocket &socket = version_node_add_socket(tree, node, SOCK_IN, "NodeSocketFont", "Font");
     socket.default_value_typed<bNodeSocketValueFont>()->value = reinterpret_cast<VFont *>(node.id);
     node.id = nullptr;
   }
-  if (!blender::bke::node_find_socket(node, SOCK_IN, "Overflow"_ustr)) {
+  if (!blender::bke::node_find_socket(node, SOCK_IN, "Overflow")) {
     bNodeSocket &socket = version_node_add_socket(
         tree, node, SOCK_IN, "NodeSocketMenu", "Overflow");
     socket.default_value_typed<bNodeSocketValueMenu>()->value = storage.overflow;
   }
-  if (!blender::bke::node_find_socket(node, SOCK_IN, "Align X"_ustr)) {
+  if (!blender::bke::node_find_socket(node, SOCK_IN, "Align X")) {
     bNodeSocket &socket = version_node_add_socket(
         tree, node, SOCK_IN, "NodeSocketMenu", "Align X");
     socket.default_value_typed<bNodeSocketValueMenu>()->value = storage.align_x;
   }
-  if (!blender::bke::node_find_socket(node, SOCK_IN, "Align Y"_ustr)) {
+  if (!blender::bke::node_find_socket(node, SOCK_IN, "Align Y")) {
     bNodeSocket &socket = version_node_add_socket(
         tree, node, SOCK_IN, "NodeSocketMenu", "Align Y");
     socket.default_value_typed<bNodeSocketValueMenu>()->value = storage.align_y;
   }
-  if (!blender::bke::node_find_socket(node, SOCK_IN, "Pivot Point"_ustr)) {
+  if (!blender::bke::node_find_socket(node, SOCK_IN, "Pivot Point")) {
     bNodeSocket &socket = version_node_add_socket(
         tree, node, SOCK_IN, "NodeSocketMenu", "Pivot Point");
     socket.default_value_typed<bNodeSocketValueMenu>()->value = storage.pivot_mode;
@@ -819,6 +816,14 @@ void blo_do_versions_510(FileData * /*fd*/, Library * /*lib*/, Main *bmain)
     FOREACH_NODETREE_END;
   }
 
+  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 5)) {
+    for (Light &light : bmain->lights) {
+      light.shadow_color[0] = 0.0f;
+      light.shadow_color[1] = 0.0f;
+      light.shadow_color[2] = 0.0f;
+    }
+  }
+
   /* This has no version check and always runs for all versions because there is forward
    * compatibility code at write time that reallocates the storage, so we need to free it
    * regardless of the version. */
@@ -882,7 +887,7 @@ void blo_do_versions_510(FileData * /*fd*/, Library * /*lib*/, Main *bmain)
   if (!MAIN_VERSION_FILE_ATLEAST(bmain, 501, 20)) {
     for (Scene &scene : bmain->scenes) {
       SequencerToolSettings *seq_ts = seq::tool_settings_ensure(&scene);
-      constexpr eSequencerSnapMode SEQ_SNAP_TO_FRAME_RANGE_OLD = eSequencerSnapMode(1 << 8);
+      constexpr short SEQ_SNAP_TO_FRAME_RANGE_OLD = (1 << 8);
       /* Snap to frame range was bit 8, now bit 9, to make room for snap to increment in bit 8.
        */
       if (seq_ts->snap_mode & SEQ_SNAP_TO_FRAME_RANGE_OLD) {

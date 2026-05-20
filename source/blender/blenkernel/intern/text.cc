@@ -217,10 +217,9 @@ static void text_blend_read_data(BlendDataReader *reader, ID *id)
     BLO_read_string(reader, &ln.line);
     ln.format = nullptr;
 
-    const int actual_len = ln.line ? int(strlen(ln.line)) : 0;
-    if (ln.len != actual_len) {
+    if (ln.len != int(strlen(ln.line))) {
       printf("Error loading text, line lengths differ\n");
-      ln.len = actual_len;
+      ln.len = strlen(ln.line);
     }
   }
 

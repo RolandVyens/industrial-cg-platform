@@ -53,9 +53,11 @@ struct MaskApplyOp {
   }
 };
 
-static void maskmodifier_apply(ModifierApplyContext &context, StripModifierData *smd)
+static void maskmodifier_apply(ModifierApplyContext &context,
+                               StripModifierData *smd,
+                               int timeline_frame)
 {
-  ImBuf *mask = modifier_render_mask_input(context, *smd);
+  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
   if (mask != nullptr && (mask->byte_data() != nullptr || mask->float_data() != nullptr)) {
     ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
 
@@ -63,7 +65,7 @@ static void maskmodifier_apply(ModifierApplyContext &context, StripModifierData 
     apply_modifier_op(op, context.image, mask, context.transform);
 
     /* Image has gained transparency. */
-    context.image->color_mode = ImColorMode::RGBA;
+    context.image->planes = R_IMF_PLANES_RGBA;
   }
 
   if (mask != nullptr) {

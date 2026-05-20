@@ -7,7 +7,6 @@
  */
 
 #include "BKE_curves.hh"
-#include "BKE_gtest_base.hh"
 
 #include "testing/testing.h"
 
@@ -32,9 +31,7 @@ static CurvesGeometry create_basic_curves(const int points_size, const int curve
   return curves;
 }
 
-class CurvesGeometryTest : public BlenderGTestBase {};
-
-TEST_F(CurvesGeometryTest, Empty)
+TEST(curves_geometry, Empty)
 {
   CurvesGeometry empty(0, 0);
   empty.cyclic();
@@ -42,7 +39,7 @@ TEST_F(CurvesGeometryTest, Empty)
   EXPECT_FALSE(empty.bounds_min_max());
 }
 
-TEST_F(CurvesGeometryTest, Move)
+TEST(curves_geometry, Move)
 {
   CurvesGeometry curves = create_basic_curves(100, 10);
 
@@ -67,7 +64,7 @@ TEST_F(CurvesGeometryTest, Move)
   EXPECT_EQ(second_other.offsets().data(), offsets_data);
 }
 
-TEST_F(CurvesGeometryTest, TypeCount)
+TEST(curves_geometry, TypeCount)
 {
   CurvesGeometry curves = create_basic_curves(100, 10);
   curves.curve_types_for_write().copy_from({
@@ -90,7 +87,7 @@ TEST_F(CurvesGeometryTest, TypeCount)
   EXPECT_EQ(counts[CURVE_TYPE_NURBS], 3);
 }
 
-TEST_F(CurvesGeometryTest, CyclicOffsets)
+TEST(curves_geometry, CyclicOffsets)
 {
   CurvesGeometry curves = create_basic_curves(100, 10);
   {
@@ -118,7 +115,7 @@ TEST_F(CurvesGeometryTest, CyclicOffsets)
   }
 }
 
-TEST_F(CurvesGeometryTest, InvalidResolution)
+TEST(curves_geometry, InvalidResolution)
 {
   CurvesGeometry curves = create_basic_curves(40, 4);
   curves.curve_types_for_write().copy_from({
@@ -138,7 +135,7 @@ TEST_F(CurvesGeometryTest, InvalidResolution)
   }
 }
 
-TEST_F(CurvesGeometryTest, CatmullRomEvaluation)
+TEST(curves_geometry, CatmullRomEvaluation)
 {
   CurvesGeometry curves(4, 1);
   curves.fill_curve_types(CURVE_TYPE_CATMULL_ROM);
@@ -271,7 +268,7 @@ TEST_F(CurvesGeometryTest, CatmullRomEvaluation)
   }
 }
 
-TEST_F(CurvesGeometryTest, CatmullRomTwoPointCyclic)
+TEST(curves_geometry, CatmullRomTwoPointCyclic)
 {
   CurvesGeometry curves(2, 1);
   curves.fill_curve_types(CURVE_TYPE_CATMULL_ROM);
@@ -283,7 +280,7 @@ TEST_F(CurvesGeometryTest, CatmullRomTwoPointCyclic)
   EXPECT_EQ(curves.evaluated_points_num(), 24);
 }
 
-TEST_F(CurvesGeometryTest, BezierPositionEvaluation)
+TEST(curves_geometry, BezierPositionEvaluation)
 {
   CurvesGeometry curves(2, 1);
   curves.fill_curve_types(CURVE_TYPE_BEZIER);
@@ -367,7 +364,7 @@ TEST_F(CurvesGeometryTest, BezierPositionEvaluation)
   }
 }
 
-TEST_F(CurvesGeometryTest, BezierGenericEvaluation)
+TEST(curves_geometry, BezierGenericEvaluation)
 {
   CurvesGeometry curves(3, 1);
   curves.fill_curve_types(CURVE_TYPE_BEZIER);
@@ -453,7 +450,7 @@ static CurvesGeometry create_single_nurbs(const int num_points)
   return curves;
 }
 
-TEST_F(CurvesGeometryTest, NURBSEvaluation)
+TEST(curves_geometry, NURBSEvaluation)
 {
   CurvesGeometry curves = create_single_nurbs(4);
   MutableSpan<float3> positions = curves.positions_for_write();
@@ -540,7 +537,7 @@ TEST_F(CurvesGeometryTest, NURBSEvaluation)
   }
 }
 
-TEST_F(CurvesGeometryTest, NURBSEvaluateZeroOrderBezierDeg3)
+TEST(curves_geometry, NURBSEvaluateZeroOrderBezierDeg3)
 {
   CurvesGeometry curves = create_single_nurbs(4);
   curves.nurbs_knots_modes_for_write().fill(NURBS_KNOT_MODE_ENDPOINT_BEZIER);
@@ -560,7 +557,7 @@ TEST_F(CurvesGeometryTest, NURBSEvaluateZeroOrderBezierDeg3)
   }
 }
 
-TEST_F(CurvesGeometryTest, NURBSEvaluateZeroOrderClampedDeg3)
+TEST(curves_geometry, NURBSEvaluateZeroOrderClampedDeg3)
 {
   CurvesGeometry curves = create_single_nurbs(4);
   curves.nurbs_knots_modes_for_write().fill(NURBS_KNOT_MODE_ENDPOINT);
@@ -586,7 +583,7 @@ TEST_F(CurvesGeometryTest, NURBSEvaluateZeroOrderClampedDeg3)
 /** \name NURBS: Basis Cache Calculation
  * \{ */
 
-TEST_F(CurvesGeometryTest, BasisCacheBezierSegmentDeg2)
+TEST(curves_geometry, BasisCacheBezierSegmentDeg2)
 {
   const int order = 3;
   const int point_count = 3;
@@ -628,7 +625,7 @@ TEST_F(CurvesGeometryTest, BasisCacheBezierSegmentDeg2)
   EXPECT_EQ_SPAN<float>(expectation, cache.weights);
 }
 
-TEST_F(CurvesGeometryTest, BasisCacheNonUniformDeg2)
+TEST(curves_geometry, BasisCacheNonUniformDeg2)
 {
   const int order = 3;
   const int point_count = 8;
@@ -698,9 +695,7 @@ TEST_F(CurvesGeometryTest, BasisCacheNonUniformDeg2)
 
 /** \} */
 
-class KnotVectorTest : public BlenderGTestBase {};
-
-TEST_F(KnotVectorTest, KnotVectorUniform)
+TEST(knot_vector, KnotVectorUniform)
 {
   constexpr int8_t order = 5;
   constexpr int points_num = 7;
@@ -713,7 +708,7 @@ TEST_F(KnotVectorTest, KnotVectorUniform)
   EXPECT_EQ_SPAN<int>(Span({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorUniformClamped)
+TEST(knot_vector, KnotVectorUniformClamped)
 {
   constexpr int8_t order = 3;
   constexpr int points_num = 7;
@@ -730,7 +725,7 @@ TEST_F(KnotVectorTest, KnotVectorUniformClamped)
 /** \name Knot vector: KnotMode::NURBS_KNOT_MODE_ENDPOINT_BEZIER
  * \{ */
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedSegmentDeg2)
+TEST(knot_vector, KnotVectorBezierClampedSegmentDeg2)
 {
   constexpr int8_t order = 3;
   constexpr int points_num = 3;
@@ -743,7 +738,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedSegmentDeg2)
   EXPECT_EQ_SPAN<int>(Span({3, 3}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedSegmentDeg4)
+TEST(knot_vector, KnotVectorBezierClampedSegmentDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num = 5;
@@ -756,7 +751,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedSegmentDeg4)
   EXPECT_EQ_SPAN<int>(Span({5, 5}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedDeg2)
+TEST(knot_vector, KnotVectorBezierClampedDeg2)
 {
   constexpr int8_t order = 3;
   constexpr int points_num = 9;
@@ -769,7 +764,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedDeg2)
   EXPECT_EQ_SPAN<int>(Span({3, 2, 2, 2, 3}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedUnevenDeg2)
+TEST(knot_vector, KnotVectorBezierClampedUnevenDeg2)
 {
   constexpr int8_t order = 3;
   constexpr int points_num = 8;
@@ -782,7 +777,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedUnevenDeg2)
   EXPECT_EQ_SPAN<int>(Span({3, 2, 2, 4}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedDeg4)
+TEST(knot_vector, KnotVectorBezierClampedDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num = 13;
@@ -795,7 +790,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedDeg4)
   EXPECT_EQ_SPAN<int>(Span({5, 4, 4, 5}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedUnevenDeg4)
+TEST(knot_vector, KnotVectorBezierClampedUnevenDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num[4] = {12, 11, 10, 9};
@@ -814,7 +809,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedUnevenDeg4)
   }
 }
 
-TEST_F(KnotVectorTest, KnotVectorCircleCyclicUnevenDeg2)
+TEST(knot_vector, KnotVectorCircleCyclicUnevenDeg2)
 {
   constexpr int8_t order = 3;
   constexpr int points_num = 8;
@@ -827,7 +822,7 @@ TEST_F(KnotVectorTest, KnotVectorCircleCyclicUnevenDeg2)
   EXPECT_EQ_SPAN<int>(Span({1, 2, 2, 2, 2, 2, 2}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierClampedCyclicUnevenDeg4)
+TEST(knot_vector, KnotVectorBezierClampedCyclicUnevenDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num[4] = {12, 11, 10, 9};
@@ -852,7 +847,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierClampedCyclicUnevenDeg4)
 /** \name Knot vector: KnotMode::NURBS_KNOT_MODE_BEZIER
  * \{ */
 
-TEST_F(KnotVectorTest, KnotVectorBezierSegmentDeg2)
+TEST(knot_vector, KnotVectorBezierSegmentDeg2)
 {
   constexpr int8_t order = 4;
   constexpr int points_num = 4;
@@ -865,7 +860,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierSegmentDeg2)
   EXPECT_EQ_SPAN<int>(Span({2, 3, 3}), multiplicity);
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierUnevenDeg2)
+TEST(knot_vector, KnotVectorBezierUnevenDeg2)
 {
   constexpr int8_t order = 3;
   constexpr int points_num[4] = {8, 7, 6, 5};
@@ -884,7 +879,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierUnevenDeg2)
   }
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierUnevenDeg4)
+TEST(knot_vector, KnotVectorBezierUnevenDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num[6] = {14, 13, 12, 11, 10, 9};
@@ -905,7 +900,7 @@ TEST_F(KnotVectorTest, KnotVectorBezierUnevenDeg4)
   }
 }
 
-TEST_F(KnotVectorTest, KnotVectorBezierCyclicUnevenDeg4)
+TEST(knot_vector, KnotVectorBezierCyclicUnevenDeg4)
 {
   constexpr int8_t order = 5;
   constexpr int points_num[4] = {12, 11, 10, 9};

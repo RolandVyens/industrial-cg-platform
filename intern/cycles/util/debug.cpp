@@ -86,17 +86,6 @@ void DebugFlags::Metal::reset()
   }
 }
 
-DebugFlags::TextureCache::TextureCache()
-{
-  reset();
-}
-
-void DebugFlags::TextureCache::reset()
-{
-  use_eviction = true;
-  preserve_unused = 0;
-}
-
 DebugFlags::OptiX::OptiX()
 {
   reset();
@@ -113,7 +102,6 @@ void DebugFlags::reset()
   cuda.reset();
   optix.reset();
   metal.reset();
-  texture_cache.reset();
 }
 
 CCL_NAMESPACE_END

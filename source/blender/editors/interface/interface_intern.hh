@@ -35,11 +35,20 @@ struct bContext;
 struct bContextStore;
 struct CurveMapping;
 struct CurveProfile;
+namespace gpu {
+class Batch;
+}
 struct ID;
 struct ImBuf;
 struct LayoutPanelHeader;
 struct Main;
 struct Scene;
+namespace ui {
+struct SafetyRect;
+struct HandleButtonData;
+struct Layout;
+struct UndoStack_Text;
+}  // namespace ui
 struct uiListType;
 struct uiStyle;
 struct uiWidgetColors;
@@ -49,21 +58,13 @@ struct wmKeyConfig;
 struct wmOperatorType;
 struct wmTimer;
 
-namespace gpu {
-class Batch;
-}
-
 namespace ui {
 
-struct SafetyRect;
-struct HandleButtonData;
-struct Layout;
-struct UndoStack_Text;
 /* ****************** general defines ************** */
 
 #define RNA_ENUM_VALUE -2
 
-#define UI_MENU_PADDING int(0.2f * UI_UNIT_Y)
+#define UI_MENU_PADDING (int)(0.2f * UI_UNIT_Y)
 
 #define UI_MENU_WIDTH_MIN (UI_UNIT_Y * 9)
 /** Some extra padding added to menus containing sub-menu icons. */
@@ -195,7 +196,7 @@ struct Button : NonMovable {
 
   ButtonType type = ButtonType(0);
   ButPointerType pointype = ButPointerType::None;
-  bool bit = false;
+  bool bit = 0;
   /* 0-31 bit index. */
   char bitnr = 0;
 
@@ -244,6 +245,17 @@ struct Button : NonMovable {
 
   ButtonCompleteFunc autocomplete_func = nullptr;
   void *autofunc_arg = nullptr;
+
+  ButtonHandleRenameFunc rename_func = nullptr;
+  void *rename_arg1 = nullptr;
+  char *rename_orig = nullptr;
+
+  /**
+   * When defined, and the button edits a string RNA property,
+   * the new name is _not_ set at all, instead this function is called with the new name.
+   */
+  std::function<void(std::string &new_name)> rename_full_func = nullptr;
+  std::string rename_full_new;
 
   /** Run an action when holding the button down. */
   ButtonHandleHoldFunc hold_func = nullptr;
@@ -354,44 +366,6 @@ struct Button : NonMovable {
   virtual ~Button() = default;
 };
 
-struct TextWrapCache {
-  int wrap_width = 0;
-  float aspect = 0.0f;
-  std::string text;
-  Vector<StringRef> wrapped_lines;
-};
-
-/** Derived struct for #ButtonType::Text */
-struct ButtonText : public Button {
-  std::function<void(bContext &, StringRefNull)> rename_func = nullptr;
-  char *rename_orig = nullptr;
-  /**
-   * When defined, and the button edits a string RNA property,
-   * the new name is _not_ set at all, instead this function is called with the new name.
-   */
-  std::function<void(StringRefNull new_name)> rename_full_func = nullptr;
-  std::string rename_full_new;
-};
-
-/** Derived struct for #ButtonType::TextBox */
-struct ButtonTextBox : public Button {
-
-  /** Total number of wrapped lines in the last text-box redraw/event handling. */
-  int last_total_lines = 0;
-
-  TextboxState *state;
-
-  /** Wrap cache from last redraw/event handling. */
-  std::unique_ptr<TextWrapCache> wrap_cache;
-
-  /** Placeholder wrap cache from last draw. */
-  std::unique_ptr<TextWrapCache> placeholder_wrap_cache;
-
-  void line_scroll_set(int line_scroll);
-  int line_scroll() const;
-  int visible_lines() const;
-};
-
 /** Derived struct for #ButtonType::But */
 struct ButtonPush : public Button {
   bool draw_as_link = false;
@@ -480,8 +454,6 @@ struct ButtonSeparatorLine : public Button {
 /** Derived struct for #ButtonType::Label. */
 struct ButtonLabel : public Button {
   float alpha_factor = 1.0f;
-  /** When the button draws an icon, also draw a mono-colored border for it. */
-  bool draw_icon_border = false;
 };
 
 /** Derived struct for #ButtonType::Scroll. */
@@ -1243,13 +1215,11 @@ void draw_but_HISTOGRAM(ARegion *region,
                         Button *but,
                         const uiWidgetColors *wcol,
                         const rcti *recti);
-void draw_but_WAVEFORM(const bContext *C,
-                       ARegion *region,
+void draw_but_WAVEFORM(ARegion *region,
                        Button *but,
                        const uiWidgetColors *wcol,
                        const rcti *recti);
-void draw_but_VECTORSCOPE(const bContext *C,
-                          ARegion *region,
+void draw_but_VECTORSCOPE(ARegion *region,
                           Button *but,
                           const uiWidgetColors *wcol,
                           const rcti *recti);
@@ -1340,8 +1310,6 @@ bool button_rna_equals_ex(const Button *but,
                           int index);
 Button *button_find_old(Block *block_old, const Button *but_new);
 Button *button_find_new(Block *block_new, const Button *but_old);
-/** Scaled text padding within the but widget box. */
-int button_text_padding(const Button *but);
 
 #ifdef WITH_INPUT_IME
 void button_ime_reposition(Button *but, int x, int y, bool complete);
@@ -1445,6 +1413,10 @@ void draw_preview_item(const uiFontStyle *fstyle,
 /**
  * Version of #draw_preview_item() that does not draw the menu background and item text based on
  * state. It just draws the preview and text directly.
+ *
+ * \param draw_as_icon: Instead of stretching the preview/icon to the available width/height, draw
+ *                      it at the standard icon size. Mono-icons will draw with \a text_col or the
+ *                      corresponding theme override for this type of icon.
  */
 void draw_preview_item_stateless(const uiFontStyle *fstyle,
                                  rcti *rect,
@@ -1460,7 +1432,7 @@ void draw_preview_item_stateless(const uiFontStyle *fstyle,
  * Margin at top of screen for popups.
  * Note this value must be sufficient to draw a popover arrow to avoid cropping it.
  */
-#define UI_POPUP_MENU_TOP int(10 * UI_SCALE_FAC)
+#define UI_POPUP_MENU_TOP (int)(10 * UI_SCALE_FAC)
 
 #define UI_PIXEL_AA_JITTER 8
 extern const float ui_pixel_jitter[UI_PIXEL_AA_JITTER][2];
@@ -1606,7 +1578,7 @@ Button *listrow_find_index(const ARegion *region,
                            int index,
                            Button *listbox) ATTR_WARN_UNUSED_RESULT;
 Button *view_item_find_mouse_over(const ARegion *region, const int xy[2]) ATTR_NONNULL(1, 2);
-Button *view_item_find_active(const ARegion *region, const AbstractView *view = nullptr);
+Button *view_item_find_active(const ARegion *region);
 Button *view_item_find_search_highlight(const ARegion *region);
 
 using ButtonFindPollFn = bool (*)(const Button *but, const void *customdata);
@@ -1809,7 +1781,7 @@ Vector<FCurve *> get_property_drivers(
  * \param is_array_prop: Whether `src_drivers` are drivers for the elements
  * of an array property.
  * \param dst_ptr: The RNA pointer for the destination property.
- * \param dst_prop: The destination property RNA.
+ * \param dist_prop: The destination property RNA.
  *
  * \returns The number of successfully pasted drivers.
  */

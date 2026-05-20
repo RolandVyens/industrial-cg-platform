@@ -5,10 +5,8 @@
 #include "DNA_space_types.h"
 
 #include "BLI_listbase.h"
-#include "BLI_string_utf8.h"
 
 #include "BKE_appdir.hh"
-#include "BKE_blender_copybuffer.hh"
 #include "BKE_blendfile.hh"
 #include "BKE_context.hh"
 #include "BKE_global.hh"
@@ -133,9 +131,8 @@ static int node_copy_local(bNodeTree &from_tree,
       bNode *from_node = node_map.lookup(link.fromnode);
       bNode *to_node = node_map.lookup(link.tonode);
 
-      bNodeSocket *from = bke::node_find_socket(
-          *from_node, SOCK_OUT, link.fromsock->identifier_ustr());
-      bNodeSocket *to = bke::node_find_socket(*to_node, SOCK_IN, link.tosock->identifier_ustr());
+      bNodeSocket *from = bke::node_find_socket(*from_node, SOCK_OUT, link.fromsock->identifier);
+      bNodeSocket *to = bke::node_find_socket(*to_node, SOCK_IN, link.tosock->identifier);
       if (!from || !to) {
         continue;
       }
@@ -176,7 +173,7 @@ static wmOperatorStatus node_clipboard_copy_exec(bContext *C, wmOperator *op)
                             {(PartialWriteContext::IDAddOperations::SET_FAKE_USER |
                               PartialWriteContext::IDAddOperations::SET_CLIPBOARD_MARK)}));
 
-  STRNCPY_UTF8(copy_tree->idname, node_tree->typeinfo->idname.c_str());
+  strcpy(copy_tree->idname, node_tree->typeinfo->idname.c_str());
   bke::node_tree_set_type(*copy_tree);
 
   /* Copy node interface to avoid losing links to Group Input and Group Output nodes.
@@ -237,7 +234,7 @@ static wmOperatorStatus node_clipboard_copy_exec(bContext *C, wmOperator *op)
 
   char filepath[FILE_MAX];
   node_copybuffer_filepath_get(filepath, sizeof(filepath));
-  if (!copy_buffer.write_as_copypaste_buffer(filepath, *op->reports)) {
+  if (!copy_buffer.write(filepath, *op->reports)) {
     BLI_assert_unreachable();
     BKE_report(op->reports, RPT_ERROR, "Unable to write to copy buffer on disk.");
     return OPERATOR_CANCELLED;
@@ -279,14 +276,21 @@ static wmOperatorStatus node_clipboard_paste_exec(bContext *C, wmOperator *op)
 
   char filepath[FILE_MAX];
   node_copybuffer_filepath_get(filepath, sizeof(filepath));
-  Main *bmain_src = BKE_main_new();
-  if (!BKE_copybuffer_read(bmain_src, filepath, op->reports, FILTER_ID_NT)) {
-    BKE_report(op->reports, RPT_ERROR, "No data to paste");
-    BKE_main_free(bmain_src);
+
+  const BlendFileReadParams params{};
+  BlendFileReadReport bf_reports{};
+  BlendFileData *bfd = BKE_blendfile_read(filepath, &params, &bf_reports);
+
+  if (bfd == nullptr) {
+    BKE_report(op->reports, RPT_INFO, "No data to paste");
     return OPERATOR_CANCELLED;
   }
 
   ED_preview_kill_jobs(CTX_wm_manager(C), CTX_data_main(C));
+
+  Main *bmain_src = bfd->main;
+  bfd->main = nullptr;
+  BLO_blendfiledata_free(bfd);
 
   /* We don't want to paste scenes referenced by the Render Layers node if they don't exist in the
    * destination bmain. */
@@ -311,27 +315,19 @@ static wmOperatorStatus node_clipboard_paste_exec(bContext *C, wmOperator *op)
     }
   }
 
+  MainMergeReport merge_reports = {};
+  /* Frees bmain_src. */
+  BKE_main_merge(bmain_dst, &bmain_src, merge_reports);
+
   bNodeTree *from_tree = nullptr;
-  FOREACH_NODETREE_BEGIN (bmain_src, node_tree, id) {
+  FOREACH_NODETREE_BEGIN (bmain_dst, node_tree, id) {
     if (node_tree->id.flag & ID_FLAG_CLIPBOARD_MARK) {
       from_tree = node_tree;
       break;
     }
   }
   FOREACH_NODETREE_END;
-  if (from_tree == nullptr) {
-    BKE_report(op->reports, RPT_ERROR, "No data to paste");
-    BKE_main_free(bmain_src);
-    return OPERATOR_CANCELLED;
-  }
-
-  MainMergeReport merge_reports = {};
-  /* We need to ensure that the source 'clipbaord marked' main NodeTree is always merged into
-   * destination Main, even in case there would be a name collision with an existing ID (see also
-   * #158049). */
-  Set<ID *> force_merge_ids = {id_cast<ID *>(from_tree)};
-  /* Frees bmain_src. */
-  BKE_main_merge(bmain_dst, &force_merge_ids, &bmain_src, merge_reports);
+  BLI_assert(from_tree != nullptr);
 
   bNodeTree *to_tree = snode->edittree;
   node_deselect_all(*to_tree);

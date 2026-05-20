@@ -21,15 +21,12 @@ namespace asset_system {
 class AssetLibrary;
 }  // namespace asset_system
 
-enum eAssetLibraryType : short {
+enum eAssetLibraryType {
   /** Display assets from the current session (current "Main"). */
   ASSET_LIBRARY_LOCAL = 1,
   ASSET_LIBRARY_ALL = 2,
   /** Display assets bundled with Blender by default. */
   ASSET_LIBRARY_ESSENTIALS = 3,
-  /** Additions to the essentials library that are stored online - displayed in the UI as part of
-   * the normal essentials library. */
-  ASSET_LIBRARY_ONLINE_ESSENTIALS = 4,
 
   /** Display assets from custom asset libraries, as defined in the preferences
    * (#bUserAssetLibrary). The name will be taken from #FileSelectParams.asset_library_ref.idname
@@ -39,7 +36,7 @@ enum eAssetLibraryType : short {
   ASSET_LIBRARY_CUSTOM = 100,
 };
 
-enum eAssetImportMethod : int {
+enum eAssetImportMethod {
   /** Regular data-block linking. */
   ASSET_IMPORT_LINK = 0,
   /** Regular data-block appending (basically linking + "Make Local"). */
@@ -52,16 +49,10 @@ enum eAssetImportMethod : int {
   ASSET_IMPORT_PACK = 3,
 };
 
-enum eAssetLibrary_Flag : int {
+enum eAssetLibrary_Flag {
   ASSET_LIBRARY_RELATIVE_PATH = (1 << 0),
   ASSET_LIBRARY_DISABLED = (1 << 1),
   ASSET_LIBRARY_USE_REMOTE_URL = (1 << 2),
-};
-
-enum class AssetAccess : int8_t {
-  OnlineAndOffline = 0,
-  OnlyOnline = 1,
-  OnlyOffline = 2,
 };
 
 /**
@@ -149,7 +140,7 @@ struct AssetImportSettings {
  * custom library. Otherwise it is not used.
  */
 struct AssetLibraryReference {
-  eAssetLibraryType type = ASSET_LIBRARY_LOCAL;
+  short type = ASSET_LIBRARY_LOCAL; /* eAssetLibraryType */
   char _pad1[2] = {};
   /**
    * If showing a custom asset library (#ASSET_LIBRARY_CUSTOM), this is the index of the
@@ -178,7 +169,7 @@ struct AssetLibraryReference {
 struct AssetWeakReference {
   char _pad[6] = {};
 
-  eAssetLibraryType asset_library_type = {};
+  short asset_library_type = 0; /* #eAssetLibraryType */
   /** If #asset_library_type is not enough to identify the asset library, this string can provide
    * further location info (allocated string). Null otherwise. */
   const char *asset_library_identifier = nullptr;

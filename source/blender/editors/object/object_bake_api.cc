@@ -14,7 +14,6 @@
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
-#include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 
 #include "RNA_access.hh"
@@ -376,11 +375,13 @@ static bool write_external_bake_pixels(const char *filepath,
 {
   ImBuf *ibuf = nullptr;
   bool ok = false;
-  bool is_float = im_format->depth > 8;
+  bool is_float;
+
+  is_float = im_format->depth > 8;
 
   /* create a new ImBuf */
-  ibuf = IMB_allocImBuf(width, height, is_float ? ImBufFlags::FloatData : ImBufFlags::ByteData);
-  ibuf->color_mode = im_format->color_mode;
+  ibuf = IMB_allocImBuf(
+      width, height, im_format->planes, (is_float ? IB_float_data : IB_byte_data));
 
   if (!ibuf) {
     return false;
@@ -1441,7 +1442,7 @@ static wmOperatorStatus bake(const BakeAPIRender *bkr,
   Mesh *me_cage_eval = nullptr;
 
   MultiresModifierData *mmd_low = nullptr;
-  MultiresModifierFlag mmd_flags_low = {};
+  int mmd_flags_low = 0;
 
   BakePixel *pixel_array_low = nullptr;
   BakePixel *pixel_array_high = nullptr;
@@ -1778,7 +1779,7 @@ static wmOperatorStatus bake(const BakeAPIRender *bkr,
           /* From multi-resolution. */
           Mesh *me_nores = nullptr;
           ModifierData *md = nullptr;
-          ModifierMode mode;
+          int mode;
 
           BKE_object_eval_reset(ob_low_eval);
           md = BKE_modifiers_findby_type(ob_low_eval, eModifierType_Multires);

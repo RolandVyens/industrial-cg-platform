@@ -4,7 +4,6 @@
 #include "testing/testing.h"
 
 #include "BKE_fcurve.hh"
-#include "BKE_gtest_base.hh"
 
 #include "ANIM_fcurve.hh"
 
@@ -20,16 +19,14 @@ using namespace blender::animrig;
 /* Epsilon for floating point comparisons. */
 static const float EPSILON = 1e-7f;
 
-class EvaluateFCurveTest : public BlenderGTestBase {};
-
-TEST_F(EvaluateFCurveTest, EmptyFCurve)
+TEST(evaluate_fcurve, EmptyFCurve)
 {
   FCurve *fcu = BKE_fcurve_create();
   EXPECT_EQ(evaluate_fcurve(fcu, 47.0f), 0.0f);
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, OnKeys)
+TEST(evaluate_fcurve, OnKeys)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -53,7 +50,7 @@ TEST_F(EvaluateFCurveTest, OnKeys)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, InterpolationConstant)
+TEST(evaluate_fcurve, InterpolationConstant)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -74,7 +71,7 @@ TEST_F(EvaluateFCurveTest, InterpolationConstant)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, InterpolationLinear)
+TEST(evaluate_fcurve, InterpolationLinear)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -96,7 +93,7 @@ TEST_F(EvaluateFCurveTest, InterpolationLinear)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, InterpolationBezier)
+TEST(evaluate_fcurve, InterpolationBezier)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -134,7 +131,7 @@ TEST_F(EvaluateFCurveTest, InterpolationBezier)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, InterpolationBounce)
+TEST(evaluate_fcurve, InterpolationBounce)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -159,7 +156,7 @@ TEST_F(EvaluateFCurveTest, InterpolationBounce)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, ExtrapolationLinearKeys)
+TEST(evaluate_fcurve, ExtrapolationLinearKeys)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -194,7 +191,7 @@ TEST_F(EvaluateFCurveTest, ExtrapolationLinearKeys)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(EvaluateFCurveTest, ExtrapolationBezierKeys)
+TEST(evaluate_fcurve, ExtrapolationBezierKeys)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -235,9 +232,7 @@ TEST_F(EvaluateFCurveTest, ExtrapolationBezierKeys)
   BKE_fcurve_free(fcu);
 }
 
-class FCurveSubdivideTest : public BlenderGTestBase {};
-
-TEST_F(FCurveSubdivideTest, BKE_fcurve_bezt_subdivide_handles)
+TEST(fcurve_subdivide, BKE_fcurve_bezt_subdivide_handles)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -305,9 +300,7 @@ TEST_F(FCurveSubdivideTest, BKE_fcurve_bezt_subdivide_handles)
   BKE_fcurve_free(fcu);
 }
 
-class FCurveActiveKeyframeTest : public BlenderGTestBase {};
-
-TEST_F(FCurveActiveKeyframeTest, ActiveKeyframe)
+TEST(fcurve_active_keyframe, ActiveKeyframe)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -335,12 +328,12 @@ TEST_F(FCurveActiveKeyframeTest, ActiveKeyframe)
   EXPECT_EQ(BKE_fcurve_active_keyframe_index(fcu), FCURVE_ACTIVE_KEYFRAME_NONE);
 
   /* Check a "normal" action. */
-  fcu->bezt[2].f2 |= BEZT_FLAG_SELECT;
+  fcu->bezt[2].f2 |= SELECT;
   BKE_fcurve_active_keyframe_set(fcu, &fcu->bezt[2]);
   EXPECT_EQ(BKE_fcurve_active_keyframe_index(fcu), 2);
 
   /* Check setting an unselected keyframe as active. */
-  fcu->bezt[2].f1 = fcu->bezt[2].f2 = fcu->bezt[2].f3 = eBezTriple_Flag{};
+  fcu->bezt[2].f1 = fcu->bezt[2].f2 = fcu->bezt[2].f3 = 0;
   EXPECT_BLI_ASSERT(BKE_fcurve_active_keyframe_set(fcu, &fcu->bezt[2]),
                     "active keyframe must be selected");
   EXPECT_EQ(BKE_fcurve_active_keyframe_index(fcu), FCURVE_ACTIVE_KEYFRAME_NONE);
@@ -370,9 +363,7 @@ TEST_F(FCurveActiveKeyframeTest, ActiveKeyframe)
   BKE_fcurve_free(fcu);
 }
 
-class BKE_FCurveTest : public BlenderGTestBase {};
-
-TEST_F(BKE_FCurveTest, BKE_fcurve_keyframe_move_value_with_handles)
+TEST(BKE_fcurve, BKE_fcurve_keyframe_move_value_with_handles)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -404,7 +395,7 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_keyframe_move_value_with_handles)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_keyframe_move_time_with_handles)
+TEST(BKE_fcurve, BKE_fcurve_keyframe_move_time_with_handles)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -436,7 +427,7 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_keyframe_move_time_with_handles)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_calc_range)
+TEST(BKE_fcurve, BKE_fcurve_calc_range)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -448,9 +439,9 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_calc_range)
   insert_vert_fcurve(fcu, {18.2f, -20.0f}, settings, INSERTKEY_NOFLAGS);
 
   for (int i = 0; i < fcu->totvert; i++) {
-    fcu->bezt[i].f1 &= ~BEZT_FLAG_SELECT;
-    fcu->bezt[i].f2 &= ~BEZT_FLAG_SELECT;
-    fcu->bezt[i].f3 &= ~BEZT_FLAG_SELECT;
+    fcu->bezt[i].f1 &= ~SELECT;
+    fcu->bezt[i].f2 &= ~SELECT;
+    fcu->bezt[i].f3 &= ~SELECT;
   }
 
   float min, max;
@@ -467,8 +458,8 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_calc_range)
   EXPECT_FALSE(success)
       << "Using selected keyframes only should not find a range if nothing is selected.";
 
-  fcu->bezt[1].f2 |= BEZT_FLAG_SELECT;
-  fcu->bezt[3].f2 |= BEZT_FLAG_SELECT;
+  fcu->bezt[1].f2 |= SELECT;
+  fcu->bezt[3].f2 |= SELECT;
 
   success = BKE_fcurve_calc_range(fcu, &min, &max, true);
   EXPECT_TRUE(success) << "Range of selected keyframes should have been found.";
@@ -489,7 +480,7 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_calc_range)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_calc_bounds)
+TEST(BKE_fcurve, BKE_fcurve_calc_bounds)
 {
   FCurve *fcu = BKE_fcurve_create();
 
@@ -501,9 +492,9 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_calc_bounds)
   insert_vert_fcurve(fcu, {18.2f, -20.0f}, settings, INSERTKEY_NOFLAGS);
 
   for (int i = 0; i < fcu->totvert; i++) {
-    fcu->bezt[i].f1 &= ~BEZT_FLAG_SELECT;
-    fcu->bezt[i].f2 &= ~BEZT_FLAG_SELECT;
-    fcu->bezt[i].f3 &= ~BEZT_FLAG_SELECT;
+    fcu->bezt[i].f1 &= ~SELECT;
+    fcu->bezt[i].f2 &= ~SELECT;
+    fcu->bezt[i].f3 &= ~SELECT;
   }
 
   fcu->bezt[0].vec[0][0] = -5.0f;
@@ -533,8 +524,8 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_calc_bounds)
   EXPECT_FALSE(success)
       << "Using selected keyframes only should not find bounds if nothing is selected.";
 
-  fcu->bezt[1].f2 |= BEZT_FLAG_SELECT;
-  fcu->bezt[3].f2 |= BEZT_FLAG_SELECT;
+  fcu->bezt[1].f2 |= SELECT;
+  fcu->bezt[3].f2 |= SELECT;
 
   success = BKE_fcurve_calc_bounds(fcu,
                                    true /* select only */,
@@ -668,7 +659,7 @@ static FCurve *testcurve_with_duplicates()
   return fcu;
 }
 
-TEST_F(BKE_FCurveTest, sort_time_fcurve_stability)
+TEST(BKE_fcurve, sort_time_fcurve_stability)
 {
   FCurve *fcu = testcurve_with_duplicates();
   ASSERT_EQ(fcu->totvert, 10);
@@ -692,7 +683,7 @@ TEST_F(BKE_FCurveTest, sort_time_fcurve_stability)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_deduplicate_keys)
+TEST(BKE_fcurve, BKE_fcurve_deduplicate_keys)
 {
   FCurve *fcu = testcurve_with_duplicates();
   ASSERT_EQ(fcu->totvert, 10);
@@ -711,7 +702,7 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_deduplicate_keys)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_deduplicate_keys_edge_cases)
+TEST(BKE_fcurve, BKE_fcurve_deduplicate_keys_edge_cases)
 {
   FCurve *fcu = testcurve_with_duplicates();
   ASSERT_EQ(fcu->totvert, 10);
@@ -734,7 +725,7 @@ TEST_F(BKE_FCurveTest, BKE_fcurve_deduplicate_keys_edge_cases)
   BKE_fcurve_free(fcu);
 }
 
-TEST_F(BKE_FCurveTest, BKE_fcurve_deduplicate_keys_prefer_whole_frames)
+TEST(BKE_fcurve, BKE_fcurve_deduplicate_keys_prefer_whole_frames)
 {
   FCurve *fcu = testcurve_with_duplicates();
   ASSERT_EQ(fcu->totvert, 10);

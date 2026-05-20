@@ -9,8 +9,8 @@ set(SRC
   cpu_check.cc
 )
 
-if(COMPILER_SIMD_FLAGS)
-  remove_c_and_cxx_flag("${COMPILER_SIMD_FLAGS}")
+if(COMPILER_SSE42_FLAG)
+  remove_c_and_cxx_flag("${COMPILER_SSE42_FLAG}")
 endif()
 add_library(blender_cpu_check SHARED ${SRC})
 

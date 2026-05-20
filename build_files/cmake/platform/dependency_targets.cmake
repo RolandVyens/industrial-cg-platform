@@ -90,7 +90,14 @@ endif()
 # -----------------------------------------------------------------------------
 # Configure OpenColorIO
 
-add_library(bf::dependencies::opencolorio ALIAS OpenColorIO::OpenColorIO)
+add_library(bf_deps_optional_opencolorio INTERFACE)
+add_library(bf::dependencies::optional::opencolorio ALIAS bf_deps_optional_opencolorio)
+
+if(WITH_OPENCOLORIO)
+  target_compile_definitions(bf_deps_optional_opencolorio INTERFACE WITH_OPENCOLORIO)
+  target_include_directories(bf_deps_optional_opencolorio SYSTEM INTERFACE ${OPENCOLORIO_INCLUDE_DIRS})
+  target_link_libraries(bf_deps_optional_opencolorio INTERFACE ${OPENCOLORIO_LIBRARIES})
+endif()
 
 # -----------------------------------------------------------------------------
 # Configure Zlib
@@ -182,7 +189,13 @@ endif()
 # -----------------------------------------------------------------------------
 # Configure OpenEXR
 
-add_library(bf::dependencies::openexr ALIAS OpenEXR::OpenEXR)
+add_library(bf_deps_optional_openexr INTERFACE)
+add_library(bf::dependencies::optional::openexr ALIAS bf_deps_optional_openexr)
+
+if(WITH_IMAGE_OPENEXR)
+  target_compile_definitions(bf_deps_optional_openexr INTERFACE WITH_IMAGE_OPENEXR)
+  target_link_libraries(bf_deps_optional_openexr INTERFACE OpenEXR::OpenEXR)
+endif()
 
 # -----------------------------------------------------------------------------
 # Configure WebP
@@ -216,7 +229,9 @@ add_library(bf_deps_optional_sdl INTERFACE)
 add_library(bf::dependencies::optional::sdl ALIAS bf_deps_optional_sdl)
 
 if(WITH_SDL)
-  target_link_libraries(bf_deps_optional_sdl INTERFACE SDL3::SDL3)
+  target_compile_definitions(bf_deps_optional_sdl INTERFACE WITH_SDL)
+  target_include_directories(bf_deps_optional_sdl SYSTEM INTERFACE ${SDL_INCLUDE_DIR})
+  target_link_libraries(bf_deps_optional_sdl INTERFACE ${SDL_LIBRARY})
 endif()
 
 # -----------------------------------------------------------------------------
@@ -348,8 +363,8 @@ endif()
 add_library(bf_deps_epoxy INTERFACE)
 add_library(bf::dependencies::epoxy ALIAS bf_deps_epoxy)
 
-target_include_directories(bf_deps_epoxy SYSTEM INTERFACE ${EPOXY_INCLUDE_DIRS})
-target_link_libraries(bf_deps_epoxy INTERFACE ${EPOXY_LIBRARIES})
+target_include_directories(bf_deps_epoxy SYSTEM INTERFACE ${Epoxy_INCLUDE_DIRS})
+target_link_libraries(bf_deps_epoxy INTERFACE ${Epoxy_LIBRARIES})
 
 # -----------------------------------------------------------------------------
 # Configure Gflags
@@ -480,37 +495,4 @@ if(WITH_CYCLES_OSL)
 else()
   add_library(bf_deps_optional_osl INTERFACE)
   add_library(bf::dependencies::optional::osl ALIAS bf_deps_optional_osl)
-endif()
-
-# -----------------------------------------------------------------------------
-# Configure Draco
-
-add_library(bf_deps_optional_draco INTERFACE)
-add_library(bf::dependencies::optional::draco ALIAS bf_deps_optional_draco)
-
-if(TARGET draco::draco)
-  target_compile_definitions(bf_deps_optional_draco INTERFACE WITH_DRACO)
-  target_link_libraries(bf_deps_optional_draco INTERFACE draco::draco)
-endif()
-
-# -----------------------------------------------------------------------------
-# Configure meshoptimizer
-
-add_library(bf_deps_optional_meshoptimizer INTERFACE)
-add_library(bf::dependencies::optional::meshoptimizer ALIAS bf_deps_optional_meshoptimizer)
-
-if(TARGET meshoptimizer::meshoptimizer)
-  target_compile_definitions(bf_deps_optional_meshoptimizer INTERFACE WITH_MESHOPTIMIZER)
-  target_link_libraries(bf_deps_optional_meshoptimizer INTERFACE meshoptimizer::meshoptimizer)
-endif()
-
-# -----------------------------------------------------------------------------
-# Configure TracyClient
-
-add_library(bf_deps_optional_tracy_client INTERFACE)
-add_library(bf::dependencies::optional::tracy_client ALIAS bf_deps_optional_tracy_client)
-
-if(WITH_TRACY)
-  target_compile_definitions(bf_deps_optional_tracy_client INTERFACE WITH_TRACY_CLIENT)
-  target_link_libraries(bf_deps_optional_tracy_client INTERFACE Tracy::TracyClient)
 endif()

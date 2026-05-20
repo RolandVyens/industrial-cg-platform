@@ -524,6 +524,4 @@ size_t MTLStorageBuf::get_size()
   return size_in_bytes_;
 }
 
-/** \} */
-
 }  // namespace blender::gpu

@@ -145,6 +145,18 @@ Attribute::SingleData Attribute::SingleData::from_default_value(const CPPType &t
   return from_value(default_value_for_type(type));
 }
 
+AttrStorageType Attribute::storage_type() const
+{
+  if (std::get_if<Attribute::ArrayData>(&data_)) {
+    return AttrStorageType::Array;
+  }
+  if (std::get_if<Attribute::SingleData>(&data_)) {
+    return AttrStorageType::Single;
+  }
+  BLI_assert_unreachable();
+  return AttrStorageType::Array;
+}
+
 Attribute::DataVariant &Attribute::data_for_write()
 {
   if (auto *data = std::get_if<Attribute::ArrayData>(&data_)) {
@@ -385,7 +397,7 @@ void AttributeStorage::resize(const AttrDomain domain, const int64_t new_size)
   }
 }
 
-static bool read_array_data(BlendDataReader &reader,
+static void read_array_data(BlendDataReader &reader,
                             const int8_t dna_attr_type,
                             const int64_t size,
                             void **data)
@@ -393,36 +405,51 @@ static bool read_array_data(BlendDataReader &reader,
   switch (dna_attr_type) {
     case int8_t(AttrType::Bool):
       static_assert(sizeof(bool) == sizeof(int8_t));
-      return BLO_read_array(&reader, reinterpret_cast<int8_t **>(data), size);
+      BLO_read_int8_array(&reader, size, reinterpret_cast<int8_t **>(data));
+      return;
     case int8_t(AttrType::Int8):
-      return BLO_read_array(&reader, reinterpret_cast<int8_t **>(data), size);
+      BLO_read_int8_array(&reader, size, reinterpret_cast<int8_t **>(data));
+      return;
     case int8_t(AttrType::Int16_2D):
-      return BLO_read_array(&reader, reinterpret_cast<int16_t **>(data), size, 2);
+      BLO_read_int16_array(&reader, size * 2, reinterpret_cast<int16_t **>(data));
+      return;
     case int8_t(AttrType::Int32):
-      return BLO_read_array(&reader, reinterpret_cast<int32_t **>(data), size);
+      BLO_read_int32_array(&reader, size, reinterpret_cast<int32_t **>(data));
+      return;
     case int8_t(AttrType::Int32_2D):
-      return BLO_read_array(&reader, reinterpret_cast<int32_t **>(data), size, 2);
+      BLO_read_int32_array(&reader, size * 2, reinterpret_cast<int32_t **>(data));
+      return;
     case int8_t(AttrType::Float):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size);
+      BLO_read_float_array(&reader, size, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::Float2):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 2);
+      BLO_read_float_array(&reader, size * 2, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::Float3):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 3);
+      BLO_read_float3_array(&reader, size, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::Float4x4):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 16);
+      BLO_read_float_array(&reader, size * 16, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::ColorByte):
-      return BLO_read_array(&reader, reinterpret_cast<uint8_t **>(data), size, 4);
+      BLO_read_uint8_array(&reader, size * 4, reinterpret_cast<uint8_t **>(data));
+      return;
     case int8_t(AttrType::ColorFloat):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 4);
+      BLO_read_float_array(&reader, size * 4, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::Quaternion):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 4);
+      BLO_read_float_array(&reader, size * 4, reinterpret_cast<float **>(data));
+      return;
     case int8_t(AttrType::String):
-      return BLO_read_array(&reader, reinterpret_cast<MStringProperty **>(data), size);
+      BLO_read_struct_array(
+          &reader, MStringProperty, size, reinterpret_cast<MStringProperty **>(data));
+      return;
     case int8_t(AttrType::Float4):
-      return BLO_read_array(&reader, reinterpret_cast<float **>(data), size, 4);
+      BLO_read_float_array(&reader, size * 4, reinterpret_cast<float **>(data));
+      return;
     default:
       *data = nullptr;
-      return false;
+      return;
   }
 }
 
@@ -513,10 +540,10 @@ static std::optional<AttrDomain> read_attr_domain(const int8_t dna_domain)
 void AttributeStorage::blend_read(BlendDataReader &reader)
 {
   this->runtime = MEM_new<AttributeStorageRuntime>(__func__);
-
-  BLO_read_array_and_validate_size(&reader, &this->dna_attributes, &this->dna_attributes_num);
-
   this->runtime->attributes.reserve(this->dna_attributes_num);
+
+  BLO_read_struct_array(
+      &reader, blender::Attribute, this->dna_attributes_num, &this->dna_attributes);
   for (const int i : IndexRange(this->dna_attributes_num)) {
     blender::Attribute &dna_attr = this->dna_attributes[i];
     BLO_read_string(&reader, &dna_attr.name);

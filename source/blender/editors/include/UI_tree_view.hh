@@ -16,9 +16,12 @@
 #include <string>
 
 #include "BLI_enum_flags.hh"
+#include "BLI_function_ref.hh"
+#include "BLI_math_vector_types.hh"
 #include "BLI_vector.hh"
 
 #include "UI_abstract_view.hh"
+#include "UI_resources.hh"
 
 namespace blender {
 
@@ -30,12 +33,6 @@ class AbstractTreeView;
 class AbstractTreeViewItem;
 class TreeViewItemDropTarget;
 struct Layout;
-
-enum class TreeViewSortOrder : uint8_t {
-  None = 0,
-  InvertRoot = 1,
-  InvertNested = 2,
-};
 
 /* ---------------------------------------------------------------------- */
 /** \name Tree-View Item Container
@@ -103,8 +100,6 @@ class TreeViewItemContainer {
   void foreach_item_recursive(ItemIterFn iter_fn, IterOptions options = IterOptions::None) const;
   void foreach_parent(ItemIterFn iter_fn) const;
   void sort_alpha();
-  /* Sort tree item list in reverse order. */
-  void foreach_sort_invert(TreeViewSortOrder order);
 };
 
 ENUM_OPERATORS(TreeViewItemContainer::IterOptions);
@@ -140,10 +135,6 @@ class AbstractTreeView : public AbstractView, public TreeViewItemContainer {
    * Collapse/expand state of filter panel.
    */
   std::shared_ptr<char> show_display_options_ = std::make_shared<char>(0);
-  /**
-   * When true, show elements that doesn't match with the search string.
-   */
-  std::shared_ptr<char> invert_search_filter_ = std::make_shared<char>(0);
   /* `char[UI_MAX_NAME_STR]` wrapped in shared pointer, to keep a stable pointer over
    * reconstruction that can be passed to buttons. */
   std::shared_ptr<char[]> search_string_{new char[256 /*UI_MAX_NAME_STR*/]{}};
@@ -152,11 +143,6 @@ class AbstractTreeView : public AbstractView, public TreeViewItemContainer {
    * When true, sort elements alphabetically.
    */
   std::shared_ptr<char> sort_alpha_ = std::make_shared<char>(0);
-  /**
-   * Invert sort order.
-   */
-  std::shared_ptr<TreeViewSortOrder> invert_sort_type_ = std::make_shared<TreeViewSortOrder>(
-      TreeViewSortOrder::None);
 
   friend class AbstractTreeViewItem;
   friend class TreeViewBuilder;
@@ -182,7 +168,6 @@ class AbstractTreeView : public AbstractView, public TreeViewItemContainer {
    * \note Value should be greater than #MIN_ROWS. This is to prevent resizing below certain
    * height. */
   void set_default_rows(int default_rows);
-  TreeViewSortOrder invert_sort_type_get() const;
 
  protected:
   virtual void build_tree() = 0;
@@ -213,7 +198,6 @@ class AbstractTreeView : public AbstractView, public TreeViewItemContainer {
    * Scroll the view so the active item is visible.
    */
   void scroll_active_into_view();
-  void sort_inverted();
 };
 
 /** \} */
@@ -334,7 +318,6 @@ class AbstractTreeViewItem : public AbstractViewItem, public TreeViewItemContain
   /** See #AbstractViewItem::update_from_old(). */
   /* virtual */ void update_from_old(const AbstractViewItem &old) override;
 
-  bool should_be_filtered_visible(StringRefNull filter_string) const override;
   /**
    * Compare this item to \a other to check if they represent the same data.
    * Used to recognize an item from a previous redraw, to be able to keep its state (e.g.

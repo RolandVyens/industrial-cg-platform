@@ -24,7 +24,7 @@ class AbcEmptyReader final : public AbcObjectReader {
   Alembic::AbcGeom::IXformSchema m_schema;
 
  public:
-  AbcEmptyReader(const AbcReaderConstructorArgs &args);
+  AbcEmptyReader(const Alembic::Abc::IObject &object, ImportSettings &settings);
 
   bool valid() const override;
   bool accepts_object_type(const Alembic::AbcCoreAbstract::ObjectHeader &alembic_header,

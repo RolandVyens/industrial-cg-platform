@@ -20,6 +20,7 @@
 #include "GPU_capabilities.hh"
 #include "GPU_debug.hh"
 
+#include "GPU_debug.hh"
 #include "draw_cache_extract.hh"
 #include "draw_subdivision.hh"
 
@@ -32,10 +33,6 @@
 #endif
 
 namespace blender::draw {
-
-/* ---------------------------------------------------------------------- */
-/** \name Dependency Data
- * \{ */
 
 static void ensure_dependency_data(MeshRenderData &mr,
                                    Span<IBOType> ibo_requests,

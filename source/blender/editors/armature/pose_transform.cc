@@ -6,7 +6,6 @@
  * \ingroup edarmature
  */
 
-#include "DNA_action_types.h"
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_constraint_types.h"
@@ -36,7 +35,6 @@
 #include "BKE_lib_query.hh"
 #include "BKE_main.hh"
 #include "BKE_object.hh"
-#include "BKE_pose.hh"
 #include "BKE_report.hh"
 
 #include "DEG_depsgraph.hh"
@@ -49,7 +47,6 @@
 #include "WM_api.hh"
 #include "WM_types.hh"
 
-#include "ED_anim_api.hh"
 #include "ED_armature.hh"
 #include "ED_keyframing.hh"
 #include "ED_screen.hh"
@@ -151,16 +148,13 @@ static void applyarmature_set_edit_position(EditBone *curbone,
 
 /* Copy properties over from pchan to curbone and reset channels. */
 static void applyarmature_transfer_properties(EditBone *curbone,
-                                              bke::PChanBone pchanbone,
+                                              bPoseChannel *pchan,
                                               const bPoseChannel *pchan_eval)
 {
-  bPoseChannel *pchan = pchanbone.pchan;
-  const Bone *pchan_bone = pchanbone.bone;
-
   /* Combine pose and rest values for bendy bone settings,
    * then clear the pchan values (so we don't get a double-up).
    */
-  if (pchan_bone->segments > 1) {
+  if (pchan->bone->segments > 1) {
     /* Combine rest/pose values. */
     curbone->curve_in_x += pchan_eval->curve_in_x;
     curbone->curve_in_z += pchan_eval->curve_in_z;
@@ -293,7 +287,7 @@ static void applyarmature_process_selected_recursive(bArmature *arm,
 
     applyarmature_set_edit_position(
         curbone, new_pstate.new_rest_mat, new_tail, new_pstate.new_arm_mat);
-    applyarmature_transfer_properties(curbone, {pchan, bone}, pchan_eval);
+    applyarmature_transfer_properties(curbone, pchan, pchan_eval);
 
     pstate = &new_pstate;
   }
@@ -391,6 +385,7 @@ static void applyarmature_reset_bone_constraints(const bPoseChannel *pchan)
 static void applyarmature_reset_constraints(bPose *pose, const bool use_selected)
 {
   for (bPoseChannel &pchan : pose->chanbase) {
+    BLI_assert(pchan.bone != nullptr);
     if (use_selected && (pchan.flag & POSE_SELECTED) == 0) {
       continue;
     }
@@ -460,7 +455,7 @@ static wmOperatorStatus apply_armature_pose2bones_exec(bContext *C, wmOperator *
 
       applyarmature_set_edit_position(
           curbone, pchan_eval->pose_mat, pchan_eval->pose_tail, nullptr);
-      applyarmature_transfer_properties(curbone, {&pchan, pchan.bone_get(*ob)}, pchan_eval);
+      applyarmature_transfer_properties(curbone, &pchan, pchan_eval);
     }
   }
 
@@ -548,8 +543,7 @@ static wmOperatorStatus pose_visual_transform_apply_exec(bContext *C, wmOperator
     bool changed = false;
 
     for (const auto [i, pchan] : ob->pose->chanbase.enumerate()) {
-      bke::PChanBone pchanbone = {&pchan, pchan.bone_get(*ob)};
-      if (!animrig::bone_is_selected(arm, pchanbone)) {
+      if (!animrig::bone_is_selected(arm, &pchan)) {
         pchan_xform_array[i].is_set = false;
         continue;
       }
@@ -563,7 +557,7 @@ static wmOperatorStatus pose_visual_transform_apply_exec(bContext *C, wmOperator
        * rotation/offset, see #38251.
        * Using `pchan->pose_mat` and bringing it back in bone space seems to work as expected!
        * This matches how visual key-framing works. */
-      BKE_armature_mat_pose_to_bone(pchanbone, pchan.pose_mat, pchan_xform_array[i].matrix);
+      BKE_armature_mat_pose_to_bone(&pchan, pchan.pose_mat, pchan_xform_array[i].matrix);
       pchan_xform_array[i].is_set = true;
       changed = true;
     }
@@ -830,7 +824,7 @@ static wmOperatorStatus pose_copy_exec(bContext *C, wmOperator *op)
 
   char filepath[FILE_MAX];
   pose_copybuffer_filepath_get(filepath, sizeof(filepath));
-  copybuffer.write_as_copypaste_buffer(filepath, *op->reports);
+  copybuffer.write(filepath, *op->reports);
 
   /* We are all done! */
   BKE_report(op->reports, RPT_INFO, "Copied pose to internal clipboard");
@@ -1003,7 +997,7 @@ static wmOperatorStatus pose_paste_exec(bContext *C, wmOperator *op)
 
   /* Recalculate paths if any of the bones have paths... */
   if (ob->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS) {
-    ED_pose_recalculate_paths(C, scene, ob, ANIMVIZ_CALC_RANGE_FULL);
+    ED_pose_recalculate_paths(C, scene, ob, POSE_PATH_CALC_RANGE_FULL);
   }
 
   /* Notifiers for updates, */
@@ -1320,7 +1314,7 @@ static wmOperatorStatus pose_clear_transform_generic_exec(bContext *C,
 
         /* now recalculate paths */
         if (ob_iter->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS) {
-          ED_pose_recalculate_paths(C, scene, ob_iter, ANIMVIZ_CALC_RANGE_FULL);
+          ED_pose_recalculate_paths(C, scene, ob_iter, POSE_PATH_CALC_RANGE_FULL);
         }
       }
 
@@ -1502,7 +1496,7 @@ static wmOperatorStatus pose_clear_user_transforms_exec(bContext *C, wmOperator 
     }
     else {
       /* No animation, so just reset to the rest pose. */
-      BKE_pose_rest(*ob, only_select);
+      BKE_pose_rest(ob->pose, only_select);
     }
 
     /* notifiers and updates */

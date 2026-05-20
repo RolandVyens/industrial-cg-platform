@@ -206,8 +206,9 @@ def argparse_create():
     parser.add_argument(
         "--output-dir",
         dest="output_dir",
+        default=".",
         help="Where to output temp saved blendfiles",
-        required=True,
+        required=False,
     )
 
     return parser

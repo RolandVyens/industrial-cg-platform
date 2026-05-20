@@ -90,12 +90,12 @@ struct BezTriple {
   float radius;
 
   /** Ipo: interpolation mode for segment from this BezTriple to the next. */
-  eBezTriple_Interpolation ipo;
+  char ipo;
 
   /** H1, h2: the handle type of the two handles. */
-  eBezTriple_Handle h1, h2;
+  uint8_t h1, h2;
   /** F1, f2, f3: used for selection status. */
-  eBezTriple_Flag f1, f2, f3;
+  uint8_t f1, f2, f3;
 
   /**
    * Hide is used to indicate whether BezTriple is hidden (3D).
@@ -104,15 +104,15 @@ struct BezTriple {
    */
   char hide;
 
-  /** Easing: easing type for interpolation mode. */
-  eBezTriple_Easing easing;
+  /** Easing: easing type for interpolation mode (eBezTriple_Easing). */
+  char easing;
   /** BEZT_IPO_BACK. */
   float back;
   /** BEZT_IPO_ELASTIC. */
   float amplitude, period;
 
   /** Used during auto handle calculation to mark special cases (local extremes). */
-  eBezTriple_Auto_Type auto_handle_type;
+  char auto_handle_type;
   char _pad[3];
 };
 
@@ -150,18 +150,17 @@ struct Nurb {
 
   /** Multiple nurbs per curve object are allowed. */
   struct Nurb *next = nullptr, *prev = nullptr;
-  eNurbType type = CU_POLY;
+  short type = 0;
   /** Index into material list. */
   short mat_nr = 0;
-  short hide = 0;
-  eNurbFlag flag = eNurbFlag{};
+  short hide = 0, flag = 0;
   /** Number of points in the U or V directions. */
   int pntsu = 0, pntsv = 0;
   char _pad[4] = {};
   /** Tessellation resolution in the U or V directions. */
   short resolu = 0, resolv = 0;
   short orderu = 0, orderv = 0;
-  eNurbKnotFlag flagu = eNurbKnotFlag{}, flagv = eNurbKnotFlag{};
+  short flagu = 0, flagv = 0;
 
   float *knotsu = nullptr, *knotsv = nullptr;
   BPoint *bp = nullptr;
@@ -178,7 +177,7 @@ struct Nurb {
 struct CharInfo {
   float kern = 0;
   short mat_nr = 0;
-  eCharInfoFlag flag = eCharInfoFlag{};
+  char flag = 0;
   char _pad[1] = {};
 };
 
@@ -237,22 +236,22 @@ struct Curve {
   float texspace_size[3] = {1, 1, 1};
 
   /**
-   * Object type of curve data-block.
+   * Object type of curve data-block (#ObjectType).
    * This must be one of:
    * - #OB_CURVES_LEGACY.
    * - #OB_FONT.
    * - #OB_SURF.
    */
-  ObjectType ob_type = OB_CURVES_LEGACY;
+  short ob_type = OB_CURVES_LEGACY;
 
   char texspace_flag = CU_TEXSPACE_FLAG_AUTO;
   char _pad0[7] = {};
-  eCurveTwistMode twist_mode = CU_TWIST_MINIMUM;
+  short twist_mode = CU_TWIST_MINIMUM;
   float twist_smooth = 0, smallcaps_scale = 0.75f;
 
   int pathlen = 100;
   short bevresol = 4, totcol = 0;
-  eCurveFlag flag = eCurveFlag(CU_DEFORM_BOUNDS_OFF | CU_PATH_RADIUS);
+  int flag = CU_DEFORM_BOUNDS_OFF | CU_PATH_RADIUS;
   float offset = 0.0, extrude = 0, bevel_radius = 0;
 
   /* default */
@@ -264,19 +263,18 @@ struct Curve {
   /* edit, index in active nurb (BPoint or BezTriple) */
   int actvert = 0;
 
-  eCurveOverflow overflow = CU_OVERFLOW_NONE;
-  eCurveSpaceMode spacemode = CU_ALIGN_X_LEFT;
-  eCurveAlignY align_y = CU_ALIGN_Y_TOP_BASELINE;
-  eCurveBevelMode bevel_mode = CU_BEV_MODE_ROUND;
+  char overflow = 0;
+  char spacemode = 0, align_y = 0;
+  char bevel_mode = CU_BEV_MODE_ROUND;
   /**
    * Determine how the effective radius of the bevel point is computed when a taper object is
    * specified. The effective radius is a function of the bevel point radius and the taper radius.
    */
-  eCurveTaperRadiusMode taper_radius_mode = CU_TAPER_RADIUS_OVERRIDE;
+  char taper_radius_mode = CU_TAPER_RADIUS_OVERRIDE;
   /** Triangulation solver for filling 2D curves. */
-  CurveFillSolverType fill_solver = CU_FILL_SOLVER_SWEEP_LINE;
+  char fill_solver = CU_FILL_SOLVER_SWEEP_LINE;
   /** Fill rule for CDT fill solver. */
-  CurveFillRuleType fill_rule = CU_FILL_RULE_EVEN_ODD;
+  char fill_rule = CU_FILL_RULE_EVEN_ODD;
   char _pad[1] = {};
 
   /* font part */
@@ -317,8 +315,7 @@ struct Curve {
   /** Current evaluation-time, for use by Objects parented to curves. */
   float ctime = 0;
   float bevfac1 = 0.0f, bevfac2 = 1.0f;
-  eCurveBevfacMapping bevfac1_mapping = CU_BEVFAC_MAP_RESOLU,
-                      bevfac2_mapping = CU_BEVFAC_MAP_RESOLU;
+  char bevfac1_mapping = CU_BEVFAC_MAP_RESOLU, bevfac2_mapping = CU_BEVFAC_MAP_RESOLU;
 
   char _pad2[1] = {};
 
@@ -368,23 +365,23 @@ struct Curve {
 
 #define BEZT_SEL_ALL(bezt) \
   { \
-    (bezt)->f1 |= BEZT_FLAG_SELECT; \
-    (bezt)->f2 |= BEZT_FLAG_SELECT; \
-    (bezt)->f3 |= BEZT_FLAG_SELECT; \
+    (bezt)->f1 |= SELECT; \
+    (bezt)->f2 |= SELECT; \
+    (bezt)->f3 |= SELECT; \
   } \
   ((void)0)
 #define BEZT_DESEL_ALL(bezt) \
   { \
-    (bezt)->f1 &= ~BEZT_FLAG_SELECT; \
-    (bezt)->f2 &= ~BEZT_FLAG_SELECT; \
-    (bezt)->f3 &= ~BEZT_FLAG_SELECT; \
+    (bezt)->f1 &= ~SELECT; \
+    (bezt)->f2 &= ~SELECT; \
+    (bezt)->f3 &= ~SELECT; \
   } \
   ((void)0)
 #define BEZT_SEL_INVERT(bezt) \
   { \
-    (bezt)->f1 ^= BEZT_FLAG_SELECT; \
-    (bezt)->f2 ^= BEZT_FLAG_SELECT; \
-    (bezt)->f3 ^= BEZT_FLAG_SELECT; \
+    (bezt)->f1 ^= SELECT; \
+    (bezt)->f2 ^= SELECT; \
+    (bezt)->f3 ^= SELECT; \
   } \
   ((void)0)
 
@@ -392,13 +389,13 @@ struct Curve {
   { \
     switch (i) { \
       case 0: \
-        (bezt)->f1 |= BEZT_FLAG_SELECT; \
+        (bezt)->f1 |= SELECT; \
         break; \
       case 1: \
-        (bezt)->f2 |= BEZT_FLAG_SELECT; \
+        (bezt)->f2 |= SELECT; \
         break; \
       case 2: \
-        (bezt)->f3 |= BEZT_FLAG_SELECT; \
+        (bezt)->f3 |= SELECT; \
         break; \
       default: \
         break; \
@@ -410,13 +407,13 @@ struct Curve {
   { \
     switch (i) { \
       case 0: \
-        (bezt)->f1 &= ~BEZT_FLAG_SELECT; \
+        (bezt)->f1 &= ~SELECT; \
         break; \
       case 1: \
-        (bezt)->f2 &= ~BEZT_FLAG_SELECT; \
+        (bezt)->f2 &= ~SELECT; \
         break; \
       case 2: \
-        (bezt)->f3 &= ~BEZT_FLAG_SELECT; \
+        (bezt)->f3 &= ~SELECT; \
         break; \
       default: \
         break; \

@@ -21,15 +21,12 @@ BLOCKLIST_ALL = [
     "principled_hair_directcoloring.blend",
     "visibility_particles.blend",
     # Tests for EEVEE-only setting (duplicates from the Cycles perspective)
-    "raytrace_backface_on.blend",
-    "raytrace_backface_off.blend",
     "camera_depth_of_field_jittered.blend",
     "shadow_resolution.blend",
     "shadow_min_pool_size.blend",
     "shadow_resolution_scale.blend",
     "shader_to_rgb_transparent.blend",
-    "subsurface_shader_to_rgb.blend",
-    "lightprobe_planar.blend"
+    "subsurface_shader_to_rgb.blend"
 ]
 
 # Blocklist for device + build configuration that does not support OSL at all.
@@ -107,11 +104,6 @@ if platform.system() == "Darwin":
             # MNEE only works on Metal with macOS >= 13
             "underwater_caustics.blend",
         ]
-
-BLOCKLIST_HIP = [
-    # MNEE does not work properly on RDNA2 GPUs.
-    'underwater_caustics.blend',
-]
 
 BLOCKLIST_GPU = [
     # Uninvestigated differences with GPU.
@@ -303,9 +295,6 @@ def main():
     if device == 'METAL-RT':
         blocklist += BLOCKLIST_METAL
         blocklist += BLOCKLIST_METAL_RT
-
-    if device in ('HIP', 'HIP-RT'):
-        blocklist += BLOCKLIST_HIP
 
     test_dir_name = Path(args.testdir).name
     report = CyclesReport('Cycles', test_dir_name, args.outdir, args.oiiotool, device, blocklist, args.osl == 'all')

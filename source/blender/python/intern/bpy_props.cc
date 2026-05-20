@@ -270,12 +270,6 @@ static PyObject *bpy_prop_deferred_call(BPy_PropDeferred * /*self*/,
 
 /* Get/Set Items. */
 
-PyDoc_STRVAR(
-    /* Wrap. */
-    bpy_prop_deferred_function_doc,
-    "The property registration function (e.g. :func:`bpy.props.IntProperty`).\n"
-    "\n"
-    ":type: Callable\n");
 /**
  * Expose the function in case scripts need to introspect this information
  * (not currently used by Blender itself).
@@ -286,13 +280,6 @@ static PyObject *bpy_prop_deferred_function_get(BPy_PropDeferred *self, void * /
   Py_IncRef(ret);
   return ret;
 }
-
-PyDoc_STRVAR(
-    /* Wrap. */
-    bpy_prop_deferred_keywords_doc,
-    "The keyword arguments passed to the property registration function.\n"
-    "\n"
-    ":type: dict[str, Any]\n");
 
 /**
  * Expose keywords in case scripts need to introspect this information
@@ -313,12 +300,12 @@ static PyGetSetDef bpy_prop_deferred_getset[] = {
     {"function",
      reinterpret_cast<getter>(bpy_prop_deferred_function_get),
      static_cast<setter>(nullptr),
-     bpy_prop_deferred_function_doc,
+     nullptr,
      nullptr},
     {"keywords",
      reinterpret_cast<getter>(bpy_prop_deferred_keywords_get),
      static_cast<setter>(nullptr),
-     bpy_prop_deferred_keywords_doc,
+     nullptr,
      nullptr},
     {nullptr, nullptr, nullptr, nullptr, nullptr} /* Sentinel */
 };
@@ -2460,9 +2447,10 @@ static size_t strswapbufcpy(char *buf, const char **orig)
 static int icon_id_from_name(const char *name)
 {
   const EnumPropertyItem *item;
+  int id;
 
   if (name[0]) {
-    for (item = rna_enum_icon_items; item->identifier; item++) {
+    for (item = rna_enum_icon_items, id = 0; item->identifier; item++, id++) {
       if (STREQ(item->name, name)) {
         return item->value;
       }

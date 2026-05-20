@@ -36,7 +36,7 @@ namespace blender {
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_bm_new_doc,
-    ".. function:: new(*, use_operators=True)\n"
+    ".. method:: new(*, use_operators=True)\n"
     "\n"
     "   :param use_operators: Support calling operators in :mod:`bmesh.ops` (uses some "
     "extra memory per vert/edge/face).\n"
@@ -67,7 +67,7 @@ static PyObject *bpy_bm_new(PyObject * /*self*/, PyObject *args, PyObject *kw)
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_bm_from_edit_mesh_doc,
-    ".. function:: from_edit_mesh(mesh)\n"
+    ".. method:: from_edit_mesh(mesh)\n"
     "\n"
     "   Return a BMesh from this mesh, currently the mesh must already be in editmode.\n"
     "\n"
@@ -99,7 +99,7 @@ void EDBM_update_extern(Mesh *mesh, const bool do_tessface, const bool is_destru
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_bm_update_edit_mesh_doc,
-    ".. function:: update_edit_mesh(mesh, *, loop_triangles=True, destructive=True)\n"
+    ".. method:: update_edit_mesh(mesh, *, loop_triangles=True, destructive=True)\n"
     "\n"
     "   Update the mesh after changes to the BMesh in editmode,\n"
     "   optionally recalculating n-gon tessellation.\n"

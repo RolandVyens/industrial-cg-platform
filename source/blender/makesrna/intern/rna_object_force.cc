@@ -728,11 +728,11 @@ static void rna_FieldSettings_type_set(PointerRNA *ptr, int value)
 {
   PartDeflect *part_deflect = static_cast<PartDeflect *>(ptr->data);
 
-  part_deflect->forcefield = ePFieldType(value);
+  part_deflect->forcefield = value;
 
   if (!particle_id_check(ptr)) {
     Object *ob = id_cast<Object *>(ptr->owner_id);
-    ob->pd->forcefield = ePFieldType(value);
+    ob->pd->forcefield = value;
     if (ELEM(value, PFIELD_WIND, PFIELD_VORTEX)) {
       ob->empty_drawtype = OB_SINGLE_ARROW;
     }

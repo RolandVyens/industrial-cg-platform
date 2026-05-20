@@ -340,7 +340,7 @@ bool jump_to_bone(bContext *C, Object *ob, const char *bone_name, const bool rev
       ED_pose_deselect_all(ob, SEL_DESELECT, true);
       ED_pose_bone_select(ob, pchan, true, true);
 
-      arm->act_bone = pchan->bone_get(*ob);
+      arm->act_bone = pchan->bone;
 
       ED_pose_bone_select_tag_update(ob);
       return true;

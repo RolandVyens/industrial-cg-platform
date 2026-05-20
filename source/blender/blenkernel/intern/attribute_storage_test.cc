@@ -6,20 +6,17 @@
 
 #include "BKE_attribute.hh"
 #include "BKE_attribute_storage.hh"
-#include "BKE_gtest_base.hh"
 
 namespace blender::bke::tests {
 
-class AttributeStorageTest : public BlenderGTestBase {};
-
-TEST_F(AttributeStorageTest, Empty)
+TEST(attribute_storage, Empty)
 {
   AttributeStorage storage;
   const int count = std::distance(storage.begin(), storage.end());
   EXPECT_EQ(count, 0);
 }
 
-TEST_F(AttributeStorageTest, Single)
+TEST(attribute_storage, Single)
 {
   AttributeStorage storage;
 
@@ -42,7 +39,7 @@ TEST_F(AttributeStorageTest, Single)
   EXPECT_EQ(count, 1);
 }
 
-TEST_F(AttributeStorageTest, Iterator)
+TEST(attribute_storage, Iterator)
 {
   AttributeStorage storage;
 
@@ -71,7 +68,7 @@ TEST_F(AttributeStorageTest, Iterator)
   }
 }
 
-TEST_F(AttributeStorageTest, GetForWrite)
+TEST(attribute_storage, GetForWrite)
 {
   AttributeStorage storage;
 
@@ -106,7 +103,7 @@ TEST_F(AttributeStorageTest, GetForWrite)
   }
 }
 
-TEST_F(AttributeStorageTest, MultipleShared)
+TEST(attribute_storage, MultipleShared)
 {
   AttributeStorage storage;
 
@@ -138,7 +135,7 @@ TEST_F(AttributeStorageTest, MultipleShared)
   EXPECT_EQ(count, 5);
 }
 
-TEST_F(AttributeStorageTest, CopyConstruct)
+TEST(attribute_storage, CopyConstruct)
 {
   AttributeStorage storage;
 
@@ -161,7 +158,7 @@ TEST_F(AttributeStorageTest, CopyConstruct)
   }
 }
 
-TEST_F(AttributeStorageTest, MoveConstruct)
+TEST(attribute_storage, MoveConstruct)
 {
   AttributeStorage storage;
 
@@ -184,7 +181,7 @@ TEST_F(AttributeStorageTest, MoveConstruct)
   }
 }
 
-TEST_F(AttributeStorageTest, UniqueNames)
+TEST(attribute_storage, UniqueNames)
 {
   AttributeStorage storage;
 

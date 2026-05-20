@@ -501,8 +501,6 @@ int button_align_opposite_to_area_align_get(const ARegion *region)
       return BUT_ALIGN_RIGHT;
     case RGN_ALIGN_RIGHT:
       return BUT_ALIGN_LEFT;
-    default:
-      break;
   }
 
   return 0;

@@ -27,16 +27,16 @@ PyDoc_STRVAR(
     "\n"
     "   Builds a ColorNoiseShader object.\n"
     "\n"
-    "   :param amplitude: The amplitude of the noise signal.\n"
+    "   :arg amplitude: The amplitude of the noise signal.\n"
     "   :type amplitude: float\n"
-    "   :param period: The period of the noise signal.\n"
+    "   :arg period: The period of the noise signal.\n"
     "   :type period: float\n"
     "\n"
     ".. method:: shade(stroke)\n"
     "\n"
     "   Shader to add noise to the stroke colors.\n"
     "\n"
-    "   :param stroke: A Stroke object.\n"
+    "   :arg stroke: A Stroke object.\n"
     "   :type stroke: :class:`freestyle.types.Stroke`\n");
 static int ColorNoiseShader___init__(BPy_ColorNoiseShader *self, PyObject *args, PyObject *kwds)
 {

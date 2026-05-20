@@ -60,7 +60,7 @@ struct LinkedBundleSignatures {
 
 NodeSocketInterfaceStructureType get_structure_type_for_bundle_signature(
     const bNodeSocket &socket,
-    NodeSocketInterfaceStructureType stored_structure_type,
-    bool allow_auto_structure_type);
+    const NodeSocketInterfaceStructureType stored_structure_type,
+    const bool allow_auto_structure_type);
 
 }  // namespace blender::nodes

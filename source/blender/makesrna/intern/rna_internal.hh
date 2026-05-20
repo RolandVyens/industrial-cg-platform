@@ -11,14 +11,8 @@
 #include <cstdint>
 
 #include "BLI_compiler_attrs.h"
-#include "BLI_string_ref.hh"
-#include "BLI_utildefines.h"
 
 #include "DNA_listBase.h"
-
-#ifndef RNA_RUNTIME
-#  include "dna_parse.h"
-#endif
 
 #include "rna_internal_types.hh"
 
@@ -51,7 +45,6 @@ struct ViewLayer;
 
 /* Data structures used during define */
 
-#ifndef RNA_RUNTIME
 struct ContainerDefRNA {
   void *next, *prev;
 
@@ -69,47 +62,51 @@ struct FunctionDefRNA {
 };
 
 struct PropertyDefRNA {
-  PropertyDefRNA *next = nullptr, *prev = nullptr;
+  PropertyDefRNA *next, *prev;
 
-  ContainerRNA *cont = nullptr;
-  PropertyRNA *prop = nullptr;
+  ContainerRNA *cont;
+  PropertyRNA *prop;
 
   /* struct */
-  StringRefNull dnastructname;
-  StringRefNull dnastructfromname;
-  StringRefNull dnastructfromprop;
+  const char *dnastructname;
+  const char *dnastructfromname;
+  const char *dnastructfromprop;
 
   /* property */
-  StringRefNull dnaname;
-  StringRefNull dnatype;
-  int dnaarraylength = 0;
-  int dnapointerlevel = 0;
-  const void *dnadefaultdata = nullptr;
+  const char *dnaname;
+  const char *dnatype;
+  int dnaarraylength;
+  int dnapointerlevel;
+  /**
+   * Offset in bytes within `dnastructname`.
+   * -1 when unusable (follows pointer for example). */
+  int dnaoffset;
+  int dnasize;
 
   /* for finding length of array collections */
-  StringRefNull dnalengthstructname;
-  StringRefNull dnalengthname;
-  int dnalengthfixed = 0;
+  const char *dnalengthstructname;
+  const char *dnalengthname;
+  int dnalengthfixed;
 
-  int64_t booleanbit = 0;
-  bool booleannegative = false;
+  int64_t booleanbit;
+  bool booleannegative;
 
   /* not to be confused with PROP_ENUM_FLAG
    * this only allows one of the flags to be set at a time, clearing all others */
-  int enumbitflags = 0;
+  int enumbitflags;
 };
 
 struct StructDefRNA {
   ContainerDefRNA cont;
 
-  StructRNA *srna = nullptr;
-  StringRefNull filename;
+  StructRNA *srna;
+  const char *filename;
 
-  StringRefNull dnaname;
+  const char *dnaname;
 
   /* for derived structs to find data in some property */
-  StringRefNull dnafromname;
-  StringRefNull dnafromprop;
+  const char *dnafromname;
+  const char *dnafromprop;
 
   ListBaseT<FunctionDefRNA> functions;
 };
@@ -118,28 +115,27 @@ struct AllocDefRNA {
   AllocDefRNA *next, *prev;
   void *mem;
 };
-#endif
 
 struct BlenderDefRNA {
-  struct StructRNA *laststruct = nullptr;
-  bool error = false;
-  bool silent = false;
-  bool verify = true;
-  bool animate = true;
+  struct SDNA *sdna;
+  ListBaseT<StructDefRNA> structs;
+  ListBaseT<AllocDefRNA> allocs;
+  struct StructRNA *laststruct;
+  bool error;
+  bool silent;
+  bool preprocess;
+  bool verify;
+  bool animate;
   /** Whether RNA properties defined should be overridable or not by default. */
-  bool make_overridable = false;
+  bool make_overridable;
 
   /* Keep last. */
 #ifndef RNA_RUNTIME
-  Vector<dna::ParsedStruct> dna_structs;
-  ListBaseT<StructDefRNA> structs = {};
-  ListBaseT<AllocDefRNA> allocs = {};
-
   struct {
     /** #RNA_def_property_update */
     struct {
-      int noteflag = 0;
-      const char *updatefunc = nullptr;
+      int noteflag;
+      const char *updatefunc;
     } property_update;
   } fallback;
 #endif
@@ -298,18 +294,15 @@ void rna_def_view_layer_common(BlenderRNA *brna, StructRNA *srna, bool scene);
 
 int rna_AssetMetaData_editable(const PointerRNA *ptr, const char **r_info);
 /**
- * Create a enum property for the available asset libraries that should be displayed in the UI.
- * Does not include the online essentials library, which should be displayed as part of the normal
- * essentials library to the user.
  * \note the UI text and updating has to be set by the caller.
  */
-PropertyRNA *rna_def_asset_library_ui_reference_common(StructRNA *srna,
-                                                       const char *get,
-                                                       const char *set);
-const EnumPropertyItem *rna_asset_library_ui_reference_itemf(bContext *C,
-                                                             PointerRNA *ptr,
-                                                             PropertyRNA *prop,
-                                                             bool *r_free);
+PropertyRNA *rna_def_asset_library_reference_common(StructRNA *srna,
+                                                    const char *get,
+                                                    const char *set);
+const EnumPropertyItem *rna_asset_library_reference_itemf(bContext *C,
+                                                          PointerRNA *ptr,
+                                                          PropertyRNA *prop,
+                                                          bool *r_free);
 
 /**
  * Common properties for Action/Bone Groups - related to color.
@@ -487,7 +480,6 @@ void RNA_api_operator(StructRNA *srna);
 void RNA_api_macro(StructRNA *srna);
 void RNA_api_gizmo(StructRNA *srna);
 void RNA_api_gizmogroup(StructRNA *srna);
-void RNA_api_grease_pencil(StructRNA *srna);
 void RNA_api_grease_pencil_drawing(StructRNA *srna);
 void RNA_api_grease_pencil_frames(StructRNA *srna);
 void RNA_api_grease_pencil_layer(StructRNA *srna);
@@ -650,12 +642,10 @@ void rna_addtail(ListBase *listbase, void *vlink);
 void rna_freelinkN(ListBase *listbase, void *vlink);
 void rna_freelistN(ListBase *listbase);
 
-#ifndef RNA_RUNTIME
 StructDefRNA *rna_find_struct_def(StructRNA *srna);
 FunctionDefRNA *rna_find_function_def(FunctionRNA *func);
 PropertyDefRNA *rna_find_parameter_def(PropertyRNA *parm);
 PropertyDefRNA *rna_find_struct_property_def(StructRNA *srna, PropertyRNA *prop);
-#endif
 
 /* Pointer Handling */
 

@@ -258,8 +258,6 @@ static void write_linestyle_color_modifiers(BlendWriter *writer,
         writer->write_struct(
             (reinterpret_cast<LineStyleColorModifier_Curvature_3D *>(&m))->color_ramp);
         break;
-      default:
-        break;
     }
   }
 }
@@ -332,8 +330,6 @@ static void write_linestyle_alpha_modifiers(BlendWriter *writer,
       case LS_MODIFIER_CURVATURE_3D:
         BKE_curvemapping_blend_write(
             writer, (reinterpret_cast<LineStyleAlphaModifier_Curvature_3D *>(&m))->curve);
-        break;
-      default:
         break;
     }
   }
@@ -408,8 +404,6 @@ static void write_linestyle_thickness_modifiers(BlendWriter *writer,
       case LS_MODIFIER_CURVATURE_3D:
         BKE_curvemapping_blend_write(
             writer, (reinterpret_cast<LineStyleThicknessModifier_Curvature_3D *>(&m))->curve);
-        break;
-      default:
         break;
     }
   }
@@ -546,8 +540,6 @@ static void direct_link_linestyle_color_modifier(BlendDataReader *reader,
       BLO_read_struct(reader, ColorBand, &m->color_ramp);
       break;
     }
-    default:
-      break;
   }
 }
 
@@ -610,8 +602,6 @@ static void direct_link_linestyle_alpha_modifier(BlendDataReader *reader,
       BKE_curvemapping_blend_read(reader, m->curve);
       break;
     }
-    default:
-      break;
   }
 }
 
@@ -668,8 +658,6 @@ static void direct_link_linestyle_thickness_modifier(BlendDataReader *reader,
       BKE_curvemapping_blend_read(reader, m->curve);
       break;
     }
-    default:
-      break;
   }
 }
 
@@ -766,7 +754,7 @@ FreestyleLineStyle *BKE_linestyle_active_from_view_layer(ViewLayer *view_layer)
   return (lineset) ? lineset->linestyle : nullptr;
 }
 
-static LineStyleModifier *new_modifier(const char *name, eLineStyleModifier_Type type, size_t size)
+static LineStyleModifier *new_modifier(const char *name, int type, size_t size)
 {
   LineStyleModifier *m;
 
@@ -789,7 +777,7 @@ static void add_to_modifier_list(ListBaseT<LineStyleModifier> *lb, LineStyleModi
       lb, m, modifier_name[m->type], '.', offsetof(LineStyleModifier, name), sizeof(m->name));
 }
 
-static LineStyleModifier *alloc_color_modifier(const char *name, eLineStyleModifier_Type type)
+static LineStyleModifier *alloc_color_modifier(const char *name, int type)
 {
   size_t size;
 
@@ -827,7 +815,7 @@ static LineStyleModifier *alloc_color_modifier(const char *name, eLineStyleModif
 
 LineStyleModifier *BKE_linestyle_color_modifier_add(FreestyleLineStyle *linestyle,
                                                     const char *name,
-                                                    eLineStyleModifier_Type type)
+                                                    int type)
 {
   LineStyleModifier *m;
 
@@ -835,7 +823,7 @@ LineStyleModifier *BKE_linestyle_color_modifier_add(FreestyleLineStyle *linestyl
   if (UNLIKELY(m == nullptr)) {
     return nullptr;
   }
-  m->blend = LS_VALUE_BLEND;
+  m->blend = MA_RAMP_BLEND;
 
   switch (type) {
     case LS_MODIFIER_ALONG_STROKE:
@@ -1029,14 +1017,12 @@ int BKE_linestyle_color_modifier_remove(FreestyleLineStyle *linestyle, LineStyle
     case LS_MODIFIER_CURVATURE_3D:
       MEM_delete((reinterpret_cast<LineStyleColorModifier_Curvature_3D *>(m))->color_ramp);
       break;
-    default:
-      break;
   }
   BLI_freelinkN(&linestyle->color_modifiers, m);
   return 0;
 }
 
-static LineStyleModifier *alloc_alpha_modifier(const char *name, eLineStyleModifier_Type type)
+static LineStyleModifier *alloc_alpha_modifier(const char *name, int type)
 {
   size_t size;
 
@@ -1073,7 +1059,7 @@ static LineStyleModifier *alloc_alpha_modifier(const char *name, eLineStyleModif
 
 LineStyleModifier *BKE_linestyle_alpha_modifier_add(FreestyleLineStyle *linestyle,
                                                     const char *name,
-                                                    eLineStyleModifier_Type type)
+                                                    int type)
 {
   LineStyleModifier *m;
 
@@ -1291,14 +1277,12 @@ int BKE_linestyle_alpha_modifier_remove(FreestyleLineStyle *linestyle, LineStyle
     case LS_MODIFIER_CURVATURE_3D:
       BKE_curvemapping_free((reinterpret_cast<LineStyleAlphaModifier_Curvature_3D *>(m))->curve);
       break;
-    default:
-      break;
   }
   BLI_freelinkN(&linestyle->alpha_modifiers, m);
   return 0;
 }
 
-static LineStyleModifier *alloc_thickness_modifier(const char *name, eLineStyleModifier_Type type)
+static LineStyleModifier *alloc_thickness_modifier(const char *name, int type)
 {
   size_t size;
 
@@ -1339,7 +1323,7 @@ static LineStyleModifier *alloc_thickness_modifier(const char *name, eLineStyleM
 
 LineStyleModifier *BKE_linestyle_thickness_modifier_add(FreestyleLineStyle *linestyle,
                                                         const char *name,
-                                                        eLineStyleModifier_Type type)
+                                                        int type)
 {
   LineStyleModifier *m;
 
@@ -1612,14 +1596,12 @@ int BKE_linestyle_thickness_modifier_remove(FreestyleLineStyle *linestyle, LineS
       break;
     case LS_MODIFIER_CURVATURE_3D:
       break;
-    default:
-      break;
   }
   BLI_freelinkN(&linestyle->thickness_modifiers, m);
   return 0;
 }
 
-static LineStyleModifier *alloc_geometry_modifier(const char *name, eLineStyleModifier_Type type)
+static LineStyleModifier *alloc_geometry_modifier(const char *name, int type)
 {
   size_t size;
 
@@ -1675,7 +1657,7 @@ static LineStyleModifier *alloc_geometry_modifier(const char *name, eLineStyleMo
 
 LineStyleModifier *BKE_linestyle_geometry_modifier_add(FreestyleLineStyle *linestyle,
                                                        const char *name,
-                                                       eLineStyleModifier_Type type)
+                                                       int type)
 {
   LineStyleModifier *m;
 
@@ -2091,8 +2073,6 @@ std::optional<std::string> BKE_linestyle_path_to_color_ramp(FreestyleLineStyle *
         {
           found = true;
         }
-        break;
-      default:
         break;
     }
 

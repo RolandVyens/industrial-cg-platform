@@ -24,15 +24,13 @@ struct ImBuf;
 struct Scopes;
 struct rctf;
 
-enum eBezTriple_Handle : uint8_t;
-
 void BKE_curvemapping_set_defaults(CurveMapping *cumap,
                                    int tot,
                                    float minx,
                                    float miny,
                                    float maxx,
                                    float maxy,
-                                   eBezTriple_Handle default_handle_type);
+                                   short default_handle_type);
 CurveMapping *BKE_curvemapping_add(int tot, float minx, float miny, float maxx, float maxy);
 void BKE_curvemapping_free_data_single(CurveMapping *cumap, int index);
 void BKE_curvemapping_free_data(CurveMapping *cumap);

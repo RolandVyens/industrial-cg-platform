@@ -34,7 +34,6 @@ struct IntraFrameCache {
   int view_id = -1;
   int width = -1;
   int height = -1;
-  bool is_render = false;
 
   ~IntraFrameCache()
   {
@@ -61,7 +60,6 @@ void intra_frame_cache_invalidate(Scene *scene)
     cache->view_id = -1;
     cache->width = -1;
     cache->height = -1;
-    cache->is_render = false;
   }
 }
 
@@ -170,19 +168,17 @@ void intra_frame_cache_destroy(Scene *scene)
   }
 }
 
-void intra_frame_cache_set_cur_frame(
-    Scene *scene, float frame, int view_id, int width, int height, bool is_render)
+void intra_frame_cache_set_cur_frame(Scene *scene, float frame, int view_id, int width, int height)
 {
   IntraFrameCache *cache = query_intra_frame_cache(scene);
   if (cache != nullptr) {
     if (cache->timeline_frame != frame || cache->view_id != view_id || cache->width != width ||
-        cache->height != height || cache->is_render != is_render)
+        cache->height != height)
     {
       cache->timeline_frame = frame;
       cache->view_id = view_id;
       cache->width = width;
       cache->height = height;
-      cache->is_render = is_render;
       cache->preprocessed.clear();
       cache->composite.clear();
     }

@@ -83,8 +83,7 @@ static wmOperatorStatus mask_parent_set_exec(bContext *C, wmOperator * /*op*/)
   MovieTrackingObject *tracking_object;
   /* done */
 
-  MaskParentType parent_type;
-  int framenr;
+  int framenr, parent_type;
   float parmask_pos[2], orig_corners[4][2];
   const char *sub_parent_name;
 

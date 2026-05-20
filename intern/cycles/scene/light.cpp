@@ -98,6 +98,7 @@ NODE_ABSTRACT_DEFINE(Light)
   SOCKET_COLOR(strength, "Strength", one_float3());
 
   SOCKET_BOOLEAN(cast_shadow, "Cast Shadow", true);
+  SOCKET_COLOR(shadow_color, "Shadow Color", zero_float3());
   SOCKET_BOOLEAN(use_mis, "Use Mis", false);
   SOCKET_BOOLEAN(use_caustics, "Shadow Caustics", false);
 
@@ -480,6 +481,7 @@ void Light::copy_to_kernel(KernelLight *klight,
   klight->object_id = object->index;
   klight->max_bounces = max_bounces;
   copy_v3_v3(klight->strength, strength);
+  copy_v3_v3(klight->shadow_color, shadow_color);
   klight->use_caustics = use_caustics;
 }
 

@@ -132,7 +132,6 @@ class DATA_PT_lightprobe_eevee(DataButtonsPanel, Panel):
         elif probe.type == 'PLANE':
             col = layout.column()
             col.prop(probe, "influence_distance", text="Distance")
-            col.prop(probe, "parallax_distance", text="Parallax")
             pass
         else:
             # Currently unsupported

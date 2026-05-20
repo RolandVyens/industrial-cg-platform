@@ -21,8 +21,6 @@
 
 namespace blender::compositor {
 
-struct Schedule;
-
 /* ------------------------------------------------------------------------------------------------
  * Shader Operation
  *
@@ -76,8 +74,7 @@ class ShaderOperation : public PixelOperation {
    * by calling GPU_material_from_callbacks with the appropriate callbacks. */
   ShaderOperation(Context &context,
                   PixelCompileUnit &compile_unit,
-                  const Schedule &schedule,
-                  const ComputeContext &compute_context);
+                  const VectorSet<const bNode *> &schedule);
 
   /* Free the GPU material. */
   ~ShaderOperation() override;

@@ -401,13 +401,13 @@ class Instance : public DrawEngine {
 
   void hair_sync(Manager &manager,
                  ObjectRef &ob_ref,
-                 ResourceHandle emitter_handle,
+                 ResourceHandleRange emitter_handle,
                  const ObjectState &object_state,
                  ParticleSystem *psys,
                  ModifierData *md)
   {
-    ResourceHandle handle = manager.resource_handle_for_psys(ob_ref,
-                                                             ob_ref.object->object_to_world());
+    ResourceHandleRange handle = manager.resource_handle_for_psys(
+        ob_ref, ob_ref.object->object_to_world());
 
     Material mat = this->get_material(ob_ref, object_state.color_type, psys->part->omat - 1);
     MaterialTexture texture;
@@ -422,7 +422,7 @@ class Instance : public DrawEngine {
           mesh_pass.get_subpass(eGeometryType::CURVES, &texture).sub("Hair SubPass");
       pass.push_constant("emitter_object_id", int(emitter_handle.raw()));
       gpu::Batch *batch = hair_sub_pass_setup(pass, scene_state_.scene, ob_ref, psys, md);
-      pass.draw(batch, {ResourceID(handle)}, material_index);
+      pass.draw(batch, handle, material_index);
     });
   }
 

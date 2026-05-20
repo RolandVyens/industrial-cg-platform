@@ -200,8 +200,6 @@ ListBaseT<Strip> *get_seqbase_from_strip(Strip *strip,
       }
       break;
     }
-    default:
-      break;
   }
 
   return seqbase;
@@ -213,14 +211,13 @@ static MovieReader *open_anim_filepath(Strip *strip, const char *filepath, bool 
    * kept unchanged for the performance reasons. */
   if (openfile) {
     return openanim(filepath,
-                    (strip->flag & SEQ_DEINTERLACE) ? ImBufFlags::Deinterlace : ImBufFlags::Zero,
+                    IB_byte_data | ((strip->flag & SEQ_DEINTERLACE) ? IB_animdeinterlace : 0),
                     strip->streamindex,
                     true,
                     strip->data->colorspace_settings.name);
   }
   return openanim_noload(filepath,
-                         (strip->flag & SEQ_DEINTERLACE) ? ImBufFlags::Deinterlace :
-                                                           ImBufFlags::Zero,
+                         IB_byte_data | ((strip->flag & SEQ_DEINTERLACE) ? IB_animdeinterlace : 0),
                          strip->streamindex,
                          true,
                          strip->data->colorspace_settings.name);
@@ -429,7 +426,7 @@ void alpha_mode_from_file_extension(Strip *strip)
 {
   if (strip->data && strip->data->stripdata) {
     const char *filename = strip->data->stripdata->filename;
-    strip->alpha_mode = eStripAlphaMode(BKE_image_alpha_mode_from_extension_ex(filename));
+    strip->alpha_mode = BKE_image_alpha_mode_from_extension_ex(filename);
   }
 }
 
@@ -444,9 +441,9 @@ bool strip_has_valid_data(const Strip *strip)
       return (strip->scene != nullptr);
     case STRIP_TYPE_SOUND:
       return (strip->sound != nullptr);
-    default:
-      return true;
   }
+
+  return true;
 }
 
 bool sequencer_strip_generates_image(Strip *strip)
@@ -460,9 +457,8 @@ bool sequencer_strip_generates_image(Strip *strip)
     case STRIP_TYPE_COLOR:
     case STRIP_TYPE_TEXT:
       return true;
-    default:
-      return false;
   }
+  return false;
 }
 
 void set_scale_to_fit(const Strip *strip,

@@ -32,6 +32,7 @@ ccl_device_inline void path_state_init(IntegratorState state,
   const uint render_pixel_index = (uint)tile->offset + x + y * tile->stride;
 
   INTEGRATOR_STATE_WRITE(state, path, render_pixel_index) = render_pixel_index;
+  INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) = 0xffffffffu;
 
   path_state_init_queues(state);
 }
@@ -44,6 +45,7 @@ ccl_device_inline void path_state_init_integrator(KernelGlobals kg,
                                                   const Spectrum throughput)
 {
   INTEGRATOR_STATE_WRITE(state, path, sample) = sample;
+  INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) = 0xffffffffu;
   INTEGRATOR_STATE_WRITE(state, path, bounce) = 0;
   INTEGRATOR_STATE_WRITE(state, path, diffuse_bounce) = 0;
   INTEGRATOR_STATE_WRITE(state, path, glossy_bounce) = 0;

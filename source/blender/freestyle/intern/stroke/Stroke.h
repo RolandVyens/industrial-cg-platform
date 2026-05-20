@@ -498,12 +498,9 @@ class Stroke : public Interface1D {
 
   /** The different blending modes available to simulate the interaction media-medium. */
   enum MediumType {
-    /** To simulate a dry medium such as Pencil or Charcoal. */
-    DRY_MEDIUM,
-    /** To simulate ink painting (color subtraction blending). */
-    HUMID_MEDIUM,
-    /** To simulate an opaque medium (oil, spray...). */
-    OPAQUE_MEDIUM,
+    DRY_MEDIUM,    /**< To simulate a dry medium such as Pencil or Charcoal. */
+    HUMID_MEDIUM,  /**< To simulate ink painting (color subtraction blending). */
+    OPAQUE_MEDIUM, /**< To simulate an opaque medium (oil, spray...). */
   };
 
  public:

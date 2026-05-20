@@ -327,9 +327,8 @@ static UnwrapOptions unwrap_options_get(wmOperator *op, Object *ob, const ToolSe
  * NOTE: these could be moved to a generic API.
  */
 
-template<typename T>
 static bool rna_property_sync_flag(
-    PointerRNA *ptr, const char *prop_name, T flag, bool flipped, T *value_p)
+    PointerRNA *ptr, const char *prop_name, char flag, bool flipped, char *value_p)
 {
   if (PropertyRNA *prop = RNA_struct_find_property(ptr, prop_name)) {
     if (RNA_property_is_set(ptr, prop)) {
@@ -341,7 +340,7 @@ static bool rna_property_sync_flag(
       }
       return true;
     }
-    RNA_property_boolean_set(ptr, prop, ((*value_p & flag) > T{}) ^ flipped);
+    RNA_property_boolean_set(ptr, prop, ((*value_p & flag) > 0) ^ flipped);
     return false;
   }
   BLI_assert_unreachable();
@@ -362,12 +361,11 @@ static bool rna_property_sync_enum(PointerRNA *ptr, const char *prop_name, int *
   return false;
 }
 
-template<typename T>
-static bool rna_property_sync_enum_char(PointerRNA *ptr, const char *prop_name, T *value_p)
+static bool rna_property_sync_enum_char(PointerRNA *ptr, const char *prop_name, char *value_p)
 {
-  int value_i = int(*value_p);
+  int value_i = *value_p;
   if (rna_property_sync_enum(ptr, prop_name, &value_i)) {
-    *value_p = T(value_i);
+    *value_p = value_i;
     return true;
   }
   return false;
@@ -1436,6 +1434,7 @@ static bool island_has_pins(const Scene *scene,
  *
  * \param scene: Scene containing the objects to be packed.
  * \param objects: Array of Objects to pack.
+ * \param objects_len: Length of `objects` array.
  * \param bmesh_override: BMesh array aligned with `objects`.
  * Optional, when non-null this overrides object's BMesh.
  * This is needed to perform UV packing on objects that aren't in edit-mode.

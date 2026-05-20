@@ -571,8 +571,6 @@ void BKE_rigidbody_calc_volume(Object *ob, float *r_vol)
 
   /* Calculate volume as appropriate. */
   switch (rbo->shape) {
-    case RB_SHAPE_COMPOUND:
-      break;
     case RB_SHAPE_BOX:
       volume = size[0] * size[1] * size[2];
       break;
@@ -650,7 +648,6 @@ void BKE_rigidbody_calc_center_of_mass(Object *ob, float r_center[3])
 
   /* Calculate volume as appropriate. */
   switch (rbo->shape) {
-    case RB_SHAPE_COMPOUND:
     case RB_SHAPE_BOX:
     case RB_SHAPE_SPHERE:
     case RB_SHAPE_CAPSULE:
@@ -1205,7 +1202,7 @@ void BKE_rigidbody_world_groups_relink(RigidBodyWorld *rbw)
   ID_NEW_REMAP(rbw->effector_weights->group);
 }
 
-RigidBodyOb *BKE_rigidbody_create_object(Scene *scene, Object *ob, eRigidBodyOb_Type type)
+RigidBodyOb *BKE_rigidbody_create_object(Scene *scene, Object *ob, short type)
 {
   RigidBodyOb *rbo;
   RigidBodyWorld *rbw = scene->rigidbody_world;
@@ -1267,7 +1264,7 @@ RigidBodyOb *BKE_rigidbody_create_object(Scene *scene, Object *ob, eRigidBodyOb_
   return rbo;
 }
 
-RigidBodyCon *BKE_rigidbody_create_constraint(Scene *scene, Object *ob, eRigidBodyCon_Type type)
+RigidBodyCon *BKE_rigidbody_create_constraint(Scene *scene, Object *ob, short type)
 {
   RigidBodyCon *rbc;
   RigidBodyWorld *rbw = scene->rigidbody_world;
@@ -1483,8 +1480,7 @@ void BKE_rigidbody_ensure_local_object(Main *bmain, Object *ob)
   }
 }
 
-bool BKE_rigidbody_add_object(
-    Main *bmain, Scene *scene, Object *ob, eRigidBodyOb_Type type, ReportList *reports)
+bool BKE_rigidbody_add_object(Main *bmain, Scene *scene, Object *ob, int type, ReportList *reports)
 {
   if (ob->type != OB_MESH) {
     BKE_report(reports, RPT_ERROR, "Cannot add Rigid Body to non mesh object");
@@ -2327,11 +2323,11 @@ RigidBodyWorld *BKE_rigidbody_world_copy(RigidBodyWorld *rbw, const int flag)
   return nullptr;
 }
 void BKE_rigidbody_world_groups_relink(RigidBodyWorld *rbw) {}
-RigidBodyOb *BKE_rigidbody_create_object(Scene *scene, Object *ob, eRigidBodyOb_Type type)
+RigidBodyOb *BKE_rigidbody_create_object(Scene *scene, Object *ob, short type)
 {
   return nullptr;
 }
-RigidBodyCon *BKE_rigidbody_create_constraint(Scene *scene, Object *ob, eRigidBodyCon_Type type)
+RigidBodyCon *BKE_rigidbody_create_constraint(Scene *scene, Object *ob, short type)
 {
   return nullptr;
 }
@@ -2342,8 +2338,7 @@ RigidBodyWorld *BKE_rigidbody_get_world(Scene *scene)
 
 void BKE_rigidbody_ensure_local_object(Main *bmain, Object *ob) {}
 
-bool BKE_rigidbody_add_object(
-    Main *bmain, Scene *scene, Object *ob, eRigidBodyOb_Type type, ReportList *reports)
+bool BKE_rigidbody_add_object(Main *bmain, Scene *scene, Object *ob, int type, ReportList *reports)
 {
   BKE_report(reports, RPT_ERROR, "Compiled without Bullet physics engine");
   return false;

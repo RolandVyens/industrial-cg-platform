@@ -327,21 +327,14 @@ template<typename Accessor>
     if (!added_socket_type) {
       return false;
     }
-    /* Ensure the source node declaration is up-to-date before capturing the socket label.
-     * This is necessary to correctly capture dynamic labels at creation time. */
-    ntree.ensure_topology_cache();
-    blender::bke::node_declaration_ensure(src_socket->owner_tree(), src_socket->owner_node());
-    std::string name = blender::bke::node_socket_label(*src_socket);
-
+    std::string name = src_socket->name;
+    if constexpr (Accessor::has_custom_initial_name) {
+      name = Accessor::custom_initial_name(storage_node, name);
+    }
     std::optional<int> dimensions = std::nullopt;
     if (src_socket_type == SOCK_VECTOR && added_socket_type == SOCK_VECTOR) {
       dimensions = src_socket->default_value_typed<bNodeSocketValueVector>()->dimensions;
     }
-
-    if constexpr (Accessor::has_custom_initial_name) {
-      name = Accessor::custom_initial_name(storage_node, name);
-    }
-
     item = add_item_with_socket_type_and_name<Accessor>(
         ntree, storage_node, *added_socket_type, name.c_str(), dimensions);
   }
@@ -361,14 +354,13 @@ template<typename Accessor>
   update_node_declaration_and_sockets(ntree, extend_node);
   if (extend_socket.is_input()) {
     const std::string item_identifier = get_socket_identifier<Accessor>(*item, SOCK_IN);
-    bNodeSocket *new_socket = bke::node_find_socket(
-        extend_node, SOCK_IN, UString(item_identifier));
+    bNodeSocket *new_socket = bke::node_find_socket(extend_node, SOCK_IN, item_identifier.c_str());
     link.tosock = new_socket;
   }
   else {
     const std::string item_identifier = get_socket_identifier<Accessor>(*item, SOCK_OUT);
     bNodeSocket *new_socket = bke::node_find_socket(
-        extend_node, SOCK_OUT, UString(item_identifier.c_str()));
+        extend_node, SOCK_OUT, item_identifier.c_str());
     link.fromsock = new_socket;
   }
   BKE_ntree_update_tag_node_property(&ntree, &storage_node);

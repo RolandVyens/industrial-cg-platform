@@ -4,7 +4,6 @@
 
 #include <fmt/format.h>
 
-#include "BKE_gtest_base.hh"
 #include "BKE_path_templates.hh"
 
 #include "testing/testing.h"
@@ -61,9 +60,7 @@ static std::string errors_to_string(Span<Error> errors)
   return s;
 }
 
-class PathTemplatesTest : public BlenderGTestBase {};
-
-TEST_F(PathTemplatesTest, VariableMap)
+TEST(path_templates, VariableMap)
 {
   VariableMap map;
 
@@ -149,7 +146,7 @@ TEST_F(PathTemplatesTest, VariableMap)
   EXPECT_FALSE(map.remove("what"));
 }
 
-TEST_F(PathTemplatesTest, VariableMap_add_filename_only)
+TEST(path_templates, VariableMap_add_filename_only)
 {
   VariableMap map;
 
@@ -186,7 +183,7 @@ TEST_F(PathTemplatesTest, VariableMap_add_filename_only)
   EXPECT_FALSE(map.add_filename_only("i", "", "fallback"));
 }
 
-TEST_F(PathTemplatesTest, VariableMap_add_path_up_to_file)
+TEST(path_templates, VariableMap_add_path_up_to_file)
 {
   VariableMap map;
 
@@ -224,7 +221,7 @@ struct PathTemplateTestCase {
   Vector<Error> expected_errors;
 };
 
-TEST_F(PathTemplatesTest, validate_and_apply_template)
+TEST(path_templates, validate_and_apply_template)
 {
   VariableMap variables;
   {
@@ -450,7 +447,7 @@ TEST_F(PathTemplatesTest, validate_and_apply_template)
   }
 }
 
-TEST_F(PathTemplatesTest, apply_template_alloc)
+TEST(path_templates, apply_template_alloc)
 {
   VariableMap variables;
   {

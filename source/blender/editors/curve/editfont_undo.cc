@@ -68,8 +68,6 @@ struct UndoFont {
   size_t undo_size;
 };
 
-/** \} */
-
 #ifdef USE_ARRAY_STORE
 
 /* -------------------------------------------------------------------- */
@@ -220,10 +218,6 @@ static void uf_arraystore_free(UndoFont *uf)
 /** \} */
 
 #endif /* USE_ARRAY_STORE */
-
-/* -------------------------------------------------------------------- */
-/** \name Undo/Redo Helper Functions
- * \{ */
 
 static void undofont_to_editfont(UndoFont *uf, Curve *cu)
 {

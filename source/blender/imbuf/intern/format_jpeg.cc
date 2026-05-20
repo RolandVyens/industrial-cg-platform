@@ -49,6 +49,8 @@ static void skip_input_data(j_decompress_ptr cinfo, long num_bytes);
 static void term_source(j_decompress_ptr cinfo);
 static void memory_source(j_decompress_ptr cinfo, const uchar *buffer, size_t size);
 static boolean handle_app1(j_decompress_ptr cinfo);
+static ImBuf *ibJpegImageFromCinfo(
+    jpeg_decompress_struct *cinfo, int flags, int max_size, size_t *r_width, size_t *r_height);
 
 static const uchar jpeg_default_quality = 75;
 static uchar ibuf_quality;
@@ -248,11 +250,8 @@ static boolean handle_app1(j_decompress_ptr cinfo)
   return true;
 }
 
-static ImBuf *ibJpegImageFromCinfo(jpeg_decompress_struct *cinfo,
-                                   ImBufFlags flags,
-                                   int max_size,
-                                   size_t *r_width,
-                                   size_t *r_height)
+static ImBuf *ibJpegImageFromCinfo(
+    jpeg_decompress_struct *cinfo, int flags, int max_size, size_t *r_width, size_t *r_height)
 {
   JSAMPARRAY row_pointer;
   JSAMPLE *buffer = nullptr;
@@ -298,28 +297,16 @@ static ImBuf *ibJpegImageFromCinfo(jpeg_decompress_struct *cinfo,
     x = cinfo->output_width;
     y = cinfo->output_height;
 
-    ImColorMode color_mode = ImColorMode::RGBA;
-    if (depth == 1) {
-      color_mode = ImColorMode::BW;
-    }
-    else if (depth == 3) {
-      color_mode = ImColorMode::RGB;
-    }
-
-    if (flag_is_set(flags, ImBufFlags::Test)) {
+    if (flags & IB_test) {
       jpeg_abort_decompress(cinfo);
-      ibuf = IMB_allocImBuf(x, y, ImBufFlags::Zero);
-      if (ibuf) {
-        ibuf->color_mode = color_mode;
-      }
+      ibuf = IMB_allocImBuf(x, y, 8 * depth, 0);
     }
-    else if ((ibuf = IMB_allocImBuf(
-                  x, y, ImBufFlags::ByteData | ImBufFlags::UninitializedPixels)) == nullptr)
+    else if ((ibuf = IMB_allocImBuf(x, y, 8 * depth, IB_byte_data | IB_uninitialized_pixels)) ==
+             nullptr)
     {
       jpeg_abort_decompress(cinfo);
     }
     else {
-      ibuf->color_mode = color_mode;
       row_stride = cinfo->output_width * depth;
 
       row_pointer = (*cinfo->mem->alloc_sarray)(
@@ -406,7 +393,7 @@ static ImBuf *ibJpegImageFromCinfo(jpeg_decompress_struct *cinfo,
            */
           IMB_metadata_ensure(&ibuf->metadata);
           IMB_metadata_set_field(ibuf->metadata, "None", str);
-          ibuf->flags |= ImBufFlags::Metadata;
+          ibuf->flags |= IB_metadata;
           MEM_delete(str);
           goto next_stamp_marker;
         }
@@ -433,7 +420,7 @@ static ImBuf *ibJpegImageFromCinfo(jpeg_decompress_struct *cinfo,
         value++;
         IMB_metadata_ensure(&ibuf->metadata);
         IMB_metadata_set_field(ibuf->metadata, key, value);
-        ibuf->flags |= ImBufFlags::Metadata;
+        ibuf->flags |= IB_metadata;
         MEM_delete(str);
       next_stamp_marker:
         marker = marker->next;
@@ -465,7 +452,7 @@ static ImBuf *ibJpegImageFromCinfo(jpeg_decompress_struct *cinfo,
 
 ImBuf *imb_load_jpeg(const uchar *buffer,
                      size_t size,
-                     ImBufFlags flags,
+                     int flags,
                      ImFileColorSpace & /*r_colorspace*/)
 {
   jpeg_decompress_struct _cinfo, *cinfo = &_cinfo;
@@ -503,7 +490,7 @@ ImBuf *imb_load_jpeg(const uchar *buffer,
 #define JPEG_APP1_MAX (1 << 16)
 
 ImBuf *imb_thumbnail_jpeg(const char *filepath,
-                          const ImBufFlags flags,
+                          const int flags,
                           const size_t max_thumb_size,
                           ImFileColorSpace &r_colorspace,
                           size_t *r_width,
@@ -710,9 +697,17 @@ static int init_jpeg(FILE *outfile, jpeg_compress_struct *cinfo, ImBuf *ibuf)
   cinfo->image_height = ibuf->y;
 
   cinfo->in_color_space = JCS_RGB;
-  if (ibuf->color_mode == ImColorMode::BW) {
+  if (ibuf->planes == 8) {
     cinfo->in_color_space = JCS_GRAYSCALE;
   }
+#if 0
+  /* just write RGBA as RGB,
+   * unsupported feature only confuses other s/w */
+
+  if (ibuf->planes == 32) {
+    cinfo->in_color_space = JCS_UNKNOWN;
+  }
+#endif
   switch (cinfo->in_color_space) {
     case JCS_RGB:
       cinfo->input_components = 3;
@@ -772,7 +767,7 @@ static bool save_stdjpeg(const char *filepath, ImBuf *ibuf)
   return true;
 }
 
-bool imb_savejpeg(ImBuf *ibuf, const char *filepath, ImBufFlags flags)
+bool imb_savejpeg(ImBuf *ibuf, const char *filepath, int flags)
 {
 
   ibuf->flags = flags;

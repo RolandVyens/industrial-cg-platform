@@ -1038,7 +1038,7 @@ static inline void square_points_clamp_to_window(const int2 &p1, int2 &p2, const
   const int max_size_y = (dir_y > 0) ? win_size.y - p1.y - 1 : p1.y;
 
   /* Clamp the square size so it does not exceed window bounds. */
-  square_size = std::min({square_size, max_size_x, max_size_y});
+  square_size = std::min(square_size, std::min(max_size_x, max_size_y));
 
   /* Update p2 to form a clamped square in the same direction as the drag. */
   p2.x = p1.x + dir_x * square_size;
@@ -1117,13 +1117,12 @@ static ImBuf *take_screenshot_crop(bContext *C, const rcti &crop_rect)
     return nullptr;
   }
 
-  ImBuf *image_buffer = IMB_allocImBuf(dumprect_size[0], dumprect_size[1], ImBufFlags::Zero);
-  image_buffer->color_mode = ImColorMode::RGB;
-  image_buffer->assign_byte_data(dumprect);
+  ImBuf *image_buffer = IMB_allocImBuf(dumprect_size[0], dumprect_size[1], 24, 0);
+  /* Using IB_TAKE_OWNERSHIP because the crop does kind of take ownership already it seems. At
+   * least freeing the memory after would cause a crash if ownership isn't taken. */
+  IMB_assign_byte_buffer(image_buffer, dumprect, IB_TAKE_OWNERSHIP);
 
-  IMB_crop(image_buffer,
-           int2(safe_rect.xmin, safe_rect.ymin),
-           int2(BLI_rcti_size_x(&safe_rect) + 1, BLI_rcti_size_y(&safe_rect) + 1));
+  IMB_rect_crop(image_buffer, &safe_rect);
   return image_buffer;
 }
 
@@ -1194,7 +1193,7 @@ static wmOperatorStatus screenshot_preview_exec(bContext *C, wmOperator *op)
                                                   region,
                                                   region->winx,
                                                   region->winy,
-                                                  ImBufFlags::ByteData,
+                                                  IB_byte_data,
                                                   R_ALPHAPREMUL,
                                                   nullptr,
                                                   false,
@@ -1208,12 +1207,10 @@ static wmOperatorStatus screenshot_preview_exec(bContext *C, wmOperator *op)
                             p2.x - area_p1->totrct.xmin,
                             p1.y - area_p1->totrct.ymin,
                             p2.y - area_p1->totrct.ymin};
-    IMB_crop(image_buffer,
-             int2(crop_rect.xmin, crop_rect.ymin),
-             int2(BLI_rcti_size_x(&crop_rect) + 1, BLI_rcti_size_y(&crop_rect) + 1));
+    IMB_rect_crop(image_buffer, &crop_rect);
   }
   else {
-    const rcti crop_rect = {p1.x, p2.x + 1, p1.y, p2.y + 1};
+    const rcti crop_rect = {p1.x, p2.x, p1.y, p2.y};
     image_buffer = take_screenshot_crop(C, crop_rect);
     if (!image_buffer) {
       BKE_report(op->reports, RPT_ERROR, "Invalid screenshot area selection");
@@ -1594,9 +1591,7 @@ static wmOperatorStatus assets_download_exec(bContext *C, wmOperator *op)
   const Vector<const asset_system::AssetRepresentation *> assets = selected_or_active_assets(C);
 
   for (const asset_system::AssetRepresentation *asset : assets) {
-    if (asset->is_online()) {
-      asset_system::remote_library_request_asset_download(*C, *asset, op->reports);
-    }
+    asset_system::remote_library_request_asset_download(*C, *asset, op->reports);
   }
 
   return OPERATOR_FINISHED;

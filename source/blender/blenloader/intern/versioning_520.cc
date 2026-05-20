@@ -21,14 +21,12 @@
 
 #include "BLI_listbase_iterator.hh"
 #include "BLI_string.h"
-#include "BLI_string_utils.hh"
 #include "BLI_sys_types.h"
 
 #include "BKE_animsys.h"
 #include "BKE_colortools.hh"
 #include "BKE_curves.hh"
 #include "BKE_idprop.hh"
-#include "BKE_layer.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_main.hh"
 #include "BKE_mesh_legacy_convert.hh"
@@ -73,14 +71,14 @@ static void version_geometry_nodes_properties(FileData &fd,
     return;
   }
   if (ID_MISSING(&nmd.node_group->id)) {
-    /* Keeping the old idproperties is not an option, and not really useful, since if the
-     * blend-file is saved in this current state, it won't be re-versioned here later anyway.
+    /* Keeping the old idproperties is not an option, and not really usefull, since if the
+     * blendfile is saved in this current state, it won't be re-versionned here later anyway.
      *
      * Furthermore, the whole remaining part of the code expects this to be nullptr, and keeping it
      * at runtime actually causes weird issues in depsgraph nodes building phase.
      *
      * So all in all, it's simpler and safer to also just lose these values here - if file is not
-     * saved in this state, next loading will do the versioning if the node-group is available
+     * saved in this state, next loading will do the versionning if the nodegroup is available
      * again, otherwise that data is lost.
      */
     IDP_FreeProperty(nmd.settings_legacy.properties);
@@ -210,31 +208,6 @@ static void version_geometry_nodes_properties(FileData &fd,
   nmd.settings_legacy.properties = nullptr;
 }
 
-static void sanitize_node_tree_interface_socket_identifiers(bNodeTree &node_tree)
-{
-  node_tree.ensure_interface_cache();
-  Set<StringRef> all_identifiers;
-  for (bNodeTreeInterfaceItem *item : node_tree.interface_items()) {
-    if (item->item_type == NODE_INTERFACE_PANEL) {
-      continue;
-    }
-    auto &socket = *bke::node_interface::get_item_as<bNodeTreeInterfaceSocket>(item);
-    /* Socket identifiers are required to be valid RNA identifiers and unique. */
-    if (!RNA_validate_identifier(socket.identifier, true)) {
-      RNA_identifier_sanitize(socket.identifier, true);
-      if (all_identifiers.contains(socket.identifier)) {
-        std::string new_identifier = BLI_uniquename_cb(
-            [&](StringRef name) { return all_identifiers.contains(name); },
-            '_',
-            socket.identifier);
-        MEM_SAFE_DELETE(socket.identifier);
-        socket.identifier = BLI_strdup(new_identifier.c_str());
-      }
-    }
-    all_identifiers.add(socket.identifier);
-  }
-}
-
 /* Saving file extension is now a property of the File Output node. So inherit this
  * setting from the active scene to restore the old behavior.
  * Note: One limitation is that node groups containing file outputs that are not part of any
@@ -262,29 +235,11 @@ static void version_clear_strip_linear_modifier_flag(Main &bmain)
     Editing *ed = seq::editing_get(&scene);
     if (ed != nullptr) {
       seq::foreach_strip(&ed->seqbase, [&](Strip *strip) {
-        constexpr eStripFlag flag_linear_modifiers = eStripFlag(1 << 23);
+        constexpr int flag_linear_modifiers = 1 << 23;
         strip->flag &= ~flag_linear_modifiers;
         return true;
       });
     }
-  }
-}
-
-static void version_text_strip_space_line(Main &bmain)
-{
-  for (Scene &scene : bmain.scenes) {
-    Editing *ed = seq::editing_get(&scene);
-    if (ed == nullptr) {
-      continue;
-    }
-
-    seq::foreach_strip(&ed->seqbase, [&](Strip *strip) {
-      if (strip->type == STRIP_TYPE_TEXT && strip->effectdata != nullptr) {
-        TextVars *data = static_cast<TextVars *>(strip->effectdata);
-        data->space_line = 1.0f;
-      }
-      return true;
-    });
   }
 }
 
@@ -303,42 +258,6 @@ static void fix_single_point_curves_custom_knots(Main *bmain)
         nu->flagv &= (CU_NURB_CYCLIC | CU_NURB_BEZIER | CU_NURB_ENDPOINT);
       }
     }
-  }
-}
-
-static void version_strip_modifier_show_preview_flag(Main &bmain)
-{
-  for (Scene &scene : bmain.scenes) {
-    Editing *ed = seq::editing_get(&scene);
-    if (ed == nullptr) {
-      continue;
-    }
-    seq::foreach_strip(&ed->seqbase, [&](Strip *strip) {
-      for (StripModifierData &smd : strip->modifiers) {
-        if ((smd.flag & STRIP_MODIFIER_FLAG_MUTE) == 0) {
-          smd.flag |= STRIP_MODIFIER_FLAG_SHOW_PREVIEW;
-        }
-      }
-      return true;
-    });
-  }
-}
-
-static void version_scene_strip_view_layer_name(Main &bmain)
-{
-  for (const Scene &scene : bmain.scenes) {
-    Editing *ed = seq::editing_get(&scene);
-    if (ed == nullptr) {
-      continue;
-    }
-
-    seq::foreach_strip(&ed->seqbase, [&](Strip *strip) {
-      if (strip->type != STRIP_TYPE_SCENE || strip->scene == nullptr) {
-        return true;
-      }
-      strip->scene_view_layer_name = BLI_strdup(BKE_view_layer_default_render(strip->scene)->name);
-      return true;
-    });
   }
 }
 
@@ -363,10 +282,6 @@ void do_versions_after_linking_520(FileData *fd, Main *bmain)
         }
       }
     }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 27)) {
-    version_scene_strip_view_layer_name(*bmain);
   }
 
   /**
@@ -510,137 +425,6 @@ void blo_do_versions_520(FileData * /*fd*/, Library * /*lib*/, Main *bmain)
         settings->cavity_curve_op = BKE_curvemapping_copy(sculpt.automasking_cavity_curve_op);
 
         scene.toolsettings->sculpt->paint.mesh_automasking_settings = settings;
-      }
-    }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 19)) {
-    for (bNodeTree &tree : bmain->nodetrees) {
-      sanitize_node_tree_interface_socket_identifiers(tree);
-    }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 20)) {
-    for (Brush &brush : bmain->brushes) {
-      if (brush.ob_mode != OB_MODE_SCULPT) {
-        continue;
-      }
-
-      brush.mesh_automasking_settings = MEM_new<MeshAutomaskingSettings>(__func__);
-      brush.mesh_automasking_settings->flags = brush.automasking_flags;
-      brush.mesh_automasking_settings->boundary_edges_propagation_steps =
-          brush.automasking_boundary_edges_propagation_steps;
-      brush.mesh_automasking_settings->cavity_blur_steps = brush.automasking_cavity_blur_steps;
-      brush.mesh_automasking_settings->cavity_factor = brush.automasking_cavity_factor;
-      brush.mesh_automasking_settings->start_normal_falloff =
-          brush.automasking_start_normal_falloff;
-      brush.mesh_automasking_settings->start_normal_limit = brush.automasking_start_normal_limit;
-      brush.mesh_automasking_settings->view_normal_falloff = brush.automasking_view_normal_falloff;
-      brush.mesh_automasking_settings->view_normal_limit = brush.automasking_view_normal_limit;
-      brush.mesh_automasking_settings->cavity_curve = BKE_curvemapping_copy(
-          brush.automasking_cavity_curve);
-      brush.mesh_automasking_settings->cavity_curve_op = nullptr;
-    }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 21)) {
-    for (Material &materials : bmain->materials) {
-      if (materials.gp_style != nullptr) {
-        materials.gp_style->random_size_factor = 0.0f;
-        materials.gp_style->random_strength_factor = 0.0f;
-        materials.gp_style->random_rotation_factor = 0.0f;
-        materials.gp_style->random_hue_factor = 0.0f;
-        materials.gp_style->random_saturation_factor = 0.0f;
-        materials.gp_style->random_value_factor = 0.0f;
-        materials.gp_style->random_noise_scale = 1.0f;
-      }
-    }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 22)) {
-    version_strip_modifier_show_preview_flag(*bmain);
-  }
-
-  /* The ID member of the Viewer node is no longer initialized to the Viewer Image, so clear that
-   * member. */
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 23)) {
-    FOREACH_NODETREE_BEGIN (bmain, node_tree, id) {
-      if (node_tree->type == NTREE_COMPOSIT) {
-        for (bNode &node : node_tree->nodes) {
-          if (node.type_legacy == CMP_NODE_VIEWER) {
-            node.id = nullptr;
-          }
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 24)) {
-    FOREACH_NODETREE_BEGIN (bmain, node_tree, id) {
-      if (node_tree->type == NTREE_SHADER) {
-        for (bNode &node : node_tree->nodes) {
-          if (node.type_legacy == SH_NODE_RAYCAST && node.storage == nullptr) {
-            node.storage = MEM_new<NodeShaderRaycast>(__func__);
-          }
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 25)) {
-    for (bScreen &screen : bmain->screens) {
-      for (ScrArea &area : screen.areabase) {
-        for (SpaceLink &space : area.spacedata) {
-          if (space.spacetype == SPACE_OUTLINER) {
-            SpaceOutliner *space_outliner = reinterpret_cast<SpaceOutliner *>(&space);
-            space_outliner->flag |= SO_SCROLL_TO_ACTIVE;
-          }
-        }
-      }
-    }
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 26)) {
-    FOREACH_NODETREE_BEGIN (bmain, tree, id) {
-      if (tree->type != NTREE_GEOMETRY) {
-        continue;
-      }
-      for (bNode &node : tree->nodes) {
-        switch (node.type_legacy) {
-          case FN_NODE_COMPARE:
-          case FN_NODE_RANDOM_VALUE: {
-            version_socket_identifier_suffixes_for_dynamic_types(node.inputs, "_");
-            version_socket_identifier_suffixes_for_dynamic_types(node.outputs, "_");
-            break;
-          }
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 28)) {
-    version_text_strip_space_line(*bmain);
-  }
-
-  if (!MAIN_VERSION_FILE_ATLEAST(bmain, 502, 29)) {
-    for (bScreen &screen : bmain->screens) {
-      for (ScrArea &area : screen.areabase) {
-        for (SpaceLink &sl : area.spacedata) {
-          if (sl.spacetype != SPACE_SEQ) {
-            continue;
-          }
-          ListBaseT<ARegion> *regionbase = (&sl == area.spacedata.first) ? &area.regionbase :
-                                                                           &sl.regionbase;
-          ARegion *scrubbing_region = do_versions_add_region_if_not_found(
-              regionbase, RGN_TYPE_SCRUBBING, "Scrubbing Region", RGN_TYPE_FOOTER);
-          if (scrubbing_region) {
-            scrubbing_region->alignment = RGN_ALIGN_BOTTOM | RGN_STACK_ON_PREV |
-                                          RGN_ALIGN_HIDE_WITH_PREV;
-          }
-        }
       }
     }
   }

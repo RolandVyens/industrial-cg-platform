@@ -391,8 +391,7 @@ static bool library_foreach_ID_link(Main *bmain,
       CALLBACK_INVOKE_ID(id->override_library->reference,
                          IDWALK_CB_USER | IDWALK_CB_OVERRIDE_LIBRARY_REFERENCE);
 
-      CALLBACK_INVOKE_ID(id->override_library->hierarchy_root,
-                         IDWALK_CB_LOOPBACK | IDWALK_CB_OVERRIDE_LIBRARY_HIERARCHY_ROOT);
+      CALLBACK_INVOKE_ID(id->override_library->hierarchy_root, IDWALK_CB_LOOPBACK);
       for (IDOverrideLibraryProperty &op : id->override_library->properties) {
         for (IDOverrideLibraryPropertyOperation &opop : op.operations) {
           CALLBACK_INVOKE_ID(opop.subitem_reference_id,

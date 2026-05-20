@@ -4,7 +4,6 @@
 
 #include "BLI_listbase.h"
 
-#include "BKE_gtest_base.hh"
 #include "BKE_nla.hh"
 
 #include "DNA_anim_types.h"
@@ -13,9 +12,7 @@
 
 namespace blender::bke::tests {
 
-class NlaStripTest : public BlenderGTestBase {};
-
-TEST_F(NlaStripTest, BKE_nlastrip_recalculate_blend)
+TEST(nla_strip, BKE_nlastrip_recalculate_blend)
 {
   NlaStrip strip{};
   strip.blendin = 4.0;
@@ -42,7 +39,7 @@ TEST_F(NlaStripTest, BKE_nlastrip_recalculate_blend)
   EXPECT_FLOAT_EQ(strip.blendout, 0.1);
 }
 
-TEST_F(NlaStripTest, BKE_nlastrips_add_strip)
+TEST(nla_strip, BKE_nlastrips_add_strip)
 {
   ListBaseT<NlaStrip> strips{};
   NlaStrip strip1{};
@@ -66,7 +63,7 @@ TEST_F(NlaStripTest, BKE_nlastrips_add_strip)
   EXPECT_TRUE(BKE_nlastrips_add_strip(&strips, &strip2));
 }
 
-TEST_F(NlaStripTest, BKE_nla_clip_length_get_nonzero)
+TEST(nla_strip, BKE_nla_clip_length_get_nonzero)
 {
   NlaStrip strip{};
 
@@ -87,7 +84,7 @@ TEST_F(NlaStripTest, BKE_nla_clip_length_get_nonzero)
   EXPECT_FLOAT_EQ(BKE_nla_clip_length_get_nonzero(&strip), 1.0f);
 }
 
-TEST_F(NlaStripTest, BKE_nla_clip_length_ensure_nonzero)
+TEST(nla_strip, BKE_nla_clip_length_ensure_nonzero)
 {
   float start, end;
 
@@ -112,9 +109,7 @@ TEST_F(NlaStripTest, BKE_nla_clip_length_ensure_nonzero)
   EXPECT_FLOAT_EQ(end, 3.0f);
 }
 
-class NlaTrackTest : public BlenderGTestBase {};
-
-TEST_F(NlaTrackTest, BKE_nlatrack_remove_strip)
+TEST(nla_track, BKE_nlatrack_remove_strip)
 {
   NlaTrack track{};
   ListBaseT<NlaStrip> strips{};
@@ -140,7 +135,7 @@ TEST_F(NlaTrackTest, BKE_nlatrack_remove_strip)
   EXPECT_EQ(-1, BLI_findindex(&track.strips, &strip2));
 }
 
-TEST_F(NlaTrackTest, BKE_nlatrack_remove_and_free)
+TEST(nla_track, BKE_nlatrack_remove_and_free)
 {
   AnimData adt{};
 
@@ -163,7 +158,7 @@ TEST_F(NlaTrackTest, BKE_nlatrack_remove_and_free)
   EXPECT_EQ(-1, BLI_findindex(&adt.nla_tracks, track1));
 }
 
-TEST_F(NlaTrackTest, BKE_nlatrack_new_tail)
+TEST(nla_track, BKE_nlatrack_new_tail)
 {
   AnimData adt{};
   NlaTrack *trackB = BKE_nlatrack_new_tail(&adt.nla_tracks, false);
@@ -178,7 +173,7 @@ TEST_F(NlaTrackTest, BKE_nlatrack_new_tail)
   BKE_nlatrack_remove_and_free(&adt.nla_tracks, trackB, false);
 }
 
-TEST_F(NlaTrackTest, BKE_nlatrack_new_head)
+TEST(nla_track, BKE_nlatrack_new_head)
 {
   AnimData adt{};
   NlaTrack *trackB = BKE_nlatrack_new_head(&adt.nla_tracks, false);

@@ -23,8 +23,6 @@ struct ID;
 struct Scene;
 struct PointerRNA;
 
-enum eInsertKeyFlags : short;
-
 /* Names for builtin keying sets so we don't confuse these with labels/text,
  * defined in python script: `keyingsets_builtins.py`. */
 
@@ -59,7 +57,7 @@ struct KeyingSetInfo {
   /** Short help/description. */
   char description[/*RNA_DYN_DESCR_MAX*/ 1024];
   /** Keying settings. */
-  eInsertKeyFlags keyingflag;
+  short keyingflag;
 
   /* polling callbacks */
   /** callback for polling the context for whether the right data is available. */

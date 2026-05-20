@@ -64,6 +64,7 @@ class DeepOutputDriver {
   void clear_device_buffers();
 
   /* Get the deep buffers for kernel access. */
+  /* Only valid for single-device renders. */
   DeepRenderBuffers *get_deep_buffers();
 
   /* Called after rendering completes to finalize and save deep data. */
@@ -93,6 +94,21 @@ class DeepOutputDriver {
   /* Set beauty buffer for uniform RGB and alpha normalization.
    * The buffer should contain RGBA floats, size = width * height * 4. */
   void set_beauty_buffer(const float *rgba_buffer, int width, int height);
+
+  /* Set per-pixel sample count buffer for hard-surface deep coverage reconstruction.
+   * Blender's Debug Sample Count pass is normalized by the render sample limit, so
+   * `sample_count_scale` converts stored values back to absolute per-pixel sample counts. */
+  void set_sample_count_buffer(
+      const float *sample_count_buffer, int width, int height, float sample_count_scale);
+
+  /* Accumulate deep samples for the current tile into the processed cache. */
+  void accumulate_tile(const float *beauty_pixels,
+                       const float *sample_count_pixels,
+                       float sample_count_scale,
+                       int tile_width,
+                       int tile_height,
+                       int tile_offset_x,
+                       int tile_offset_y);
 
   /* Get processed deep data for compositor storage.
    * Uses std::vector to match Blender render/imbuf API expectations.
@@ -137,20 +153,7 @@ class DeepOutputDriver {
     size_t bytes = 0;
   };
 
-  struct DeepBufferSnapshot {
-    Device *device = nullptr;
-    int full_x = 0;
-    int full_y = 0;
-    int width = 0;
-    int height = 0;
-    int window_x = 0;
-    int window_y = 0;
-    int window_width = 0;
-    int window_height = 0;
-    int max_samples = 0;
-    vector<uint32_t> sample_counts;
-    vector<DeepSampleData> sample_data;
-  };
+  struct DeepBufferSnapshot;
 
   vector<DeepBufferSlice> device_buffers_;
   Device *device_ = nullptr;
@@ -161,13 +164,19 @@ class DeepOutputDriver {
   vector<float> beauty_buffer_;
   bool use_beauty_buffer_ = false;
 
+  /* Sample count buffer for hard-surface edge coverage reconstruction. */
+  vector<float> sample_count_buffer_;
+  bool use_sample_count_buffer_ = false;
+  float sample_count_scale_ = 1.0f;
+
   /* Stored as std::vector to match Blender's IMB_exr_save_deep API. */
   unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_cache_;
   bool deep_buffers_processed_ = false;
+  /* Populated only when accumulate_tile() is used to track written pixels. */
+  vector<uint8_t> pixel_written_;
 
   bool process_device_buffers();
   bool layout_matches(const vector<SliceParams> &slices) const;
-  bool compute_deep_bytes(int width, int height, int max_samples, size_t &bytes) const;
   bool build_device_estimates(const vector<SliceParams> &slices,
                               int max_samples,
                               vector<DeviceEstimate> &estimates) const;
@@ -179,24 +188,53 @@ class DeepOutputDriver {
   void merge_slice_into_cache(const DeepBufferSlice &slice,
                               bool track_overlap,
                               vector<uint8_t> &pixel_written,
-                              bool &overlap_logged);
+                              bool &overlap_logged,
+                              /* Beauty pass window. */
+                              const float *beauty_pixels,
+                              int beauty_width,
+                              int beauty_height,
+                              int beauty_offset_x,
+                              int beauty_offset_y);
   void populate_pixel_samples(size_t global_idx,
                               int count,
                               const DeepSampleData *sample_data,
-                              int offset);
+                              size_t offset);
+  void populate_pixel_samples_with_resolved_beauty(size_t global_idx,
+                                                   int count,
+                                                   const DeepSampleData *sample_data,
+                                                   size_t offset,
+                                                   bool has_beauty,
+                                                   float beauty_r,
+                                                   float beauty_g,
+                                                   float beauty_b,
+                                                   float beauty_a);
   void get_beauty_pixel(size_t global_idx,
                         float &beauty_r,
                         float &beauty_g,
                         float &beauty_b,
                         float &beauty_a) const;
+  float get_sample_count_pixel(size_t global_idx) const;
   void compute_scaled_alphas(const DeepSampleData *sample_data,
-                             int offset,
+                             size_t offset,
                              int count,
                              float beauty_a,
                              vector<float> &scaled_alphas,
                              float &beauty_r,
                              float &beauty_g,
                              float &beauty_b);
+  bool populate_pure_surface_grouped_samples(size_t global_idx,
+                                             int count,
+                                             const DeepSampleData *sample_data,
+                                             size_t offset,
+                                             float beauty_a);
+  bool populate_opaque_surface_prefix_samples(size_t global_idx,
+                                              int count,
+                                              const DeepSampleData *sample_data,
+                                              size_t offset,
+                                              float beauty_r,
+                                              float beauty_g,
+                                              float beauty_b,
+                                              float beauty_a);
 
   std::vector<std::vector<blender::DeepSample>> *ensure_processed_cache();
 };

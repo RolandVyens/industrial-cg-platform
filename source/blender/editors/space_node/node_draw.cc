@@ -93,8 +93,8 @@
 #include "RNA_path.hh"
 #include "RNA_prototypes.hh"
 
-#include "NOD_eval_log.hh"
 #include "NOD_geometry_nodes_gizmos.hh"
+#include "NOD_geometry_nodes_log.hh"
 #include "NOD_node_declaration.hh"
 #include "NOD_node_extra_info.hh"
 #include "NOD_sync_sockets.hh"
@@ -109,6 +109,7 @@
 
 namespace blender {
 
+namespace geo_log = nodes::geo_eval_log;
 using bke::bNodeTreeZone;
 using bke::bNodeTreeZones;
 using ed::space_node::NestedTreePreviews;
@@ -142,9 +143,11 @@ struct TreeDrawContext {
    * Geometry nodes logs various data during execution. The logged data that corresponds to the
    * currently drawn node tree can be retrieved from the log below.
    */
-  nodes::eval_log::ContextualNodeTreeLogs tree_logs;
+  geo_log::ContextualGeoTreeLogs tree_logs;
 
   NestedTreePreviews *nested_group_infos = nullptr;
+
+  Map<bNodeInstanceKey, timeit::Nanoseconds> *compositor_per_node_execution_time = nullptr;
 
   /**
    * Label for reroute nodes that is derived from upstream reroute nodes.
@@ -489,8 +492,7 @@ static bool node_update_basis_socket(TreeDrawContext &tree_draw_ctx,
 
   /* Add the half the height of a multi-input socket to cursor Y
    * to account for the increased height of the taller sockets. */
-  const bool is_multi_input = (input_socket ? (input_socket->flag & SOCK_MULTI_INPUT) != 0 :
-                                              false);
+  const bool is_multi_input = (input_socket ? input_socket->flag & SOCK_MULTI_INPUT : false);
   const float multi_input_socket_offset = is_multi_input ?
                                               std::max(input_socket->runtime->total_inputs - 2,
                                                        0) *
@@ -1624,7 +1626,7 @@ static void node_draw_preview_background(rctf *rect)
 }
 
 /* Not a callback. */
-static void node_draw_preview(const Scene *scene, const ImBuf *preview, const rctf *prv)
+static void node_draw_preview(const Scene *scene, ImBuf *preview, const rctf *prv)
 {
   float xrect = BLI_rctf_size_x(prv);
   float yrect = BLI_rctf_size_y(prv);
@@ -2103,12 +2105,11 @@ static void node_draw_panels(bNodeTree &ntree, const bNode &node, ui::Block &blo
   }
 }
 
-static nodes::NodeWarningType node_error_highest_priority(
-    Span<nodes::eval_log::NodeWarning> warnings)
+static nodes::NodeWarningType node_error_highest_priority(Span<geo_log::NodeWarning> warnings)
 {
   int highest_priority = 0;
   nodes::NodeWarningType highest_priority_type = nodes::NodeWarningType::Info;
-  for (const nodes::eval_log::NodeWarning &warning : warnings) {
+  for (const geo_log::NodeWarning &warning : warnings) {
     const int priority = node_warning_type_severity(warning.type);
     if (priority > highest_priority) {
       highest_priority = priority;
@@ -2118,11 +2119,11 @@ static nodes::NodeWarningType node_error_highest_priority(
   return highest_priority_type;
 }
 
-static std::string node_errors_tooltip_fn(const Span<nodes::eval_log::NodeWarning> warnings)
+static std::string node_errors_tooltip_fn(const Span<geo_log::NodeWarning> warnings)
 {
   std::string complete_string;
 
-  for (const nodes::eval_log::NodeWarning &warning : warnings.drop_back(1)) {
+  for (const geo_log::NodeWarning &warning : warnings.drop_back(1)) {
     complete_string += warning.message;
     /* Adding the period is not ideal for multi-line messages, but it is consistent
      * with other tooltip implementations in Blender, so it is added here. */
@@ -2168,8 +2169,8 @@ static void node_add_error_message_button(const TreeDrawContext &tree_draw_ctx,
                                           const rctf &rect,
                                           float &icon_offset)
 {
-  if (ELEM(ntree.type, NTREE_GEOMETRY, NTREE_COMPOSIT)) {
-    nodes::eval_log::NodeTreeLog *geo_tree_log = [&]() -> nodes::eval_log::NodeTreeLog * {
+  if (ntree.type == NTREE_GEOMETRY) {
+    geo_log::GeoTreeLog *geo_tree_log = [&]() -> geo_log::GeoTreeLog * {
       const bNodeTreeZones *zones = node.owner_tree().zones();
       if (!zones) {
         return nullptr;
@@ -2181,9 +2182,9 @@ static void node_add_error_message_button(const TreeDrawContext &tree_draw_ctx,
       return tree_draw_ctx.tree_logs.get_main_tree_log(zone);
     }();
 
-    Span<nodes::eval_log::NodeWarning> warnings;
+    Span<geo_log::NodeWarning> warnings;
     if (geo_tree_log) {
-      nodes::eval_log::NodeLog *node_log = geo_tree_log->nodes.lookup_ptr(node.identifier);
+      geo_log::GeoNodeLog *node_log = geo_tree_log->nodes.lookup_ptr(node.identifier);
       if (node_log != nullptr) {
         warnings = node_log->warnings;
       }
@@ -2197,8 +2198,7 @@ static void node_add_error_message_button(const TreeDrawContext &tree_draw_ctx,
     ui::Button *but = add_error_message_button(
         block, rect, nodes::node_warning_type_icon(display_type), icon_offset);
     button_func_quick_tooltip_set(
-        but,
-        [warnings = Array<nodes::eval_log::NodeWarning>(warnings)](const ui::Button * /*but*/) {
+        but, [warnings = Array<geo_log::NodeWarning>(warnings)](const ui::Button * /*but*/) {
           return node_errors_tooltip_fn(warnings);
         });
     return;
@@ -2227,15 +2227,12 @@ static void node_add_error_message_button(const TreeDrawContext &tree_draw_ctx,
   }
 }
 
-static std::optional<std::chrono::nanoseconds> node_get_execution_time(
+static std::optional<std::chrono::nanoseconds> geo_node_get_execution_time(
     const TreeDrawContext &tree_draw_ctx, const SpaceNode &snode, const bNode &node)
 {
   const bNodeTree &ntree = *snode.edittree;
-  if (!ELEM(ntree.type, NTREE_GEOMETRY, NTREE_COMPOSIT)) {
-    return std::nullopt;
-  }
 
-  nodes::eval_log::NodeTreeLog *tree_log = [&]() -> nodes::eval_log::NodeTreeLog * {
+  geo_log::GeoTreeLog *tree_log = [&]() -> geo_log::GeoTreeLog * {
     const bNodeTreeZones *zones = ntree.zones();
     if (!zones) {
       return nullptr;
@@ -2253,11 +2250,6 @@ static std::optional<std::chrono::nanoseconds> node_get_execution_time(
   if (node.is_group_output()) {
     return tree_log->execution_time;
   }
-  if (node.is_type("CompositorNodeViewer"_ustr)) {
-    /* Don't display execution times on compositor viewer nodes for consistency with Geometry
-     * Nodes. */
-    return std::nullopt;
-  }
   if (node.is_frame()) {
     /* Could be cached in the future if this recursive code turns out to be slow. */
     std::chrono::nanoseconds run_time{0};
@@ -2265,7 +2257,7 @@ static std::optional<std::chrono::nanoseconds> node_get_execution_time(
 
     for (const bNode *tnode : node.direct_children_in_frame()) {
       if (tnode->is_frame()) {
-        std::optional<std::chrono::nanoseconds> sub_frame_run_time = node_get_execution_time(
+        std::optional<std::chrono::nanoseconds> sub_frame_run_time = geo_node_get_execution_time(
             tree_draw_ctx, snode, *tnode);
         if (sub_frame_run_time.has_value()) {
           run_time += *sub_frame_run_time;
@@ -2273,8 +2265,7 @@ static std::optional<std::chrono::nanoseconds> node_get_execution_time(
         }
       }
       else {
-        if (const nodes::eval_log::NodeLog *node_log = tree_log->nodes.lookup_ptr_as(
-                tnode->identifier))
+        if (const geo_log::GeoNodeLog *node_log = tree_log->nodes.lookup_ptr_as(tnode->identifier))
         {
           found_node = true;
           run_time += node_log->execution_time;
@@ -2286,10 +2277,89 @@ static std::optional<std::chrono::nanoseconds> node_get_execution_time(
     }
     return std::nullopt;
   }
-  if (const nodes::eval_log::NodeLog *node_log = tree_log->nodes.lookup_ptr(node.identifier)) {
+  if (const geo_log::GeoNodeLog *node_log = tree_log->nodes.lookup_ptr(node.identifier)) {
     return node_log->execution_time;
   }
   return std::nullopt;
+}
+
+/* Create node key instance, assuming the node comes from the currently edited node tree. */
+static bNodeInstanceKey current_node_instance_key(const SpaceNode &snode, const bNode &node)
+{
+  const bNodeTreePath *path = static_cast<const bNodeTreePath *>(snode.treepath.last);
+
+  /* Some code in this file checks for the non-null elements of the tree path. However, if we did
+   * iterate into a node it is expected that there is a tree, and it should be in the path.
+   * Otherwise something else went wrong. */
+  BLI_assert(path);
+
+  /* Assume that the currently editing tree is the last in the path. */
+  BLI_assert(snode.edittree == path->nodetree);
+
+  return bke::node_instance_key(path->parent_key, snode.edittree, &node);
+}
+
+static std::optional<std::chrono::nanoseconds> compositor_accumulate_frame_node_execution_time(
+    const TreeDrawContext &tree_draw_ctx, const SpaceNode &snode, const bNode &node)
+{
+  BLI_assert(tree_draw_ctx.compositor_per_node_execution_time);
+
+  timeit::Nanoseconds frame_execution_time(0);
+  bool has_any_execution_time = false;
+
+  for (const bNode *current_node : node.direct_children_in_frame()) {
+    const bNodeInstanceKey key = current_node_instance_key(snode, *current_node);
+    if (const timeit::Nanoseconds *node_execution_time =
+            tree_draw_ctx.compositor_per_node_execution_time->lookup_ptr(key))
+    {
+      frame_execution_time += *node_execution_time;
+      has_any_execution_time = true;
+    }
+  }
+
+  if (!has_any_execution_time) {
+    return std::nullopt;
+  }
+
+  return frame_execution_time;
+}
+
+static std::optional<std::chrono::nanoseconds> compositor_node_get_execution_time(
+    const TreeDrawContext &tree_draw_ctx, const SpaceNode &snode, const bNode &node)
+{
+  BLI_assert(tree_draw_ctx.compositor_per_node_execution_time);
+
+  /* For the frame nodes accumulate execution time of its children. */
+  if (node.is_frame()) {
+    return compositor_accumulate_frame_node_execution_time(tree_draw_ctx, snode, node);
+  }
+
+  /* For other nodes simply lookup execution time.
+   * The group node instances have their own entries in the execution times map. */
+  const bNodeInstanceKey key = current_node_instance_key(snode, node);
+  if (const timeit::Nanoseconds *execution_time =
+          tree_draw_ctx.compositor_per_node_execution_time->lookup_ptr(key))
+  {
+    if (execution_time->count() == 0) {
+      return std::nullopt;
+    }
+    return *execution_time;
+  }
+
+  return std::nullopt;
+}
+
+static std::optional<std::chrono::nanoseconds> node_get_execution_time(
+    const TreeDrawContext &tree_draw_ctx, const SpaceNode &snode, const bNode &node)
+{
+  switch (snode.edittree->type) {
+    case NTREE_GEOMETRY:
+      return geo_node_get_execution_time(tree_draw_ctx, snode, node);
+    case NTREE_COMPOSIT:
+      return compositor_node_get_execution_time(tree_draw_ctx, snode, node);
+    default:
+      return std::nullopt;
+  }
 }
 
 static std::string node_get_execution_time_label(TreeDrawContext &tree_draw_ctx,
@@ -2329,7 +2399,7 @@ static std::string node_get_execution_time_label(TreeDrawContext &tree_draw_ctx,
 }
 
 struct NamedAttributeTooltipArg {
-  Map<StringRefNull, nodes::eval_log::NamedAttributeUsage> usage_by_attribute;
+  Map<StringRefNull, geo_log::NamedAttributeUsage> usage_by_attribute;
 };
 
 static std::string named_attribute_tooltip(bContext * /*C*/, void *argN, const StringRef /*tip*/)
@@ -2342,7 +2412,7 @@ static std::string named_attribute_tooltip(bContext * /*C*/, void *argN, const S
 
   struct NameWithUsage {
     StringRefNull name;
-    nodes::eval_log::NamedAttributeUsage usage;
+    geo_log::NamedAttributeUsage usage;
   };
 
   Vector<NameWithUsage> sorted_used_attribute;
@@ -2355,16 +2425,16 @@ static std::string named_attribute_tooltip(bContext * /*C*/, void *argN, const S
 
   for (const NameWithUsage &attribute : sorted_used_attribute) {
     const StringRefNull name = attribute.name;
-    const nodes::eval_log::NamedAttributeUsage usage = attribute.usage;
+    const geo_log::NamedAttributeUsage usage = attribute.usage;
     fmt::format_to(fmt::appender(buf), fmt::runtime(TIP_("  \u2022 \"{}\": ")), name);
     Vector<std::string> usages;
-    if (flag_is_set(usage, nodes::eval_log::NamedAttributeUsage::Read)) {
+    if (flag_is_set(usage, geo_log::NamedAttributeUsage::Read)) {
       usages.append(TIP_("read"));
     }
-    if (flag_is_set(usage, nodes::eval_log::NamedAttributeUsage::Write)) {
+    if (flag_is_set(usage, geo_log::NamedAttributeUsage::Write)) {
       usages.append(TIP_("write"));
     }
-    if (flag_is_set(usage, nodes::eval_log::NamedAttributeUsage::Remove)) {
+    if (flag_is_set(usage, geo_log::NamedAttributeUsage::Remove)) {
       usages.append(TIP_("remove"));
     }
     for (const int i : usages.index_range()) {
@@ -2384,7 +2454,7 @@ static std::string named_attribute_tooltip(bContext * /*C*/, void *argN, const S
 }
 
 static NodeExtraInfoRow row_from_used_named_attribute(
-    const Map<StringRefNull, nodes::eval_log::NamedAttributeUsage> &usage_by_attribute_name)
+    const Map<StringRefNull, geo_log::NamedAttributeUsage> &usage_by_attribute_name)
 {
   const int attributes_num = usage_by_attribute_name.size();
 
@@ -2404,7 +2474,7 @@ static NodeExtraInfoRow row_from_used_named_attribute(
 static std::optional<NodeExtraInfoRow> node_get_accessed_attributes_row(
     TreeDrawContext &tree_draw_ctx, const bNode &node)
 {
-  nodes::eval_log::NodeTreeLog *geo_tree_log = tree_draw_ctx.tree_logs.get_main_tree_log(node);
+  geo_log::GeoTreeLog *geo_tree_log = tree_draw_ctx.tree_logs.get_main_tree_log(node);
   if (geo_tree_log == nullptr) {
     return std::nullopt;
   }
@@ -2423,7 +2493,7 @@ static std::optional<NodeExtraInfoRow> node_get_accessed_attributes_row(
     }
   }
   geo_tree_log->ensure_used_named_attributes();
-  nodes::eval_log::NodeLog *node_log = geo_tree_log->nodes.lookup_ptr(node.identifier);
+  geo_log::GeoNodeLog *node_log = geo_tree_log->nodes.lookup_ptr(node.identifier);
   if (node_log == nullptr) {
     return std::nullopt;
   }
@@ -2518,11 +2588,11 @@ static Vector<NodeExtraInfoRow> node_get_extra_info(const bContext &C,
     }
   }
 
-  nodes::eval_log::NodeTreeLog *tree_log = tree_draw_ctx.tree_logs.get_main_tree_log(node);
+  geo_log::GeoTreeLog *tree_log = tree_draw_ctx.tree_logs.get_main_tree_log(node);
 
   if (tree_log) {
     tree_log->ensure_debug_messages();
-    const nodes::eval_log::NodeLog *node_log = tree_log->nodes.lookup_ptr(node.identifier);
+    const geo_log::GeoNodeLog *node_log = tree_log->nodes.lookup_ptr(node.identifier);
     if (node_log != nullptr) {
       for (const StringRef message : node_log->debug_messages) {
         NodeExtraInfoRow row;
@@ -2633,7 +2703,7 @@ static void node_draw_extra_info_panel(const bContext &C,
                                        TreeDrawContext &tree_draw_ctx,
                                        const SpaceNode &snode,
                                        const bNode &node,
-                                       const ImBuf *preview,
+                                       ImBuf *preview,
                                        ui::Block &block)
 {
   const Scene *scene = CTX_data_scene(&C);
@@ -2840,7 +2910,8 @@ static void node_draw_basis(const bContext &C,
                             const SpaceNode &snode,
                             bNodeTree &ntree,
                             const bNode &node,
-                            ui::Block &block)
+                            ui::Block &block,
+                            bNodeInstanceKey key)
 {
   const float iconbutw = NODE_HEADER_ICON_SIZE;
   const bool show_preview = (snode.overlay.flag & SN_OVERLAY_SHOW_OVERLAYS) &&
@@ -2881,6 +2952,9 @@ static void node_draw_basis(const bContext &C,
     bool drawn_with_previews = false;
 
     if (show_preview) {
+      Map<bNodeInstanceKey, bke::bNodePreview> *previews_compo =
+          static_cast<Map<bNodeInstanceKey, bke::bNodePreview> *>(
+              CTX_data_pointer_get(&C, "node_previews").data);
       NestedTreePreviews *previews_shader = tree_draw_ctx.nested_group_infos;
 
       if (previews_shader) {
@@ -2889,18 +2963,11 @@ static void node_draw_basis(const bContext &C,
         node_release_preview_ibuf(*previews_shader);
         drawn_with_previews = true;
       }
-
-      if (const nodes::eval_log::NodeTreeLog *tree_log = tree_draw_ctx.tree_logs.get_main_tree_log(
-              node))
-      {
-        if (const nodes::eval_log::NodeLog *node_log = tree_log->nodes.lookup_ptr_as(
-                node.identifier))
-        {
-          if (node_log->image_preview) {
-            node_draw_extra_info_panel(
-                C, tree_draw_ctx, snode, node, node_log->image_preview, block);
-            drawn_with_previews = true;
-          }
+      else if (previews_compo) {
+        if (bke::bNodePreview *preview_compositor = previews_compo->lookup_ptr(key)) {
+          node_draw_extra_info_panel(
+              C, tree_draw_ctx, snode, node, preview_compositor->ibuf, block);
+          drawn_with_previews = true;
         }
       }
     }
@@ -4051,7 +4118,8 @@ static void node_draw(const bContext &C,
                       const SpaceNode &snode,
                       bNodeTree &ntree,
                       bNode &node,
-                      ui::Block &block)
+                      ui::Block &block,
+                      bNodeInstanceKey key)
 {
   if (node.is_frame()) {
     /* Should have been drawn before already. */
@@ -4066,7 +4134,7 @@ static void node_draw(const bContext &C,
       node_draw_collapsed(C, tree_draw_ctx, v2d, snode, ntree, node, block);
     }
     else {
-      node_draw_basis(C, tree_draw_ctx, v2d, snode, ntree, node, block);
+      node_draw_basis(C, tree_draw_ctx, v2d, snode, ntree, node, block, key);
     }
   }
 }
@@ -4501,7 +4569,8 @@ static void node_draw_nodetree(const bContext &C,
                                SpaceNode &snode,
                                bNodeTree &ntree,
                                Span<bNode *> nodes,
-                               Span<ui::Block *> blocks)
+                               Span<ui::Block *> blocks,
+                               bNodeInstanceKey parent_key)
 {
 #ifdef USE_DRAW_TOT_UPDATE
   BLI_rctf_init_minmax(&region.v2d.tot);
@@ -4546,7 +4615,8 @@ static void node_draw_nodetree(const bContext &C,
       continue;
     }
 
-    node_draw(C, tree_draw_ctx, region, snode, ntree, node, *blocks[node.index()]);
+    const bNodeInstanceKey key = bke::node_instance_key(parent_key, &ntree, &node);
+    node_draw(C, tree_draw_ctx, region, snode, ntree, node, *blocks[node.index()], key);
   }
 
   ui::Block &invalid_links_block = invalid_links_uiblock_init(C);
@@ -4629,7 +4699,10 @@ static Map<const bNode *, const bNode *> find_menu_switch_sources_for_index_swit
   return result;
 }
 
-static void draw_nodetree(const bContext &C, ARegion &region, bNodeTree &ntree)
+static void draw_nodetree(const bContext &C,
+                          ARegion &region,
+                          bNodeTree &ntree,
+                          bNodeInstanceKey parent_key)
 {
   SpaceNode *snode = CTX_wm_space_node(&C);
   ntree.ensure_topology_cache();
@@ -4650,17 +4723,13 @@ static void draw_nodetree(const bContext &C, ARegion &region, bNodeTree &ntree)
   tree_draw_ctx.menu_switch_source_by_index_switch =
       find_menu_switch_sources_for_index_switch_nodes(*snode, ntree, compute_context_cache);
 
-  if (ELEM(ntree.type, NTREE_GEOMETRY, NTREE_COMPOSIT)) {
-    tree_draw_ctx.tree_logs = nodes::eval_log::NodesEvalLog::get_contextual_tree_logs(*snode);
-    tree_draw_ctx.tree_logs.foreach_tree_log([&](nodes::eval_log::NodeTreeLog &log) {
-      log.ensure_node_warnings(*tree_draw_ctx.bmain);
-      log.ensure_execution_times();
-      log.ensure_node_image_previews();
-    });
-  }
-
   BLI_SCOPED_DEFER([&]() { ntree.runtime->sockets_on_active_gizmo_paths.clear(); });
   if (ntree.type == NTREE_GEOMETRY) {
+    tree_draw_ctx.tree_logs = geo_log::GeoNodesLog::get_contextual_tree_logs(*snode);
+    tree_draw_ctx.tree_logs.foreach_tree_log([&](geo_log::GeoTreeLog &log) {
+      log.ensure_node_warnings(*tree_draw_ctx.bmain);
+      log.ensure_execution_times();
+    });
     const WorkSpace *workspace = CTX_wm_workspace(&C);
     tree_draw_ctx.active_geometry_nodes_viewer = viewer_path::find_geometry_nodes_viewer(
         workspace->viewer_path, *snode);
@@ -4669,6 +4738,11 @@ static void draw_nodetree(const bContext &C, ARegion &region, bNodeTree &ntree)
      * special gizmo drawing. */
     ntree.runtime->sockets_on_active_gizmo_paths = find_sockets_on_active_gizmo_paths(
         C, *snode, compute_context_cache);
+  }
+  else if (ntree.type == NTREE_COMPOSIT) {
+    const Scene *scene = CTX_data_scene(&C);
+    tree_draw_ctx.compositor_per_node_execution_time =
+        &scene->runtime->compositor.per_node_execution_time;
   }
   else if (ntree.type == NTREE_SHADER) {
     if (USER_EXPERIMENTAL_TEST(&U, use_shader_node_previews) &&
@@ -4694,7 +4768,7 @@ static void draw_nodetree(const bContext &C, ARegion &region, bNodeTree &ntree)
 
   node_update_nodetree(C, tree_draw_ctx, ntree, nodes, blocks);
   node_draw_zones_and_frames(region, *snode, ntree);
-  node_draw_nodetree(C, tree_draw_ctx, region, *snode, ntree, nodes, blocks);
+  node_draw_nodetree(C, tree_draw_ctx, region, *snode, ntree, nodes, blocks, parent_key);
 }
 
 static void draw_background_color()
@@ -4814,7 +4888,7 @@ void node_draw_space(const bContext &C, ARegion &region)
         GPU_matrix_projection_set(original_proj);
       }
 
-      draw_nodetree(C, region, *ntree);
+      draw_nodetree(C, region, *ntree, path->parent_key);
     }
 
     /* Temporary links. */

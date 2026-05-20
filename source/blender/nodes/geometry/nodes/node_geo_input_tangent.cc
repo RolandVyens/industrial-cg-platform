@@ -101,10 +101,15 @@ class TangentFieldInput final : public bke::CurvesFieldInput {
     return construct_curve_tangent_gvarray(curves, domain);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random constant hash. */
+    return 91827364589;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const TangentFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

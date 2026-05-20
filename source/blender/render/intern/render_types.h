@@ -30,6 +30,7 @@ namespace blender {
 
 namespace compositor {
 class RenderContext;
+class Profiler;
 enum class NodeGroupOutputTypes : uint8_t;
 }  // namespace compositor
 
@@ -56,6 +57,7 @@ struct BaseRender {
                                   const bNodeTree &node_tree,
                                   const char *view_name,
                                   compositor::RenderContext *render_context,
+                                  compositor::Profiler *profiler,
                                   compositor::NodeGroupOutputTypes needed_outputs) = 0;
   virtual void compositor_free() = 0;
 
@@ -100,6 +102,7 @@ struct ViewRender : public BaseRender {
                           const bNodeTree & /*node_tree*/,
                           const char * /*view_name*/,
                           compositor::RenderContext * /*render_context*/,
+                          compositor::Profiler * /*profiler*/,
                           compositor::NodeGroupOutputTypes /*needed_outputs*/) override
   {
   }
@@ -127,6 +130,7 @@ struct Render : public BaseRender {
                           const bNodeTree &node_tree,
                           const char *view_name,
                           compositor::RenderContext *render_context,
+                          compositor::Profiler *profiler,
                           compositor::NodeGroupOutputTypes needed_outputs) override;
   void compositor_free() override;
 

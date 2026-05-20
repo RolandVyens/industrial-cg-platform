@@ -188,8 +188,6 @@ void AbstractView::filter(std::optional<StringRef> filter_str)
   });
 }
 
-/** \} */
-
 /* ---------------------------------------------------------------------- */
 /** \name Renaming
  * \{ */

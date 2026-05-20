@@ -11,8 +11,6 @@
 #include "DNA_ID.h"
 #include "DNA_listBase.h"
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 struct AnimData;
@@ -20,13 +18,12 @@ struct BoundBox;
 struct Material;
 
 /** #MetaBall::texspace_flag */
-enum eMetaBall_TexSpaceFlag : char {
+enum {
   MB_TEXSPACE_FLAG_AUTO = 1 << 0,
 };
-ENUM_OPERATORS(eMetaBall_TexSpaceFlag)
 
 /** #MetaBall::flag */
-enum eMetaBall_Flag : char {
+enum {
   MB_UPDATE_ALWAYS = 0,
   MB_UPDATE_HALFRES = 1,
   MB_UPDATE_FAST = 2,
@@ -34,13 +31,12 @@ enum eMetaBall_Flag : char {
 };
 
 /** #MetaBall::flag2 */
-enum eMetaBall_Flag2 : char {
+enum {
   MB_DS_EXPAND = 1 << 0,
 };
-ENUM_OPERATORS(eMetaBall_Flag2)
 
 /** #MetaElem::type */
-enum eMetaElem_Type : short {
+enum {
   MB_BALL = 0,
   MB_TUBEX = 1, /* Deprecated. */
   MB_TUBEY = 2, /* Deprecated. */
@@ -54,13 +50,11 @@ enum eMetaElem_Type : short {
 #define MB_TYPE_SIZE_SQUARED(type) ((type) == MB_ELIPSOID)
 
 /** #MetaElem::flag */
-enum eMetaElem_Flag : short {
-  MB_SELECT = (1 << 0),
+enum {
   MB_NEGATIVE = 1 << 1,
   MB_HIDE = 1 << 3,
   MB_SCALE_RAD = 1 << 4,
 };
-ENUM_OPERATORS(eMetaElem_Flag)
 
 struct MetaElem {
   struct MetaElem *next = nullptr, *prev = nullptr;
@@ -68,8 +62,7 @@ struct MetaElem {
   /** Bound Box of MetaElem. */
   struct BoundBox *bb = nullptr;
 
-  eMetaElem_Type type = MB_BALL;
-  eMetaElem_Flag flag = {};
+  short type = 0, flag = 0;
   char _pad[4] = {};
   /** Position of center of MetaElem. */
   float x = 0, y = 0, z = 0;
@@ -109,9 +102,9 @@ struct MetaBall {
   struct Material **mat = nullptr;
 
   /** Flag is enum for updates, flag2 is bit-flags for settings. */
-  eMetaBall_Flag flag = MB_UPDATE_ALWAYS;
-  eMetaBall_Flag2 flag2 = {};
+  char flag = 0, flag2 = 0;
   short totcol = 0;
+  /** Used to store #MB_TEXTURE_FLAG_AUTO. */
   char texspace_flag = MB_TEXSPACE_FLAG_AUTO;
   char _pad[2] = {};
 

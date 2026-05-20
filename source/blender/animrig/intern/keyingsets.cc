@@ -42,7 +42,7 @@ void keyingset_info_register(KeyingSetInfo *keyingset_info)
   KeyingSet *keyingset = BKE_keyingset_add(&builtin_keyingsets,
                                            keyingset_info->idname,
                                            keyingset_info->name,
-                                           eKS_Settings{},
+                                           1,
                                            keyingset_info->keyingflag);
 
   /* Link this KeyingSet with its typeinfo. */

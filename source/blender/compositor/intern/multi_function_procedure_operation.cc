@@ -11,7 +11,6 @@
 #include "BLI_index_mask.hh"
 #include "BLI_map.hh"
 #include "BLI_math_base.hh"
-#include "BLI_math_euler.hh"
 #include "BLI_math_vector_types.hh"
 #include "BLI_string_ref.hh"
 #include "BLI_vector.hh"
@@ -40,7 +39,6 @@
 #include "COM_multi_function_procedure_operation.hh"
 #include "COM_pixel_operation.hh"
 #include "COM_result.hh"
-#include "COM_scheduler.hh"
 #include "COM_utilities.hh"
 
 namespace blender::compositor {
@@ -48,11 +46,11 @@ namespace blender::compositor {
 MultiFunctionProcedureOperation::MultiFunctionProcedureOperation(
     Context &context,
     PixelCompileUnit &compile_unit,
-    const Schedule &schedule,
-    const bool is_single_value,
-    const ComputeContext &compute_context)
-    : PixelOperation(context, compile_unit, schedule, compute_context, is_single_value),
-      procedure_builder_(procedure_)
+    const VectorSet<const bNode *> &schedule,
+    const bool is_single_value)
+    : PixelOperation(context, compile_unit, schedule),
+      procedure_builder_(procedure_),
+      is_single_value_(is_single_value)
 {
   this->build_procedure();
   procedure_executor_ = std::make_unique<mf::ProcedureExecutor>(procedure_);
@@ -94,7 +92,7 @@ void MultiFunctionProcedureOperation::execute()
       }
       else {
         output.allocate_texture(domain);
-        parameter_builder.add_uninitialized_single_output(output.cpu_data_for_write());
+        parameter_builder.add_uninitialized_single_output(output.cpu_data());
       }
     }
   }
@@ -154,7 +152,6 @@ void MultiFunctionProcedureOperation::build_procedure()
   }
 
   mf::ReturnInstruction &return_instruction = procedure_builder_.add_return();
-  procedure_.prepare_for_execution();
   mf::procedure_optimization::move_destructs_up(procedure_, return_instruction);
   BLI_assert(procedure_.validate());
 }
@@ -166,14 +163,6 @@ Vector<mf::Variable *> MultiFunctionProcedureOperation::get_input_variables(
   Vector<mf::Variable *> input_variables;
   for (const bNodeSocket *input : node.input_sockets()) {
     if (!is_socket_available(input)) {
-      continue;
-    }
-
-    const mf::ParamType parameter_type = multi_function.param_type(available_inputs_index);
-    available_inputs_index++;
-
-    if (schedule_.unneeded_inputs.contains(input)) {
-      input_variables.append(this->get_default_value_variable(parameter_type.data_type()));
       continue;
     }
 
@@ -202,8 +191,11 @@ Vector<mf::Variable *> MultiFunctionProcedureOperation::get_input_variables(
     }
 
     /* Implicitly convert the variable type to the expected parameter type if needed. */
+    const mf::ParamType parameter_type = multi_function.param_type(available_inputs_index);
     input_variables.last() = this->convert_variable(input_variables.last(),
                                                     parameter_type.data_type());
+
+    available_inputs_index++;
   }
 
   return input_variables;
@@ -289,15 +281,6 @@ mf::Variable *MultiFunctionProcedureOperation::get_constant_input_variable(
     case SOCK_STRING: {
       const std::string value = input.default_value_typed<bNodeSocketValueString>()->value;
       constant_function = &procedure_.construct_function<mf::CustomMF_Constant<std::string>>(
-          value);
-      break;
-    }
-    case SOCK_ROTATION: {
-      const bNodeSocketValueRotation *rotation =
-          input.default_value_typed<bNodeSocketValueRotation>();
-      const math::EulerXYZ euler(float3(rotation->value_euler));
-      const math::Quaternion value = math::to_quaternion(euler);
-      constant_function = &procedure_.construct_function<mf::CustomMF_Constant<math::Quaternion>>(
           value);
       break;
     }
@@ -434,10 +417,9 @@ mf::Variable *MultiFunctionProcedureOperation::get_multi_function_input_variable
 void MultiFunctionProcedureOperation::assign_output_variables(const bNode &node,
                                                               Vector<mf::Variable *> &variables)
 {
-  const bool should_log_outputs = this->context().nodes_evaluation_log() && is_single_value_;
-  const bNodeSocket *preview_output = needs_node_previews_ && !is_single_value_ ?
-                                          find_preview_output_socket(node) :
-                                          nullptr;
+  const bool is_node_preview_needed = this->get_node_previews() != nullptr;
+  const bNodeSocket *preview_output = is_node_preview_needed ? find_preview_output_socket(node) :
+                                                               nullptr;
 
   int available_outputs_index = 0;
   for (const bNodeSocket *output : node.output_sockets()) {
@@ -453,7 +435,7 @@ void MultiFunctionProcedureOperation::assign_output_variables(const bNode &node,
      * populated for it. */
     const bool is_operation_output = is_output_linked_to_node_conditioned(
         *output, [&](const bNode &node) {
-          return schedule_.nodes.contains(&node) && !compile_unit_.contains(&node);
+          return schedule_.contains(&node) && !compile_unit_.contains(&node);
         });
 
     /* If the output is used as the node preview, then an output result needs to be populated for
@@ -463,11 +445,7 @@ void MultiFunctionProcedureOperation::assign_output_variables(const bNode &node,
       preview_outputs_.add(output);
     }
 
-    if (should_log_outputs) {
-      logged_outputs_.add(output);
-    }
-
-    if (is_operation_output || is_preview_output || should_log_outputs) {
+    if (is_operation_output || is_preview_output) {
       this->populate_operation_result(*output, output_variable);
     }
 
@@ -512,22 +490,17 @@ mf::Variable *MultiFunctionProcedureOperation::convert_variable(mf::Variable *va
 
   /* Conversion is not possible, return a default variable instead. */
   if (!function) {
-    return this->get_default_value_variable(expected_type);
+    const mf::MultiFunction &constant_function =
+        procedure_.construct_function<mf::CustomMF_GenericConstant>(
+            expected_type.single_type(), expected_type.single_type().default_value(), false);
+    mf::Variable *constant_variable = procedure_builder_.add_call<1>(constant_function)[0];
+    implicit_variables_.append(constant_variable);
+    return constant_variable;
   }
 
   mf::Variable *converted_variable = procedure_builder_.add_call<1>(*function, {variable})[0];
   implicit_variables_.append(converted_variable);
   return converted_variable;
-}
-
-mf::Variable *MultiFunctionProcedureOperation::get_default_value_variable(const mf::DataType type)
-{
-  const mf::MultiFunction &constant_function =
-      procedure_.construct_function<mf::CustomMF_GenericConstant>(
-          type.single_type(), type.single_type().default_value(), false);
-  mf::Variable *constant_variable = procedure_builder_.add_call<1>(constant_function)[0];
-  implicit_variables_.append(constant_variable);
-  return constant_variable;
 }
 
 }  // namespace blender::compositor

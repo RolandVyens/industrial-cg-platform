@@ -19,9 +19,6 @@ namespace nodes::node_shader_bsdf_principled_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  const bNodeTree *ntree = b.tree_or_null();
-  const bool is_gpu_internal = ntree && (ntree->flag & NTREE_IS_GPU_SHADER_INTERNAL);
-
   /**
    * Define static socket numbers to avoid string based lookups for GPU material creation as these
    * could run on animated materials.
@@ -74,7 +71,7 @@ static void node_declare(NodeDeclarationBuilder &b)
 #define SOCK_ALPHA_ID 4
   b.add_input<decl::Vector>("Normal"_ustr).hide_value();
 #define SOCK_NORMAL_ID 5
-  b.add_input<decl::Float>("Weight"_ustr).available(is_gpu_internal);
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
 #define SOCK_WEIGHT_ID 6
 
   /* Panel for Diffuse settings. */
@@ -130,15 +127,15 @@ static void node_declare(NodeDeclarationBuilder &b)
 #define SOCK_SUBSURFACE_IOR_ID 11
   sss.add_input<decl::Float>("Subsurface Anisotropy"_ustr)
       .default_value(0.0f)
-      .min(-1.0f)
+      .min(0.0f)
       .max(1.0f)
       .subtype(PROP_FACTOR)
       .short_label("Anisotropy")
       .description(
           "Directionality of volume scattering within the subsurface medium. "
-          "Zero scatters uniformly in all directions, positive values scatter more in the forward "
-          "direction, and negative values scatter more backwards. "
-          "For example, skin has been measured to have an anisotropy of 0.8")
+          "Zero scatters uniformly in all directions, with higher values "
+          "scattering more strongly forward. For example, skin has been measured "
+          "to have an anisotropy of 0.8")
       .make_available([](bNode &node) { node.custom2 = SHD_SUBSURFACE_RANDOM_WALK; });
 #define SOCK_SUBSURFACE_ANISOTROPY_ID 12
 
@@ -381,11 +378,7 @@ static int node_shader_gpu_bsdf_principled(GPUMaterial *mat,
     flag |= GPU_MATFLAG_REFRACTION_MAYBE_COLORED;
   }
   if (use_coat && in[SOCK_COAT_TINT_ID].might_be_tinted()) {
-    /* Coat tints lower layers. */
     flag |= GPU_MATFLAG_REFLECTION_MAYBE_COLORED;
-    if (use_refract) {
-      flag |= GPU_MATFLAG_REFRACTION_MAYBE_COLORED;
-    }
   }
 
   GPU_material_flag_set(mat, flag);
@@ -417,11 +410,11 @@ static void node_shader_update_principled(bNodeTree *ntree, bNode *node)
   const int sss_method = node->custom2;
 
   bke::node_set_socket_availability(*ntree,
-                                    *bke::node_find_socket(*node, SOCK_IN, "Subsurface IOR"_ustr),
+                                    *bke::node_find_socket(*node, SOCK_IN, "Subsurface IOR"),
                                     sss_method == SHD_SUBSURFACE_RANDOM_WALK_SKIN);
   bke::node_set_socket_availability(
       *ntree,
-      *bke::node_find_socket(*node, SOCK_IN, "Subsurface Anisotropy"_ustr),
+      *bke::node_find_socket(*node, SOCK_IN, "Subsurface Anisotropy"),
       sss_method != SHD_SUBSURFACE_BURLEY);
 }
 

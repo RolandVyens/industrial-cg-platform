@@ -135,7 +135,9 @@ void ABCHairWriter::write_hair_sample(const HierarchyContext &context,
   const Span<float3> vert_normals = mesh->vert_normals();
 
   if ((!mtface || !mface) && !uv_warning_shown_) {
-    CLOG_WARN(&LOG, "No UV set found for underlying geometry of %s", context.object->id.name + 2);
+    std::fprintf(stderr,
+                 "Warning, no UV set found for underlying geometry of %s.\n",
+                 context.object->id.name + 2);
     uv_warning_shown_ = true;
   }
 
@@ -187,7 +189,7 @@ void ABCHairWriter::write_hair_sample(const HierarchyContext &context,
         }
       }
       else {
-        CLOG_WARN(&LOG, "Particle to faces overflow (%d/%d)", num, mesh->totface_legacy);
+        std::fprintf(stderr, "Particle to faces overflow (%d/%d)\n", num, mesh->totface_legacy);
       }
     }
     else if (part->from == PART_FROM_VERT && mtface) {

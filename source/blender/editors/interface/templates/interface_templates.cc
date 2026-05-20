@@ -298,8 +298,6 @@ void template_node_socket(Layout *layout, bContext * /*C*/, const float color[4]
   block_align_end(block);
 }
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
 /** \name FileSelectParams Path Button Template
  * \{ */

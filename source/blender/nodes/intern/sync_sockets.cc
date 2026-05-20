@@ -29,7 +29,6 @@
 
 #include "BLT_translation.hh"
 
-#include "NOD_bundle_type.hh"
 #include "NOD_geo_bundle.hh"
 #include "NOD_geo_closure.hh"
 #include "NOD_socket_items.hh"
@@ -93,12 +92,13 @@ static BundleSyncState get_sync_state_separate_bundle(
   return {NodeSyncState::Synced};
 }
 
-static LinkedBundleSignatures get_expected_combine_bundle_signatures(
-    const SpaceNode &snode, const bNode &combine_bundle_node, const bNodeSocket *src_bundle_socket)
+static BundleSyncState get_sync_state_combine_bundle(
+    const SpaceNode &snode,
+    const bNode &combine_bundle_node,
+    const bNodeSocket *src_bundle_socket = nullptr)
 {
   BLI_assert(combine_bundle_node.is_type("NodeCombineBundle"_ustr));
   snode.edittree->ensure_topology_cache();
-
   if (!src_bundle_socket) {
     src_bundle_socket = &combine_bundle_node.output_socket(0);
   }
@@ -108,39 +108,18 @@ static LinkedBundleSignatures get_expected_combine_bundle_signatures(
   const ComputeContext *current_context = ed::space_node::compute_context_for_edittree_socket(
       snode, compute_context_cache, *src_bundle_socket);
   if (!current_context) {
-    return {};
-  }
-
-  const std::optional<StringRef> type = combine_bundle_node_type(*snode.edittree,
-                                                                 combine_bundle_node);
-  if (type) {
-    if (const FlatBundleTypePtr flat_bundle_type = BundleTypeRegistry::try_find_single_flat(*type))
-    {
-      SocketInContext socket = {current_context, src_bundle_socket};
-      LinkedBundleSignatures result;
-      result.items.append({flat_bundle_type->to_bundle_signature(), true, socket});
-      return result;
-    }
-  }
-  return gather_linked_target_bundle_signatures(
-      current_context, *src_bundle_socket, compute_context_cache);
-}
-
-static BundleSyncState get_sync_state_combine_bundle(
-    const SpaceNode &snode,
-    const bNode &combine_bundle_node,
-    const bNodeSocket *src_bundle_socket = nullptr)
-{
-  const LinkedBundleSignatures source_signatures = get_expected_combine_bundle_signatures(
-      snode, combine_bundle_node, src_bundle_socket);
-  if (source_signatures.items.is_empty()) {
     return {NodeSyncState::NoSyncSource};
   }
-  std::optional<BundleSignature> merged_signature = source_signatures.get_merged_signature();
+  const LinkedBundleSignatures linked_signatures = gather_linked_target_bundle_signatures(
+      current_context, *src_bundle_socket, compute_context_cache);
+  if (linked_signatures.items.is_empty()) {
+    return {NodeSyncState::NoSyncSource};
+  }
+  std::optional<BundleSignature> merged_signature = linked_signatures.get_merged_signature();
   if (!merged_signature.has_value()) {
     return {NodeSyncState::ConflictingSyncSources};
   }
-  if (!source_signatures.has_type_definition()) {
+  if (!linked_signatures.has_type_definition()) {
     merged_signature->set_auto_structure_types();
   }
   const nodes::BundleSignature &current_signature =
@@ -258,7 +237,7 @@ void sync_sockets_separate_bundle(SpaceNode &snode,
     NodeSeparateBundleItem &new_item = *nodes::socket_items::add_item_with_socket_type_and_name<
         nodes ::SeparateBundleItemsAccessor>(
         *snode.edittree, separate_bundle_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }
@@ -299,7 +278,7 @@ void sync_sockets_combine_bundle(SpaceNode &snode,
     NodeCombineBundleItem &new_item = *nodes::socket_items::add_item_with_socket_type_and_name<
         nodes ::CombineBundleItemsAccessor>(
         *snode.edittree, combine_bundle_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }
@@ -349,7 +328,7 @@ void sync_sockets_evaluate_closure(SpaceNode &snode,
         *nodes::socket_items::add_item_with_socket_type_and_name<
             nodes::EvaluateClosureInputItemsAccessor>(
             *snode.edittree, evaluate_closure_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_input_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }
@@ -359,7 +338,7 @@ void sync_sockets_evaluate_closure(SpaceNode &snode,
         *nodes::socket_items::add_item_with_socket_type_and_name<
             nodes::EvaluateClosureOutputItemsAccessor>(
             *snode.edittree, evaluate_closure_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_output_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }
@@ -409,7 +388,7 @@ void sync_sockets_closure(SpaceNode &snode,
     NodeClosureInputItem &new_item =
         *nodes::socket_items::add_item_with_socket_type_and_name<nodes::ClosureInputItemsAccessor>(
             *snode.edittree, closure_output_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_input_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }
@@ -418,7 +397,7 @@ void sync_sockets_closure(SpaceNode &snode,
     NodeClosureOutputItem &new_item = *nodes::socket_items::add_item_with_socket_type_and_name<
         nodes::ClosureOutputItemsAccessor>(
         *snode.edittree, closure_output_node, item.type->type, item.key.c_str());
-    new_item.structure_type = item.structure_type;
+    new_item.structure_type = int(item.structure_type);
     if (const std::optional<int> old_identifier = old_output_identifiers.lookup_try(item.key)) {
       new_item.identifier = *old_identifier;
     }

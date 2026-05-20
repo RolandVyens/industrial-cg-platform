@@ -18,15 +18,6 @@ struct FluidModifierData;
 struct Main;
 struct Scene;
 
-enum eFluidDomain_BorderFlags : int;
-enum eFluidDomain_FileFormat : char;
-enum eFluidDomain_ParticleTypes : int;
-enum eFluidDomain_Type : short;
-enum eFluidEffector_Type : short;
-enum eFluidFlow_Behavior : short;
-enum eFluidFlow_Type : short;
-enum eParticleType : short;
-
 typedef float (*BKE_Fluid_BresenhamFn)(
     float *result, const float *input, int res[3], int *pixel, float *tRay, float correct);
 
@@ -68,39 +59,30 @@ void BKE_fluid_particle_system_create(struct Main *bmain,
                                       const char *pset_name,
                                       const char *parts_name,
                                       const char *psys_name,
-                                      eParticleType psys_type);
+                                      int psys_type);
 void BKE_fluid_particle_system_destroy(struct Object *ob, int particle_type);
 
 void BKE_fluid_cache_startframe_set(struct FluidDomainSettings *settings, int value);
 void BKE_fluid_cache_endframe_set(struct FluidDomainSettings *settings, int value);
 
-void BKE_fluid_cachetype_mesh_set(struct FluidDomainSettings *settings,
-                                  eFluidDomain_FileFormat cache_mesh_format);
-void BKE_fluid_cachetype_data_set(struct FluidDomainSettings *settings,
-                                  eFluidDomain_FileFormat cache_data_format);
+void BKE_fluid_cachetype_mesh_set(struct FluidDomainSettings *settings, int cache_mesh_format);
+void BKE_fluid_cachetype_data_set(struct FluidDomainSettings *settings, int cache_data_format);
 void BKE_fluid_cachetype_particle_set(struct FluidDomainSettings *settings,
-                                      eFluidDomain_FileFormat cache_particle_format);
-void BKE_fluid_cachetype_noise_set(struct FluidDomainSettings *settings,
-                                   eFluidDomain_FileFormat cache_noise_format);
-void BKE_fluid_collisionextents_set(struct FluidDomainSettings *settings,
-                                    eFluidDomain_BorderFlags value,
-                                    bool clear);
-void BKE_fluid_particles_set(struct FluidDomainSettings *settings,
-                             eFluidDomain_ParticleTypes value,
-                             bool clear);
+                                      int cache_particle_format);
+void BKE_fluid_cachetype_noise_set(struct FluidDomainSettings *settings, int cache_noise_format);
+void BKE_fluid_collisionextents_set(struct FluidDomainSettings *settings, int value, bool clear);
+void BKE_fluid_particles_set(struct FluidDomainSettings *settings, int value, bool clear);
 
 void BKE_fluid_domain_type_set(struct Object *object,
                                struct FluidDomainSettings *settings,
-                               eFluidDomain_Type type);
-void BKE_fluid_flow_type_set(struct Object *object,
-                             struct FluidFlowSettings *settings,
-                             eFluidFlow_Type type);
+                               int type);
+void BKE_fluid_flow_type_set(struct Object *object, struct FluidFlowSettings *settings, int type);
 void BKE_fluid_effector_type_set(struct Object *object,
                                  struct FluidEffectorSettings *settings,
-                                 eFluidEffector_Type type);
+                                 int type);
 void BKE_fluid_fields_sanitize(struct FluidDomainSettings *settings);
 void BKE_fluid_flow_behavior_set(struct Object *object,
                                  struct FluidFlowSettings *settings,
-                                 eFluidFlow_Behavior behavior);
+                                 int behavior);
 
 }  // namespace blender

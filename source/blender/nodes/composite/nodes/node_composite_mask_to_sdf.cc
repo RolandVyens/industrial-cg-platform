@@ -66,10 +66,11 @@ class MaskToSDFOperation : public NodeOperation {
     }
 
     if (nearest_pixel_output.should_compute()) {
-      nearest_pixel_output.share_data(flooded_boundary);
+      nearest_pixel_output.steal_data(flooded_boundary);
     }
-
-    flooded_boundary.release();
+    else {
+      flooded_boundary.release();
+    }
   }
 
   /* Compute an image that marks the boundary pixels of the mask region as seed pixels for

@@ -4,8 +4,6 @@
 
 #include "testing/testing.h"
 
-#include "BKE_gtest_base.hh"
-
 #include "BLI_cpp_type.hh"
 
 #include "FN_field_evaluation.hh"
@@ -14,9 +12,7 @@
 
 namespace blender::fn::tests {
 
-class FieldTest : public bke::BlenderGTestBase {};
-
-TEST_F(FieldTest, ConstantFunction)
+TEST(field, ConstantFunction)
 {
   GField constant_field{FieldOperation::from(std::make_unique<mf::CustomMF_Constant<int>>(10), {}),
                         0};
@@ -46,7 +42,7 @@ class IndexFieldInput final : public FieldInput {
   }
 };
 
-TEST_F(FieldTest, VArrayInput)
+TEST(field, VArrayInput)
 {
   GField index_field = GField::from_input<IndexFieldInput>();
 
@@ -77,7 +73,7 @@ TEST_F(FieldTest, VArrayInput)
   EXPECT_EQ(result_2[8], 8);
 }
 
-TEST_F(FieldTest, VArrayInputMultipleOutputs)
+TEST(field, VArrayInputMultipleOutputs)
 {
   FieldInputPtr index_input{MEM_new<IndexFieldInput>(__func__)};
   GField field_1{index_input};
@@ -105,7 +101,7 @@ TEST_F(FieldTest, VArrayInputMultipleOutputs)
   EXPECT_EQ(result_2[8], 8);
 }
 
-TEST_F(FieldTest, InputAndFunction)
+TEST(field, InputAndFunction)
 {
   GField index_field = GField::from_input<IndexFieldInput>();
 
@@ -128,7 +124,7 @@ TEST_F(FieldTest, InputAndFunction)
   EXPECT_EQ(result[8], 16);
 }
 
-TEST_F(FieldTest, TwoFunctions)
+TEST(field, TwoFunctions)
 {
   GField index_field = GField::from_input<IndexFieldInput>();
 
@@ -182,7 +178,7 @@ class TwoOutputFunction : public mf::MultiFunction {
   }
 };
 
-TEST_F(FieldTest, FunctionTwoOutputs)
+TEST(field, FunctionTwoOutputs)
 {
   /* Also use two separate input fields, why not. */
   GField index_field_1 = GField::from_input<IndexFieldInput>();
@@ -216,7 +212,7 @@ TEST_F(FieldTest, FunctionTwoOutputs)
   EXPECT_EQ(result_2[8], 26);
 }
 
-TEST_F(FieldTest, TwoFunctionsTwoOutputs)
+TEST(field, TwoFunctionsTwoOutputs)
 {
   GField index_field = GField::from_input<IndexFieldInput>();
 
@@ -251,7 +247,7 @@ TEST_F(FieldTest, TwoFunctionsTwoOutputs)
   EXPECT_EQ(result_2.get(8), 36);
 }
 
-TEST_F(FieldTest, SameFieldTwice)
+TEST(field, SameFieldTwice)
 {
   GField constant_field{FieldOperation::from(std::make_unique<mf::CustomMF_Constant<int>>(10), {}),
                         0};
@@ -271,7 +267,7 @@ TEST_F(FieldTest, SameFieldTwice)
   EXPECT_EQ(varray2.get(1), 10);
 }
 
-TEST_F(FieldTest, IgnoredOutput)
+TEST(field, IgnoredOutput)
 {
   static mf::tests::OptionalOutputsFunction fn;
   Field<int> field{FieldOperation::from(fn, {}), 0};
@@ -286,7 +282,7 @@ TEST_F(FieldTest, IgnoredOutput)
   EXPECT_EQ(results.get(3), 5);
 }
 
-TEST_F(FieldTest, EvaluateWithVArrayPtr)
+TEST(field, EvaluateWithVArrayPtr)
 {
   VArray<int> dst_a;
   VArraySpan<int> dst_b;

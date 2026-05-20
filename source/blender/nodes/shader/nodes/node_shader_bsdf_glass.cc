@@ -13,9 +13,6 @@ namespace nodes::node_shader_bsdf_glass_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  const bNodeTree *ntree = b.tree_or_null();
-  const bool is_gpu_internal = ntree && (ntree->flag & NTREE_IS_GPU_SHADER_INTERNAL);
-
   b.use_custom_socket_order();
 
   b.add_output<decl::Shader>("BSDF"_ustr);
@@ -30,7 +27,7 @@ static void node_declare(NodeDeclarationBuilder &b)
       .subtype(PROP_FACTOR);
   b.add_input<decl::Float>("IOR"_ustr).default_value(1.5f).min(0.0f).max(1000.0f);
   b.add_input<decl::Vector>("Normal"_ustr).hide_value();
-  b.add_input<decl::Float>("Weight"_ustr).available(is_gpu_internal);
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
 
   PanelDeclarationBuilder &film = b.add_panel("Thin Film"_ustr).default_closed(true);
   film.add_input<decl::Float>("Thin Film Thickness"_ustr)

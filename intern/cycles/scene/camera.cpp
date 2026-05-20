@@ -362,15 +362,17 @@ void Camera::update(Scene *scene)
   }
 
   if (need_motion == Scene::MOTION_PASS) {
-    if (have_motion) {
-      kcam->motion_pass_pre = transform_inverse(motion[0]);
-      kcam->motion_pass_post = transform_inverse(motion[motion.size() - 1]);
+    if (camera_type == CAMERA_PANORAMA || camera_type == CAMERA_CUSTOM) {
+      if (have_motion) {
+        kcam->motion_pass_pre = transform_inverse(motion[0]);
+        kcam->motion_pass_post = transform_inverse(motion[motion.size() - 1]);
+      }
+      else {
+        kcam->motion_pass_pre = kcam->worldtocamera;
+        kcam->motion_pass_post = kcam->worldtocamera;
+      }
     }
     else {
-      kcam->motion_pass_pre = kcam->worldtocamera;
-      kcam->motion_pass_post = kcam->worldtocamera;
-    }
-    if (camera_type != CAMERA_PANORAMA && camera_type != CAMERA_CUSTOM) {
       if (have_motion || fov != fov_pre || fov != fov_post) {
         /* Note the values for perspective_pre/perspective_post calculated for MOTION_PASS are
          * different to those calculated for MOTION_BLUR below, so the code has not been combined.
@@ -946,9 +948,7 @@ void Camera::set_osl_camera(Scene *scene,
       /* Skip unsupported types. */
       if (param->varlenarray || param->isstruct || param->type.arraylen > 1 || param->isoutput ||
           param->isclosure)
-      {
         continue;
-      }
 
       vector<uint8_t> raw_data;
       int vec_size = (int)param->type.aggregate;
@@ -976,9 +976,8 @@ void Camera::set_osl_camera(Scene *scene,
         raw_data.resize(data.length() + 1);
         memcpy(raw_data.data(), data.c_str(), data.length() + 1);
       }
-      else {
+      else
         continue;
-      }
 
       auto entry = std::make_pair(raw_data, param->type);
       auto it = script_params.find(param->name);
@@ -996,7 +995,7 @@ void Camera::set_osl_camera(Scene *scene,
 
     /* Remove unused parameters. */
     for (auto it = script_params.begin(); it != script_params.end();) {
-      if (used_params.contains(it->first)) {
+      if (used_params.count(it->first)) {
         it++;
       }
       else {

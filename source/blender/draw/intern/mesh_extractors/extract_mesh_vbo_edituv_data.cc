@@ -224,6 +224,4 @@ gpu::VertBufPtr extract_edituv_data_subdiv(const MeshRenderData &mr,
   return vbo;
 }
 
-/** \} */
-
 }  // namespace blender::draw

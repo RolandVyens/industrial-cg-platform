@@ -4,7 +4,9 @@
 
 #include "libocio_look.hh"
 
-#include "../view_specific_look.hh"
+#if defined(WITH_OPENCOLORIO)
+
+#  include "../view_specific_look.hh"
 
 namespace blender::ocio {
 
@@ -26,3 +28,5 @@ LibOCIOLook::LibOCIOLook(const int index, const OCIO_NAMESPACE::ConstLookRcPtr &
 }
 
 }  // namespace blender::ocio
+
+#endif

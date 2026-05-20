@@ -733,8 +733,7 @@ static bool uv_rip_pairs_calc_center_and_direction(UVRipPairs *rip,
 /**
  * \return true when a change was made.
  */
-static bool uv_rip_object(
-    Scene *scene, Object *obedit, const float co[2], const float aspect_y, ReportList *reports)
+static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const float aspect_y)
 {
   const ToolSettings *ts = scene->toolsettings;
 
@@ -835,14 +834,11 @@ static bool uv_rip_object(
     return changed;
   }
 
-  bool vert_selected = false;
-  bool edge_selected = false;
   /* Extract loop pairs or single loops. */
   BM_ITER_MESH (efa, &iter, em->bm, BM_FACES_OF_MESH) {
     if (BM_elem_flag_test(efa, BM_ELEM_TAG)) {
       BM_ITER_ELEM (l, &liter, efa, BM_LOOPS_OF_FACE) {
         if (UL(l)->is_select_edge) {
-          edge_selected = true;
           if (!UL(l)->in_rip_pairs) {
             UVRipPairs *rip = uv_rip_pairs_from_loop(l, aspect_y, offsets.uv);
             float center[2];
@@ -870,7 +866,6 @@ static bool uv_rip_object(
           }
         }
         else if (UL(l)->is_select_vert_single) {
-          vert_selected = true;
           UVRipSingle *rip = uv_rip_single_from_loop(l, co, aspect_y, offsets.uv);
           /* We only ever use one side. */
           const int side_from_cursor = 0;
@@ -888,16 +883,6 @@ static bool uv_rip_object(
       }
     }
   }
-
-  if (edge_selected && !changed) {
-    BKE_report(reports, RPT_ERROR, "Edge must have connected edges");
-    return false;
-  }
-  else if (vert_selected && !changed) {
-    BKE_report(reports, RPT_ERROR, "Vertex must have connected vertices");
-    return false;
-  }
-
   if (changed) {
     if (ts->uv_flag & UV_FLAG_SELECT_SYNC) {
       BM_mesh_uvselect_flush_from_loop_verts(bm);
@@ -964,7 +949,7 @@ static wmOperatorStatus uv_rip_exec(bContext *C, wmOperator *op)
   }
 
   for (Object *obedit : objects) {
-    if (uv_rip_object(scene, obedit, co, aspect_y, op->reports)) {
+    if (uv_rip_object(scene, obedit, co, aspect_y)) {
       changed_multi = true;
       uvedit_live_unwrap_update(sima, scene, obedit);
       DEG_id_tag_update(obedit->data, 0);
@@ -973,6 +958,7 @@ static wmOperatorStatus uv_rip_exec(bContext *C, wmOperator *op)
   }
 
   if (!changed_multi) {
+    BKE_report(op->reports, RPT_ERROR, "Rip failed");
     return OPERATOR_CANCELLED;
   }
   return OPERATOR_FINISHED;
@@ -992,7 +978,7 @@ static wmOperatorStatus uv_rip_invoke(bContext *C, wmOperator *op, const wmEvent
 void UV_OT_rip(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "Rip UVs";
+  ot->name = "UV Rip";
   ot->description = "Rip selected vertices or a selected region";
   ot->idname = "UV_OT_rip";
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_DEPENDS_ON_CURSOR;

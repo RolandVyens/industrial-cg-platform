@@ -268,6 +268,28 @@ ccl_device void integrator_shade_shadow(KernelGlobals kg,
 {
   PROFILING_INIT(kg, PROFILING_SHADE_SHADOW_SETUP);
   const uint packed_num_hits = INTEGRATOR_STATE(state, shadow_path, packed_num_hits);
+  const uint32_t path_flag = INTEGRATOR_STATE(state, shadow_path, flag);
+  Spectrum shadow_color = zero_spectrum();
+  bool apply_shadow_color = false;
+  bool opaque = false;
+
+  if (!(path_flag & PATH_RAY_SHADOW_FOR_AO)) {
+    Ray ray ccl_optional_struct_init;
+    integrator_state_read_shadow_ray(state, &ray);
+    integrator_state_read_shadow_ray_self(state, &ray);
+
+    if (ray.self.light_object != OBJECT_NONE && ray.self.light_prim != PRIM_NONE) {
+      const KernelObject &kobject = kernel_data_fetch(objects, ray.self.light_object);
+      if (kobject.primitive_type == PRIMITIVE_LAMP) {
+        const ccl_global KernelLight *klight = &kernel_data_fetch(lights, ray.self.light_prim);
+        shadow_color = make_float3(klight->shadow_color[0],
+                                   klight->shadow_color[1],
+                                   klight->shadow_color[2]);
+        shadow_color = clamp(shadow_color, zero_spectrum(), one_spectrum());
+        apply_shadow_color = !is_zero(shadow_color);
+      }
+    }
+  }
 
 #ifdef __TRANSPARENT_SHADOWS__
   /* Evaluate transparent shadows. */
@@ -277,17 +299,36 @@ ccl_device void integrator_shade_shadow(KernelGlobals kg,
     integrator_shadow_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);
     return;
   }
-  if (result == TRANSPARENT_SHADOW_EVAL_OPAQUE) {
+  opaque = (result == TRANSPARENT_SHADOW_EVAL_OPAQUE);
+  if (opaque && !apply_shadow_color) {
     integrator_shadow_path_terminate(state, DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);
     return;
   }
 #endif
 
-  if (shadow_intersections_has_remaining(packed_num_hits)) {
+  if (!opaque && shadow_intersections_has_remaining(packed_num_hits)) {
     /* More intersections to find, continue shadow ray. */
     integrator_shadow_path_next(
         state, DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW, DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW);
     return;
+  }
+
+  if (apply_shadow_color) {
+    /* Shadow color tinting.
+     * Compute transmittance as the ratio of shadowed to unshadowed throughput, then linearly
+     * interpolate: full occlusion (T=0) yields shadow_color, no occlusion (T=1) yields white.
+     * Formula: tinted = T + (1 - T) * shadow_color. */
+    const Spectrum unshadowed_throughput = INTEGRATOR_STATE(
+        state, shadow_path, unshadowed_throughput);
+    if (!is_zero(unshadowed_throughput)) {
+      const Spectrum shadowed_throughput = INTEGRATOR_STATE(state, shadow_path, throughput);
+      Spectrum transmittance = safe_divide_color(shadowed_throughput, unshadowed_throughput);
+      transmittance = clamp(transmittance, zero_spectrum(), one_spectrum());
+      const Spectrum tinted_transmittance =
+          transmittance + (one_spectrum() - transmittance) * shadow_color;
+      INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) =
+          unshadowed_throughput * tinted_transmittance;
+    }
   }
 
   guiding_record_direct_light(kg, state);

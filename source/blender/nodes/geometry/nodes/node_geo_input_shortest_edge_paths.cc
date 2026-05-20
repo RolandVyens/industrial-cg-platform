@@ -141,12 +141,19 @@ class ShortestEdgePathsNextVertFieldInput final : public bke::MeshFieldInput {
     fn(cost_);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(deep_hash_cache.ensure(end_selection_));
-    hash.add(deep_hash_cache.ensure(cost_));
+    return get_default_hash(end_selection_, cost_);
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    if (const ShortestEdgePathsNextVertFieldInput *other_field =
+            dynamic_cast<const ShortestEdgePathsNextVertFieldInput *>(&other))
+    {
+      return other_field->end_selection_ == end_selection_ && other_field->cost_ == cost_;
+    }
+    return false;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
@@ -216,12 +223,19 @@ class ShortestEdgePathsCostFieldInput final : public bke::MeshFieldInput {
     fn(cost_);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(deep_hash_cache.ensure(end_selection_));
-    hash.add(deep_hash_cache.ensure(cost_));
+    return get_default_hash(end_selection_, cost_);
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    if (const ShortestEdgePathsCostFieldInput *other_field =
+            dynamic_cast<const ShortestEdgePathsCostFieldInput *>(&other))
+    {
+      return other_field->end_selection_ == end_selection_ && other_field->cost_ == cost_;
+    }
+    return false;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

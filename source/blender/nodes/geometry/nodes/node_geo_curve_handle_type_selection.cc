@@ -97,12 +97,19 @@ class HandleTypeFieldInput final : public bke::CurvesFieldInput {
     return VArray<bool>::from_container(std::move(selection));
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(type_);
-    hash.add(mode_);
+    return get_default_hash(int(mode_), int(type_));
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    if (const HandleTypeFieldInput *other_handle_selection =
+            dynamic_cast<const HandleTypeFieldInput *>(&other))
+    {
+      return mode_ == other_handle_selection->mode_ && type_ == other_handle_selection->type_;
+    }
+    return false;
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

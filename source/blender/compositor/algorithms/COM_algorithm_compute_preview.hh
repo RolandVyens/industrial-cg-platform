@@ -11,8 +11,12 @@
 
 namespace blender::compositor {
 
-/* Computes and returns a lower resolution byte version of the given input after applying the
- * appropriate color management specified in the given context. */
-ImBuf *compute_preview(Context &context, const Result &input);
+/* Computes a lower resolution version of the given result and sets it as a preview for node with
+ * the given node instance key in the given node previews map after applying the appropriate color
+ * management specified in the given context. */
+void compute_preview(Context &context,
+                     Map<bNodeInstanceKey, bke::bNodePreview> *node_previews,
+                     const bNodeInstanceKey &instance_key,
+                     const Result &input_result);
 
 }  // namespace blender::compositor

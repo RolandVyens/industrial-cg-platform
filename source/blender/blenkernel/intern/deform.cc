@@ -513,8 +513,6 @@ static const int *object_defgroup_active_index_get_p(const Object *ob)
       const GreasePencil *grease_pencil = id_cast<const GreasePencil *>(ob->data);
       return &grease_pencil->vertex_group_active_index;
     }
-    default:
-      break;
   }
   return nullptr;
 }
@@ -1626,7 +1624,7 @@ void BKE_defvert_blend_read(BlendDataReader *reader, int count, MDeformVert *mdv
   for (int i = count; i > 0; i--, mdverts++) {
     /* Convert to vertex group allocation system. */
     MDeformWeight *dw = mdverts->dw;
-    BLO_read_array_and_validate_size(reader, &dw, &mdverts->totweight);
+    BLO_read_struct_array(reader, MDeformWeight, mdverts->totweight, &dw);
     if (dw) {
       void *dw_tmp = MEM_new_array_uninitialized<MDeformWeight>(size_t(mdverts->totweight),
                                                                 __func__);

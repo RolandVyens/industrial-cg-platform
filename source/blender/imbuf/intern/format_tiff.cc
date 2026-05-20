@@ -24,10 +24,7 @@ bool imb_is_a_tiff(const uchar *mem, size_t size)
   return imb_oiio_check(mem, size, "tif");
 }
 
-ImBuf *imb_load_tiff(const uchar *mem,
-                     size_t size,
-                     ImBufFlags flags,
-                     ImFileColorSpace &r_colorspace)
+ImBuf *imb_load_tiff(const uchar *mem, size_t size, int flags, ImFileColorSpace &r_colorspace)
 {
   ImageSpec config, spec;
   config.attribute("oiio:UnassociatedAlpha", 1);
@@ -36,9 +33,9 @@ ImBuf *imb_load_tiff(const uchar *mem,
 
   ImBuf *ibuf = imb_oiio_read(ctx, config, r_colorspace, spec);
   if (ibuf) {
-    if (flag_is_set(flags, ImBufFlags::AlphaDetect)) {
+    if (flags & IB_alphamode_detect) {
       if (spec.nchannels == 4 && spec.format == TypeDesc::UINT16) {
-        ibuf->flags |= ImBufFlags::AlphaPremul;
+        ibuf->flags |= IB_alphamode_premul;
       }
     }
   }
@@ -49,10 +46,10 @@ ImBuf *imb_load_tiff(const uchar *mem,
   return ibuf;
 }
 
-static std::tuple<WriteContext, ImageSpec> prepare_save_tiff(ImBuf *ibuf, ImBufFlags flags)
+bool imb_save_tiff(ImBuf *ibuf, const char *filepath, int flags)
 {
   const bool is_16bit = ((ibuf->foptions.flag & TIF_16BIT) && ibuf->float_data());
-  const int file_channels = ibuf->color_mode_channels_get();
+  const int file_channels = ibuf->planes >> 3;
   const TypeDesc data_format = is_16bit ? TypeDesc::UINT16 : TypeDesc::UINT8;
 
   WriteContext ctx = imb_create_write_context("tif", ibuf, flags, is_16bit);
@@ -78,19 +75,7 @@ static std::tuple<WriteContext, ImageSpec> prepare_save_tiff(ImBuf *ibuf, ImBufF
     file_spec.attribute("compression", "none");
   }
 
-  return {ctx, file_spec};
-}
-
-bool imb_save_tiff(ImBuf *ibuf, const char *filepath, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_tiff(ibuf, flags);
   return imb_oiio_write(ctx, filepath, file_spec);
-}
-
-Vector<uint8_t> imb_save_buffer_tiff(ImBuf *ibuf, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_tiff(ibuf, flags);
-  return imb_oiio_write_buffer(ctx, file_spec);
 }
 
 }  // namespace blender

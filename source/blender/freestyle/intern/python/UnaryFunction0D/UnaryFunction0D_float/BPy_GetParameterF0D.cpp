@@ -31,7 +31,7 @@ PyDoc_STRVAR(
     "   Returns the parameter of the :class:`freestyle.types.Interface0D`\n"
     "   pointed by the Interface0DIterator in the context of its 1D element.\n"
     "\n"
-    "   :param it: An Interface0DIterator object.\n"
+    "   :arg it: An Interface0DIterator object.\n"
     "   :type it: :class:`freestyle.types.Interface0DIterator`\n"
     "   :return: The parameter of an Interface0D.\n"
     "   :rtype: float\n");

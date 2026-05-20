@@ -122,7 +122,6 @@ class Array {
    */
   explicit Array(int64_t size, Allocator allocator = {}) : Array(NoExceptConstructor(), allocator)
   {
-    BLI_assert(size >= 0);
     data_ = this->get_buffer_for_size(size);
     default_construct_n(data_, size);
     size_ = size;
@@ -136,7 +135,7 @@ class Array {
       : Array(NoExceptConstructor(), allocator)
   {
     BLI_assert(size >= 0);
-    if (std::is_trivially_copyable_v<T> && value_is_zero(value)) {
+    if (std::is_trivially_copyable_v<T> && memory_is_zero(&value, sizeof(T))) {
       data_ = this->get_buffer_for_size(size, true);
     }
     else {

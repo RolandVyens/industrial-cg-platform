@@ -43,8 +43,6 @@
 
 #include "BLO_readfile.hh"
 
-#include "BLT_date_string.hh"
-#include "BLT_lang.hh"
 #include "BLT_translation.hh"
 
 #include "BLF_api.hh"
@@ -86,7 +84,7 @@ namespace blender {
 using RemoteLibraryLoadingStatus = asset_system::RemoteLibraryLoadingStatus;
 
 void ED_file_path_button(bScreen *screen,
-                         SpaceFile *sfile,
+                         const SpaceFile *sfile,
                          FileSelectParams *params,
                          ui::Block *block)
 {
@@ -94,11 +92,9 @@ void ED_file_path_button(bScreen *screen,
 
   BLI_assert_msg(params != nullptr,
                  "File select parameters not set. The caller is expected to check this.");
-  BLI_assert(params == sfile->params || params == &sfile->asset_params->base_params);
 
-  PointerRNA space_ptr = RNA_pointer_create_discrete(&screen->id, RNA_SpaceFileBrowser, sfile);
-  PointerRNA params_rna_ptr = RNA_pointer_create_with_parent(
-      space_ptr, RNA_FileSelectParams, params);
+  PointerRNA params_rna_ptr = RNA_pointer_create_discrete(
+      &screen->id, RNA_FileSelectParams, params);
 
   /* callbacks for operator check functions */
   block_func_set(block, file_draw_check_cb, nullptr, nullptr);
@@ -307,20 +303,19 @@ static void file_draw_tooltip_custom_func(bContext & /*C*/,
       free_imbuf = true;
     }
 
-    const time_t file_time = (time_t)file->time;
-    const std::tm mod_time = *std::localtime(&file_time);
-    const time_t ts_now = time(nullptr);
-    const std::tm now = *std::localtime(&ts_now);
-    const char *lang = BLT_lang_get();
-    std::string modified_s = blender::date_string::datetime(mod_time,
-                                                            lang,
-                                                            date_string::DateFormat(U.date_format),
-                                                            date_string::TimeFormat(U.time_format),
-                                                            &now,
-                                                            TIP_("Today"),
-                                                            TIP_("Yesterday"));
+    char date_str[FILELIST_DIRENTRY_DATE_LEN], time_str[FILELIST_DIRENTRY_TIME_LEN];
+    bool is_today, is_yesterday;
+    std::string day_string;
+    BLI_filelist_entry_datetime_to_string(
+        nullptr, file->time, false, time_str, date_str, &is_today, &is_yesterday);
+    if (is_today || is_yesterday) {
+      day_string = (is_today ? TIP_("Today") : TIP_("Yesterday")) + std::string(" ");
+    }
     tooltip_text_field_add(tip,
-                           fmt::format(fmt::runtime(TIP_("Modified: {}")), modified_s),
+                           fmt::format(fmt::runtime(TIP_("Modified: {}{}{}")),
+                                       day_string,
+                                       (is_today || is_yesterday) ? "" : date_str,
+                                       (is_today || is_yesterday) ? time_str : ""),
                            {},
                            ui::TIP_STYLE_NORMAL,
                            ui::TIP_LC_NORMAL);
@@ -598,7 +593,8 @@ static rcti file_measure_string_multiline(const StringRef string, const int wrap
   rcti textbox;
   BLF_wordwrap(font_id,
                wrap_width,
-               BLFWrapMode::Typographical | BLFWrapMode::Path | BLFWrapMode::HardLimit);
+               BLFWrapMode(int(BLFWrapMode::Typographical) | int(BLFWrapMode::Path) |
+                           int(BLFWrapMode::HardLimit)));
   BLF_enable(font_id, BLF_WORD_WRAP);
   BLF_boundbox(font_id, string.data(), string.size(), &textbox);
   BLF_disable(font_id, BLF_WORD_WRAP);
@@ -770,17 +766,20 @@ static void file_draw_preview(const FileDirEntry *file,
   const gpu::TextureFormat format = gpu::TextureFormat::UNORM_8_8_8_8;
   BLI_assert_msg(preview.channels == 4, "preview images are expected to be 4 channels");
 
-  PixelBitmapDrawer drawer(GPU_SHADER_3D_IMAGE_COLOR);
-  drawer.draw(float(xmin),
-              float(ymin),
-              preview.width,
-              preview.height,
-              format,
-              true,
-              preview.buffer.data(),
-              scale,
-              scale,
-              document_img_col);
+  IMMDrawPixelsTexState state = immDrawPixelsTexSetup(GPU_SHADER_3D_IMAGE_COLOR);
+  immDrawPixelsTexTiled_scaling(&state,
+                                float(xmin),
+                                float(ymin),
+                                preview.width,
+                                preview.height,
+                                format,
+                                true,
+                                preview.buffer.data(),
+                                scale,
+                                scale,
+                                1.0f,
+                                1.0f,
+                                document_img_col);
 
   const bool show_outline = (file->typeflag & (FILE_TYPE_IMAGE | FILE_TYPE_OBJECT_IO |
                                                FILE_TYPE_MOVIE | FILE_TYPE_BLENDER));
@@ -1008,18 +1007,18 @@ static void file_draw_indicator_icons(const FileList *files,
   }
 }
 
-static void renamebutton_cb(bContext &C, StringRefNull oldname)
+static void renamebutton_cb(bContext *C, void * /*arg1*/, char *oldname)
 {
   char newname[FILE_MAX + 12];
   char orgname[FILE_MAX + 12];
   char filename[FILE_MAX + 12];
-  wmWindowManager *wm = CTX_wm_manager(&C);
-  wmWindow *win = CTX_wm_window(&C);
-  SpaceFile *sfile = reinterpret_cast<SpaceFile *>(CTX_wm_space_data(&C));
-  ARegion *region = CTX_wm_region(&C);
+  wmWindowManager *wm = CTX_wm_manager(C);
+  wmWindow *win = CTX_wm_window(C);
+  SpaceFile *sfile = reinterpret_cast<SpaceFile *>(CTX_wm_space_data(C));
+  ARegion *region = CTX_wm_region(C);
   FileSelectParams *params = ED_fileselect_get_active_params(sfile);
 
-  BLI_path_join(orgname, sizeof(orgname), params->dir, oldname.c_str());
+  BLI_path_join(orgname, sizeof(orgname), params->dir, oldname);
   STRNCPY(filename, params->renamefile);
   BLI_path_make_safe_filename(filename);
   BLI_path_join(newname, sizeof(newname), params->dir, filename);
@@ -1031,7 +1030,7 @@ static void renamebutton_cb(bContext &C, StringRefNull oldname)
           RPT_ERROR, "Could not rename: %s", errno ? strerror(errno) : "unknown error");
       WM_report_banner_show(wm, win);
       /* Renaming failed, reset the name for further renaming handling. */
-      STRNCPY(params->renamefile, oldname.c_str());
+      STRNCPY(params->renamefile, oldname);
     }
     else {
       /* If rename is successful, set renamefile to newly renamed entry.
@@ -1230,22 +1229,18 @@ static const char *filelist_get_details_column_string(
     case COLUMN_DATETIME:
       if (!(file->typeflag & FILE_TYPE_BLENDERLIB) && !FILENAME_IS_CURRPAR(file->relpath)) {
         if (file->draw_data.datetime_str[0] == '\0' || update_stat_strings) {
-          const time_t file_time = (time_t)file->time;
-          const std::tm mod_time = *std::localtime(&file_time);
-          const time_t ts_now = time(nullptr);
-          const std::tm now = *std::localtime(&ts_now);
-          const char *lang = BLT_lang_get();
-          std::string modified_s =
-              compact ? date_string::date(mod_time, lang, date_string::DateFormat(U.date_format)) :
-                        date_string::datetime(mod_time,
-                                              lang,
-                                              date_string::DateFormat(U.date_format),
-                                              date_string::TimeFormat(U.time_format),
-                                              &now,
-                                              TIP_("Today"),
-                                              TIP_("Yesterday"));
-          STRNCPY_UTF8(file->draw_data.datetime_str, modified_s.c_str());
+          char date[FILELIST_DIRENTRY_DATE_LEN], time[FILELIST_DIRENTRY_TIME_LEN];
+          bool is_today, is_yesterday;
+
+          BLI_filelist_entry_datetime_to_string(
+              nullptr, file->time, compact, time, date, &is_today, &is_yesterday);
+
+          if (!compact && (is_today || is_yesterday)) {
+            STRNCPY_UTF8(date, is_today ? IFACE_("Today") : IFACE_("Yesterday"));
+          }
+          SNPRINTF_UTF8(file->draw_data.datetime_str, compact ? "%s" : "%s %s", date, time);
         }
+
         return file->draw_data.datetime_str;
       }
       break;
@@ -1600,7 +1595,7 @@ void file_draw_list(const bContext *C, ARegion *region)
                                  float(sizeof(params->renamefile)),
                                  "");
       button_retval_set(but, 1);
-      text_button_func_rename_set(but, renamebutton_cb);
+      button_func_rename_set(but, renamebutton_cb, file);
       button_flag_enable(but, ui::BUT_NO_UTF8); /* Allow non UTF8 names. */
       button_flag_disable(but, ui::BUT_UNDO);
       if (false == button_active_only(C, region, block, but)) {
@@ -1659,13 +1654,6 @@ void file_draw_list(const bContext *C, ARegion *region)
       }
       if (is_filtered) {
         return IFACE_("No results match the search filter");
-      }
-      FileAssetSelectParams *asset_params = ED_fileselect_get_asset_params(sfile);
-      if (asset_params && (asset_params->asset_access == AssetAccess::OnlyOnline)) {
-        return IFACE_("No items. Note: The \"Only Online\" filter option is enabled.");
-      }
-      if (asset_params && (asset_params->asset_access == AssetAccess::OnlyOffline)) {
-        return IFACE_("No items. Note: The \"Only Offline\" filter option is enabled.");
       }
       return IFACE_("No items");
     }();

@@ -22,9 +22,6 @@ static DynamicLibrary lib = NULL;
 
 bool wayland_dynload_cursor_init(const bool verbose)
 {
-  /* NOTE: returning false must call exit to prevent leaking `lib`
-   * once it has been opened. */
-
   /* Library paths. */
   const char *paths[] = {
       "libwayland-cursor.so.0",
@@ -36,7 +33,6 @@ bool wayland_dynload_cursor_init(const bool verbose)
     return false;
   }
   if (atexit(wayland_dynload_cursor_exit)) {
-    wayland_dynload_cursor_exit();
     return false;
   }
 
@@ -44,7 +40,6 @@ bool wayland_dynload_cursor_init(const bool verbose)
   if (!(wayland_dynload_cursor.symbol = dynamic_library_find_with_error( \
             lib, #symbol, paths[path_index], verbose))) \
   { \
-    wayland_dynload_cursor_exit(); \
     return false; \
   }
 #include "wayland_dynload_cursor.h"

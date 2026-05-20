@@ -77,14 +77,13 @@ static void node_init(bNodeTree * /*tree*/, bNode *node)
   node->custom2 = int(AttrDomain::Point);
 }
 
-static void get_closest_pointcloud_points(const PointCloud &pointcloud,
+static void get_closest_pointcloud_points(const bke::BVHTreeFromPointCloud &tree_data,
                                           const VArray<float3> &positions,
                                           const IndexMask &mask,
                                           MutableSpan<int> r_indices,
                                           MutableSpan<float> r_distances_sq)
 {
   BLI_assert(positions.size() >= r_indices.size());
-  const bke::BVHTreeFromPointCloud tree_data = pointcloud.bvh_tree();
   if (tree_data.tree == nullptr) {
     r_indices.fill(0);
     r_distances_sq.fill(0.0f);
@@ -239,6 +238,9 @@ class SampleNearestFunction : public mf::MultiFunction {
 
   const GeometryComponent *src_component_;
 
+  /* Point clouds do not cache BVH trees currently; avoid rebuilding it on every call. */
+  bke::BVHTreeFromPointCloud pointcloud_bvh = {};
+
   mf::Signature signature_;
 
  public:
@@ -247,6 +249,12 @@ class SampleNearestFunction : public mf::MultiFunction {
   {
     source_.ensure_owns_direct_data();
     this->src_component_ = find_source_component(source_, domain_);
+    if (src_component_ && src_component_->type() == bke::GeometryComponent::Type::PointCloud) {
+      const PointCloudComponent &component = *static_cast<const PointCloudComponent *>(
+          src_component_);
+      const PointCloud &points = *component.get();
+      pointcloud_bvh = bke::bvhtree_from_pointcloud_get(points, IndexMask(points.totpoint));
+    }
 
     mf::SignatureBuilder builder{"Sample Nearest", signature_};
     builder.single_input<float3>("Position");
@@ -265,7 +273,7 @@ class SampleNearestFunction : public mf::MultiFunction {
 
     switch (src_component_->type()) {
       case GeometryComponent::Type::Mesh: {
-        const auto &component = *static_cast<const MeshComponent *>(src_component_);
+        const MeshComponent &component = *static_cast<const MeshComponent *>(src_component_);
         const Mesh &mesh = *component.get();
         switch (domain_) {
           case AttrDomain::Point:
@@ -286,22 +294,12 @@ class SampleNearestFunction : public mf::MultiFunction {
         break;
       }
       case GeometryComponent::Type::PointCloud: {
-        const auto &component = *static_cast<const bke::PointCloudComponent *>(src_component_);
-        const PointCloud &pointcloud = *component.get();
-        get_closest_pointcloud_points(pointcloud, positions, mask, indices, {});
+        get_closest_pointcloud_points(pointcloud_bvh, positions, mask, indices, {});
         break;
       }
       default:
         break;
     }
-  }
-
-  void hash_unique(UniqueHashBytes &hash) const override
-  {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(domain_);
-    hash.add(src_component_);
   }
 };
 

@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "usd_reader_domelight.hh"
-#include "usd_colorspace_utils.hh"
 #include "usd_light_convert.hh"
 
 #include <pxr/usd/usdLux/domeLight.h>
@@ -81,9 +80,6 @@ static bool get_color(const T &dome_light, const pxr::UsdTimeCode time, pxr::GfV
 {
   bool has_color = get_authored_value(
       dome_light.GetColorAttr(), time, dome_light.GetPrim(), usdtokens::color, color);
-  if (has_color) {
-    colorspace_attr_to_scene_linear(dome_light.GetColorAttr(), *color);
-  }
   return has_color;
 }
 

@@ -177,9 +177,9 @@ struct SmoothView3DStore {
    * When smooth-view is enabled, store the 'rv3d->view' here,
    * assign back when the view motion is completed.
    */
-  eRegionView3D_View org_view;
+  char org_view;
   /** Same behavior as `view`. */
-  eRegionView3D_ViewAxisRoll org_view_axis_roll;
+  char org_view_axis_roll;
 
   double time_allowed;
 };

@@ -36,8 +36,6 @@ class BVHHIPRT : public BVH {
   device_vector<int> triangle_index;
   device_vector<float> vertex_data;
 
-  float aabb_overlap_ratio;
-
   BVHHIPRT(const BVHParams &params,
            const vector<Geometry *> &geometry,
            const vector<Object *> &objects,

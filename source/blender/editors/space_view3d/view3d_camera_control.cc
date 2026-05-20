@@ -81,7 +81,7 @@ struct View3DCameraControl {
    * Remember if we're orthographic or not,
    * only used for restoring the view if it was a orthographic view.
    */
-  eRegionView3D_Persp persp_backup;
+  char persp_backup;
 
   /**
    * True when flying an orthographic camera in perspective view,

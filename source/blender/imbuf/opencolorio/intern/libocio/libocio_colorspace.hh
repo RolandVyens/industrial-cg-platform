@@ -4,14 +4,16 @@
 
 #pragma once
 
-#include <string>
+#if defined(WITH_OPENCOLORIO)
 
-#include "MEM_guardedalloc.h"
+#  include <string>
 
-#include "OCIO_colorspace.hh"
+#  include "MEM_guardedalloc.h"
 
-#include "../cpu_processor_cache.hh"
-#include "../opencolorio.hh"
+#  include "OCIO_colorspace.hh"
+
+#  include "../cpu_processor_cache.hh"
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -85,3 +87,5 @@ class LibOCIOColorSpace : public ColorSpace {
 };
 
 }  // namespace blender::ocio
+
+#endif

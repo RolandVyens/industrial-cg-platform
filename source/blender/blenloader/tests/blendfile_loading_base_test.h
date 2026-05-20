@@ -25,7 +25,7 @@ class BlendfileLoadingBaseTest : public testing::Test {
 
  protected:
   /* Frees the depsgraph & blendfile. */
-  void TearDown() override;
+  virtual void TearDown();
 
   /* Loads a blend file from the tests/files directory from SVN.
    * Returns 'ok' flag (true=good, false=bad) and sets `this->bfile`.

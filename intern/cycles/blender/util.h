@@ -369,18 +369,6 @@ static inline Transform get_transform(const blender::float4x4 &matrix)
                         ptr[14]);
 }
 
-static inline float2 get_float2(blender::PointerRNA &ptr, const char *name)
-{
-  float2 f;
-  RNA_float_get_array(&ptr, name, &f.x);
-  return f;
-}
-
-static inline void set_float2(blender::PointerRNA &ptr, const char *name, const float2 value)
-{
-  RNA_float_set_array(&ptr, name, &value.x);
-}
-
 static inline float3 get_float3(blender::PointerRNA &ptr, const char *name)
 {
   float3 f;
@@ -799,7 +787,7 @@ class EdgeMap {
   bool exists(int v0, int v1)
   {
     get_sorted_verts(v0, v1);
-    return edges_.contains(std::pair<int, int>(v0, v1));
+    return edges_.find(std::pair<int, int>(v0, v1)) != edges_.end();
   }
 
  protected:

@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-12-23 20:36+0000\n"
 "Last-Translator: \"Adriel Y.\" <mixnblend@users.noreply.translate.blender.org>\n"
 "Language-Team: Indonesian <https://translate.blender.org/projects/blender-ui/ui/id/>\n"
@@ -5507,6 +5507,10 @@ msgstr "Menampilkan garis bantuan untuk ekstensi sapuan"
 
 msgid "Show Lasso"
 msgstr "Tampilkan Lasso"
+
+
+msgid "Do not display fill color while drawing the stroke"
+msgstr "Jangan menampilkan warna isi saat menggambarkan sapuan"
 
 
 msgid "Factor of Simplify using adaptive algorithm"
@@ -11758,6 +11762,14 @@ msgid "Auto-Smooth"
 msgstr "Penghalusan Secara Otomatis"
 
 
+msgid "Blur Steps"
+msgstr "Langkah Buram"
+
+
+msgid "The number of times the cavity mask is blurred"
+msgstr "Berapa kali masker rongga diburamkan"
+
+
 msgid "Erase alpha while painting"
 msgstr "Hapus alpha saat melukis"
 
@@ -12229,6 +12241,18 @@ msgstr "Berapa banyak posisi tiap titik-titik sudut individu mempengaruhi hasil 
 
 msgid "Accumulate"
 msgstr "Akumulasi"
+
+
+msgid "Affect only vertices that share face sets with the active vertex"
+msgstr "Hanya mempengaruhi titik-titik sudut yang membagikan set-set wajah dengan titik sudut aktif"
+
+
+msgid "Affect only vertices connected to the active vertex under the brush"
+msgstr "Hanya mempengaruhi titik-titik sudut yang terhubung dengan titk sudut aktif di bawah kuas"
+
+
+msgid "Occlusion"
+msgstr "Oklusi"
 
 
 msgid "Show cursor in viewport"
@@ -15640,18 +15664,6 @@ msgid "Use Material Mask"
 msgstr "Gunakan Masker Bahan"
 
 
-msgid "Snap"
-msgstr "Jepret"
-
-
-msgid "Navigation"
-msgstr "Navigasi"
-
-
-msgid "Select Linked"
-msgstr "Seleksi yang Terhubung"
-
-
 msgid "Math"
 msgstr "Matematika"
 
@@ -15660,16 +15672,44 @@ msgid "Utilities"
 msgstr "Utilitas"
 
 
+msgid "Mirror"
+msgstr "Cermin"
+
+
+msgid "Snap"
+msgstr "Jepret"
+
+
+msgid "Navigation"
+msgstr "Navigasi"
+
+
+msgid "Sample"
+msgstr "Sampel"
+
+
+msgid "Select Linked"
+msgstr "Seleksi yang Terhubung"
+
+
 msgid "Assign Material"
 msgstr "Tugaskan Bahan"
+
+
+msgid "Gizmo"
+msgstr "Gizmo"
+
+
+msgid "Instances"
+msgstr "Contoh-contoh"
 
 
 msgid "Metaball"
 msgstr "Metabola"
 
 
-msgid "Sample"
-msgstr "Sampel"
+msgid "Import"
+msgstr "Impor"
 
 
 msgid "Light"
@@ -15684,24 +15724,16 @@ msgid "Add Image"
 msgstr "Tambah Gambar"
 
 
-msgid "Gizmo"
-msgstr "Gizmo"
+msgid "UV"
+msgstr "UV"
 
 
 msgid "Apply"
 msgstr "Tetapkan"
 
 
-msgid "Instances"
-msgstr "Contoh-contoh"
-
-
 msgid "Track"
 msgstr "Lacak"
-
-
-msgid "Import"
-msgstr "Impor"
 
 
 msgid "Asset"
@@ -15710,10 +15742,6 @@ msgstr "Aset"
 
 msgid "Hooks"
 msgstr "Kait"
-
-
-msgid "UV"
-msgstr "UV"
 
 
 msgid "Names"
@@ -15730,10 +15758,6 @@ msgstr "Tata Letak"
 
 msgid "Tracking"
 msgstr "Pelacakan"
-
-
-msgid "Mirror"
-msgstr "Cermin"
 
 
 msgid "Animals"
@@ -15930,26 +15954,6 @@ msgstr "Simpan & Buka"
 msgctxt "Operator"
 msgid "Parent"
 msgstr "Induk"
-
-
-msgid "Blur Steps"
-msgstr "Langkah Buram"
-
-
-msgid "The number of times the cavity mask is blurred"
-msgstr "Berapa kali masker rongga diburamkan"
-
-
-msgid "Affect only vertices that share face sets with the active vertex"
-msgstr "Hanya mempengaruhi titik-titik sudut yang membagikan set-set wajah dengan titik sudut aktif"
-
-
-msgid "Affect only vertices connected to the active vertex under the brush"
-msgstr "Hanya mempengaruhi titik-titik sudut yang terhubung dengan titk sudut aktif di bawah kuas"
-
-
-msgid "Occlusion"
-msgstr "Oklusi"
 
 
 msgid "Sharp"
@@ -19018,6 +19022,11 @@ msgstr "Objek"
 
 msgid "Load a SVG file"
 msgstr "Memuat dokumen SVG"
+
+
+msgctxt "Operator"
+msgid "Import SVG"
+msgstr "Impor SVG"
 
 
 msgid "Add a node to the active tree"
@@ -23409,6 +23418,11 @@ msgstr "Gertakan"
 
 
 msgctxt "Operator"
+msgid "Area Options"
+msgstr "Pilihan Area"
+
+
+msgctxt "Operator"
 msgid "Split Area"
 msgstr "Modus Pahat"
 
@@ -26214,6 +26228,10 @@ msgstr "Gunakan bagian belakang Vulkan"
 
 msgid "Device"
 msgstr "Perangkat"
+
+
+msgid "2D Texture"
+msgstr "Tekstur 2D"
 
 
 msgid "Ambient Color"
@@ -32285,6 +32303,14 @@ msgstr "Hapus bingkai kunci yang terseleksi?"
 
 msgid "No selected F-Curves to paste into"
 msgstr "Hapus"
+
+
+msgid "Property is not editable"
+msgstr "Properti tidak dapat diubah"
+
+
+msgid "Property is not editable: %s"
+msgstr "Properti tidak dapat diubah: %s"
 
 
 msgid "Position:"

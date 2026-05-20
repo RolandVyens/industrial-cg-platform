@@ -241,13 +241,6 @@ static void file_refresh(const bContext *C, ScrArea *area)
   filelist_setrecursion(sfile->files, params->recursion_level);
   filelist_setsorting(sfile->files, params->sort, params->flag & FILE_SORT_INVERT);
   filelist_setlibrary(sfile->files, asset_params ? &asset_params->asset_library_ref : nullptr);
-
-  const bool show_assets_online = asset_params && ELEM(asset_params->asset_access,
-                                                       AssetAccess::OnlineAndOffline,
-                                                       AssetAccess::OnlyOnline);
-  const bool show_assets_offline = asset_params && ELEM(asset_params->asset_access,
-                                                        AssetAccess::OnlineAndOffline,
-                                                        AssetAccess::OnlyOffline);
   filelist_setfilter_options(
       sfile->files,
       (params->flag & FILE_FILTER) != 0,
@@ -256,12 +249,12 @@ static void file_refresh(const bContext *C, ScrArea *area)
       params->filter,
       params->filter_id,
       (params->flag & FILE_ASSETS_ONLY) != 0,
-      /*filter_assets_hide_online=*/!show_assets_online,
-      /*filter_assets_hide_offline=*/!show_assets_offline,
+      asset_params && (asset_params->asset_flags & FILE_ASSETS_HIDE_ONLINE) != 0,
       params->filter_glob,
       params->filter_search);
   if (asset_params) {
-    filelist_set_asset_include_online(sfile->files, show_assets_online);
+    filelist_set_asset_include_online(sfile->files,
+                                      !(asset_params->asset_flags & FILE_ASSETS_HIDE_ONLINE));
     filelist_set_asset_catalog_filter_options(
         sfile->files,
         eFileSel_Params_AssetCatalogVisibility(asset_params->asset_catalog_visibility),
@@ -379,11 +372,6 @@ static void file_listener(const wmSpaceTypeListenerParams *listener_params)
 
   /* context changes */
   switch (wmn->category) {
-    case NC_UI:
-      if (sfile) {
-        filelist_tag_force_reset(sfile->files);
-      }
-      break;
     case NC_SPACE:
       switch (wmn->data) {
         case ND_SPACE_FILE_LIST:
@@ -571,12 +559,6 @@ static void file_main_region_message_subscribe(const wmRegionMessageSubscribePar
                               &U,
                               PreferencesSystem,
                               use_online_access,
-                              &msg_sub_value_region_clear_remote_libraries);
-    WM_msg_subscribe_rna_prop(mbus,
-                              nullptr,
-                              &U,
-                              PreferencesExperimental,
-                              use_remote_asset_libraries,
                               &msg_sub_value_region_clear_remote_libraries);
   }
 }
@@ -895,7 +877,7 @@ static void file_space_subtype_set(ScrArea *area, int value)
   for (ARegion &region : area->regionbase) {
     region.v2d.flag &= ~V2D_IS_INIT;
   }
-  sfile->browse_mode = eFileBrowse_Mode(value);
+  sfile->browse_mode = value;
 }
 
 static void file_space_subtype_item_extend(bContext * /*C*/, EnumPropertyItem **item, int *totitem)
@@ -957,7 +939,7 @@ static void file_space_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
   sfile->layout = nullptr;
   sfile->op = nullptr;
   sfile->previews_timer = nullptr;
-  sfile->tags = eFileTags{};
+  sfile->tags = 0;
   sfile->runtime = nullptr;
   BLO_read_struct(reader, FileSelectParams, &sfile->params);
   BLO_read_struct(reader, FileAssetSelectParams, &sfile->asset_params);

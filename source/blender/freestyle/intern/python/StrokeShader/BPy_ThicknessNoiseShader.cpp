@@ -27,16 +27,16 @@ PyDoc_STRVAR(
     "\n"
     "   Builds a ThicknessNoiseShader object.\n"
     "\n"
-    "   :param amplitude: The amplitude of the noise signal.\n"
+    "   :arg amplitude: The amplitude of the noise signal.\n"
     "   :type amplitude: float\n"
-    "   :param period: The period of the noise signal.\n"
+    "   :arg period: The period of the noise signal.\n"
     "   :type period: float\n"
     "\n"
     ".. method:: shade(stroke)\n"
     "\n"
     "   Adds some noise to the stroke thickness.\n"
     "\n"
-    "   :param stroke: A Stroke object.\n"
+    "   :arg stroke: A Stroke object.\n"
     "   :type stroke: :class:`freestyle.types.Stroke`\n");
 static int ThicknessNoiseShader___init__(BPy_ThicknessNoiseShader *self,
                                          PyObject *args,

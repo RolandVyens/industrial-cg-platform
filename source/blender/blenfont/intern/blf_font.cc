@@ -444,12 +444,6 @@ struct GlyphStepData {
   ft_pix pen_x_right = 0;
   /** Draw position of the last base character (for centering combining marks). */
   ft_pix pen_x_base = 0;
-  /** Vertical offset for combining marks (raised above tall base glyphs). */
-  ft_pix offset_y = 0;
-  /** Accumulated top edge for stacking multiple above-marks on one base. */
-  ft_pix base_ymax_accum = 0;
-  /** Accumulated bottom edge for stacking multiple below-marks on one base. */
-  ft_pix base_ymin_accum = 0;
 };
 
 /**
@@ -469,67 +463,20 @@ BLI_INLINE bool blf_glyph_step(
       step.pen_x = step.pen_x_right;
       step.pen_x_right += step.g->advance_x;
       step.g_kerning = step.g;
-      step.offset_y = 0;
-      step.base_ymax_accum = step.g->box_ymax;
-      step.base_ymin_accum = step.g->box_ymin;
     }
     else {
-      /* Combining character: center the mark over the previous base character.
+      /* Combining character: center the mark's bitmap over the previous base character.
        *
        * Without GPOS data (which requires a shaping engine such as HarfBuzz),
-       * combining glyphs have no base-relative positioning. We follow the
-       * fallback algorithm used by HarfBuzz when GPOS tables are absent
-       * (see `hb-ot-shape-fallback.cc`, `position_mark`):
-       *
-       * - X: center the mark bitmap over the base character's advance width.
-       * - Y: place the mark at the accumulated top (above) or bottom (below)
-       *   of the base, with a small gap. Successive marks stack.
-       *   If the offset would push the mark the wrong direction, dampen it.
-       *
-       * Above/below is determined from glyph bounding boxes: the mark's
-       * vertical center vs the base glyph's vertical midpoint. */
+       * combining glyphs have no base-relative positioning. We center them using
+       * the base character's advance width, matching the fallback algorithm used
+       * by HarfBuzz when GPOS tables are absent (see `hb-ot-shape-fallback.cc`,
+       * `position_mark`, "Center align" case) and consistent with the approach
+       * described in Unicode Technical Note #2. */
       step.pen_x_right = pen_x_prev;
-
-      /* Horizontal: center align (matches HarfBuzz ABOVE / BELOW default). */
       const int base_center = (ft_pix_to_int(step.pen_x_base) + ft_pix_to_int(pen_x_prev)) / 2;
       const int mark_center_offset = step.g->pos[0] + step.g->dims[0] / 2;
       step.pen_x = ft_pix_from_int(base_center - mark_center_offset);
-
-      /* Vertical: reposition above/below marks (follows HarfBuzz `position_mark`). */
-      step.offset_y = 0;
-      if (step.g_kerning) {
-        const ft_pix mark_ymin = step.g->box_ymin;
-        const ft_pix mark_ymax = step.g->box_ymax;
-        const ft_pix mark_height = mark_ymax - mark_ymin;
-        const ft_pix base_mid = (step.g_kerning->box_ymin + step.g_kerning->box_ymax) / 2;
-        const ft_pix mark_mid = (mark_ymin + mark_ymax) / 2;
-        /* Gap matches HarfBuzz `y_gap = font->y_scale / 16`. */
-        const ft_pix y_gap = ft_pix_from_float(gc->size) / 16;
-
-        if (mark_mid > base_mid) {
-          /* Above mark. */
-          step.base_ymax_accum += y_gap;
-          step.offset_y = step.base_ymax_accum - mark_ymin;
-          /* Don't shift down "above" marks too much (HarfBuzz dampening). */
-          if ((y_gap > 0) != (step.offset_y > 0)) {
-            const ft_pix correction = -step.offset_y / 2;
-            step.base_ymax_accum += correction;
-            step.offset_y += correction;
-          }
-          step.base_ymax_accum += mark_height;
-        }
-        else {
-          /* Below mark. */
-          step.base_ymin_accum -= y_gap;
-          step.offset_y = step.base_ymin_accum - mark_ymax;
-          /* Never shift up "below" marks (HarfBuzz dampening). */
-          if ((y_gap > 0) == (step.offset_y > 0)) {
-            step.base_ymin_accum -= step.offset_y;
-            step.offset_y = 0;
-          }
-          step.base_ymin_accum -= mark_height;
-        }
-      }
     }
     return true;
   }
@@ -547,9 +494,6 @@ BLI_INLINE void blf_glyph_step_reset_for_newline(GlyphStepData &step)
   step.pen_x = 0;
   step.pen_x_right = 0;
   step.pen_x_base = 0;
-  step.offset_y = 0;
-  step.base_ymax_accum = 0;
-  step.base_ymin_accum = 0;
 }
 
 /** \} */
@@ -598,11 +542,7 @@ static void blf_font_draw_ex(FontBLF *font,
       continue;
     }
     /* Do not return this loop if clipped, we want every character tested. */
-    blf_glyph_draw(font,
-                   gc,
-                   step.g,
-                   ft_pix_to_int_floor(step.pen_x),
-                   ft_pix_to_int_floor(pen_y + step.offset_y));
+    blf_glyph_draw(font, gc, step.g, ft_pix_to_int_floor(step.pen_x), ft_pix_to_int_floor(pen_y));
   }
 
   blf_batch_draw_end();
@@ -802,30 +742,19 @@ static void blf_glyph_draw_buffer(FontBufInfoBLF *buf_info,
     for (int y = ((chy >= 0) ? 0 : -chy); y < height_clip; y++) {
       const int x_start = (chx >= 0) ? 0 : -chx;
       const uchar *a_ptr = g->bitmap + x_start + (yb * g->pitch);
-      const int64_t buf_ofs = (int64_t(buf_info->dims[0]) * (pen_y_px + y) + (chx + x_start)) *
-                              buf_info->channel_count;
+      const int64_t buf_ofs = (int64_t(buf_info->dims[0]) * (pen_y_px + y) + (chx + x_start)) * 4;
       float *fbuf = buf_info->fbuf + buf_ofs;
-      if (buf_info->channel_count == 4) {
-        for (int x = x_start; x < width_clip; x++, a_ptr++, fbuf += 4) {
-          const char a_byte = *a_ptr;
-          if (a_byte) {
-            const float a = (a_byte / 255.0f) * b_col_float[3];
+      for (int x = x_start; x < width_clip; x++, a_ptr++, fbuf += 4) {
+        const char a_byte = *a_ptr;
+        if (a_byte) {
+          const float a = (a_byte / 255.0f) * b_col_float[3];
 
-            float font_pixel[4];
-            font_pixel[0] = b_col_float[0] * a;
-            font_pixel[1] = b_col_float[1] * a;
-            font_pixel[2] = b_col_float[2] * a;
-            font_pixel[3] = a;
-            blend_color_mix_float(fbuf, fbuf, font_pixel);
-          }
-        }
-      }
-      else {
-        for (int x = x_start; x < width_clip; x++, a_ptr++, fbuf++) {
-          const char a_byte = *a_ptr;
-          if (a_byte) {
-            *fbuf = (a_byte / 255.0f) * b_col_float[0];
-          }
+          float font_pixel[4];
+          font_pixel[0] = b_col_float[0] * a;
+          font_pixel[1] = b_col_float[1] * a;
+          font_pixel[2] = b_col_float[2] * a;
+          font_pixel[3] = a;
+          blend_color_mix_float(fbuf, fbuf, font_pixel);
         }
       }
 
@@ -843,32 +772,20 @@ static void blf_glyph_draw_buffer(FontBufInfoBLF *buf_info,
     for (int y = ((chy >= 0) ? 0 : -chy); y < height_clip; y++) {
       const int x_start = (chx >= 0) ? 0 : -chx;
       const uchar *a_ptr = g->bitmap + x_start + (yb * g->pitch);
-      const int64_t buf_ofs = (int64_t(buf_info->dims[0]) * (pen_y_px + y) + (chx + x_start)) *
-                              buf_info->channel_count;
+      const int64_t buf_ofs = (int64_t(buf_info->dims[0]) * (pen_y_px + y) + (chx + x_start)) * 4;
       uchar *cbuf = buf_info->cbuf + buf_ofs;
-      if (buf_info->channel_count == 4) {
-        for (int x = x_start; x < width_clip; x++, a_ptr++, cbuf += 4) {
-          const char a_byte = *a_ptr;
+      for (int x = x_start; x < width_clip; x++, a_ptr++, cbuf += 4) {
+        const char a_byte = *a_ptr;
 
-          if (a_byte) {
-            const float a = (a_byte / 255.0f) * b_col_float[3];
+        if (a_byte) {
+          const float a = (a_byte / 255.0f) * b_col_float[3];
 
-            uchar font_pixel[4];
-            font_pixel[0] = b_col_char[0];
-            font_pixel[1] = b_col_char[1];
-            font_pixel[2] = b_col_char[2];
-            font_pixel[3] = unit_float_to_uchar_clamp(a);
-            blend_color_mix_byte(cbuf, cbuf, font_pixel);
-          }
-        }
-      }
-      else {
-        for (int x = x_start; x < width_clip; x++, a_ptr++, cbuf++) {
-          const char a_byte = *a_ptr;
-          if (a_byte) {
-            const float a = (a_byte / 255.0f) * b_col_float[0];
-            *cbuf = unit_float_to_uchar_clamp(a);
-          }
+          uchar font_pixel[4];
+          font_pixel[0] = b_col_char[0];
+          font_pixel[1] = b_col_char[1];
+          font_pixel[2] = b_col_char[2];
+          font_pixel[3] = unit_float_to_uchar_clamp(a);
+          blend_color_mix_byte(cbuf, cbuf, font_pixel);
         }
       }
 
@@ -905,7 +822,7 @@ static void blf_font_draw_buffer_ex(FontBLF *font,
     if (!blf_glyph_step(font, gc, step, str, str_len)) {
       continue;
     }
-    blf_glyph_draw_buffer(buf_info, step.g, step.pen_x + pos_x, pen_y_basis + step.offset_y);
+    blf_glyph_draw_buffer(buf_info, step.g, step.pen_x + pos_x, pen_y_basis);
   }
 
   if (r_info) {
@@ -1074,8 +991,8 @@ static void blf_font_boundbox_ex(FontBLF *font,
     const ft_pix gbox_xmax = (font->flags & BLF_MONOSPACED) ?
                                  step.pen_x_right :
                                  std::max(step.pen_x_right, step.pen_x + step.g->box_xmax);
-    const ft_pix gbox_ymin = step.g->box_ymin + pen_y + step.offset_y;
-    const ft_pix gbox_ymax = step.g->box_ymax + pen_y + step.offset_y;
+    const ft_pix gbox_ymin = step.g->box_ymin + pen_y;
+    const ft_pix gbox_ymax = step.g->box_ymax + pen_y;
 
     box_xmin = std::min(gbox_xmin, box_xmin);
     box_ymin = std::min(gbox_ymin, box_ymin);
@@ -1460,7 +1377,8 @@ static void blf_font_wrap_apply(FontBLF *font,
     if (UNLIKELY(overflows && (wrap.start != wrap.last[0]))) {
       do_draw = true;
     }
-    else if (UNLIKELY(bool(mode & BLFWrapMode::HardLimit) && overflows && (advance_x != 0))) {
+    else if (UNLIKELY((int(mode) & int(BLFWrapMode::HardLimit)) && overflows && (advance_x != 0)))
+    {
       wrap.last[0] = i_curr;
       wrap.last[1] = i_curr;
       do_draw = true;
@@ -1479,12 +1397,14 @@ static void blf_font_wrap_apply(FontBLF *font,
       do_draw = true;
       clip_bytes = 1;
     }
-    else if (UNLIKELY(codepoint != ' ' && (g_prev ? g_prev->c == ' ' : false))) {
+    else if (UNLIKELY(((int(mode) & int(BLFWrapMode::Minimal)) == int(BLFWrapMode::Minimal)) &&
+                      codepoint != ' ' && (g_prev ? g_prev->c == ' ' : false)))
+    {
       wrap.last[0] = i_curr;
       wrap.last[1] = i_curr;
       clip_bytes = 1;
     }
-    else if (UNLIKELY(bool(mode & BLFWrapMode::Path))) {
+    else if (UNLIKELY(int(mode) & int(BLFWrapMode::Path))) {
       if (ELEM(codepoint, SEP, ' ', '?', '&', '=')) {
         /* Break and leave at the end of line. */
         wrap.last[0] = step.i;
@@ -1498,7 +1418,7 @@ static void blf_font_wrap_apply(FontBLF *font,
         clip_bytes = 0;
       }
     }
-    else if (UNLIKELY(bool(mode & BLFWrapMode::Typographical) &&
+    else if (UNLIKELY((int(mode) & int(BLFWrapMode::Typographical)) &&
                       !BLI_str_utf32_char_is_breaking_space(codepoint) &&
                       BLI_str_utf32_char_is_breaking_space(codepoint_prev)))
     {
@@ -1507,7 +1427,7 @@ static void blf_font_wrap_apply(FontBLF *font,
       wrap.last[1] = i_curr;
       clip_bytes = BLI_str_utf8_from_unicode_len(codepoint_prev);
     }
-    else if (UNLIKELY(bool(mode & BLFWrapMode::Typographical) &&
+    else if (UNLIKELY((int(mode) & int(BLFWrapMode::Typographical)) &&
                       BLI_str_utf32_char_is_optional_break_after(codepoint, codepoint_prev)))
     {
       /* Optional break after various characters, keeping it. */
@@ -1515,7 +1435,7 @@ static void blf_font_wrap_apply(FontBLF *font,
       wrap.last[1] = step.i;
       clip_bytes = 0;
     }
-    else if (UNLIKELY(bool(mode & BLFWrapMode::Typographical) &&
+    else if (UNLIKELY((int(mode) & int(BLFWrapMode::Typographical)) &&
                       BLI_str_utf32_char_is_optional_break_before(codepoint, codepoint_prev)))
     {
       /* Optional break before various characters. */
@@ -1829,7 +1749,6 @@ static void blf_font_fill(FontBLF *font)
   font->buf_info.cbuf = nullptr;
   font->buf_info.dims[0] = 0;
   font->buf_info.dims[1] = 0;
-  font->buf_info.channel_count = 4;
   font->buf_info.col_init[0] = 0;
   font->buf_info.col_init[1] = 0;
   font->buf_info.col_init[2] = 0;

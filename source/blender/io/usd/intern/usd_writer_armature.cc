@@ -140,7 +140,10 @@ static void add_anim_sample(pxr::UsdSkelAnimation &skel_anim,
   const bPose *pose = obj->pose;
 
   for (const bPoseChannel &pchan : pose->chanbase) {
-    if (deform_map && !deform_map->contains(pchan.name)) {
+
+    BLI_assert(pchan.bone);
+
+    if (deform_map && !deform_map->contains(pchan.bone->name)) {
       /* If deform_map is passed in, assume we're going deform-only.
        * Bones not found in the map should be skipped. */
       continue;

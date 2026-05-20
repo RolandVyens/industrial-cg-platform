@@ -18,13 +18,11 @@ namespace blender {
 /** \name ObjectAttributes
  * \{ */
 
-bool ObjectAttribute::sync(const draw::ObjectRef &ref,
-                           const GPUUniformAttr &attr,
-                           int instance_index)
+bool ObjectAttribute::sync(const draw::ObjectRef &ref, const GPUUniformAttr &attr)
 {
   /* This function mirrors `lookup_instance_property` in `cycles/blender/blender_object.cpp`. */
   hash_code = attr.hash_code;
-  return ref.find_rgba_attribute(attr, instance_index, &data_x);
+  return ref.find_rgba_attribute(attr, &data_x);
 }
 
 /** \} */

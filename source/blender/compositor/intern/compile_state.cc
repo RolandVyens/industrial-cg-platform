@@ -20,18 +20,17 @@
 #include "COM_node_operation.hh"
 #include "COM_pixel_operation.hh"
 #include "COM_result.hh"
-#include "COM_scheduler.hh"
 #include "COM_shader_operation.hh"
 #include "COM_utilities.hh"
 
 namespace blender::compositor {
 
-CompileState::CompileState(const Context &context, const Schedule &schedule)
+CompileState::CompileState(const Context &context, const VectorSet<const bNode *> &schedule)
     : context_(context), schedule_(schedule)
 {
 }
 
-const Schedule &CompileState::get_schedule()
+const VectorSet<const bNode *> &CompileState::get_schedule()
 {
   return schedule_;
 }
@@ -283,7 +282,7 @@ bool CompileState::pixel_compile_unit_has_too_many_outputs(const bool are_node_p
        * part of the execution schedule, then an operation output will exist for it. */
       const bool is_operation_output = is_output_linked_to_node_conditioned(
           *output, [&](const bNode &node) {
-            return schedule_.nodes.contains(&node) && !pixel_compile_unit_.contains(&node);
+            return schedule_.contains(&node) && !pixel_compile_unit_.contains(&node);
           });
 
       if (is_operation_output || is_preview_output) {

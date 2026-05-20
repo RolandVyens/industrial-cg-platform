@@ -10,6 +10,7 @@ namespace blender {
 
 namespace compositor {
 class RenderContext;
+class Profiler;
 enum class NodeGroupOutputTypes : uint8_t;
 }  // namespace compositor
 
@@ -36,6 +37,7 @@ void RE_compositor_execute(Render &render,
                            const bNodeTree &node_tree,
                            const char *view_name,
                            compositor::RenderContext *render_context,
+                           compositor::Profiler *profiler,
                            compositor::NodeGroupOutputTypes needed_outputs);
 
 /* Free compositor caches. */

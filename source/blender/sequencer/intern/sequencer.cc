@@ -25,7 +25,6 @@
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
 #include "BLI_path_utils.hh"
-#include "BLI_string.h"
 #include "BLI_string_utf8.h"
 
 #include "BKE_duplilist.hh"
@@ -255,8 +254,6 @@ static void seq_strip_free_ex(Scene *scene,
     strip->retiming_keys = nullptr;
     strip->retiming_keys_num = 0;
   }
-
-  MEM_SAFE_DELETE(strip->scene_view_layer_name);
 
   MEM_SAFE_DELETE(strip->runtime);
   MEM_delete(strip);
@@ -632,7 +629,6 @@ static Strip *strip_duplicate(StripDuplicateContext &ctx,
                               Strip *strip)
 {
   Strip *strip_new = MEM_new<Strip>(__func__, *strip);
-  strip_new->scene_view_layer_name = BLI_strdup_null(strip->scene_view_layer_name);
   strip_new->runtime = MEM_new<StripRuntime>(__func__);
   strip_new->runtime->flag = strip->runtime->flag;
 
@@ -674,7 +670,7 @@ static Strip *strip_duplicate(StripDuplicateContext &ctx,
   if (strip_new->modifiers.first) {
     BLI_listbase_clear(&strip_new->modifiers);
 
-    modifier_list_copy(strip_new, strip, ctx.copy_flag);
+    modifier_list_copy(strip_new, strip);
   }
   BLI_assert(modifier_persistent_uids_are_valid(*strip));
 
@@ -875,7 +871,6 @@ static bool strip_write_data_cb(Strip *strip, void *userdata)
 {
   BlendWriter *writer = static_cast<BlendWriter *>(userdata);
   writer->write_struct(strip);
-  writer->write_string(strip->scene_view_layer_name);
   if (strip->data) {
     /* TODO this doesn't depend on the `Strip` data to be present? */
     if (strip->effectdata) {
@@ -909,8 +904,6 @@ static bool strip_write_data_cb(Strip *strip, void *userdata)
           break;
         case STRIP_TYPE_COMPOSITOR:
           writer->write_struct_cast<CompositorEffectVars>(strip->effectdata);
-          break;
-        default:
           break;
       }
     }
@@ -977,45 +970,42 @@ static bool strip_read_data_cb(Strip *strip, void *user_data)
 
   BLO_read_struct(reader, Strip, &strip->input1);
   BLO_read_struct(reader, Strip, &strip->input2);
-  BLO_read_string(reader, &strip->scene_view_layer_name);
 
   if (strip->effectdata) {
     switch (strip->type) {
       case STRIP_TYPE_COLOR:
-        BLO_read_struct_nonnull(reader, SolidColorVars, &strip->effectdata);
+        BLO_read_struct(reader, SolidColorVars, &strip->effectdata);
         break;
       case STRIP_TYPE_SPEED: {
-        if (BLO_read_struct_nonnull(reader, SpeedControlVars, &strip->effectdata)) {
-          SpeedControlVars *speed = static_cast<SpeedControlVars *>(strip->effectdata);
-          speed->frameMap = nullptr;
-        }
+        BLO_read_struct(reader, SpeedControlVars, &strip->effectdata);
+        SpeedControlVars *speed = static_cast<SpeedControlVars *>(strip->effectdata);
+        speed->frameMap = nullptr;
       } break;
       case STRIP_TYPE_WIPE:
-        BLO_read_struct_nonnull(reader, WipeVars, &strip->effectdata);
+        BLO_read_struct(reader, WipeVars, &strip->effectdata);
         break;
       case STRIP_TYPE_GLOW:
-        BLO_read_struct_nonnull(reader, GlowVars, &strip->effectdata);
+        BLO_read_struct(reader, GlowVars, &strip->effectdata);
         break;
       case STRIP_TYPE_TRANSFORM_LEGACY:
-        BLO_read_struct_nonnull(reader, TransformVarsLegacy, &strip->effectdata);
+        BLO_read_struct(reader, TransformVarsLegacy, &strip->effectdata);
         break;
       case STRIP_TYPE_GAUSSIAN_BLUR:
-        BLO_read_struct_nonnull(reader, GaussianBlurVars, &strip->effectdata);
+        BLO_read_struct(reader, GaussianBlurVars, &strip->effectdata);
         break;
       case STRIP_TYPE_TEXT: {
-        if (BLO_read_struct_nonnull(reader, TextVars, &strip->effectdata)) {
-          TextVars *text = static_cast<TextVars *>(strip->effectdata);
-          BLO_read_string(reader, &text->text_ptr);
-          text->text_len_bytes = text->text_ptr ? strlen(text->text_ptr) : 0;
-          text->text_blf_id = STRIP_FONT_NOT_LOADED;
-          text->runtime = nullptr;
-        }
+        BLO_read_struct(reader, TextVars, &strip->effectdata);
+        TextVars *text = static_cast<TextVars *>(strip->effectdata);
+        BLO_read_string(reader, &text->text_ptr);
+        text->text_len_bytes = text->text_ptr ? strlen(text->text_ptr) : 0;
+        text->text_blf_id = STRIP_FONT_NOT_LOADED;
+        text->runtime = nullptr;
       } break;
       case STRIP_TYPE_COLORMIX:
-        BLO_read_struct_nonnull(reader, ColorMixVars, &strip->effectdata);
+        BLO_read_struct(reader, ColorMixVars, &strip->effectdata);
         break;
       case STRIP_TYPE_COMPOSITOR:
-        BLO_read_struct_nonnull(reader, CompositorEffectVars, &strip->effectdata);
+        BLO_read_struct(reader, CompositorEffectVars, &strip->effectdata);
         break;
       default:
         BLI_assert_unreachable();
@@ -1078,9 +1068,8 @@ static bool strip_read_data_cb(Strip *strip, void *user_data)
   BLO_read_struct_list(reader, SeqTimelineChannel, &strip->channels);
 
   if (strip->retiming_keys != nullptr) {
-    if (!BLO_read_array(reader, &strip->retiming_keys, retiming_keys_count(strip))) {
-      strip->retiming_keys_num = 0;
-    }
+    const int size = retiming_keys_count(strip);
+    BLO_read_struct_array(reader, SeqRetimingKey, size, &strip->retiming_keys);
   }
 
   return true;
@@ -1337,7 +1326,7 @@ ListBaseT<SeqTimelineChannel> *Editing::current_channels() const
 
 bool Strip::is_effect() const
 {
-  return blender::seq::strip_type_is_effect(this->type);
+  return blender::seq::strip_type_is_effect(StripType(this->type));
 }
 
 int Strip::effect_num_inputs_get() const
@@ -1346,13 +1335,7 @@ int Strip::effect_num_inputs_get() const
   if (this->type == STRIP_TYPE_COMPOSITOR) {
     return this->input1 && this->input2 ? 2 : this->input1 ? 1 : 0;
   }
-  return blender::seq::effect_type_get_min_num_inputs(this->type);
-}
-
-bool StripModifierData::is_type_sound() const
-{
-  return ELEM(
-      this->type, eSeqModifierType_SoundEqualizer, eSeqModifierType_Echo, eSeqModifierType_Pitch);
+  return blender::seq::effect_type_get_min_num_inputs(StripType(this->type));
 }
 
 }  // namespace blender

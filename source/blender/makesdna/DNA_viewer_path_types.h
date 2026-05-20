@@ -13,7 +13,7 @@ namespace blender {
 struct ID;
 struct bNodeTree;
 
-enum ViewerPathElemType : int {
+enum ViewerPathElemType {
   VIEWER_PATH_ELEM_TYPE_ID = 0,
   VIEWER_PATH_ELEM_TYPE_MODIFIER = 1,
   VIEWER_PATH_ELEM_TYPE_GROUP_NODE = 2,
@@ -26,7 +26,7 @@ enum ViewerPathElemType : int {
 
 struct ViewerPathElem {
   struct ViewerPathElem *next = nullptr, *prev = nullptr;
-  ViewerPathElemType type = VIEWER_PATH_ELEM_TYPE_ID;
+  int type = 0;
   char _pad[4] = {};
   char *ui_name = nullptr;
 };

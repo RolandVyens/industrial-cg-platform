@@ -7,8 +7,6 @@
 #include "BLI_listbase.h"
 #include "BLI_serialize.hh"
 
-#include "BKE_gtest_base.hh"
-
 #include "DNA_ID.h"
 
 #include "BKE_idprop.hh"
@@ -16,8 +14,6 @@
 namespace blender::bke::idprop::tests {
 
 using namespace blender::io::serialize;
-
-class IDPropertySerializeTest : public BlenderGTestBase {};
 
 static void check_container_value(ArrayValue *value)
 {
@@ -87,7 +83,7 @@ static void test_string_to_value(const StringRefNull prop_name, const StringRefN
   check_object_attribute(lookup, "value", prop_content);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_string_to_value)
+TEST(idprop, convert_idp_string_to_value)
 {
   test_string_to_value("mykey", "mycontent");
 }
@@ -108,7 +104,7 @@ static void test_int_to_value(const StringRefNull prop_name, int32_t prop_conten
   check_object_attribute(lookup, "value", prop_content);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_int_to_value)
+TEST(idprop, convert_idp_int_to_value)
 {
   test_int_to_value("mykey", 0);
 }
@@ -129,7 +125,7 @@ static void test_float_to_value(const StringRefNull prop_name, float prop_conten
   check_object_attribute(lookup, "value", prop_content);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_float_to_value)
+TEST(idprop, convert_idp_float_to_value)
 {
   test_float_to_value("mykey", 0.2f);
 }
@@ -150,7 +146,7 @@ static void test_double_to_value(const StringRefNull prop_name, double prop_cont
   check_object_attribute(lookup, "value", prop_content);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_double_to_value)
+TEST(idprop, convert_idp_double_to_value)
 {
   test_double_to_value("mykey", 0.2);
 }
@@ -181,19 +177,19 @@ static void test_array_to_value(const StringRefNull prop_name, Vector<PrimitiveT
   }
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_int_array_to_value)
+TEST(idprop, convert_idp_int_array_to_value)
 {
   test_array_to_value<int32_t, IntValue>("my_integer_array",
                                          {-16, -8, -4, -2, -1, 0, 1, 2, 4, 8, 16});
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_float_array_to_value)
+TEST(idprop, convert_idp_float_array_to_value)
 {
   test_array_to_value<float, DoubleValue>(
       "my_float_array", {-16.8f, -8.4f, -4.2f, -2.1f, -1.0f, 0.0f, 1.0f, 2.1f, 4.2f, 8.4f, 16.8f});
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_double_array_to_value)
+TEST(idprop, convert_idp_double_array_to_value)
 {
   test_array_to_value<double, DoubleValue>(
       "my_double_array", {-16.8, -8.4, -4.2, -2.1, -1.0, 0.0, 1.0, 2.1, 4.2, 8.4, 16.8});
@@ -311,7 +307,7 @@ static void test_convert_idprop_from_value(StringRef input,
   IDP_FreeProperty(id_property);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_string_from_value)
+TEST(idprop, convert_idp_string_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyStringName","type":"IDP_STRING","value":"MyString"}])",
@@ -319,25 +315,25 @@ TEST_F(IDPropertySerializeTest, convert_idp_string_from_value)
       "MyString");
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_int_from_value)
+TEST(idprop, convert_idp_int_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyIntegerName","type":"IDP_INT","value":42}])", "MyIntegerName", 42);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_float_from_value)
+TEST(idprop, convert_idp_float_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyFloatName","type":"IDP_FLOAT","value":42.24}])", "MyFloatName", 42.24f);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_double_from_value)
+TEST(idprop, convert_idp_double_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyDoubleName","type":"IDP_DOUBLE","value":42.24}])", "MyDoubleName", 42.24);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_array_int_from_value)
+TEST(idprop, convert_idp_array_int_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyArrayName","type":"IDP_ARRAY","subtype":"IDP_INT","value":[42, 24, 35]}])",
@@ -345,7 +341,7 @@ TEST_F(IDPropertySerializeTest, convert_idp_array_int_from_value)
       Vector<int32_t>{42, 24, 35});
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_array_float_from_value)
+TEST(idprop, convert_idp_array_float_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyArrayName","type":"IDP_ARRAY","subtype":"IDP_FLOAT","value":[42.0, 24.4, 35.2]}])",
@@ -353,7 +349,7 @@ TEST_F(IDPropertySerializeTest, convert_idp_array_float_from_value)
       Vector<float>{42.0f, 24.4f, 35.2f});
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_array_double_from_value)
+TEST(idprop, convert_idp_array_double_from_value)
 {
   test_convert_idprop_from_value(
       R"([{"name":"MyArrayName","type":"IDP_ARRAY","subtype":"IDP_DOUBLE","value":[42.43,24.5,35.8]}])",
@@ -361,7 +357,7 @@ TEST_F(IDPropertySerializeTest, convert_idp_array_double_from_value)
       Vector<double>{42.43, 24.5, 35.8});
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_multiple_from_value)
+TEST(idprop, convert_idp_multiple_from_value)
 {
   static const std::string input_json =
       R"([{"name":"MyIntegerName","type":"IDP_INT","value":42},{"name":"MyStringName","type":"IDP_STRING","value":"MyString"},{"name":"MyFloatName","type":"IDP_FLOAT","value":42.24},{"name":"MyDoubleName","type":"IDP_DOUBLE","value":42.24}])";
@@ -394,7 +390,7 @@ TEST_F(IDPropertySerializeTest, convert_idp_multiple_from_value)
   IDP_FreeProperty(id_property_4);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_multiple_roundtrip)
+TEST(idprop, convert_idp_multiple_roundtrip)
 {
   static const std::string input_json =
       R"([{"name":"MyIntegerName","type":"IDP_INT","value":42},{"name":"MyStringName","type":"IDP_STRING","value":"MyString"},{"name":"MyFloatName","type":"IDP_FLOAT","value":42.2400016784668},{"name":"MyDoubleName","type":"IDP_DOUBLE","value":42.24}])";
@@ -420,7 +416,7 @@ TEST_F(IDPropertySerializeTest, convert_idp_multiple_roundtrip)
   IDP_FreeProperty(id_property_4);
 }
 
-TEST_F(IDPropertySerializeTest, convert_idp_group_from_value)
+TEST(idprop, convert_idp_group_from_value)
 {
   static const std::string input_json =
       R"([{"name":"AssetMetaData.properties","type":"IDP_GROUP","value":[{"name":"dimensions","type":"IDP_ARRAY","subtype":"IDP_FLOAT","value":[2.0,2.0,2.0]}]}])";

@@ -8,25 +8,22 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 #include "DNA_view3d_types.h"
 
 namespace blender {
 
-enum eXrSessionFlag : int {
+enum eXrSessionFlag {
   XR_SESSION_USE_POSITION_TRACKING = (1 << 0),
   XR_SESSION_USE_ABSOLUTE_TRACKING = (1 << 1),
 };
-ENUM_OPERATORS(eXrSessionFlag)
 
-enum eXRSessionBasePoseType : char {
+enum eXRSessionBasePoseType {
   XR_BASE_POSE_SCENE_CAMERA = 0,
   XR_BASE_POSE_OBJECT = 1,
   XR_BASE_POSE_CUSTOM = 2,
 };
 
-enum eXrSessionControllerDrawStyle : char {
+enum eXrSessionControllerDrawStyle {
   XR_CONTROLLER_DRAW_DARK = 0,
   XR_CONTROLLER_DRAW_LIGHT = 1,
   XR_CONTROLLER_DRAW_DARK_RAY = 2,
@@ -34,7 +31,7 @@ enum eXrSessionControllerDrawStyle : char {
 };
 
 /** XR action type. Enum values match those in GHOST_XrActionType enum for consistency. */
-enum eXrActionType : char {
+enum eXrActionType {
   XR_BOOLEAN_INPUT = 1,
   XR_FLOAT_INPUT = 2,
   XR_VECTOR2F_INPUT = 3,
@@ -43,19 +40,18 @@ enum eXrActionType : char {
 };
 
 /** Determines how XR action operators are executed. */
-enum eXrOpFlag : short {
+enum eXrOpFlag {
   XR_OP_PRESS = 0,
   XR_OP_RELEASE = 1,
   XR_OP_MODAL = 2,
 };
 
-enum eXrActionFlag : short {
+enum eXrActionFlag {
   /** Action depends on two sub-action paths (i.e. two-handed/bi-manual action). */
   XR_ACTION_BIMANUAL = (1 << 0),
 };
-ENUM_OPERATORS(eXrActionFlag)
 
-enum eXrHapticFlag : short {
+enum eXrHapticFlag {
   /** Whether to apply haptics to corresponding user paths for an action and its haptic action. */
   XR_HAPTIC_MATCHUSERPATHS = (1 << 0),
   /**
@@ -66,26 +62,23 @@ enum eXrHapticFlag : short {
   XR_HAPTIC_RELEASE = (1 << 2),
   XR_HAPTIC_REPEAT = (1 << 3),
 };
-ENUM_OPERATORS(eXrHapticFlag)
 
 /**
  * For axis-based inputs (thumbstick/trackpad/etc).
  * Determines the region for action execution (mutually exclusive per axis).
  */
-enum eXrAxisFlag : short {
+enum eXrAxisFlag {
   XR_AXIS0_POS = (1 << 0),
   XR_AXIS0_NEG = (1 << 1),
   XR_AXIS1_POS = (1 << 2),
   XR_AXIS1_NEG = (1 << 3),
 };
-ENUM_OPERATORS(eXrAxisFlag)
 
-enum eXrPoseFlag : short {
+enum eXrPoseFlag {
   /* Pose represents controller grip/aim. */
   XR_POSE_GRIP = (1 << 0),
   XR_POSE_AIM = (1 << 1),
 };
-ENUM_OPERATORS(eXrPoseFlag)
 
 /**
  * The following user and component path lengths are dependent on OpenXR's XR_MAX_PATH_LENGTH
@@ -105,7 +98,7 @@ struct XrSessionSettings {
 
   float base_scale = 0;
   char _pad[3] = {};
-  eXRSessionBasePoseType base_pose_type = XR_BASE_POSE_SCENE_CAMERA;
+  char base_pose_type = 0; /* #eXRSessionBasePoseType */
   /** Object to take the location and rotation as base position from. */
   Object *base_pose_object = nullptr;
   float base_pose_location[3] = {};
@@ -153,7 +146,7 @@ struct XrActionMapBinding {
 
   /** Input threshold/region. */
   float float_threshold = 0;
-  eXrAxisFlag axis_flag = {};
+  short axis_flag = 0; /* eXrAxisFlag */
   char _pad[2] = {};
 
   /** Pose action properties. */
@@ -174,7 +167,7 @@ struct XrActionMapItem {
   /** Unique name. */
   char name[/*MAX_NAME*/ 64] = "";
   /** Type. */
-  eXrActionType type = {};
+  char type = 0; /** eXrActionType */
   char _pad[7] = {};
 
   /** OpenXR user paths. */
@@ -187,12 +180,12 @@ struct XrActionMapItem {
   /** RNA pointer to access properties. */
   struct PointerRNA *op_properties_ptr = nullptr;
 
-  eXrOpFlag op_flag = XR_OP_PRESS;
-  eXrActionFlag action_flag = {};
-  eXrHapticFlag haptic_flag = {};
+  short op_flag = 0;     /* eXrOpFlag */
+  short action_flag = 0; /* eXrActionFlag */
+  short haptic_flag = 0; /* eXrHapticFlag */
 
   /** Pose action properties. */
-  eXrPoseFlag pose_flag = {};
+  short pose_flag = 0; /* eXrPoseFlag */
 
   /** Haptic properties. */
   char haptic_name[/*MAX_NAME*/ 64] = "";

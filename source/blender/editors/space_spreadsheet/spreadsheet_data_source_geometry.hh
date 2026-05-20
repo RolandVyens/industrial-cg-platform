@@ -14,8 +14,7 @@
 
 #include "NOD_geometry_nodes_bundle_fwd.hh"
 #include "NOD_geometry_nodes_closure_fwd.hh"
-
-#include "NOD_geometry_nodes_list.hh"
+#include "NOD_geometry_nodes_list_fwd.hh"
 
 #include "spreadsheet_data_source.hh"
 
@@ -118,10 +117,10 @@ class VolumeGridDataSource : public DataSource {
 #endif
 
 class ListDataSource : public DataSource {
-  nodes::GListPtr list_;
+  nodes::ListPtr list_;
 
  public:
-  ListDataSource(nodes::GListPtr list);
+  ListDataSource(nodes::ListPtr list);
 
   void foreach_default_column_ids(
       FunctionRef<void(const SpreadsheetColumnID &, bool is_extra)> fn) const override;

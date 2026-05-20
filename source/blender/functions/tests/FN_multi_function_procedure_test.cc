@@ -9,13 +9,9 @@
 #include "FN_multi_function_procedure_executor.hh"
 #include "FN_multi_function_test_common.hh"
 
-#include "BKE_gtest_base.hh"
-
 namespace blender::fn::multi_function::tests {
 
-class MultiFunctionProcedureTest : public bke::BlenderGTestBase {};
-
-TEST_F(MultiFunctionProcedureTest, ConstantOutput)
+TEST(multi_function_procedure, ConstantOutput)
 {
   /**
    * procedure(int *var2) {
@@ -53,7 +49,7 @@ TEST_F(MultiFunctionProcedureTest, ConstantOutput)
   EXPECT_EQ(output_array[1], 10);
 }
 
-TEST_F(MultiFunctionProcedureTest, SimpleTest)
+TEST(multi_function_procedure, SimpleTest)
 {
   /**
    * procedure(int var1, int var2, int *var4) {
@@ -100,7 +96,7 @@ TEST_F(MultiFunctionProcedureTest, SimpleTest)
   EXPECT_EQ(output_array[2], 19);
 }
 
-TEST_F(MultiFunctionProcedureTest, BranchTest)
+TEST(multi_function_procedure, BranchTest)
 {
   /**
    * procedure(int &var1, bool var2) {
@@ -153,7 +149,7 @@ TEST_F(MultiFunctionProcedureTest, BranchTest)
   EXPECT_EQ(values_a[4], 22);
 }
 
-TEST_F(MultiFunctionProcedureTest, EvaluateOne)
+TEST(multi_function_procedure, EvaluateOne)
 {
   /**
    * procedure(int var1, int *var2) {
@@ -197,7 +193,7 @@ TEST_F(MultiFunctionProcedureTest, EvaluateOne)
   EXPECT_EQ(tot_evaluations, 1);
 }
 
-TEST_F(MultiFunctionProcedureTest, SimpleLoop)
+TEST(multi_function_procedure, SimpleLoop)
 {
   /**
    * procedure(int count, int *out) {
@@ -271,7 +267,7 @@ TEST_F(MultiFunctionProcedureTest, SimpleLoop)
   EXPECT_EQ(results[4], 1016);
 }
 
-TEST_F(MultiFunctionProcedureTest, Vectors)
+TEST(multi_function_procedure, Vectors)
 {
   /**
    * procedure(vector<int> v1, vector<int> &v2, vector<int> *v3) {
@@ -341,7 +337,7 @@ TEST_F(MultiFunctionProcedureTest, Vectors)
   EXPECT_EQ(v3[4].size(), 35);
 }
 
-TEST_F(MultiFunctionProcedureTest, BufferReuse)
+TEST(multi_function_procedure, BufferReuse)
 {
   /**
    * procedure(int a, int *out) {
@@ -396,7 +392,7 @@ TEST_F(MultiFunctionProcedureTest, BufferReuse)
   EXPECT_EQ(results[4], 53);
 }
 
-TEST_F(MultiFunctionProcedureTest, OutputBufferReplaced)
+TEST(multi_function_procedure, OutputBufferReplaced)
 {
   Procedure procedure;
   ProcedureBuilder builder{procedure};

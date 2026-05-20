@@ -85,10 +85,15 @@ class FaceNeighborCountFieldInput final : public bke::MeshFieldInput {
     return construct_neighbor_count_varray(mesh, domain);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random constant hash. */
+    return 823543774;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const FaceNeighborCountFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
@@ -118,10 +123,15 @@ class FaceVertexCountFieldInput final : public bke::MeshFieldInput {
     return construct_vertex_count_varray(mesh, domain);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random constant hash. */
+    return 236235463634;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const FaceVertexCountFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

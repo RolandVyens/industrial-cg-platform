@@ -4,10 +4,8 @@
 
 #include "BKE_attribute.hh"
 #include "BKE_curves.hh"
-#include "BKE_gtest_base.hh"
 
 #include "BLI_array_utils.hh"
-
 #include "GEO_merge_curves.hh"
 
 #include "testing/testing.h"
@@ -17,8 +15,6 @@ namespace blender {
 using namespace blender::bke;
 
 namespace geometry::tests {
-
-class MergeCurvesTest : public bke::BlenderGTestBase {};
 
 static bke::CurvesGeometry create_test_curves(Span<int> offsets, Span<bool> cyclic)
 {
@@ -41,7 +37,7 @@ static bke::CurvesGeometry create_test_curves(Span<int> offsets, Span<bool> cycl
   return curves;
 }
 
-TEST_F(MergeCurvesTest, NoConnections)
+TEST(merge_curves, NoConnections)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -59,7 +55,7 @@ TEST_F(MergeCurvesTest, NoConnections)
   EXPECT_EQ_SPAN(Span({false, true, true, false}), cyclic);
 }
 
-TEST_F(MergeCurvesTest, ConnectSingleCurve)
+TEST(merge_curves, ConnectSingleCurve)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -79,7 +75,7 @@ TEST_F(MergeCurvesTest, ConnectSingleCurve)
   EXPECT_EQ_SPAN(Span({0, 1, 2, 6, 7, 8, 9, 10, 11, 3, 4, 5}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, ReverseCurves)
+TEST(merge_curves, ReverseCurves)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -99,7 +95,7 @@ TEST_F(MergeCurvesTest, ReverseCurves)
   EXPECT_EQ_SPAN(Span({0, 1, 2, 5, 4, 3, 6, 7, 8, 11, 10, 9}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, ConnectAndReverseCurves)
+TEST(merge_curves, ConnectAndReverseCurves)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -119,7 +115,7 @@ TEST_F(MergeCurvesTest, ConnectAndReverseCurves)
   EXPECT_EQ_SPAN(Span({3, 4, 5, 2, 1, 0, 9, 10, 11, 8, 7, 6}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, CyclicConnection)
+TEST(merge_curves, CyclicConnection)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -139,7 +135,7 @@ TEST_F(MergeCurvesTest, CyclicConnection)
   EXPECT_EQ_SPAN(Span({0, 1, 2, 3, 4, 5, 9, 10, 11, 6, 7, 8}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, SelfConnectCurve)
+TEST(merge_curves, SelfConnectCurve)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, false, false, false});
@@ -159,7 +155,7 @@ TEST_F(MergeCurvesTest, SelfConnectCurve)
   EXPECT_EQ_SPAN(Span({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, MergeAll)
+TEST(merge_curves, MergeAll)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});
@@ -179,7 +175,7 @@ TEST_F(MergeCurvesTest, MergeAll)
   EXPECT_EQ_SPAN(Span({0, 1, 2, 6, 7, 8, 9, 10, 11, 3, 4, 5}), dst_indices);
 }
 
-TEST_F(MergeCurvesTest, Branching)
+TEST(merge_curves, Branching)
 {
   bke::CurvesGeometry src_curves = create_test_curves({0, 3, 6, 9, 12},
                                                       {false, true, true, false});

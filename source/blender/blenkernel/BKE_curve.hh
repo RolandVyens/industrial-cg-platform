@@ -37,8 +37,6 @@ struct Object;
 struct rctf;
 struct TextBox;
 
-enum ObjectType : short;
-
 using eBezTriple_Flag__Alias = int;
 
 struct CurveCache {
@@ -101,8 +99,8 @@ enum eNurbHandleTest_Mode {
  * Frees edit-curve entirely.
  */
 void BKE_curve_editfont_free(Curve *cu);
-void BKE_curve_init(Curve *cu, ObjectType curve_type);
-Curve *BKE_curve_add(Main *bmain, const char *name, ObjectType type);
+void BKE_curve_init(Curve *cu, short curve_type);
+Curve *BKE_curve_add(Main *bmain, const char *name, int type);
 void BKE_curve_type_test(Object *ob, bool dimension_update);
 void BKE_curve_dimension_update(Curve *cu);
 
@@ -215,19 +213,15 @@ void BKE_nurbList_duplicate(ListBaseT<Nurb> *lb1, const ListBaseT<Nurb> *lb2);
  */
 void BKE_nurbList_handles_set(ListBaseT<Nurb> *editnurb,
                               eNurbHandleTest_Mode handle_mode,
-                              eBezTriple_Handle code);
-void BKE_nurbList_handles_recalculate(ListBaseT<Nurb> *editnurb,
-                                      bool calc_length,
-                                      eBezTriple_Flag flag);
+                              char code);
+void BKE_nurbList_handles_recalculate(ListBaseT<Nurb> *editnurb, bool calc_length, uint8_t flag);
 
-void BKE_nurbList_handles_autocalc(ListBaseT<Nurb> *editnurb, eBezTriple_Flag flag);
-void BKE_nurbList_flag_set(ListBaseT<Nurb> *editnurb, eBezTriple_Flag flag, bool set);
+void BKE_nurbList_handles_autocalc(ListBaseT<Nurb> *editnurb, uint8_t flag);
+void BKE_nurbList_flag_set(ListBaseT<Nurb> *editnurb, uint8_t flag, bool set);
 /**
  * Set \a flag for every point that already has \a from_flag set.
  */
-bool BKE_nurbList_flag_set_from_flag(ListBaseT<Nurb> *editnurb,
-                                     eBezTriple_Flag from_flag,
-                                     eBezTriple_Flag flag);
+bool BKE_nurbList_flag_set_from_flag(ListBaseT<Nurb> *editnurb, uint8_t from_flag, uint8_t flag);
 
 void BKE_nurb_free(Nurb *nu);
 Nurb *BKE_nurb_duplicate(const Nurb *nu);
@@ -302,7 +296,7 @@ void BKE_nurb_direction_switch(Nurb *nu);
 /**
  * \note caller must ensure active vertex remains valid.
  */
-bool BKE_nurb_type_convert(Nurb *nu, eNurbType type, bool use_handles, const char **r_err_msg);
+bool BKE_nurb_type_convert(Nurb *nu, short type, bool use_handles, const char **r_err_msg);
 
 /**
  * Be sure to call #BKE_nurb_knot_calc_u / #BKE_nurb_knot_calc_v after this.
@@ -352,7 +346,7 @@ void BKE_nurb_handle_calc_simple_auto(Nurb *nu, BezTriple *bezt);
 void BKE_nurb_handle_smooth_fcurve(BezTriple *bezt, int total, bool cyclic);
 
 void BKE_nurb_handles_calc(Nurb *nu);
-void BKE_nurb_handles_autocalc(Nurb *nu, eBezTriple_Flag flag);
+void BKE_nurb_handles_autocalc(Nurb *nu, uint8_t flag);
 
 /**
  * Return a flag for the handles to treat as "selected":
@@ -404,8 +398,8 @@ unsigned int BKE_curve_decimate_bezt_array(BezTriple *bezt_array,
                                            unsigned int bezt_array_len,
                                            unsigned int resolu,
                                            bool is_cyclic,
-                                           eBezTriple_Flag flag_test,
-                                           eBezTriple_Flag flag_set,
+                                           char flag_test,
+                                           char flag_set,
                                            float error_sq_max,
                                            unsigned int error_target_len);
 

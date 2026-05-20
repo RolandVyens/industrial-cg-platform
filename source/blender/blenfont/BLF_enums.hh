@@ -29,7 +29,6 @@ enum class BLFWrapMode : int {
   /** Line break at limit. */
   HardLimit = 1 << 2,
 };
-ENUM_OPERATORS(BLFWrapMode);
 
 enum FontFlags {
   BLF_NONE = 0,

@@ -14,8 +14,6 @@
 
 #  include <OpenImageDenoise/oidn.hpp>
 
-#  include "COM_result.hh"
-
 namespace blender::compositor {
 
 class Context;
@@ -48,7 +46,7 @@ bool operator==(const DenoisedAuxiliaryPassKey &a, const DenoisedAuxiliaryPassKe
  * the given quality. */
 class DenoisedAuxiliaryPass {
  public:
-  Result result;
+  float *denoised_buffer = nullptr;
 
  public:
   DenoisedAuxiliaryPass(Context &context,

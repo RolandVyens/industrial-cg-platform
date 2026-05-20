@@ -18,7 +18,7 @@ namespace blender {
  * \{ */
 
 /** #SpaceLink.link_flag */
-enum eSpace_Link_Flag : char {
+enum {
   /**
    * The space is not a regular one opened through the editor menu (for example) but spawned by an
    * operator to fulfill some task and then disappear again.
@@ -33,7 +33,6 @@ enum eSpace_Link_Flag : char {
    */
   SPACE_FLAG_TYPE_WAS_ACTIVE = (1 << 1),
 };
-ENUM_OPERATORS(eSpace_Link_Flag)
 
 /** \} */
 
@@ -42,14 +41,13 @@ ENUM_OPERATORS(eSpace_Link_Flag)
  * \{ */
 
 /** #SpaceInfo.rpt_mask */
-enum eSpaceInfo_RptMask : char {
+enum eSpaceInfo_RptMask {
   INFO_RPT_DEBUG = (1 << 0),
   INFO_RPT_INFO = (1 << 1),
   INFO_RPT_OP = (1 << 2),
   INFO_RPT_WARN = (1 << 3),
   INFO_RPT_ERR = (1 << 4),
 };
-ENUM_OPERATORS(eSpaceInfo_RptMask)
 
 /** \} */
 
@@ -61,7 +59,7 @@ ENUM_OPERATORS(eSpaceInfo_RptMask)
 #ifdef DNA_DEPRECATED_ALLOW
 /* WARNING: the values of these defines are used in SpaceProperties.tabs[8] */
 /** #SpaceProperties::mainb new */
-enum eSpaceButtons_Context_Legacy : short {
+enum {
   CONTEXT_SCENE = 0,
   CONTEXT_OBJECT = 1,
   // CONTEXT_TYPES = 2,
@@ -72,7 +70,7 @@ enum eSpaceButtons_Context_Legacy : short {
 };
 
 /** #SpaceProperties::mainb old (deprecated) */
-enum eSpaceButtons_Legacy : short {
+enum {
   // BUTS_VIEW = 0,
   BUTS_LAMP = 1,
   BUTS_MAT = 2,
@@ -92,7 +90,7 @@ enum eSpaceButtons_Legacy : short {
 #endif /* DNA_DEPRECATED_ALLOW */
 
 /** #SpaceProperties.mainb new */
-enum eSpaceButtons_Context : short {
+enum eSpaceButtons_Context {
   BCONTEXT_SEPARATOR = -1,
   BCONTEXT_RENDER = 0,
   BCONTEXT_SCENE = 1,
@@ -120,7 +118,7 @@ enum eSpaceButtons_Context : short {
 };
 
 /** #SpaceProperties.flag */
-enum eSpaceButtons_Flag : char {
+enum eSpaceButtons_Flag {
   /* SB_PRV_OSA = (1 << 0), */ /* UNUSED */
   SB_PIN_CONTEXT = (1 << 1),
   SB_FLAG_UNUSED_2 = (1 << 2),
@@ -129,10 +127,9 @@ enum eSpaceButtons_Flag : char {
   SB_TEX_USER_LIMITED = (1 << 3),
   SB_SHADING_CONTEXT = (1 << 4),
 };
-ENUM_OPERATORS(eSpaceButtons_Flag)
 
 /** #SpaceProperties.outliner_sync */
-enum eSpaceButtons_OutlinerSync : char {
+enum eSpaceButtons_OutlinerSync {
   PROPERTIES_SYNC_AUTO = 0,
   PROPERTIES_SYNC_NEVER = 1,
   PROPERTIES_SYNC_ALWAYS = 2,
@@ -145,7 +142,7 @@ enum eSpaceButtons_OutlinerSync : char {
  * \{ */
 
 /** #SpaceOutliner.flag */
-enum eSpaceOutliner_Flag : short {
+enum eSpaceOutliner_Flag {
   /* SO_TESTBLOCKS = (1 << 0), */         /* UNUSED */
   /* SO_NEWSELECTED = (1 << 1), */        /* UNUSED */
   SO_FLAG_UNUSED_1 = (1 << 2),            /* cleared */
@@ -153,12 +150,10 @@ enum eSpaceOutliner_Flag : short {
   SO_SKIP_SORT_ALPHA = (1 << 4),
   SO_SYNC_SELECT = (1 << 5),
   SO_MODE_COLUMN = (1 << 6),
-  SO_SCROLL_TO_ACTIVE = (1 << 7),
 };
-ENUM_OPERATORS(eSpaceOutliner_Flag)
 
 /** #SpaceOutliner.filter */
-enum eSpaceOutliner_Filter : int {
+enum eSpaceOutliner_Filter {
   SO_FILTER_SEARCH = (1 << 0), /* Run-time flag. */
   SO_FILTER_CLEARED_1 = (1 << 1),
   SO_FILTER_NO_OBJECT = (1 << 2),
@@ -187,7 +182,6 @@ enum eSpaceOutliner_Filter : int {
 
   SO_FILTER_NO_OB_GREASE_PENCIL = (1 << 20),
 };
-ENUM_OPERATORS(eSpaceOutliner_Filter)
 
 #define SO_FILTER_OB_TYPE \
   (SO_FILTER_NO_OB_MESH | SO_FILTER_NO_OB_ARMATURE | SO_FILTER_NO_OB_EMPTY | \
@@ -203,7 +197,7 @@ ENUM_OPERATORS(eSpaceOutliner_Filter)
    SO_FILTER_NO_COLLECTION | SO_FILTER_NO_VIEW_LAYERS)
 
 /** #SpaceOutliner.filter_state */
-enum eSpaceOutliner_StateFilter : char {
+enum eSpaceOutliner_StateFilter {
   SO_FILTER_OB_ALL = 0,
   SO_FILTER_OB_VISIBLE = 1,
   SO_FILTER_OB_HIDDEN = 2, /* deprecated */
@@ -213,7 +207,7 @@ enum eSpaceOutliner_StateFilter : char {
 };
 
 /** #SpaceOutliner.show_restrict_flags */
-enum eSpaceOutliner_ShowRestrictFlag : char {
+enum eSpaceOutliner_ShowRestrictFlag {
   SO_RESTRICT_ENABLE = (1 << 0),
   SO_RESTRICT_SELECT = (1 << 1),
   SO_RESTRICT_HIDE = (1 << 2),
@@ -222,10 +216,9 @@ enum eSpaceOutliner_ShowRestrictFlag : char {
   SO_RESTRICT_HOLDOUT = (1 << 5),
   SO_RESTRICT_INDIRECT_ONLY = (1 << 6),
 };
-ENUM_OPERATORS(eSpaceOutliner_ShowRestrictFlag)
 
 /** #SpaceOutliner.outlinevis */
-enum eSpaceOutliner_Mode : short {
+enum eSpaceOutliner_Mode {
   SO_SCENES = 0,
   /* SO_CUR_SCENE      = 1, */ /* deprecated! */
   /* SO_VISIBLE        = 2, */ /* deprecated! */
@@ -246,7 +239,7 @@ enum eSpaceOutliner_Mode : short {
 };
 
 /** #SpaceOutliner.outlinevis */
-enum eSpaceOutliner_LibOverrideViewMode : short {
+enum eSpaceOutliner_LibOverrideViewMode {
   /** View all overrides with RNA buttons to edit the overridden values. */
   SO_LIB_OVERRIDE_VIEW_PROPERTIES = 0,
   /** View entire override hierarchies (relationships between overridden data-blocks). */
@@ -254,7 +247,7 @@ enum eSpaceOutliner_LibOverrideViewMode : short {
 };
 
 /** #SpaceOutliner.storeflag */
-enum eSpaceOutliner_StoreFlag : short {
+enum eSpaceOutliner_StoreFlag {
   /* cleanup tree */
   SO_TREESTORE_CLEANUP = (1 << 0),
   SO_TREESTORE_UNUSED_1 = (1 << 1), /* cleared */
@@ -262,15 +255,13 @@ enum eSpaceOutliner_StoreFlag : short {
    * bke::outliner::treehash::rebuild_from_treestore instead. */
   SO_TREESTORE_REBUILD = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceOutliner_StoreFlag)
 
 /** Outliner search flags (#SpaceOutliner.search_flags) */
-enum eSpaceOutliner_Search_Flags : char {
+enum eSpaceOutliner_Search_Flags {
   SO_FIND_CASE_SENSITIVE = (1 << 0),
   SO_FIND_COMPLETE = (1 << 1),
   SO_SEARCH_RECURSIVE = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceOutliner_Search_Flags)
 
 /** \} */
 
@@ -279,7 +270,7 @@ ENUM_OPERATORS(eSpaceOutliner_Search_Flags)
  * \{ */
 
 /** #SpaceGraph.flag (Graph Editor Settings) */
-enum eGraphEdit_Flag : int {
+enum eGraphEdit_Flag {
   /* OLD DEPRECATED SETTING */
   /* SIPO_LOCK_VIEW            = (1 << 0), */
 
@@ -311,17 +302,16 @@ enum eGraphEdit_Flag : int {
   SIPO_SHOW_MARKERS = (1 << 16),
   SIPO_NO_DRAW_EXTRAPOLATION = (1 << 17),
 };
-ENUM_OPERATORS(eGraphEdit_Flag)
 
 /** #SpaceGraph.mode (Graph Editor Mode) */
-enum eGraphEdit_Mode : short {
+enum eGraphEdit_Mode {
   /* all animation curves (from all over Blender) */
   SIPO_MODE_ANIMATION = 0,
   /* drivers only */
   SIPO_MODE_DRIVERS = 1,
 };
 
-enum eGraphEdit_Runtime_Flag : char {
+enum eGraphEdit_Runtime_Flag {
   /** Temporary flag to force channel selections to be synced with main. */
   SIPO_RUNTIME_FLAG_NEED_CHAN_SYNC = (1 << 0),
   /** Temporary flag to force F-Curves to recalculate colors. */
@@ -334,7 +324,6 @@ enum eGraphEdit_Runtime_Flag : char {
   SIPO_RUNTIME_FLAG_TWEAK_HANDLES_LEFT = (1 << 2),
   SIPO_RUNTIME_FLAG_TWEAK_HANDLES_RIGHT = (1 << 3),
 };
-ENUM_OPERATORS(eGraphEdit_Runtime_Flag)
 
 /** \} */
 
@@ -343,7 +332,7 @@ ENUM_OPERATORS(eGraphEdit_Runtime_Flag)
  * \{ */
 
 /** #SpaceNla.flag */
-enum eSpaceNla_Flag : short {
+enum eSpaceNla_Flag {
   SNLA_FLAG_UNUSED_0 = (1 << 0),
   SNLA_FLAG_UNUSED_1 = (1 << 1),
   /* draw timing in seconds instead of frames */
@@ -359,7 +348,6 @@ enum eSpaceNla_Flag : short {
   /* show markers region */
   SNLA_SHOW_MARKERS = (1 << 8),
 };
-ENUM_OPERATORS(eSpaceNla_Flag)
 
 /** \} */
 
@@ -368,7 +356,7 @@ ENUM_OPERATORS(eSpaceNla_Flag)
  * \{ */
 
 /** #SequencerPreviewOverlay.flag */
-enum eSpaceSeq_SequencerPreviewOverlay_Flag : int {
+enum eSpaceSeq_SequencerPreviewOverlay_Flag {
   SEQ_PREVIEW_SHOW_2D_CURSOR = (1 << 1),
   SEQ_PREVIEW_SHOW_OUTLINE_SELECTED = (1 << 2),
   SEQ_PREVIEW_SHOW_SAFE_MARGINS = (1 << 3),
@@ -376,10 +364,9 @@ enum eSpaceSeq_SequencerPreviewOverlay_Flag : int {
   SEQ_PREVIEW_SHOW_SAFE_CENTER = (1 << 9),
   SEQ_PREVIEW_SHOW_METADATA = (1 << 10),
 };
-ENUM_OPERATORS(eSpaceSeq_SequencerPreviewOverlay_Flag)
 
 /** #SequencerTimelineOverlay.flag */
-enum eSpaceSeq_SequencerTimelineOverlay_Flag : int {
+enum eSpaceSeq_SequencerTimelineOverlay_Flag {
   SEQ_TIMELINE_SHOW_STRIP_OFFSETS = (1 << 1),
   /** Show thumbnails only at ends of a strip. */
   SEQ_TIMELINE_STRIP_END_THUMBNAILS = (1 << 2),
@@ -400,20 +387,18 @@ enum eSpaceSeq_SequencerTimelineOverlay_Flag : int {
   /** Show continuous sequence of thumbnails. */
   SEQ_TIMELINE_CONTINUOUS_THUMBNAILS = (1 << 19),
 };
-ENUM_OPERATORS(eSpaceSeq_SequencerTimelineOverlay_Flag)
 
 /** #SequencerCacheOverlay.flag */
-enum eSpaceSeq_SequencerCacheOverlay_Flag : int {
+enum eSpaceSeq_SequencerCacheOverlay_Flag {
   SEQ_CACHE_SHOW = (1 << 1),
   SEQ_CACHE_SHOW_RAW = (1 << 2),
   /* Was SEQ_CACHE_SHOW_PREPROCESSED = (1 << 3) */
   /* Was SEQ_CACHE_SHOW_COMPOSITE = (1 << 4) */
   SEQ_CACHE_SHOW_FINAL_OUT = (1 << 5),
 };
-ENUM_OPERATORS(eSpaceSeq_SequencerCacheOverlay_Flag)
 
 /** #SpaceSeq.mainb */
-enum eSpaceSeq_RegionType : short {
+enum eSpaceSeq_RegionType {
   SEQ_DRAW_IMG_IMBUF = 1,
   SEQ_DRAW_IMG_WAVEFORM = 2,
   SEQ_DRAW_IMG_VECTORSCOPE = 3,
@@ -422,15 +407,14 @@ enum eSpaceSeq_RegionType : short {
 };
 
 /** #SpaceSeq.draw_flag */
-enum eSpaceSeq_DrawFlag : char {
+enum eSpaceSeq_DrawFlag {
   SEQ_DRAW_UNUSED_0 = (1 << 0),
   SEQ_DRAW_UNUSED_1 = (1 << 1),
   SEQ_DRAW_TRANSFORM_PREVIEW = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceSeq_DrawFlag)
 
 /** #SpaceSeq.flag */
-enum eSpaceSeq_Flag : int {
+enum eSpaceSeq_Flag {
   SEQ_DRAWFRAMES = (1 << 0),
   SEQ_MARKER_TRANS = (1 << 1),
   SEQ_DRAW_COLOR_SEPARATED_UNUSED_2 = (1 << 2),
@@ -447,19 +431,17 @@ enum eSpaceSeq_Flag : int {
   SPACE_SEQ_FLAG_UNUSED_16 = (1 << 16),
   SEQ_USE_PROXIES = (1 << 17),
   SEQ_SHOW_GRID = (1 << 18),
-  SEQ_SHOW_SCRUBBING_REGION = (1 << 19),
 };
-ENUM_OPERATORS(eSpaceSeq_Flag)
 
 /** #SpaceSeq.view */
-enum eSpaceSeq_Displays : char {
+enum eSpaceSeq_Displays {
   SEQ_VIEW_SEQUENCE = 1,
   SEQ_VIEW_PREVIEW = 2,
   SEQ_VIEW_SEQUENCE_PREVIEW = 3,
 };
 
 /** #SpaceSeq.render_size */
-enum eSpaceSeq_Proxy_RenderSize : short {
+enum eSpaceSeq_Proxy_RenderSize {
   SEQ_RENDER_SIZE_NONE = -1,
   SEQ_RENDER_SIZE_SCENE = 0,
   SEQ_RENDER_SIZE_PROXY_25 = 25,
@@ -470,17 +452,16 @@ enum eSpaceSeq_Proxy_RenderSize : short {
 };
 
 /** #SpaceSeq.gizmo_flag */
-enum eSpaceSeq_Gizmo_Flag : char {
+enum {
   /** All gizmos. */
   SEQ_GIZMO_HIDE = (1 << 0),
   SEQ_GIZMO_HIDE_NAVIGATE = (1 << 1),
   SEQ_GIZMO_HIDE_CONTEXT = (1 << 2),
   SEQ_GIZMO_HIDE_TOOL = (1 << 3),
 };
-ENUM_OPERATORS(eSpaceSeq_Gizmo_Flag)
 
 /** #SpaceSeq.mainb */
-enum eSpaceSeq_OverlayFrameType : char {
+enum eSpaceSeq_OverlayFrameType {
   SEQ_OVERLAY_FRAME_TYPE_RECT = 0,
   SEQ_OVERLAY_FRAME_TYPE_REFERENCE = 1,
   SEQ_OVERLAY_FRAME_TYPE_CURRENT = 2,
@@ -492,7 +473,7 @@ enum eSpaceSeq_OverlayFrameType : char {
 /** \name File Selector
  * \{ */
 
-enum eFileAssetImportMethod : short {
+enum eFileAssetImportMethod {
   /** Regular data-block linking. */
   FILE_ASSET_IMPORT_LINK = 0,
   /** Regular data-block appending (basically linking + "Make Local"). */
@@ -510,19 +491,19 @@ enum eFileAssetImportMethod : short {
   FILE_ASSET_IMPORT_PACK = 4,
 };
 
-enum eFileAssetImportFlags : short {
+enum eFileAssetImportFlags {
   FILE_ASSET_IMPORT_INSTANCE_COLLECTIONS_ON_LINK = (1 << 0),
   FILE_ASSET_IMPORT_INSTANCE_COLLECTIONS_ON_APPEND = (1 << 1),
 };
-ENUM_OPERATORS(eFileAssetImportFlags)
 
-enum eFileSel_AssetParams_Flag : int {
-  // FILE_ASSETS_FLAG_DEPRECATED_1 = (1 << 0), /* Not cleared! */
+enum eFileSel_AssetParams_Flag {
+  /** Only show files available offline. More than a filter, it prevents downloading asset listings
+   * when enabled. */
+  FILE_ASSETS_HIDE_ONLINE = (1 << 0),
 };
-ENUM_OPERATORS(eFileSel_AssetParams_Flag)
 
 /** #SpaceFile.browse_mode (File Space Browsing Mode). */
-enum eFileBrowse_Mode : char {
+enum eFileBrowse_Mode {
   /* Regular Blender File Browser */
   FILE_BROWSE_MODE_FILES = 0,
   /* Asset Browser */
@@ -530,7 +511,7 @@ enum eFileBrowse_Mode : char {
 };
 
 /** #FileSelectParams.display */
-enum eFileDisplayType : short {
+enum eFileDisplayType {
   /** Internal (not exposed to users): Keep whatever display type was used during the last File
    * Browser use, or the default if no such record is found. Use this unless there's a good reason
    * to set a specific display type. */
@@ -544,7 +525,7 @@ enum eFileDisplayType : short {
 };
 
 /** #FileSelectParams.sort */
-enum eFileSortType : short {
+enum eFileSortType {
   /** Internal (not exposed to users): Sort by whatever was sorted by during the last File Browser
    * use, or the default if no such record is found. Use this unless there's a good reason to set a
    * specific sort order. */
@@ -561,19 +542,17 @@ enum eFileSortType : short {
 };
 
 /** #SpaceFile.tags */
-enum eFileTags : short {
+enum eFileTags {
   /** Tag the space as having to update files representing or containing main data. Must be set
    * after file read and undo/redo. */
   FILE_TAG_REBUILD_MAIN_FILES = (1 << 0),
 };
-ENUM_OPERATORS(eFileTags)
 
 /** #FileSelectParams.details_flags */
-enum eFileDetails : char {
+enum eFileDetails {
   FILE_DETAILS_SIZE = (1 << 0),
   FILE_DETAILS_DATETIME = (1 << 1),
 };
-ENUM_OPERATORS(eFileDetails)
 
 /* These values need to be hard-coded in structs, DNA does not recognize defines. */
 /* also defined in BKE */
@@ -591,9 +570,8 @@ ENUM_OPERATORS(eFileDetails)
 #define FILE_SELECT_MAX_RECURSIONS (FILE_MAX_LIBEXTRA / 2)
 
 /** File selector types. */
-enum eFileSelectType : short {
+enum eFileSelectType {
   FILE_LOADLIB = 1,
-
   /** Load assets from #Main. */
   FILE_MAIN_ASSET = 3,
   /** Load assets of an asset library containing external files. */
@@ -601,9 +579,6 @@ enum eFileSelectType : short {
   /** Load all asset libraries. */
   FILE_ASSET_LIBRARY_ALL = 5,
   FILE_ASSET_LIBRARY_REMOTE = 6,
-  /** Load assets from the bundled essentials library *and the online essentials library* (if
-   * online access is enabled). */
-  FILE_ASSET_LIBRARY_ESSENTIALS = 7,
 
   FILE_UNIX = 8,
   FILE_BLENDER = 8, /* don't display relative paths */
@@ -615,7 +590,7 @@ enum eFileSelectType : short {
  * \note short flag, also used as 16 lower bits of flags in link/append code
  * (WM and BLO code area, see #eBLOLibLinkFlags in BLO_readfile.hh).
  */
-enum eFileSel_Params_Flag : short {
+enum eFileSel_Params_Flag {
   FILE_PARAMS_FLAG_UNUSED_1 = (1 << 0),
   FILE_RELPATH = (1 << 1),
   FILE_LINK = (1 << 2),
@@ -632,11 +607,11 @@ enum eFileSel_Params_Flag : short {
   FILE_CHECK_EXISTING = (1 << 13),
   FILE_ASSETS_ONLY = (1 << 14),
   /** Enables filtering by asset catalog. */
-  FILE_FILTER_ASSET_CATALOG = short(1u << 15),
+  FILE_FILTER_ASSET_CATALOG = (1 << 15),
 };
 ENUM_OPERATORS(eFileSel_Params_Flag);
 
-enum eFileSel_Params_AssetCatalogVisibility : short {
+enum eFileSel_Params_AssetCatalogVisibility {
   FILE_SHOW_ASSETS_ALL_CATALOGS,
   FILE_SHOW_ASSETS_FROM_CATALOG,
   FILE_SHOW_ASSETS_WITHOUT_CATALOG,
@@ -646,7 +621,7 @@ enum eFileSel_Params_AssetCatalogVisibility : short {
  * #FileSelectParams.rename_flag / `sfile->params->rename_flag`.
  * \note short flag. Defined as bit-flags, but currently only used as exclusive status markers.
  */
-enum eFileSel_Params_RenameFlag : short {
+enum eFileSel_Params_RenameFlag {
   /** Used when we only have the name of the entry we want to rename,
    * but not yet access to its matching file entry. */
   FILE_PARAMS_RENAME_PENDING = 1 << 0,
@@ -656,14 +631,13 @@ enum eFileSel_Params_RenameFlag : short {
   FILE_PARAMS_RENAME_POSTSCROLL_PENDING = 1 << 2,
   FILE_PARAMS_RENAME_POSTSCROLL_ACTIVE = 1 << 3,
 };
-ENUM_OPERATORS(eFileSel_Params_RenameFlag)
 
 /**
  * Files in the file selector list: file types
  * Note we could use mere values (instead of bit-flags) for file types themselves,
  * but since we do not lack of bytes currently.
  */
-enum eFileSel_File_Types : int {
+enum eFileSel_File_Types {
   FILE_TYPE_BLENDER = (1 << 2),
   FILE_TYPE_BLENDER_BACKUP = (1 << 3),
   FILE_TYPE_IMAGE = (1 << 4),
@@ -691,12 +665,12 @@ enum eFileSel_File_Types : int {
   FILE_TYPE_ASSET_ONLINE = (1 << 29),
   /** An FS directory (i.e. S_ISDIR on its path is true). */
   FILE_TYPE_DIR = (1 << 30),
-  FILE_TYPE_BLENDERLIB = int(1u << 31),
+  FILE_TYPE_BLENDERLIB = (1u << 31),
 };
 ENUM_OPERATORS(eFileSel_File_Types);
 
 /** Selection Flags #FileList::selection_state. */
-enum eDirEntry_SelectFlag : char {
+enum eDirEntry_SelectFlag {
   // FILE_SEL_ACTIVE = (1 << 1), /* UNUSED */
   FILE_SEL_HIGHLIGHTED = (1 << 2),
   FILE_SEL_SELECTED = (1 << 3),
@@ -707,7 +681,7 @@ ENUM_OPERATORS(eDirEntry_SelectFlag);
 /* ***** Related to file browser, but never saved in DNA, only here to help with RNA. ***** */
 
 /** #FileDirEntry.flags */
-enum eFileEntry_Flag : short {
+enum {
   /* The preview for this entry could not be generated. */
   FILE_ENTRY_INVALID_PREVIEW = 1 << 0,
   /* The entry name needs to be freed when clearing file list. */
@@ -719,7 +693,6 @@ enum eFileEntry_Flag : short {
    * we reload previews. When dealing with heavy files this can have quite an impact. */
   FILE_ENTRY_BLENDERLIB_NO_PREVIEW = 1 << 3,
 };
-ENUM_OPERATORS(eFileEntry_Flag)
 
 /** \} */
 
@@ -727,14 +700,14 @@ ENUM_OPERATORS(eFileEntry_Flag)
 /** \name Image/UV Editor
  * \{ */
 
-enum eSpaceImage_GridShapeSource : char {
+enum eSpaceImage_GridShapeSource {
   SI_GRID_SHAPE_DYNAMIC = 0,
   SI_GRID_SHAPE_FIXED = 1,
   SI_GRID_SHAPE_PIXEL = 2,
 };
 
 /** #SpaceImage.dt_uv */
-enum eSpaceImage_UVDT : char {
+enum eSpaceImage_UVDT {
   SI_UVDT_OUTLINE = 0,
   SI_UVDT_DASH = 1,
   SI_UVDT_BLACK = 2,
@@ -742,20 +715,20 @@ enum eSpaceImage_UVDT : char {
 };
 
 /** #SpaceImage.dt_uvstretch */
-enum eSpaceImage_UVDT_Stretch : char {
+enum eSpaceImage_UVDT_Stretch {
   SI_UVDT_STRETCH_ANGLE = 0,
   SI_UVDT_STRETCH_AREA = 1,
 };
 
 /** #SpaceImage.pixel_round_mode */
-enum eSpaceImage_PixelRoundMode : char {
+enum eSpaceImage_PixelRoundMode {
   SI_PIXEL_ROUND_DISABLED = 0,
   SI_PIXEL_ROUND_CENTER = 1,
   SI_PIXEL_ROUND_CORNER = 2,
 };
 
 /** #SpaceImage.mode */
-enum eSpaceImage_Mode : char {
+enum eSpaceImage_Mode {
   SI_MODE_VIEW = 0,
   SI_MODE_PAINT = 1,
   SI_MODE_MASK = 2,
@@ -763,7 +736,7 @@ enum eSpaceImage_Mode : char {
 };
 
 /** #SpaceImage.flag */
-enum eSpaceImage_Flag : int {
+enum eSpaceImage_Flag {
   SI_FLAG_UNUSED_0 = (1 << 0), /* cleared */
   SI_FLAG_UNUSED_1 = (1 << 1), /* cleared */
   SI_CLIP_UV = (1 << 2),
@@ -813,24 +786,21 @@ enum eSpaceImage_Flag : int {
 
   SI_NO_DRAW_UV_GUIDE = (1 << 31),
 };
-ENUM_OPERATORS(eSpaceImage_Flag)
 
-enum eSpaceImageOverlay_Flag : int {
+enum eSpaceImageOverlay_Flag {
   SI_OVERLAY_SHOW_OVERLAYS = (1 << 0),
   SI_OVERLAY_SHOW_GRID_BACKGROUND = (1 << 1),
   SI_OVERLAY_DRAW_RENDER_REGION = (1 << 2),
   SI_OVERLAY_DRAW_TEXT_INFO = (1 << 3),
 };
-ENUM_OPERATORS(eSpaceImageOverlay_Flag)
 
 /** #SpaceImage.gizmo_flag */
-enum eSpaceImage_Gizmo_Flag : char {
+enum {
   /** All gizmos. */
   SI_GIZMO_HIDE = (1 << 0),
   SI_GIZMO_HIDE_NAVIGATE = (1 << 1),
   SI_GIZMO_HIDE_ACTIVE_NODE = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceImage_Gizmo_Flag)
 
 /** Keep in sync with `STEPS_LEN` in `grid_frag.glsl`. */
 #define SI_GRID_STEPS_LEN 8
@@ -842,7 +812,7 @@ ENUM_OPERATORS(eSpaceImage_Gizmo_Flag)
  * \{ */
 
 /** SpaceText flags (moved from DNA_text_types.h). */
-enum eSpaceText_Flags : short {
+enum eSpaceText_Flags {
   /* scrollable */
   ST_SCROLL_SELECT = (1 << 0),
 
@@ -856,7 +826,6 @@ enum eSpaceText_Flags : short {
   ST_FLAG_UNUSED_9 = (1 << 9), /* Dirty. */
 
 };
-ENUM_OPERATORS(eSpaceText_Flags)
 
 /* SpaceText.findstr/replacestr */
 #define ST_MAX_FIND_STR 256
@@ -867,7 +836,7 @@ ENUM_OPERATORS(eSpaceText_Flags)
 /** \name Nodes Editor
  * \{ */
 
-enum eSpaceNodeOverlay_Flag : int {
+enum eSpaceNodeOverlay_Flag {
   SN_OVERLAY_SHOW_OVERLAYS = (1 << 1),
   SN_OVERLAY_SHOW_WIRE_COLORS = (1 << 2),
   SN_OVERLAY_SHOW_TIMINGS = (1 << 3),
@@ -881,15 +850,14 @@ enum eSpaceNodeOverlay_Flag : int {
   SN_OVERLAY_SHOW_REROUTE_AUTO_LABELS = (1 << 7),
   SN_OVERLAY_SHOW_RENDER_REGION = (1 << 8),
 };
-ENUM_OPERATORS(eSpaceNodeOverlay_Flag)
 
-enum eSpaceNodeOverlay_preview_shape : int {
+enum eSpaceNodeOverlay_preview_shape {
   SN_OVERLAY_PREVIEW_FLAT = 0,
   SN_OVERLAY_PREVIEW_3D = 1,
 };
 
 /** #SpaceNode.flag */
-enum eSpaceNode_Flag : short {
+enum eSpaceNode_Flag {
   SNODE_BACKDRAW = (1 << 1),
   SNODE_SHOW_GPENCIL = (1 << 2),
   SNODE_USE_ALPHA = (1 << 3),
@@ -904,18 +872,16 @@ enum eSpaceNode_Flag : short {
   SNODE_PIN = (1 << 12),
   SNODE_FLAG_UNUSED_12 = (1 << 13),
 };
-ENUM_OPERATORS(eSpaceNode_Flag)
 
 /** #SpaceNode.gizmo_flag */
-enum eSpaceNode_Gizmo_Flag : char {
+enum {
   /** All gizmos. */
   SNODE_GIZMO_HIDE = (1 << 0),
   SNODE_GIZMO_HIDE_ACTIVE_NODE = (1 << 1),
 };
-ENUM_OPERATORS(eSpaceNode_Gizmo_Flag)
 
 /** #SpaceNode.texfrom */
-enum eSpaceNode_TexFrom : short {
+enum eSpaceNode_TexFrom {
   /* SNODE_TEX_OBJECT   = 0, */
   SNODE_TEX_WORLD = 1,
   SNODE_TEX_BRUSH = 2,
@@ -923,26 +889,26 @@ enum eSpaceNode_TexFrom : short {
 };
 
 /** #SpaceNode.shaderfrom */
-enum eSpaceNode_ShaderFrom : char {
+enum eSpaceNode_ShaderFrom {
   SNODE_SHADER_OBJECT = 0,
   SNODE_SHADER_WORLD = 1,
   SNODE_SHADER_LINESTYLE = 2,
 };
 
 /** #SpaceNode.nodes_type */
-enum SpaceNodeGeometryNodesType : char {
+enum SpaceNodeGeometryNodesType {
   SNODE_GEOMETRY_MODIFIER = 0,
   SNODE_GEOMETRY_TOOL = 1,
 };
 
 /** #SpaceNode.nodes_type */
-enum SpaceNodeCompositorNodesType : char {
+enum SpaceNodeCompositorNodesType {
   SNODE_COMPOSITOR_SCENE = 0,
   SNODE_COMPOSITOR_SEQUENCER = 1,
 };
 
 /** #SpaceNode.insert_ofs_dir */
-enum eSpaceNode_InsertOffsetDir : char {
+enum {
   SNODE_INSERTOFS_DIR_RIGHT = 0,
   SNODE_INSERTOFS_DIR_LEFT = 1,
 };
@@ -954,7 +920,7 @@ enum eSpaceNode_InsertOffsetDir : char {
  * \{ */
 
 /** #ConsoleLine.type */
-enum eConsoleLine_Type : int {
+enum eConsoleLine_Type {
   CONSOLE_LINE_OUTPUT = 0,
   CONSOLE_LINE_INPUT = 1,
   /** Auto-completion feedback. */
@@ -969,14 +935,13 @@ enum eConsoleLine_Type : int {
  * \{ */
 
 /** #SpaceClipOverlay.flag */
-enum eSpaceClipOverlay_Flag : int {
+enum eSpaceClipOverlay_Flag {
   SC_SHOW_OVERLAYS = (1 << 0),
   SC_SHOW_CURSOR = (1 << 1),
 };
-ENUM_OPERATORS(eSpaceClipOverlay_Flag)
 
 /** #SpaceClip.flag */
-enum eSpaceClip_Flag : int {
+enum eSpaceClip_Flag {
   SC_SHOW_MARKER_PATTERN = (1 << 0),
   SC_SHOW_MARKER_SEARCH = (1 << 1),
   SC_LOCK_SELECTION = (1 << 2),
@@ -1001,10 +966,9 @@ enum eSpaceClip_Flag : int {
   SC_SHOW_GRAPH_TRACKS_ERROR = (1 << 21),
   SC_SHOW_METADATA = (1 << 22),
 };
-ENUM_OPERATORS(eSpaceClip_Flag)
 
 /** #SpaceClip.mode */
-enum eSpaceClip_Mode : short {
+enum eSpaceClip_Mode {
   SC_MODE_TRACKING = 0,
   // SC_MODE_RECONSTRUCTION = 1, /* DEPRECATED */
   // SC_MODE_DISTORTION = 2,     /* DEPRECATED */
@@ -1012,25 +976,24 @@ enum eSpaceClip_Mode : short {
 };
 
 /** #SpaceClip.view */
-enum eSpaceClip_View : short {
+enum eSpaceClip_View {
   SC_VIEW_CLIP = 0,
   SC_VIEW_GRAPH = 1,
   SC_VIEW_DOPESHEET = 2,
 };
 
 /** #SpaceClip.gpencil_src */
-enum eSpaceClip_GPencil_Source : short {
+enum eSpaceClip_GPencil_Source {
   SC_GPENCIL_SRC_CLIP = 0,
   SC_GPENCIL_SRC_TRACK = 1,
 };
 
 /** #SpaceClip.gizmo_flag */
-enum eSpaceClip_Gizmo_Flag : char {
+enum {
   /** All gizmos. */
   SCLIP_GIZMO_HIDE = (1 << 0),
   SCLIP_GIZMO_HIDE_NAVIGATE = (1 << 1),
 };
-ENUM_OPERATORS(eSpaceClip_Gizmo_Flag)
 
 /** \} */
 
@@ -1038,7 +1001,7 @@ ENUM_OPERATORS(eSpaceClip_Gizmo_Flag)
 /** \name Spreadsheet
  * \{ */
 
-enum eSpaceSpreadsheet_Flag : int {
+enum eSpaceSpreadsheet_Flag {
   /**
    * Spreadsheet context is pinned and does not does not change when the context changes (unless
    * the pinned context does not exist anymore).
@@ -1051,28 +1014,25 @@ enum eSpaceSpreadsheet_Flag : int {
   SPREADSHEET_FLAG_CONTEXT_PATH_COLLAPSED_LEGACY = (1 << 1),
   SPREADSHEET_FLAG_SHOW_INTERNAL_ATTRIBUTES = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceSpreadsheet_Flag)
 
-enum eSpaceSpreadsheet_FilterFlag : uint8_t {
+enum eSpaceSpreadsheet_FilterFlag {
   SPREADSHEET_FILTER_SELECTED_ONLY = (1 << 0),
   SPREADSHEET_FILTER_ENABLE = (1 << 1),
 };
-ENUM_OPERATORS(eSpaceSpreadsheet_FilterFlag)
 
-enum eSpaceSpreadsheet_RowFilterFlag : uint8_t {
+enum eSpaceSpreadsheet_RowFilterFlag {
   SPREADSHEET_ROW_FILTER_UI_EXPAND = (1 << 0),
   SPREADSHEET_ROW_FILTER_BOOL_VALUE = (1 << 1),
   SPREADSHEET_ROW_FILTER_ENABLED = (1 << 2),
 };
-ENUM_OPERATORS(eSpaceSpreadsheet_RowFilterFlag)
 
-enum eSpreadsheetFilterOperation : uint8_t {
+enum eSpreadsheetFilterOperation {
   SPREADSHEET_ROW_FILTER_EQUAL = 0,
   SPREADSHEET_ROW_FILTER_GREATER = 1,
   SPREADSHEET_ROW_FILTER_LESS = 2,
 };
 
-enum eSpaceSpreadsheet_ObjectEvalState : uint8_t {
+enum eSpaceSpreadsheet_ObjectEvalState {
   SPREADSHEET_OBJECT_EVAL_STATE_EVALUATED = 0,
   SPREADSHEET_OBJECT_EVAL_STATE_ORIGINAL = 1,
   SPREADSHEET_OBJECT_EVAL_STATE_VIEWER_NODE = 2,
@@ -1105,7 +1065,7 @@ enum eSpreadsheetColumnValueType {
   SPREADSHEET_VALUE_TYPE_FLOAT4 = 16,
 };
 
-enum eSpreadsheetColumnFlag : int {
+enum eSpreadsheetColumnFlag {
   /**
    * There is no data for this column currently, so it's not displayed. However, it is still kept
    * around so that the column remembers its position and width when the data becomes available
@@ -1113,21 +1073,19 @@ enum eSpreadsheetColumnFlag : int {
    */
   SPREADSHEET_COLUMN_FLAG_UNAVAILABLE = (1 << 0),
 };
-ENUM_OPERATORS(eSpreadsheetColumnFlag)
 
-enum eSpreadsheetTableIDType : int {
+enum eSpreadsheetTableIDType {
   /** This table uses the #SpreadsheetTableIDGeometry key. */
   SPREADSHEET_TABLE_ID_TYPE_GEOMETRY = 0,
 };
 
-enum eSpreadsheetTableFlag : int {
+enum eSpreadsheetTableFlag {
   /**
    * If a generated table has never been manually edited (e.g. changing column order), it can be
    * discarded when it's no longer displayed.
    */
   SPREADSHEET_TABLE_FLAG_MANUALLY_EDITED = (1 << 0),
 };
-ENUM_OPERATORS(eSpreadsheetTableFlag)
 
 /**
  * We can't just use UI_UNIT_X, because it does not take `widget.points` into account, which
@@ -1146,7 +1104,7 @@ ENUM_OPERATORS(eSpreadsheetTableFlag)
  * Space types: #SpaceLink.spacetype & #ScrArea.spacetype.
  * \note Do NOT change order, append on end. types are hardcoded needed.
  */
-enum eSpace_Type : char {
+enum eSpace_Type {
   SPACE_EMPTY = 0,
   SPACE_VIEW3D = 1,
   SPACE_GRAPH = 2,

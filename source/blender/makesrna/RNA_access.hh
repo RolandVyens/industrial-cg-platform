@@ -35,8 +35,6 @@ struct ReportList;
 struct Scene;
 struct bContext;
 
-enum eID_OverrideLib_Op : short;
-
 /* Types */
 BlenderRNA &RNA_blender_rna_get();
 
@@ -214,7 +212,7 @@ unsigned int RNA_struct_count_properties(StructRNA *srna);
  * \return The matching pointer if any, or `nullopt` otherwise.
  */
 std::optional<AncestorPointerRNA> RNA_struct_search_closest_ancestor_by_type(
-    const PointerRNA *ptr, const StructRNA *srna);
+    PointerRNA *ptr, const StructRNA *srna);
 
 /**
  * Low level direct access to type->properties,
@@ -1094,15 +1092,14 @@ IDOverrideLibraryProperty *RNA_property_override_property_get(Main *bmain,
 
 IDOverrideLibraryPropertyOperation *RNA_property_override_property_operation_find(
     Main *bmain, PointerRNA *ptr, PropertyRNA *prop, int index, bool strict, bool *r_strict);
-IDOverrideLibraryPropertyOperation *RNA_property_override_property_operation_get(
-    Main *bmain,
-    PointerRNA *ptr,
-    PropertyRNA *prop,
-    eID_OverrideLib_Op operation,
-    int index,
-    bool strict,
-    bool *r_strict,
-    bool *r_created);
+IDOverrideLibraryPropertyOperation *RNA_property_override_property_operation_get(Main *bmain,
+                                                                                 PointerRNA *ptr,
+                                                                                 PropertyRNA *prop,
+                                                                                 short operation,
+                                                                                 int index,
+                                                                                 bool strict,
+                                                                                 bool *r_strict,
+                                                                                 bool *r_created);
 
 eRNAOverrideStatus RNA_property_override_library_status(Main *bmain,
                                                         PointerRNA *ptr,

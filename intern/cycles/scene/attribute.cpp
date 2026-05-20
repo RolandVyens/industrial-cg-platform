@@ -56,21 +56,11 @@ Attribute::Attribute(ustring name,
 {
   assert((element & ATTR_ELEMENT_VOXEL) == 0);
   buffer = data;
-  /* Implicit sharing function pointers should be set if shared attributes are created. */
+  /* Implicit sharing function pointers should be set if shared attribtues are created. */
   assert(g_implicit_sharing_user_add_fn);
   assert(g_implicit_sharing_user_remove_fn);
   g_implicit_sharing_user_add_fn(sharing_info);
   this->sharing_info = sharing_info;
-}
-
-Attribute::Attribute(Attribute &&other)
-    : name(other.name),
-      std(other.std),
-      type(other.type),
-      element(other.element),
-      modified(other.modified)
-{
-  set_data_from(std::move(other));
 }
 
 void Attribute::free_data()
@@ -524,25 +514,6 @@ Attribute *AttributeSet::add_shared(ustring name,
   return &attributes.back();
 }
 
-Attribute *AttributeSet::add_from(Attribute &&other)
-{
-  Attribute *attr = find(other.name);
-  if (attr) {
-    if (attr->type == other.type && attr->element == other.element) {
-      attr->std = other.std;
-      attr->set_data_from(std::move(other));
-      return attr;
-    }
-
-    /* Overwrite attribute with the same name but different type/element. */
-    remove(other.name);
-  }
-
-  attributes.emplace_back(std::move(other));
-  tag_modified(attributes.back());
-  return &attributes.back();
-}
-
 Attribute *AttributeSet::find(ustring name) const
 {
   for (const Attribute &attr : attributes) {
@@ -650,8 +621,6 @@ static TypeDesc find_type_from_geometry_std(Geometry *geometry, AttributeStandar
         return TypeColor;
       case ATTR_STD_VOLUME_VELOCITY:
         return TypeVector;
-      case ATTR_STD_GENERATED_TRANSFORM:
-        return TypeMatrix;
       default:
         assert(0);
         break;
@@ -772,8 +741,6 @@ static AttributeElement find_element_from_geometry_std(Geometry *geometry, Attri
         return ATTR_ELEMENT_VOXEL;
       case ATTR_STD_VOLUME_VELOCITY:
         return ATTR_ELEMENT_VOXEL;
-      case ATTR_STD_GENERATED_TRANSFORM:
-        return ATTR_ELEMENT_MESH;
       default:
         assert(0);
         break;
@@ -974,7 +941,9 @@ void AttributeSet::update(AttributeSet &&new_attributes)
 
   /* Add or update old_attributes based on the new_attributes. */
   for (Attribute &attr : new_attributes.attributes) {
-    add_from(std::move(attr));
+    Attribute *nattr = add(attr.name, attr.type, attr.element);
+    nattr->std = attr.std;
+    nattr->set_data_from(std::move(attr));
   }
 
   /* If all attributes were replaced, transform is no longer applied. */
@@ -1031,7 +1000,7 @@ AttributeRequestSet::AttributeRequestSet() = default;
 
 AttributeRequestSet::~AttributeRequestSet() = default;
 
-bool AttributeRequestSet::modified(const AttributeRequestSet &other) const
+bool AttributeRequestSet::modified(const AttributeRequestSet &other)
 {
   if (requests.size() != other.requests.size()) {
     return true;
@@ -1076,7 +1045,7 @@ void AttributeRequestSet::add(AttributeStandard std)
   requests.push_back(AttributeRequest(std));
 }
 
-void AttributeRequestSet::add(const AttributeRequestSet &reqs)
+void AttributeRequestSet::add(AttributeRequestSet &reqs)
 {
   for (const AttributeRequest &req : reqs.requests) {
     if (req.std == ATTR_STD_NONE) {
@@ -1104,7 +1073,7 @@ void AttributeRequestSet::add_standard(ustring name)
   }
 }
 
-bool AttributeRequestSet::find(const ustring name) const
+bool AttributeRequestSet::find(ustring name)
 {
   for (const AttributeRequest &req : requests) {
     if (req.name == name) {
@@ -1115,7 +1084,7 @@ bool AttributeRequestSet::find(const ustring name) const
   return false;
 }
 
-bool AttributeRequestSet::find(const AttributeStandard std) const
+bool AttributeRequestSet::find(AttributeStandard std)
 {
   for (const AttributeRequest &req : requests) {
     if (req.std == std) {
@@ -1126,7 +1095,7 @@ bool AttributeRequestSet::find(const AttributeStandard std) const
   return false;
 }
 
-size_t AttributeRequestSet::size() const
+size_t AttributeRequestSet::size()
 {
   return requests.size();
 }

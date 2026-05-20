@@ -137,11 +137,7 @@ ccl_device int subsurface_bounce(KernelGlobals kg,
   /* Pass BSSRDF parameters. */
   INTEGRATOR_STATE_WRITE(state, subsurface, albedo) = bssrdf->albedo;
   INTEGRATOR_STATE_WRITE(state, subsurface, radius) = bssrdf->radius;
-  /* Encode the bssrdf type in anisotropy. */
-  INTEGRATOR_STATE_WRITE(state, subsurface, anisotropy) = (bssrdf->type ==
-                                                           CLOSURE_BSSRDF_RANDOM_WALK_ID) ?
-                                                              bssrdf->anisotropy :
-                                                              bssrdf->anisotropy + 2.0f;
+  INTEGRATOR_STATE_WRITE(state, subsurface, anisotropy) = bssrdf->anisotropy;
 
   /* Path guiding. */
   guiding_record_bssrdf_weight(kg, state, weight, bssrdf->albedo);
@@ -163,7 +159,14 @@ ccl_device void subsurface_shader_data_setup(KernelGlobals kg, ccl_private Shade
   sd->num_closure_left = kernel_data.max_closures;
 
   const Spectrum weight = one_spectrum();
-  bsdf_diffuse_setup(sd, N, weight);
+
+  ccl_private DiffuseBsdf *bsdf = (ccl_private DiffuseBsdf *)bsdf_alloc(
+      sd, sizeof(DiffuseBsdf), weight);
+
+  if (bsdf) {
+    bsdf->N = N;
+    sd->flag |= bsdf_diffuse_setup(bsdf);
+  }
 }
 
 ccl_device_inline bool subsurface_scatter(KernelGlobals kg, IntegratorState state)

@@ -32,6 +32,7 @@
 #include "BLI_array_utils.hh"
 #include "BLI_bit_group_vector.hh"
 #include "BLI_bit_span_ops.hh"
+#include "BLI_cpp_types.hh"
 #include "BLI_lazy_threading.hh"
 #include "BLI_map.hh"
 #include "BLI_stack.hh"
@@ -461,7 +462,6 @@ static void execute_multi_function_on_value_variant__single(
     void *value = output_variant.allocate_single(socket_type);
     params.add_uninitialized_single_output(GMutableSpan{cpp_type, value, 1});
   }
-  fn.prepare_for_execution();
   fn.call(mask, params, context);
 }
 
@@ -752,7 +752,8 @@ class LazyFunctionForMultiFunctionNode : public LazyFunction {
         const auto &user_data = *static_cast<GeoNodesUserData *>(context.user_data);
         const auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(
             context.local_user_data);
-        if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data))
+        if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
+                user_data))
         {
           tree_logger->node_warnings.append(
               *tree_logger->allocator,
@@ -818,7 +819,7 @@ class LazyFunctionForViewerNode : public LazyFunction {
   {
     const auto &user_data = *static_cast<GeoNodesUserData *>(context.user_data);
     const auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(context.local_user_data);
-    eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
+    geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
     if (tree_logger == nullptr) {
       return;
     }
@@ -835,7 +836,7 @@ class LazyFunctionForViewerNode : public LazyFunction {
       values[i] = params.try_get_input_data_ptr<bke::SocketValueVariant>(param_index);
     }
 
-    auto log = allocator.construct<eval_log::ViewerNodeLog>();
+    auto log = allocator.construct<geo_eval_log::ViewerNodeLog>();
     geo_viewer_node_log(bnode_, values, *log);
     tree_logger->viewer_node_logs.append(allocator, {bnode_.identifier, std::move(log)});
   }
@@ -948,7 +949,8 @@ class LazyFunctionForGizmoNode : public LazyFunction {
     }
 
     const auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(context.local_user_data);
-    if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data)) {
+    if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data))
+    {
       tree_logger->evaluated_gizmo_nodes.append(*tree_logger->allocator, {bnode_.identifier});
     }
   }
@@ -1146,7 +1148,8 @@ class LazyFunctionForGroupNode : public LazyFunction {
     auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(context.local_user_data);
 
     if (user_data->is_stack_limit_reached()) {
-      if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(*user_data))
+      if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
+              *user_data))
       {
         tree_logger->node_warnings.append(
             *tree_logger->allocator,
@@ -1398,23 +1401,6 @@ class LazyFunctionForExtractingReferenceSet : public lf::LazyFunction {
         const ClosurePtr &closure = *value.get<ClosurePtr>();
         this->gather__closure(closure, r_references);
       }
-      if (value.is_type<GeometrySet>()) {
-        const GeometrySet &geometry = *value.get<GeometrySet>();
-        this->gather__geometry(geometry, r_references);
-      }
-    }
-  }
-
-  void gather__geometry(const GeometrySet &geometry, GeometryNodesReferenceSet &r_references) const
-  {
-    this->gather__bundle(geometry.bundle_ptr(), r_references);
-    if (geometry.has_instances()) {
-      const bke::Instances &instances = *geometry.get_instances();
-      for (const bke::InstanceReference &reference : instances.references()) {
-        GeometrySet instance_geometry;
-        reference.to_geometry_set(instance_geometry);
-        this->gather__geometry(instance_geometry, r_references);
-      }
     }
   }
 
@@ -1621,7 +1607,7 @@ void report_from_multi_function(const mf::Context &context,
   if (!user_data) {
     return;
   }
-  eval_log::NodesEvalLog *log = user_data->call_data->eval_log;
+  geo_eval_log::GeoNodesLog *log = user_data->call_data->eval_log;
   if (!log) {
     return;
   }
@@ -1641,7 +1627,7 @@ void report_from_multi_function(const mf::Context &context,
   if (!tree_context) {
     return;
   }
-  eval_log::NodeTreeLogger &logger = log->get_local_tree_logger(*tree_context);
+  geo_eval_log::GeoTreeLogger &logger = log->get_local_tree_logger(*tree_context);
   logger.node_warnings.append(*logger.allocator,
                               {node_context->node_id(), {type, std::move(message)}});
 }
@@ -1795,7 +1781,7 @@ std::string zone_wrapper_output_name(const ZoneBuildInfo &zone_info,
 }
 
 /**
- * Logs intermediate values from the lazy-function graph evaluation into #NodesEvalLog based on
+ * Logs intermediate values from the lazy-function graph evaluation into #GeoNodesLog based on
  * the mapping between the lazy-function graph and the corresponding #bNodeTree.
  */
 class GeometryNodesLazyFunctionLogger : public lf::GraphExecutor::Logger {
@@ -1823,7 +1809,7 @@ class GeometryNodesLazyFunctionLogger : public lf::GraphExecutor::Logger {
       return;
     }
     auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(context.local_user_data);
-    eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
+    geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
     if (tree_logger == nullptr) {
       return;
     }
@@ -1902,7 +1888,7 @@ class GeometryNodesLazyFunctionLogger : public lf::GraphExecutor::Logger {
 
     const auto &user_data = *static_cast<GeoNodesUserData *>(context.user_data);
     const auto &local_user_data = *static_cast<GeoNodesLocalUserData *>(context.local_user_data);
-    eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
+    geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
     if (tree_logger == nullptr) {
       return;
     }
@@ -4315,7 +4301,7 @@ destruct_ptr<fn::LocalUserData> GeoNodesUserData::get_local(LinearAllocator<> &a
 
 void GeoNodesLocalUserData::ensure_tree_logger(const GeoNodesUserData &user_data) const
 {
-  if (eval_log::NodesEvalLog *log = user_data.call_data->eval_log) {
+  if (geo_eval_log::GeoNodesLog *log = user_data.call_data->eval_log) {
     tree_logger_.emplace(&log->get_local_tree_logger(*user_data.compute_context));
     return;
   }
@@ -4347,9 +4333,6 @@ static const ID *get_only_evaluated_id(const Depsgraph &depsgraph, const ID &id_
 
 const ID *GeoNodesOperatorDepsgraphs::get_evaluated_id(const ID &id_orig) const
 {
-  if (!ID_TYPE_USE_COPY_ON_EVAL(GS(id_orig.name))) {
-    return &id_orig;
-  }
   if (const Depsgraph *graph = this->active) {
     if (const ID *id = get_only_evaluated_id(*graph, id_orig)) {
       return id;

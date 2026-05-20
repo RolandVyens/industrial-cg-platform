@@ -29,7 +29,6 @@
 #include "BKE_context.hh"
 #include "BKE_fcurve.hh"
 #include "BKE_global.hh"
-#include "BKE_layer.hh"
 #include "BKE_screen.hh"
 #include "BKE_sound.hh"
 
@@ -777,13 +776,7 @@ static void draw_seq_text_get_source(const Strip *strip, char *r_source, size_t 
     }
     case STRIP_TYPE_SOUND: {
       if (strip->sound != nullptr) {
-        if (strip->sound->packedfile != nullptr) {
-          /* The sound data has been packed, don't display the path. */
-          BLI_strncpy_utf8(r_source, "<Packed File>", source_maxncpy);
-        }
-        else {
-          BLI_strncpy_utf8(r_source, strip->sound->filepath, source_maxncpy);
-        }
+        BLI_strncpy_utf8(r_source, strip->sound->filepath, source_maxncpy);
       }
       break;
     }
@@ -823,8 +816,6 @@ static void draw_seq_text_get_source(const Strip *strip, char *r_source, size_t 
       }
       break;
     }
-    default:
-      break;
   }
 }
 
@@ -836,7 +827,7 @@ static size_t draw_seq_text_get_overlay_string(const TimelineDrawContext &ctx,
   const Strip *strip = strip_ctx.strip;
 
   const char *text_sep = " | ";
-  const char *text_array[7];
+  const char *text_array[5];
   int i = 0;
 
   if (ctx.sseq->timeline_overlay.flag & SEQ_TIMELINE_SHOW_STRIP_NAME) {
@@ -851,16 +842,6 @@ static size_t draw_seq_text_get_overlay_string(const TimelineDrawContext &ctx,
         text_array[i++] = text_sep;
       }
       text_array[i++] = source;
-    }
-
-    if (strip->type == STRIP_TYPE_SCENE && strip->scene != nullptr &&
-        (strip->flag & SEQ_SCENE_STRIPS) == 0)
-    {
-      BLI_assert(strip->scene_view_layer_name != nullptr);
-      if (i != 0) {
-        text_array[i++] = text_sep;
-      }
-      text_array[i++] = strip->scene_view_layer_name;
     }
   }
 
@@ -1218,7 +1199,7 @@ static void draw_multicam_highlight(const TimelineDrawContext &ctx,
 static void seq_prefetch_wm_notify(const bContext *C, Scene *scene)
 {
   if (seq::prefetch_need_redraw(C, scene)) {
-    WM_event_add_notifier(C, NC_SCENE | ND_SEQUENCER_PREFETCH, nullptr);
+    WM_event_add_notifier(C, NC_SCENE | ND_SEQUENCER, nullptr);
   }
 }
 
@@ -1346,7 +1327,8 @@ static void draw_strips_background(const TimelineDrawContext &ctx,
 
     /* Transition state. */
     if (show_overlay && strip.can_draw_strip_content &&
-        seq::effect_is_transition(strip.strip->type) && strip.strip->input1 && strip.strip->input2)
+        seq::effect_is_transition(StripType(strip.strip->type)) && strip.strip->input1 &&
+        strip.strip->input2)
     {
       data.flags |= GPU_SEQ_FLAG_TRANSITION;
 

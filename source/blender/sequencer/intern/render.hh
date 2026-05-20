@@ -17,6 +17,7 @@ namespace blender {
 
 struct Depsgraph;
 struct ImBuf;
+struct LinkNode;
 struct Mask;
 struct RenderData;
 struct Scene;
@@ -25,11 +26,10 @@ struct Strip;
 
 namespace seq {
 
-/* Recursion protection while rendering a single sequencer frame.
- * If the same scene or strip is seen, recursion stops. */
+/* Mutable state while rendering one sequencer frame. */
 struct SeqRenderState {
-  Set<Scene *> scenes_in_progress;
-  Set<Strip *> strips_in_progress;
+  LinkNode *scene_parents = nullptr;
+  Set<Strip *> strips_rendering_seqbase;
 };
 
 /* Strip corner coordinates in screen pixel space. Note that they might not be

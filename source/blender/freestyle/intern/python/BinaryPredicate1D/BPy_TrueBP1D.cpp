@@ -23,9 +23,9 @@ PyDoc_STRVAR(
     "\n"
     "   Always returns true.\n"
     "\n"
-    "   :param inter1: The first Interface1D object.\n"
+    "   :arg inter1: The first Interface1D object.\n"
     "   :type inter1: :class:`freestyle.types.Interface1D`\n"
-    "   :param inter2: The second Interface1D object.\n"
+    "   :arg inter2: The second Interface1D object.\n"
     "   :type inter2: :class:`freestyle.types.Interface1D`\n"
     "   :return: True.\n"
     "   :rtype: bool\n");

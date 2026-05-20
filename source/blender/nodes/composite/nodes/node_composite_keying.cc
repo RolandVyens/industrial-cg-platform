@@ -208,10 +208,11 @@ class KeyingOperation : public NodeOperation {
       }
 
       if (output_matte.should_compute()) {
-        output_matte.share_data(feathered_matte);
+        output_matte.steal_data(feathered_matte);
       }
-
-      feathered_matte.release();
+      else {
+        feathered_matte.release();
+      }
     }
     else {
       tweaked_matte.release();

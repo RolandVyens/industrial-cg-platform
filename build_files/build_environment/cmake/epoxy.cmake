@@ -7,11 +7,6 @@ if(WIN32)
 else()
   set(EPOXY_LIB_TYPE static)
 endif()
-
-set(EPOXY_EXTRA_OPTIONS
-  -Dtests=false
-)
-
 ExternalProject_Add(external_epoxy
   URL file://${PACKAGE_DIR}/${EPOXY_FILE}
   DOWNLOAD_DIR ${DOWNLOAD_DIR}
@@ -25,12 +20,11 @@ ExternalProject_Add(external_epoxy
   CONFIGURE_COMMAND ${CONFIGURE_ENV} &&
     ${MESON} setup
       --prefix ${LIBDIR}/epoxy
-      --libdir lib
       --default-library ${EPOXY_LIB_TYPE}
-      ${MESON_BUILD_TYPE}
-      ${EPOXY_EXTRA_OPTIONS}
+      --libdir lib
       ${BUILD_DIR}/epoxy/src/external_epoxy-build
       ${BUILD_DIR}/epoxy/src/external_epoxy
+      -Dtests=false ${MESON_BUILD_TYPE}
 
   BUILD_COMMAND ninja
   INSTALL_COMMAND ninja install

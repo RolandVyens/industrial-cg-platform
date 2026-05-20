@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-07-23 15:34+0000\n"
 "Last-Translator: Just Adam <adam.abbas2009@gmail.com>\n"
 "Language-Team: Bulgarian <https://translate.blender.org/projects/blender-ui/ui/bg/>\n"
@@ -1152,6 +1152,10 @@ msgid "UV Mapping"
 msgstr "UV Картиране"
 
 
+msgid "Import"
+msgstr "Внеси"
+
+
 msgid "Light"
 msgstr "Светлина"
 
@@ -1162,10 +1166,6 @@ msgstr "Твърдо тяло"
 
 msgid "Apply"
 msgstr "Прилагане"
-
-
-msgid "Import"
-msgstr "Внеси"
 
 
 msgid "Make Single User"

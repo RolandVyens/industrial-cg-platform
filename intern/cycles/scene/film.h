@@ -52,9 +52,6 @@ class Film : public Node {
 
   NODE_SOCKET_API(bool, use_sample_count)
 
-  NODE_SOCKET_API(bool, denoising_pass_follow_reflections);
-  NODE_SOCKET_API(bool, denoising_pass_use_albedo_roughness_weighting);
-
   /* Deep EXR output settings. */
   NODE_SOCKET_API(bool, use_deep_output)
   NODE_SOCKET_API(int, deep_max_samples)

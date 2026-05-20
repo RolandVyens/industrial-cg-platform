@@ -454,15 +454,20 @@ PyDoc_STRVAR(
     bpy_app_cachedir_doc,
     "String, the cache directory used by blender (read-only).\n"
     "\n"
-    "In rare cases the default cache directory may not be available;\n"
-    "in this case a temporary directory is used.\n"
+    "If the parent of the cache folder (i.e. the part of the path that is not Blender-specific) "
+    "does not exist, returns None.\n"
     "\n"
-    ":type: str\n");
+    ":type: str | None\n");
 static PyObject *bpy_app_cachedir_get(PyObject * /*self*/, void * /*closure*/)
 {
   char cache_path[FILE_MAX];
-  BKE_appdir_folder_caches(cache_path, sizeof(cache_path));
-  BLI_assert_msg(cache_path[0], "BKE_appdir_folder_caches must never return an empty path");
+  if (!BKE_appdir_folder_caches(cache_path, sizeof(cache_path))) {
+    /* Avoid returning an empty path, as it could cause cache data to be stored in the user's home
+     * directory, or in the current working directory. Or worse, the caller could decide to erase
+     * the cache, which might have less subtle effects. */
+    Py_RETURN_NONE;
+  }
+  BLI_assert_msg(cache_path[0], "if BKE_appdir_folder_caches returns true, it should set a path");
   return PyC_UnicodeFromBytes(cache_path);
 }
 
@@ -712,7 +717,7 @@ static PyGetSetDef bpy_app_getsets[] = {
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_app_is_job_running_doc,
-    ".. function:: is_job_running(job_type)\n"
+    ".. staticmethod:: is_job_running(job_type)\n"
     "\n"
     "   Check whether a job of the given type is running.\n"
     "\n"
@@ -752,7 +757,7 @@ char *(*BPY_python_app_help_text_fn)(bool all) = nullptr;
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_app_help_text_doc,
-    ".. function:: help_text(*, all=False)\n"
+    ".. staticmethod:: help_text(*, all=False)\n"
     "\n"
     "   Return the help text as a string.\n"
     "\n"
@@ -794,7 +799,7 @@ static PyObject *bpy_app_help_text(PyObject * /*self*/, PyObject *args, PyObject
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_app_memory_usage_undo_doc,
-    ".. function:: memory_usage_undo()\n"
+    ".. staticmethod:: memory_usage_undo()\n"
     "\n"
     "   Get undo memory usage information.\n"
     "\n"

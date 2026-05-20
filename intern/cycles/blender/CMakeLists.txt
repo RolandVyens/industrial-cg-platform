@@ -63,7 +63,6 @@ set(LIB
   PRIVATE bf::intern::guardedalloc
   PRIVATE bf::intern::clog
   PRIVATE bf::nodes
-  PRIVATE bf::nodes::shader
   PRIVATE bf::render
   PRIVATE cycles_bvh
   PRIVATE cycles_device

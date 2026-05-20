@@ -245,6 +245,10 @@ ccl_device void integrator_shade_light_nee(KernelGlobals kg,
     integrator_shadow_path_terminate(state, DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE);
   }
   else {
+    /* The full light evaluation is now part of the throughput. Store it as the unshadowed value
+     * so shadow color only affects occlusion, not light intensity. */
+    INTEGRATOR_STATE_WRITE(state, shadow_path, unshadowed_throughput) = INTEGRATOR_STATE(
+        state, shadow_path, throughput);
     integrator_shadow_path_next(state,
                                 DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE,
                                 DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW);

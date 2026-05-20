@@ -4,9 +4,11 @@
 
 #pragma once
 
-#include "BLI_string_ref.hh"
+#if defined(WITH_OPENCOLORIO)
 
-#include "../opencolorio.hh"
+#  include "BLI_string_ref.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -24,3 +26,5 @@ OCIO_NAMESPACE::TransformRcPtr create_ocio_display_transform(
     StringRefNull from_colorspace);
 
 }  // namespace blender::ocio
+
+#endif

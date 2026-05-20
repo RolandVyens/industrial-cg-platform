@@ -418,10 +418,6 @@ static void node_declare(NodeDeclarationBuilder &b)
       input_decl.supports_field().structure_type(StructureType::Dynamic);
       output_decl.dependent_field({input_decl.index()});
     }
-    if (socket_type == SOCK_BUNDLE) {
-      dynamic_cast<decl::BundleBuilder &>(output_decl)
-          .pass_through_input_index(input_decl.index());
-    }
   }
   b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr).structure_type(StructureType::Dynamic);
   b.add_output<decl::Extend>(""_ustr, "__extend__"_ustr)
@@ -550,7 +546,9 @@ class LazyFunctionForSimulationOutputNode final : public LazyFunction {
       return;
     }
     if (!user_data.call_data->simulation_params) {
-      if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data)) {
+      if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
+              user_data))
+      {
         tree_logger->node_warnings.append(
             *tree_logger->allocator,
             {node_.identifier,
@@ -565,7 +563,9 @@ class LazyFunctionForSimulationOutputNode final : public LazyFunction {
       return;
     }
     if (found_id->is_in_loop || found_id->is_in_closure) {
-      if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data)) {
+      if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
+              user_data))
+      {
         const StringRefNull message = TIP_("Simulation must not be in a loop or closure");
         tree_logger->node_warnings.append(*tree_logger->allocator,
                                           {node_.identifier, {NodeWarningType::Error, message}});
@@ -752,10 +752,6 @@ static void node_declare(NodeDeclarationBuilder &b)
       /* If it's below a geometry input it may be a field evaluated on that geometry. */
       input_decl.supports_field().structure_type(StructureType::Dynamic);
       output_decl.dependent_field({input_decl.index()});
-    }
-    if (socket_type == SOCK_BUNDLE) {
-      dynamic_cast<decl::BundleBuilder &>(output_decl)
-          .pass_through_input_index(input_decl.index());
     }
   }
   b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr).structure_type(StructureType::Dynamic);

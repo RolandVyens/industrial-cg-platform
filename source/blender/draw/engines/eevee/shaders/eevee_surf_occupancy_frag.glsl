@@ -40,7 +40,7 @@ FRAGMENT_SHADER_CREATE_INFO(eevee_surf_occupancy)
 
 #include "eevee_occupancy_lib.bsl.hh"
 #include "eevee_sampling_lib.glsl"
-#include "eevee_volume_lib.bsl.hh"
+#include "eevee_volume_lib.glsl"
 
 void main()
 {

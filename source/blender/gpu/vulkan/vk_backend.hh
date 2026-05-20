@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include <cstdio>
-
 #include "gpu_backend.hh"
 
 #ifdef WITH_RENDERDOC
@@ -54,13 +52,6 @@ class VKBackend : public GPUBackend {
    * directly to ensure no parts of Blender needs to be initialized.
    */
   static bool is_supported();
-
-  /**
-   * Print one line per Vulkan device that meets minimum requirements, in the format used by
-   * `--gpu-device help`. Each line is `<vendor-hex>/<device-hex>/<index>  <name>`.
-   * Operates without an active backend (creates a temporary Vulkan instance).
-   */
-  static void supported_devices_print(FILE *fp);
 
   void init_resources() override;
   void delete_resources() override;

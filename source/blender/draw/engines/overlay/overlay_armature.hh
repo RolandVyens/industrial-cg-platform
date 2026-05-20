@@ -475,7 +475,6 @@ class Armatures : Overlay {
     /* Current armature object */
     Object *ob = nullptr;
     const ObjectRef *ob_ref = nullptr;
-    bArmature *armature = nullptr;
 
     /* Note: can be mutated inside `draw_armature_pose()`. */
     eArmatureDrawMode draw_mode = ARM_DRAW_MODE_OBJECT;
@@ -514,7 +513,6 @@ class Armatures : Overlay {
     DrawContext ctx;
     ctx.ob = ob_ref.object;
     ctx.ob_ref = &ob_ref;
-    ctx.armature = &arm;
     ctx.res = &res;
     ctx.dt = state.dt;
     ctx.draw_mode = draw_mode;

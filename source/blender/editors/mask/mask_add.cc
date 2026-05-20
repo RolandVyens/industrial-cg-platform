@@ -124,7 +124,7 @@ static void setup_vertex_point(Mask *mask,
       }
 
       /* handle type */
-      eBezTriple_Handle handle_type = HD_FREE;
+      uint8_t handle_type = 0;
       if (prev_point) {
         handle_type = prev_point->bezt.h2;
       }
@@ -717,7 +717,7 @@ void MASK_OT_add_feather_vertex(wmOperatorType *ot)
 
 static BezTriple *points_to_bezier(const float (*points)[2],
                                    const int num_points,
-                                   const eBezTriple_Handle handle_type,
+                                   const char handle_type,
                                    const float scale,
                                    const float location[2])
 {
@@ -742,11 +742,8 @@ static BezTriple *points_to_bezier(const float (*points)[2],
   return bezier_points;
 }
 
-static int create_primitive_from_points(bContext *C,
-                                        wmOperator *op,
-                                        const float (*points)[2],
-                                        int num_points,
-                                        eBezTriple_Handle handle_type)
+static int create_primitive_from_points(
+    bContext *C, wmOperator *op, const float (*points)[2], int num_points, char handle_type)
 {
   MaskViewLockState lock_state;
   ED_mask_view_lock_state_store(C, &lock_state);
@@ -779,7 +776,7 @@ static int create_primitive_from_points(bContext *C,
   ED_mask_select_toggle_all(mask, SEL_DESELECT);
 
   MaskSpline *new_spline = BKE_mask_spline_add(mask_layer);
-  new_spline->flag = MASK_SPLINE_CYCLIC | MASK_SPLINE_SELECT;
+  new_spline->flag = MASK_SPLINE_CYCLIC | SELECT;
   new_spline->points = static_cast<MaskSplinePoint *>(
       MEM_realloc_zeroed(new_spline->points, sizeof(MaskSplinePoint) * num_points));
 

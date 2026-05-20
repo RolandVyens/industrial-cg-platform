@@ -71,10 +71,10 @@ struct CurvesApplyOp {
   }
 };
 
-static void curves_apply(ModifierApplyContext &context, StripModifierData *smd)
+static void curves_apply(ModifierApplyContext &context, StripModifierData *smd, int timeline_frame)
 {
   ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
-  ImBuf *mask = modifier_render_mask_input(context, *smd);
+  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
 
   CurvesModifierData *cmd = reinterpret_cast<CurvesModifierData *>(smd);
 

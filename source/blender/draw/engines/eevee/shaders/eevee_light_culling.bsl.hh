@@ -5,13 +5,15 @@
 #pragma once
 
 #include "infos/eevee_common_infos.hh"
+#include "infos/eevee_light_infos.hh"
 
 SHADER_LIBRARY_CREATE_INFO(eevee_hiz_data)
+SHADER_LIBRARY_CREATE_INFO(eevee_light_data)
 
 #include "draw_intersect_lib.glsl"
 #include "draw_shape_lib.glsl"
 #include "draw_view_lib.glsl"
-#include "eevee_light_iter.bsl.hh"
+#include "eevee_light_iter_lib.glsl"
 #include "eevee_light_lib.glsl"
 #include "eevee_light_shared.hh"
 #include "gpu_shader_debug_gradients_lib.glsl"
@@ -38,7 +40,10 @@ struct Cull {
 };
 
 [[compute, local_size(CULLING_SELECT_GROUP_SIZE)]]
-void cull_main([[resource_table]] Cull &srt, [[global_invocation_id]] const uint3 global_id)
+void cull_main([[resource_table]] Cull &srt,
+               [[global_invocation_id]] const uint3 global_id,
+               [[local_invocation_id]] const uint3 local_id,
+               [[local_invocation_index]] const uint local_index)
 {
   uint l_idx = global_id.x;
   if (l_idx >= srt.light_cull_buf.items_count) {
@@ -138,7 +143,8 @@ struct Sort {
 [[compute, local_size(CULLING_SORT_GROUP_SIZE)]]
 void sort_main([[resource_table]] Sort &srt,
                [[global_invocation_id]] const uint3 global_id,
-               [[local_invocation_id]] const uint3 local_id)
+               [[local_invocation_id]] const uint3 local_id,
+               [[local_invocation_index]] const uint local_index)
 {
   /* Early exit if no lights are present to prevent out of bounds buffer read. */
   if (srt.light_cull_buf.visible_count == 0) {
@@ -211,7 +217,10 @@ struct ZBinning {
 };
 
 [[compute, local_size(CULLING_ZBIN_GROUP_SIZE)]]
-void zbin_main([[resource_table]] ZBinning &srt, [[local_invocation_id]] const uint3 local_id)
+void zbin_main([[resource_table]] ZBinning &srt,
+               [[global_invocation_id]] const uint3 global_id,
+               [[local_invocation_id]] const uint3 local_id,
+               [[local_invocation_index]] const uint local_index)
 {
   constexpr uint zbin_iter = CULLING_ZBIN_COUNT / gl_WorkGroupSize.x;
   const uint zbin_local = local_id.x * zbin_iter;
@@ -378,7 +387,10 @@ struct Tile {
 };
 
 [[compute, local_size(CULLING_TILE_GROUP_SIZE)]]
-void tile_main([[resource_table]] Tile &srt, [[global_invocation_id]] const uint3 global_id)
+void tile_main([[resource_table]] Tile &srt,
+               [[global_invocation_id]] const uint3 global_id,
+               [[local_invocation_id]] const uint3 local_id,
+               [[local_invocation_index]] const uint local_index)
 {
   uint word_idx = global_id.x % srt.light_cull_buf.tile_word_len;
   uint tile_idx = global_id.x / srt.light_cull_buf.tile_word_len;
@@ -467,6 +479,7 @@ struct DebugFragOut {
 
 struct Debug {
   [[legacy_info]] ShaderCreateInfo draw_view;
+  [[legacy_info]] ShaderCreateInfo eevee_light_data;
   [[legacy_info]] ShaderCreateInfo eevee_hiz_data;
 };
 
@@ -478,59 +491,8 @@ void debug_vert([[vertex_id]] const int vert_id,
   fullscreen_vertex(vert_id, out_position, v_out.screen_uv);
 }
 
-struct NoCullCtx {
-  float light_count;
-  uint light_bits;
-
-  void eval_directional([[resource_table]] LightRenderData & /*lrd*/,
-                        uint /*l_idx*/,
-                        LightData /*light*/)
-  {
-  }
-
-  void eval_local([[resource_table]] LightRenderData & /*lrd*/, uint l_idx, LightData /*light*/)
-  {
-    light_bits |= 1u << l_idx;
-    light_count += 1.0f;
-  }
-};
-
-struct WithCullCtx {
-  uint light_bits;
-  float3 P;
-
-  void eval_directional([[resource_table]] LightRenderData & /*lrd*/,
-                        uint /*l_idx*/,
-                        LightData /*light*/)
-  {
-  }
-
-  void eval_local([[resource_table]] LightRenderData & /*lrd*/, uint l_idx, LightData light)
-  {
-    LightVector lv = light_vector_get(light, false, P);
-    if (light_attenuation_surface(light, false, lv) > LIGHT_ATTENUATION_THRESHOLD) {
-      light_bits |= 1u << l_idx;
-    }
-  }
-};
-
-}  // namespace eevee::light::culling
-
-namespace eevee::light {
-
-template void light::foreach<culling::NoCullCtx, LightRenderData>(const LightRenderData &,
-                                                                  culling::NoCullCtx &,
-                                                                  LightRenderData &);
-
-template void light::foreach_visible<culling::WithCullCtx, LightRenderData>(
-    const LightRenderData &, float2, float, culling::WithCullCtx &, LightRenderData &);
-
-}  // namespace eevee::light
-
-namespace eevee::light::culling {
 [[fragment]]
-void debug_frag([[resource_table]] Debug & /*srt*/,
-                [[resource_table]] LightRenderData &lrd,
+void debug_frag([[resource_table]] Debug &srt,
                 [[frag_coord]] const float4 frag_co,
                 [[in]] const DebugVertOut &v_out,
                 [[out]] DebugFragOut &frag_out)
@@ -541,15 +503,29 @@ void debug_frag([[resource_table]] Debug & /*srt*/,
   float vP_z = drw_depth_screen_to_view(depth);
   float3 P = drw_point_screen_to_world(float3(v_out.screen_uv, depth));
 
-  NoCullCtx no_cull = {};
-  light::foreach(lrd, no_cull, lrd);
+  float light_count = 0.0f;
+  uint light_cull = 0u;
+  float2 px = frag_co.xy;
+  LIGHT_FOREACH_BEGIN_LOCAL (light_cull_buf, light_zbin_buf, light_tile_buf, px, vP_z, l_idx) {
+    light_cull |= 1u << l_idx;
+    light_count += 1.0f;
+  }
+  LIGHT_FOREACH_END
 
-  WithCullCtx with_cull = {.P = P};
-  light::foreach_visible(lrd, frag_co.xy, vP_z, with_cull, lrd);
+  uint light_nocull = 0u;
+  LIGHT_FOREACH_BEGIN_LOCAL_NO_CULL(light_cull_buf, l_idx)
+  {
+    LightData light = light_buf[l_idx];
+    LightVector lv = light_vector_get(light, false, P);
+    if (light_attenuation_surface(light, false, lv) > LIGHT_ATTENUATION_THRESHOLD) {
+      light_nocull |= 1u << l_idx;
+    }
+  }
+  LIGHT_FOREACH_END
 
-  float4 color = float4(heatmap_gradient(no_cull.light_count / 4.0f), 1.0f);
+  float4 color = float4(heatmap_gradient(light_count / 4.0f), 1.0f);
 
-  if ((with_cull.light_bits & no_cull.light_bits) != no_cull.light_bits) {
+  if ((light_cull & light_nocull) != light_nocull) {
     /* ERROR. Some lights were culled incorrectly. */
     color = float4(0.0f, 1.0f, 0.0f, 1.0f);
   }

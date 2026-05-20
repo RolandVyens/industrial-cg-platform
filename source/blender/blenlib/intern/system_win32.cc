@@ -99,8 +99,6 @@ static void bli_windows_get_module_name(LPVOID address, PCHAR buffer, size_t siz
   }
 }
 
-/* Note: Because this code can run after main exits the MEM_* api is not available, and the stock
- * calloc/free *must* be used. */
 static void bli_windows_get_module_version(const char *file, char *buffer, size_t buffersize)
 {
   buffer[0] = 0;
@@ -109,7 +107,7 @@ static void bli_windows_get_module_version(const char *file, char *buffer, size_
   LPBYTE lpBuffer = nullptr;
   DWORD verSize = GetFileVersionInfoSize(file, &verHandle);
   if (verSize != 0) {
-    LPSTR verData = (LPSTR)calloc(1, verSize);
+    LPSTR verData = (LPSTR)MEM_new_zeroed(verSize, "crash module version");
 
     if (GetFileVersionInfo(file, verHandle, verSize, verData)) {
       if (VerQueryValue(verData, "\\", (VOID FAR * FAR *)&lpBuffer, &size)) {
@@ -130,7 +128,7 @@ static void bli_windows_get_module_version(const char *file, char *buffer, size_
         }
       }
     }
-    free(verData);
+    MEM_delete(verData);
   }
 }
 
@@ -183,16 +181,14 @@ static void bli_windows_system_backtrace_exception_record(FILE *fp, PEXCEPTION_R
   fprintf(fp, "\n\n");
 }
 
-/* Note: Because this code can run after main exits the MEM_* api is not available, and the stock
- * calloc/free *must* be used. */
 static bool BLI_windows_system_backtrace_run_trace(FILE *fp, HANDLE hThread, PCONTEXT context)
 {
   const int max_symbol_length = 100;
 
   bool result = true;
 
-  PSYMBOL_INFO symbolinfo = static_cast<PSYMBOL_INFO>(
-      calloc(1, sizeof(SYMBOL_INFO) + max_symbol_length * sizeof(char)));
+  PSYMBOL_INFO symbolinfo = static_cast<PSYMBOL_INFO>(MEM_new_zeroed(
+      sizeof(SYMBOL_INFO) + max_symbol_length * sizeof(char), "crash Symbol table"));
   symbolinfo->MaxNameLen = max_symbol_length - 1;
   symbolinfo->SizeOfStruct = sizeof(SYMBOL_INFO);
 
@@ -262,7 +258,7 @@ static bool BLI_windows_system_backtrace_run_trace(FILE *fp, HANDLE hThread, PCO
       break;
     }
   }
-  free(symbolinfo);
+  MEM_delete(symbolinfo);
   fprintf(fp, "\n\n");
   return result;
 }

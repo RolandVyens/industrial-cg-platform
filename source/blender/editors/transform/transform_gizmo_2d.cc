@@ -95,7 +95,7 @@ static bool gizmo2d_generic_poll(const bContext *C, wmGizmoGroupType *gzgt)
       if (sseq->mainb != SEQ_DRAW_IMG_IMBUF) {
         return false;
       }
-      Scene *scene = CTX_data_sequencer_scene(C);
+      Scene *scene = CTX_data_scene(C);
       Editing *ed = seq::editing_get(scene);
       if (ed == nullptr) {
         return false;
@@ -266,7 +266,7 @@ static bool gizmo2d_calc_bounds(const bContext *C, float *r_center, float *r_min
     }
   }
   else if (area->spacetype == SPACE_SEQ) {
-    Scene *scene = CTX_data_sequencer_scene(C);
+    Scene *scene = CTX_data_scene(C);
     Editing *ed = seq::editing_get(scene);
     ListBaseT<Strip> *seqbase = seq::active_seqbase_get(ed);
     ListBaseT<SeqTimelineChannel> *channels = seq::channels_displayed_get(ed);
@@ -275,7 +275,8 @@ static bool gizmo2d_calc_bounds(const bContext *C, float *r_center, float *r_min
     int selected_strips = strips.size();
     if (selected_strips > 0) {
       has_select = true;
-      const Bounds<float2> box = seq::image_transform_bounding_box_from_strips_get(scene, strips);
+      const Bounds<float2> box = seq::image_transform_bounding_box_from_collection(
+          scene, strips, selected_strips != 1);
       copy_v2_v2(r_min, box.min);
       copy_v2_v2(r_max, box.max);
     }
@@ -319,7 +320,7 @@ static int gizmo2d_calc_transform_orientation(const bContext *C)
     return V3D_ORIENT_GLOBAL;
   }
 
-  Scene *scene = CTX_data_sequencer_scene(C);
+  Scene *scene = CTX_data_scene(C);
   Editing *ed = seq::editing_get(scene);
   ListBaseT<Strip> *seqbase = seq::active_seqbase_get(ed);
   ListBaseT<SeqTimelineChannel> *channels = seq::channels_displayed_get(ed);
@@ -341,7 +342,7 @@ static float gizmo2d_calc_rotation(const bContext *C)
     return 0.0f;
   }
 
-  Scene *scene = CTX_data_sequencer_scene(C);
+  Scene *scene = CTX_data_scene(C);
   Editing *ed = seq::editing_get(scene);
   ListBaseT<Strip> *seqbase = seq::active_seqbase_get(ed);
   ListBaseT<SeqTimelineChannel> *channels = seq::channels_displayed_get(ed);
@@ -373,7 +374,7 @@ static bool seq_get_strip_pivot_median(const Scene *scene, float r_pivot[2])
 
   if (has_select) {
     for (Strip *strip : strips) {
-      const float2 origin = seq::image_transform_origin_preview_offset_get(scene, strip);
+      const float2 origin = seq::image_transform_origin_offset_pixelspace_get(scene, strip);
       add_v2_v2(r_pivot, origin);
     }
     mul_v2_fl(r_pivot, 1.0f / strips.size());
@@ -387,11 +388,11 @@ static bool gizmo2d_calc_transform_pivot(const bContext *C,
                                          float r_pivot[2])
 {
   ScrArea *area = CTX_wm_area(C);
+  const Main *bmain = CTX_data_main(C);
+  Scene *scene = CTX_data_scene(C);
   bool has_select = false;
 
   if (area->spacetype == SPACE_IMAGE) {
-    const Main *bmain = CTX_data_main(C);
-    Scene *scene = CTX_data_scene(C);
     const SpaceImage *sima = static_cast<const SpaceImage *>(area->spacedata.first);
     ViewLayer *view_layer = CTX_data_view_layer(C);
     switch (sima->mode) {
@@ -408,7 +409,6 @@ static bool gizmo2d_calc_transform_pivot(const bContext *C,
     }
   }
   else if (area->spacetype == SPACE_SEQ) {
-    Scene *scene = CTX_data_sequencer_scene(C);
     SpaceSeq *sseq = static_cast<SpaceSeq *>(area->spacedata.first);
     const int pivot_point = scene->toolsettings->sequencer_tool_settings->pivot_point;
 
@@ -646,7 +646,7 @@ static void gizmo2d_xform_draw_prepare(const bContext *C, wmGizmoGroup *gzgroup)
   ScrArea *area = CTX_wm_area(C);
 
   if (area->spacetype == SPACE_SEQ) {
-    Scene *scene = CTX_data_sequencer_scene(C);
+    Scene *scene = CTX_data_scene(C);
     seq_get_strip_pivot_median(scene, origin);
 
     float matrix_rotate[4][4];
@@ -711,7 +711,7 @@ static void gizmo2d_xform_invoke_prepare(const bContext *C,
 
   if (ggd->rotation != 0.0f && area->spacetype == SPACE_SEQ) {
     float origin[3];
-    Scene *scene = CTX_data_sequencer_scene(C);
+    Scene *scene = CTX_data_scene(C);
     seq_get_strip_pivot_median(scene, origin);
     /* We need to rotate the cardinal points so they align with the rotated bounding box. */
 

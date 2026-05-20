@@ -95,12 +95,17 @@ class InstanceBoundsField final : public bke::InstancesFieldInput {
     return VArray<float3>::from_container(std::move(output_bounds));
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(use_radius_);
-    hash.add(return_max_);
+    return get_default_hash(use_radius_, return_max_);
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    if (const auto *other_field = dynamic_cast<const InstanceBoundsField *>(&other)) {
+      return use_radius_ == other_field->use_radius_ && return_max_ == other_field->return_max_;
+    }
+    return false;
   }
 };
 

@@ -3,14 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 if(WIN32)
-  set(FRIBIDI_CONFIGURE_ENV ${CONFIGURE_ENV_MSVC})
-else()
-  set(FRIBIDI_CONFIGURE_ENV ${CONFIGURE_ENV})
+  set(CONFIGURE_ENV ${CONFIGURE_ENV_MSVC})
 endif()
-
-set(FRIBIDI_EXTRA_OPTIONS
-  -Ddocs=false
-)
 
 ExternalProject_Add(external_fribidi
   URL file://${PACKAGE_DIR}/${FRIBIDI_FILE}
@@ -18,13 +12,13 @@ ExternalProject_Add(external_fribidi
   DOWNLOAD_DIR ${DOWNLOAD_DIR}
   PREFIX ${BUILD_DIR}/fribidi
 
-  CONFIGURE_COMMAND ${FRIBIDI_CONFIGURE_ENV} &&
+  CONFIGURE_COMMAND ${CONFIGURE_ENV} &&
     ${MESON} setup
       --prefix ${LIBDIR}/fribidi
-      --libdir lib
-      --default-library static
       ${MESON_BUILD_TYPE}
-      ${FRIBIDI_EXTRA_OPTIONS}
+      -Ddocs=false
+      --default-library static
+      --libdir lib
       ${BUILD_DIR}/fribidi/src/external_fribidi-build
       ${BUILD_DIR}/fribidi/src/external_fribidi
 

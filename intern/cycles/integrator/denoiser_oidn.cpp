@@ -678,8 +678,7 @@ bool OIDNDenoiser::denoise_buffer(const BufferParams &buffer_params,
                                   const BufferParams & /*denoised_buffer_params*/,
                                   RenderBuffers *render_buffers,
                                   const int num_samples,
-                                  const bool allow_inplace_modification,
-                                  const float2 /*pixel_jitter*/)
+                                  const bool allow_inplace_modification)
 {
   DCHECK(openimagedenoise_supported())
       << "OpenImageDenoise is not supported on this platform or build.";

@@ -248,6 +248,8 @@ integrate_direct_light_shadow_init_common(KernelGlobals kg,
       state, path, rng_pixel);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, sample) = INTEGRATOR_STATE(
       state, path, sample);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
+      state, path, deep_surface_sample_idx);
 
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = INTEGRATOR_STATE(
       state, path, transparent_bounce);
@@ -256,6 +258,7 @@ integrate_direct_light_shadow_init_common(KernelGlobals kg,
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, glossy_bounce) = INTEGRATOR_STATE(
       state, path, glossy_bounce);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, throughput) = throughput;
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, unshadowed_throughput) = throughput;
 
   if ((kernel_data.kernel_features & KERNEL_FEATURE_NODE_PORTAL)) {
     INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, portal_bounce) = INTEGRATOR_STATE(
@@ -566,8 +569,6 @@ ccl_device_forceinline int integrate_surface_bsdf_bssrdf_bounce(
     INTEGRATOR_STATE_WRITE(state, ray, tmax) = FLT_MAX;
 #ifdef __RAY_DIFFERENTIALS__
     INTEGRATOR_STATE_WRITE(state, ray, dP) = differential_make_compact(sd->dP);
-    INTEGRATOR_STATE_WRITE(state, ray, dD) = bsdf_widen_dD(INTEGRATOR_STATE(state, ray, dD),
-                                                           bsdf_sampled_roughness);
 #endif
   }
 
@@ -719,6 +720,8 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
       state, path, rng_pixel);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, sample) = INTEGRATOR_STATE(
       state, path, sample);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
+      state, path, deep_surface_sample_idx);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, flag) = shadow_flag;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, bounce) = bounce;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = transparent_bounce;
@@ -792,13 +795,29 @@ ccl_device int integrate_surface(KernelGlobals kg,
           const float alpha = average(surface_shader_alpha(&sd));
           if (alpha > 0.0f) {
             const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
+            uint32_t surface_object = 0;
+            uint32_t surface_prim = 0;
+            uint32_t surface_shader = 0;
             ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
                                                             kernel_data.film.deep_samples_ptr;
             ccl_global uint32_t *deep_sample_counts = (ccl_global uint32_t *)
                                                           kernel_data.film.deep_sample_counts_ptr;
             if (deep_samples && deep_sample_counts) {
-              film_write_deep_sample_transparent(
-                  kg, pixel_index, deep_samples, deep_sample_counts, alpha, depth, depth);
+              deep_make_surface_key(
+                  sd.object, sd.prim, sd.shader, surface_object, surface_prim, surface_shader);
+              INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) =
+                  film_write_deep_surface_sample_transparent(kg,
+                                                             pixel_index,
+                                                             deep_samples,
+                                                             deep_sample_counts,
+                                                             alpha,
+                                                             depth,
+                                                             depth,
+                                                             surface_object,
+                                                             surface_prim,
+                                                             surface_shader,
+                                                             deep_pack_geometric_normal(sd.Ng),
+                                                             INTEGRATOR_STATE(state, path, sample));
             }
           }
         }

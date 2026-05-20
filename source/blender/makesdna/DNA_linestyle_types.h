@@ -14,8 +14,6 @@
 #include "DNA_listBase.h"
 #include "DNA_texture_types.h"
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 #ifndef MAX_MTEX
@@ -33,7 +31,7 @@ struct Object;
 struct bNodeTree;
 
 /** #LineStyleModifier::type */
-enum eLineStyleModifier_Type : int {
+enum {
   LS_MODIFIER_ALONG_STROKE = 1,
   LS_MODIFIER_DISTANCE_FROM_CAMERA = 2,
   LS_MODIFIER_DISTANCE_FROM_OBJECT = 3,
@@ -61,33 +59,29 @@ enum eLineStyleModifier_Type : int {
 };
 
 /** #LineStyleModifier::flags */
-enum eLineStyleModifier_Flag : int {
+enum {
   LS_MODIFIER_ENABLED = 1,
   LS_MODIFIER_EXPANDED = 2,
 };
-ENUM_OPERATORS(eLineStyleModifier_Flag)
 
-/** #LineStyleColorModifier_Material::flags and similar color modifier flags. */
-enum eLineStyleColorModifier_Flag : int {
+/** Flags (for color) */
+enum {
   LS_MODIFIER_USE_RAMP = 1,
 };
-ENUM_OPERATORS(eLineStyleColorModifier_Flag)
 
-/** Flags (for alpha & thickness modifiers). */
-enum eLineStyleAlphaThicknessModifier_Flag : int {
+/** Flags (for alpha & thickness) */
+enum {
   LS_MODIFIER_USE_CURVE = 1,
   LS_MODIFIER_INVERT = 2,
 };
-ENUM_OPERATORS(eLineStyleAlphaThicknessModifier_Flag)
 
 /** Flags (for asymmetric thickness application). */
-enum eLineStyleThicknessNoise_Flag : int {
+enum {
   LS_THICKNESS_ASYMMETRIC = 1,
 };
-ENUM_OPERATORS(eLineStyleThicknessNoise_Flag)
 
 /** Blend (for alpha & thickness). */
-enum eLineStyleBlend : int {
+enum {
   LS_VALUE_BLEND = 0,
   LS_VALUE_ADD = 1,
   LS_VALUE_MULT = 2,
@@ -99,7 +93,7 @@ enum eLineStyleBlend : int {
 };
 
 /* mat_attr */
-enum eLineStyleMaterialAttr : int {
+enum {
   LS_MODIFIER_MATERIAL_DIFF = 1,
   LS_MODIFIER_MATERIAL_DIFF_R = 2,
   LS_MODIFIER_MATERIAL_DIFF_G = 3,
@@ -118,22 +112,20 @@ enum eLineStyleMaterialAttr : int {
 };
 
 /** #LineStyleGeometryModifier_SpatialNoise::flags */
-enum eLineStyleGeomSpatialNoise_Flag : int {
+enum {
   LS_MODIFIER_SPATIAL_NOISE_SMOOTH = 1,
   LS_MODIFIER_SPATIAL_NOISE_PURERANDOM = 2,
 };
-ENUM_OPERATORS(eLineStyleGeomSpatialNoise_Flag)
 
-/** #LineStyleGeometryModifier_Blueprint::flags */
-enum eLineStyleGeomBlueprint_Flag : int {
+/** #LineStyleGeometryModifier_BluePrintLines::shape */
+enum {
   LS_MODIFIER_BLUEPRINT_CIRCLES = 1,
   LS_MODIFIER_BLUEPRINT_ELLIPSES = 2,
   LS_MODIFIER_BLUEPRINT_SQUARES = 4,
 };
-ENUM_OPERATORS(eLineStyleGeomBlueprint_Flag)
 
 /** #LineStyleGeometryModifier_2DTransform::pivot */
-enum eLineStyleGeom2DTransform_Pivot : int {
+enum {
   LS_MODIFIER_2D_TRANSFORM_PIVOT_CENTER = 1,
   LS_MODIFIER_2D_TRANSFORM_PIVOT_START = 2,
   LS_MODIFIER_2D_TRANSFORM_PIVOT_END = 3,
@@ -142,7 +134,7 @@ enum eLineStyleGeom2DTransform_Pivot : int {
 };
 
 /** #FreestyleLineStyle::panel */
-enum eLineStyle_Panel : int {
+enum {
   LS_PANEL_STROKES = 1,
   LS_PANEL_COLOR = 2,
   LS_PANEL_ALPHA = 3,
@@ -153,7 +145,7 @@ enum eLineStyle_Panel : int {
 };
 
 /** #FreestyleLineStyle::flag */
-enum eLineStyle_Flag : int {
+enum {
   LS_DS_EXPAND = 1 << 0, /* for animation editors */
   LS_SAME_OBJECT = 1 << 1,
   LS_DASHED_LINE = 1 << 2,
@@ -170,23 +162,22 @@ enum eLineStyle_Flag : int {
   LS_TEXTURE = 1 << 13,
   LS_CHAIN_COUNT = 1 << 14,
 };
-ENUM_OPERATORS(eLineStyle_Flag)
 
 /** #FreestyleLineStyle::chaining */
-enum eLineStyle_Chaining : int {
+enum {
   LS_CHAINING_PLAIN = 1,
   LS_CHAINING_SKETCHY = 2,
 };
 
 /** #FreestyleLineStyle::caps */
-enum eLineStyle_Caps : int {
+enum {
   LS_CAPS_BUTT = 1,
   LS_CAPS_ROUND = 2,
   LS_CAPS_SQUARE = 3,
 };
 
 /** #FreestyleLineStyle::thickness_position */
-enum eLineStyle_ThicknessPosition : int {
+enum {
   LS_THICKNESS_CENTER = 1,
   LS_THICKNESS_INSIDE = 2,
   LS_THICKNESS_OUTSIDE = 3,
@@ -195,7 +186,7 @@ enum eLineStyle_ThicknessPosition : int {
 };
 
 /** #FreestyleLineStyle::sort_key */
-enum eLineStyle_SortKey : int {
+enum {
   LS_SORT_KEY_DISTANCE_FROM_CAMERA = 1,
   LS_SORT_KEY_2D_LENGTH = 2,
   LS_SORT_KEY_PROJECTED_X = 3,
@@ -203,7 +194,7 @@ enum eLineStyle_SortKey : int {
 };
 
 /** #FreestyleLineStyle::integration_type */
-enum eLineStyle_IntegrationType : int {
+enum {
   LS_INTEGRATION_MEAN = 1,
   LS_INTEGRATION_MIN = 2,
   LS_INTEGRATION_MAX = 3,
@@ -217,10 +208,10 @@ struct LineStyleModifier {
   struct LineStyleModifier *next = nullptr, *prev = nullptr;
 
   char name[/*MAX_NAME*/ 64] = "";
-  eLineStyleModifier_Type type = {};
+  int type = 0;
   float influence = 0;
-  eLineStyleModifier_Flag flags = {};
-  eLineStyleBlend blend = LS_VALUE_BLEND;
+  int flags = 0;
+  int blend = 0;
 };
 
 /* Along Stroke modifiers */
@@ -239,7 +230,7 @@ struct LineStyleAlphaModifier_AlongStroke {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   char _pad[4] = {};
 };
 
@@ -249,7 +240,7 @@ struct LineStyleThicknessModifier_AlongStroke {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float value_min = 0, value_max = 0;
   char _pad[4] = {};
 };
@@ -271,7 +262,7 @@ struct LineStyleAlphaModifier_DistanceFromCamera {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float range_min = 0, range_max = 0;
   char _pad[4] = {};
 };
@@ -282,7 +273,7 @@ struct LineStyleThicknessModifier_DistanceFromCamera {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float range_min = 0, range_max = 0;
   float value_min = 0, value_max = 0;
   char _pad[4] = {};
@@ -307,7 +298,7 @@ struct LineStyleAlphaModifier_DistanceFromObject {
 
   struct Object *target = nullptr;
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float range_min = 0, range_max = 0;
   char _pad[4] = {};
 };
@@ -319,7 +310,7 @@ struct LineStyleThicknessModifier_DistanceFromObject {
 
   struct Object *target = nullptr;
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float range_min = 0, range_max = 0;
   float value_min = 0, value_max = 0;
   char _pad[4] = {};
@@ -343,7 +334,7 @@ struct LineStyleAlphaModifier_Curvature_3D {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float min_curvature = 0, max_curvature = 0;
   char _pad[4] = {};
 };
@@ -354,7 +345,7 @@ struct LineStyleThicknessModifier_Curvature_3D {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   char _pad[4] = {};
   float min_curvature = 0, max_curvature = 0;
   float min_thickness = 0, max_thickness = 0;
@@ -379,7 +370,7 @@ struct LineStyleAlphaModifier_Noise {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float period = 0, amplitude = 0;
   int seed = 0;
 };
@@ -390,7 +381,7 @@ struct LineStyleThicknessModifier_Noise {
   struct LineStyleModifier modifier;
 
   float period = 0, amplitude = 0;
-  eLineStyleThicknessNoise_Flag flags = {};
+  int flags = 0;
   int seed = 0;
 };
 
@@ -411,7 +402,7 @@ struct LineStyleAlphaModifier_CreaseAngle {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float min_angle = 0, max_angle = 0;
   char _pad[4] = {};
 };
@@ -422,7 +413,7 @@ struct LineStyleThicknessModifier_CreaseAngle {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   char _pad[4] = {};
   float min_angle = 0, max_angle = 0;
   float min_thickness = 0, max_thickness = 0;
@@ -444,7 +435,7 @@ struct LineStyleAlphaModifier_Tangent {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   char _pad[4] = {};
 };
 
@@ -454,7 +445,7 @@ struct LineStyleThicknessModifier_Tangent {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float min_thickness = 0, max_thickness = 0;
   char _pad[4] = {};
 };
@@ -467,8 +458,8 @@ struct LineStyleColorModifier_Material {
   struct LineStyleModifier modifier;
 
   struct ColorBand *color_ramp = nullptr;
-  eLineStyleColorModifier_Flag flags = {};
-  eLineStyleMaterialAttr mat_attr = {};
+  int flags = 0;
+  int mat_attr = 0;
 };
 
 struct LineStyleAlphaModifier_Material {
@@ -477,8 +468,8 @@ struct LineStyleAlphaModifier_Material {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
-  eLineStyleMaterialAttr mat_attr = {};
+  int flags = 0;
+  int mat_attr = 0;
 };
 
 struct LineStyleThicknessModifier_Material {
@@ -487,9 +478,9 @@ struct LineStyleThicknessModifier_Material {
   struct LineStyleModifier modifier;
 
   struct CurveMapping *curve = nullptr;
-  eLineStyleAlphaThicknessModifier_Flag flags = {};
+  int flags = 0;
   float value_min = 0, value_max = 0;
-  eLineStyleMaterialAttr mat_attr = {};
+  int mat_attr = 0;
 };
 
 /* Geometry modifiers */
@@ -528,7 +519,7 @@ struct LineStyleGeometryModifier_SpatialNoise {
 
   float amplitude = 0, scale = 0;
   unsigned int octaves = 0;
-  eLineStyleGeomSpatialNoise_Flag flags = {};
+  int flags = 0;
 };
 
 struct LineStyleGeometryModifier_PerlinNoise1D {
@@ -598,7 +589,7 @@ struct LineStyleGeometryModifier_Blueprint {
 
   struct LineStyleModifier modifier;
 
-  eLineStyleGeomBlueprint_Flag flags = {};
+  int flags = 0;
   unsigned int rounds = 0;
   float backbone_length = 0;
   unsigned int random_radius = 0;
@@ -620,7 +611,7 @@ struct LineStyleGeometryModifier_2DTransform {
 
   struct LineStyleModifier modifier;
 
-  eLineStyleGeom2DTransform_Pivot pivot = {};
+  int pivot = 0;
   float scale_x = 0, scale_y = 0;
   /** In radians. */
   float angle = 0;
@@ -663,11 +654,10 @@ struct FreestyleLineStyle {
 
   float r = 0, g = 0, b = 0, alpha = 1.0f;
   float thickness = 3.0f;
-  eLineStyle_ThicknessPosition thickness_position = LS_THICKNESS_CENTER;
+  int thickness_position = LS_THICKNESS_CENTER;
   float thickness_ratio = 0.5f;
-  eLineStyle_Flag flag = LS_SAME_OBJECT | LS_NO_SORTING | LS_TEXTURE;
-  eLineStyle_Caps caps = LS_CAPS_BUTT;
-  eLineStyle_Chaining chaining = LS_CHAINING_PLAIN;
+  int flag = LS_SAME_OBJECT | LS_NO_SORTING | LS_TEXTURE, caps = LS_CAPS_BUTT;
+  int chaining = LS_CHAINING_PLAIN;
   unsigned int rounds = 3;
   float split_length = 100;
   /** In radians, for splitting. */
@@ -677,15 +667,14 @@ struct FreestyleLineStyle {
   unsigned short split_dash1 = 0, split_gap1 = 0;
   unsigned short split_dash2 = 0, split_gap2 = 0;
   unsigned short split_dash3 = 0, split_gap3 = 0;
-  eLineStyle_SortKey sort_key = LS_SORT_KEY_DISTANCE_FROM_CAMERA;
-  eLineStyle_IntegrationType integration_type = LS_INTEGRATION_MEAN;
+  int sort_key = LS_SORT_KEY_DISTANCE_FROM_CAMERA, integration_type = LS_INTEGRATION_MEAN;
   float texstep = 1.0f;
   short texact = 0, pr_texture = TEX_PR_TEXTURE;
   short use_nodes = 0;
   char _pad[6] = {};
   unsigned short dash1 = 0, gap1 = 0, dash2 = 0, gap2 = 0, dash3 = 0, gap3 = 0;
   /** For UI. */
-  eLineStyle_Panel panel = LS_PANEL_STROKES;
+  int panel = LS_PANEL_STROKES;
   struct MTex *mtex[/*MAX_MTEX*/ 18] = {};
   /* nodes */
   struct bNodeTree *nodetree = nullptr;

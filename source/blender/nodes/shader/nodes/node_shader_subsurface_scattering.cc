@@ -17,9 +17,6 @@ namespace nodes::node_shader_subsurface_scattering_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  const bNodeTree *ntree = b.tree_or_null();
-  const bool is_gpu_internal = ntree && (ntree->flag & NTREE_IS_GPU_SHADER_INTERNAL);
-
   b.add_input<decl::Color>("Color"_ustr).default_value({0.8f, 0.8f, 0.8f, 1.0f});
   b.add_input<decl::Float>("Scale"_ustr)
       .default_value(0.05f)
@@ -43,16 +40,11 @@ static void node_declare(NodeDeclarationBuilder &b)
       .subtype(PROP_FACTOR);
   b.add_input<decl::Float>("Anisotropy"_ustr)
       .default_value(0.0f)
-      .min(-1.0f)
+      .min(0.0f)
       .max(1.0f)
-      .subtype(PROP_FACTOR)
-      .description(
-          "Directionality of volume scattering within the subsurface medium. "
-          "Zero scatters uniformly in all directions, positive values scatter more in the forward "
-          "direction, and negative values scatter more backwards. "
-          "For example, skin has been measured to have an anisotropy of 0.8");
+      .subtype(PROP_FACTOR);
   b.add_input<decl::Vector>("Normal"_ustr).hide_value();
-  b.add_input<decl::Float>("Weight"_ustr).available(is_gpu_internal);
+  b.add_input<decl::Float>("Weight"_ustr).available(false);
   b.add_output<decl::Shader>("BSSRDF"_ustr);
 }
 
@@ -91,9 +83,7 @@ static void node_shader_update_subsurface_scattering(bNodeTree *ntree, bNode *no
       bke::node_set_socket_availability(*ntree, sock, sss_method != SHD_SUBSURFACE_BURLEY);
     }
     if (STR_ELEM(sock.name, "Roughness")) {
-      const bool is_random_walk = sss_method == SHD_SUBSURFACE_RANDOM_WALK ||
-                                  sss_method == SHD_SUBSURFACE_RANDOM_WALK_LEGACY;
-      bke::node_set_socket_availability(*ntree, sock, is_random_walk);
+      bke::node_set_socket_availability(*ntree, sock, sss_method == SHD_SUBSURFACE_RANDOM_WALK);
     }
   }
 }

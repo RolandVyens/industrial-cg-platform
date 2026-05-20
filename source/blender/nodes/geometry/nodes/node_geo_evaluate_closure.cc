@@ -6,7 +6,6 @@
 #include "UI_resources.hh"
 
 #include "NOD_geo_closure.hh"
-#include "NOD_geometry_nodes_closure_signature.hh"
 #include "NOD_socket_items_blend.hh"
 #include "NOD_socket_items_ops.hh"
 #include "NOD_socket_items_ui.hh"
@@ -31,11 +30,7 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.use_custom_socket_order();
   b.allow_any_socket_order();
 
-  b.add_input<decl::Closure>("Closure"_ustr).create_signature([](const bNode &node) {
-    const auto &storage = node_storage(node);
-    return nodes::ClosureSignature::from_evaluate_closure_node(
-        node, storage.flag & NODE_EVALUATE_CLOSURE_FLAG_DEFINE_SIGNATURE);
-  });
+  b.add_input<decl::Closure>("Closure"_ustr);
 
   const bNode *node = b.node_or_null();
   auto &panel = b.add_panel("Interface"_ustr);
@@ -47,7 +42,7 @@ static void node_declare(NodeDeclarationBuilder &b)
       const UString identifier(
           EvaluateClosureOutputItemsAccessor::socket_identifier_for_item(item));
       auto &decl = panel.add_output(socket_type, UString(item.name), identifier);
-      if (item.structure_type != NodeSocketInterfaceStructureType::Auto) {
+      if (item.structure_type != NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO) {
         decl.structure_type(StructureType(item.structure_type));
       }
       else {
@@ -61,10 +56,7 @@ static void node_declare(NodeDeclarationBuilder &b)
       const UString identifier(
           EvaluateClosureInputItemsAccessor::socket_identifier_for_item(item));
       auto &decl = panel.add_input(socket_type, UString(item.name), identifier);
-      if (socket_type_supports_fields(socket_type)) {
-        decl.supports_field();
-      }
-      if (item.structure_type != NodeSocketInterfaceStructureType::Auto) {
+      if (item.structure_type != NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO) {
         decl.structure_type(StructureType(item.structure_type));
       }
       else {

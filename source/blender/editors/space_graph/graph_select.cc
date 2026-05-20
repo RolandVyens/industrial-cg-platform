@@ -1760,29 +1760,29 @@ static wmOperatorStatus mouse_graph_keys(bAnimContext *ac,
       bezt = nvi->bezt; /* Used to check `bezt` selection is set. */
       if (select_mode == SELECT_INVERT) {
         if (nvi->hpoint == NEAREST_HANDLE_KEY) {
-          bezt->f2 ^= BEZT_FLAG_SELECT;
+          bezt->f2 ^= SELECT;
           something_was_selected = (bezt->f2 & SELECT);
         }
         else if (nvi->hpoint == NEAREST_HANDLE_LEFT) {
           /* toggle selection */
-          bezt->f1 ^= BEZT_FLAG_SELECT;
+          bezt->f1 ^= SELECT;
           something_was_selected = (bezt->f1 & SELECT);
         }
         else {
           /* toggle selection */
-          bezt->f3 ^= BEZT_FLAG_SELECT;
+          bezt->f3 ^= SELECT;
           something_was_selected = (bezt->f3 & SELECT);
         }
       }
       else {
         if (nvi->hpoint == NEAREST_HANDLE_KEY) {
-          bezt->f2 |= BEZT_FLAG_SELECT;
+          bezt->f2 |= SELECT;
         }
         else if (nvi->hpoint == NEAREST_HANDLE_LEFT) {
-          bezt->f1 |= BEZT_FLAG_SELECT;
+          bezt->f1 |= SELECT;
         }
         else {
-          bezt->f3 |= BEZT_FLAG_SELECT;
+          bezt->f3 |= SELECT;
         }
         something_was_selected = true;
       }

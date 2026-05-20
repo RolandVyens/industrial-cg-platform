@@ -359,7 +359,7 @@ class RenderLayerOperation : public NodeOperation {
       Result pass = this->context().get_pass(scene, view_layer, output->identifier);
       result.set_type(pass.type());
       result.set_precision(pass.precision());
-      result.share_data(pass);
+      result.steal_data(pass);
       pass.release();
     }
   }

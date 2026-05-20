@@ -195,14 +195,14 @@ class NODE_MT_lazy_connect_outputs(Menu, NWBaseMenu):
         layout.separator()
 
         n1 = nodes[context.scene.NWLazySource]
-        for index, output_socket in enumerate(n1.outputs):
+        for index, output in enumerate(n1.outputs):
             # Only show sockets that are exposed.
-            if output_socket.enabled:
+            if output.enabled:
                 layout.operator(
                     "node.lazy_connect_call_inputs_menu",
-                    text=output_socket.name,
+                    text=output.name,
                     text_ctxt=i18n_contexts.default,
-                    icon=socket_to_icon(output_socket),
+                    icon=socket_to_icon(output),
                 ).from_socket = index
 
 
@@ -219,16 +219,16 @@ class NODE_MT_lazy_connect_inputs(Menu, NWBaseMenu):
 
         n2 = nodes[context.scene.NWLazyTarget]
 
-        for index, input_socket in enumerate(n2.inputs):
+        for index, input in enumerate(n2.inputs):
             # Only show sockets that are exposed.
             # This prevents, for example, the scale value socket
             # of the vector math node being added to the list when
             # the mode is not 'SCALE'.
-            if input_socket.enabled:
+            if input.enabled:
                 op = layout.operator(
-                    "node.lazy_connect_make_link", text=input_socket.name,
+                    "node.lazy_connect_make_link", text=input.name,
                     text_ctxt=i18n_contexts.default,
-                    icon=socket_to_icon(input_socket),
+                    icon=socket_to_icon(input),
                 )
                 op.from_socket = context.scene.NWSourceSocket
                 op.to_socket = index

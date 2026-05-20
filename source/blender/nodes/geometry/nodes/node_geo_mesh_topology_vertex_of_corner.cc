@@ -33,10 +33,14 @@ class CornerVertFieldInput final : public bke::MeshFieldInput {
     return VArray<int>::from_span(mesh.corner_verts());
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 30495867093876;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    return dynamic_cast<const CornerVertFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const final

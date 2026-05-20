@@ -114,13 +114,6 @@ class CurveVecFunction : public mf::MultiFunction {
       }
     });
   }
-
-  void hash_unique(UniqueHashBytes &hash) const override
-  {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(&cumap_);
-  }
 };
 
 static void sh_node_curve_vec_build_multi_function(NodeMultiFunctionBuilder &builder)
@@ -290,13 +283,6 @@ class CurveRGBFunction : public mf::MultiFunction {
       col_out[i].a = 1.0f;
     });
   }
-
-  void hash_unique(UniqueHashBytes &hash) const override
-  {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(&cumap_);
-  }
 };
 
 static void sh_node_curve_rgb_build_multi_function(NodeMultiFunctionBuilder &builder)
@@ -435,13 +421,6 @@ class CurveFloatFunction : public mf::MultiFunction {
         val_out[i] = (1.0f - fac[i]) * val_in[i] + fac[i] * val_out[i];
       }
     });
-  }
-
-  void hash_unique(UniqueHashBytes &hash) const override
-  {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(&cumap_);
   }
 };
 

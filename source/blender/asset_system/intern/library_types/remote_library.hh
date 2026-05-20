@@ -14,32 +14,17 @@
 
 namespace blender::asset_system {
 
-/**
- * Abstract class for remote libraries. #PreferencesRemoteAssetLibrary and #OnlineEssentialsLibrary
- * derive from this.
- */
 class RemoteAssetLibrary : public AssetLibrary {
   std::string remote_url_;
-
- public:
-  RemoteAssetLibrary(eAssetLibraryType library_type,
-                     bool is_read_only,
-                     StringRef remote_url,
-                     StringRef name,
-                     StringRef root_path);
-  std::optional<eAssetImportMethod> import_method() const override;
-  std::optional<StringRefNull> remote_url() const override;
-  void refresh_catalogs() override;
-};
-
-class PreferencesRemoteAssetLibrary : public RemoteAssetLibrary {
   /** Helper to get the #bUserAssetLibrary from the preferences (if still valid). */
   UserAssetLibraryWrapper user_library_;
 
  public:
-  PreferencesRemoteAssetLibrary(const bUserAssetLibrary &custom_library);
+  RemoteAssetLibrary(const bUserAssetLibrary &custom_library);
   std::optional<AssetLibraryReference> library_reference() const override;
-  bool is_enabled() const;
+  std::optional<StringRefNull> remote_url() const override;
+  void refresh_catalogs() override;
+  void load_or_reload_catalogs();
 };
 
 }  // namespace blender::asset_system

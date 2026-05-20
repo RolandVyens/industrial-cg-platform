@@ -80,7 +80,7 @@ void RNA_def_struct_sdna_from(StructRNA *srna, const char *structname, const cha
  * Define the struct's String property used to retrieve the name of a PointerRNA of that type.
  * Used e.g. in several UI widget displaying content of RNA collections.
  *
- * \param allow_replace: If true, allow replacing an already defined struct name property.
+ * \param allow_replace If true, allow replacing an already defined struct name property.
  */
 void RNA_def_struct_name_property(StructRNA *srna, PropertyRNA *prop, bool allow_replace = false);
 void RNA_def_struct_nested(BlenderRNA *brna, StructRNA *srna, const char *structname);
@@ -721,11 +721,14 @@ void RNA_def_property_free_pointers_set_py_data_callback(
 /* Utilities. */
 
 const char *RNA_property_typename(PropertyType type);
+#define IS_DNATYPE_FLOAT_COMPAT(_str) (strcmp(_str, "float") == 0 || strcmp(_str, "double") == 0)
+#define IS_DNATYPE_INT_COMPAT(_str) \
+  (strcmp(_str, "int") == 0 || strcmp(_str, "short") == 0 || strcmp(_str, "char") == 0 || \
+   strcmp(_str, "uchar") == 0 || strcmp(_str, "ushort") == 0 || strcmp(_str, "int8_t") == 0)
+#define IS_DNATYPE_BOOLEAN_COMPAT(_str) \
+  (IS_DNATYPE_INT_COMPAT(_str) || strcmp(_str, "int64_t") == 0 || strcmp(_str, "uint64_t") == 0)
 
-bool RNA_validate_identifier(const char *identifier,
-                             bool is_property,
-                             const char **r_error = nullptr);
-void RNA_identifier_sanitize(char *identifier, bool is_property);
+void RNA_identifier_sanitize(char *identifier, int property);
 
 /* Common arguments for length. */
 

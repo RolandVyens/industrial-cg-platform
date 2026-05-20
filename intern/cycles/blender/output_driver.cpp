@@ -122,13 +122,47 @@ void BlenderOutputDriver::write_render_tile(const Tile &tile)
       }
 
       for (int y = 0; y < tile.size.y; y++) {
-        const int dst_y = tile.offset.y + y;
+        /* Tile offsets are addressed from Blender's render-result bottom-left origin, while the
+         * captured post-render full-frame beauty buffer is stored top-to-bottom for direct pixel
+         * lookup by global image coordinates. Mirror the tile rows into that top-to-bottom layout
+         * when caching Combined for deep recolor. */
+        const int dst_y = full_height - tile.offset.y - tile.size.y + y;
+        if (dst_y < 0 || dst_y >= full_height) {
+          continue;
+        }
         const size_t src_offset = static_cast<size_t>(y) * tile.size.x * 4;
         const size_t dst_offset =
             (static_cast<size_t>(dst_y) * combined_width_ + tile.offset.x) * 4;
         memcpy(combined_pass_buffer_.data() + dst_offset,
                pixels.data() + src_offset,
                sizeof(float) * tile.size.x * 4);
+      }
+    }
+    else if (strcmp(b_pass.name, "Debug Sample Count") == 0 && b_pass.channels == 1) {
+      const int full_width = tile.full_size.x;
+      const int full_height = tile.full_size.y;
+
+      if (sample_count_pass_buffer_.empty() || sample_count_width_ != full_width ||
+          sample_count_height_ != full_height) {
+        sample_count_width_ = full_width;
+        sample_count_height_ = full_height;
+        sample_count_pass_buffer_.assign(
+            static_cast<size_t>(sample_count_width_) * sample_count_height_, 0.0f);
+      }
+
+      for (int y = 0; y < tile.size.y; y++) {
+        /* Keep sample-count capture in the same top-to-bottom full-frame layout as the cached
+         * Combined pass so deep reconstruction samples the corresponding pixel. */
+        const int dst_y = full_height - tile.offset.y - tile.size.y + y;
+        if (dst_y < 0 || dst_y >= full_height) {
+          continue;
+        }
+        const size_t src_offset = static_cast<size_t>(y) * tile.size.x;
+        const size_t dst_offset =
+            static_cast<size_t>(dst_y) * sample_count_width_ + tile.offset.x;
+        memcpy(sample_count_pass_buffer_.data() + dst_offset,
+               pixels.data() + src_offset,
+               sizeof(float) * tile.size.x);
       }
     }
 
@@ -152,6 +186,19 @@ const float *BlenderOutputDriver::get_combined_pass(int &width, int &height) con
   width = combined_width_;
   height = combined_height_;
   return combined_pass_buffer_.data();
+}
+
+const float *BlenderOutputDriver::get_sample_count_pass(int &width, int &height) const
+{
+  if (sample_count_pass_buffer_.empty()) {
+    width = 0;
+    height = 0;
+    return nullptr;
+  }
+
+  width = sample_count_width_;
+  height = sample_count_height_;
+  return sample_count_pass_buffer_.data();
 }
 
 CCL_NAMESPACE_END

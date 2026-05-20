@@ -2,6 +2,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
+#include <cmath>
 #include <cstring>
 
 #include "device/cpu/device.h"
@@ -9,7 +10,6 @@
 #include "integrator/path_trace.h"
 #include "scene/background.h"
 #include "scene/camera.h"
-#include "scene/image.h"
 #include "scene/integrator.h"
 #include "scene/light.h"
 #include "scene/mesh.h"
@@ -17,6 +17,7 @@
 #include "scene/scene.h"
 #include "scene/shader_graph.h"
 #include "session/buffers.h"
+#include "session/deep_buffers.h"
 #include "session/deep_output_driver.h"
 #include "session/display_driver.h"
 #include "session/output_driver.h"
@@ -24,15 +25,14 @@
 
 #include "util/log.h"
 #include "util/math.h"
+#include "util/string.h"
 #include "util/task.h"
 #include "util/time.h"
 
 CCL_NAMESPACE_BEGIN
 
 Session::Session(const SessionParams &params_, const SceneParams &scene_params)
-    : params(params_),
-      eviction_manager_(params_.background),
-      render_scheduler_(tile_manager_, params)
+    : params(params_), render_scheduler_(tile_manager_, params)
 {
   TaskScheduler::init(params.threads);
 
@@ -331,8 +331,6 @@ RenderWork Session::run_update_for_next_iteration()
     /* After reset make sure the tile manager is at the first big tile. */
     have_tiles = tile_manager_.next();
     switched_to_new_tile = true;
-
-    eviction_manager_.reset();
   }
 
   /* Update denoiser settings. */
@@ -373,11 +371,6 @@ RenderWork Session::run_update_for_next_iteration()
       render_scheduler_.reset_for_next_tile();
       switched_to_new_tile = true;
     }
-  }
-
-  /* Evict unused image tiles periodically. */
-  if (eviction_manager_.need_eviction(!render_work, switched_to_new_tile)) {
-    scene->image_manager->evict_unused(device.get(), scene.get());
   }
 
   if (render_work) {
@@ -464,20 +457,8 @@ bool Session::run_wait_for_work(const RenderWork &render_work)
       break;
     }
 
-    const std::chrono::milliseconds wait_time = eviction_manager_.wait_time(!render_work);
-    if (wait_time == std::chrono::milliseconds::zero()) {
-      /* Break out of the loop for cache eviction. */
-      break;
-    }
-
-    /* Wait for either pause state changed, extra samples added to render, or idle
-     * timer before performing eviction. */
-    if (wait_time == std::chrono::milliseconds::max()) {
-      pause_cond_.wait(pause_lock);
-    }
-    else {
-      pause_cond_.wait_for(pause_lock, wait_time);
-    }
+    /* Wait for either pause state changed, or extra samples added to render. */
+    pause_cond_.wait(pause_lock);
 
     if (pause_) {
       progress.add_skip_time(pause_timer, params.background);
@@ -508,14 +489,56 @@ int2 Session::get_effective_tile_size() const
 
   const int64_t image_area = static_cast<int64_t>(image_width) * image_height;
 
-  /* TODO(sergey): Take available memory into account, and if there is enough memory do not
-   * tile and prefer optimal performance. */
+  /* TODO(sergey): Take available memory into account for non-deep renders so we can
+   * avoid tiling when there is enough memory. */
+  /* Deep EXR uses a user-configured tile budget. */
 
-  const int tile_size = tile_manager_.compute_render_tile_size(params.tile_size);
+  int tile_size = tile_manager_.compute_render_tile_size(params.tile_size);
+  bool deep_tile_clamp_active = false;
+
+  if (scene && scene->film->get_use_deep_output() && params.deep_tile_budget_mb > 0) {
+    const int max_samples = deep_effective_max_samples(scene->film, scene->integrator);
+
+    size_t bytes_per_pixel = 0;
+    if (deep_compute_buffer_bytes(1, 1, max_samples, bytes_per_pixel) && bytes_per_pixel > 0) {
+      const size_t deep_budget_bytes = static_cast<size_t>(params.deep_tile_budget_mb) *
+                                       1024 * 1024;
+      const size_t max_pixels = deep_budget_bytes / bytes_per_pixel;
+      if (max_pixels > 0) {
+        const double max_pixels_double = static_cast<double>(max_pixels);
+        const int max_tile_unaligned = max(
+            8, static_cast<int>(std::floor(std::sqrt(max_pixels_double))));
+        int max_tile = max_tile_unaligned;
+        if (max_tile >= TileManager::IMAGE_TILE_SIZE) {
+          max_tile = (max_tile / TileManager::IMAGE_TILE_SIZE) * TileManager::IMAGE_TILE_SIZE;
+        }
+
+        if (max_tile < tile_size) {
+          deep_tile_clamp_active = true;
+          tile_size = max_tile;
+
+          size_t estimated_bytes = 0;
+          const string budget_str = string_human_readable_size(deep_budget_bytes);
+          if (deep_compute_buffer_bytes(tile_size, tile_size, max_samples, estimated_bytes)) {
+            const string estimated_str = string_human_readable_size(estimated_bytes);
+            LOG_INFO << "Deep EXR: clamping tile size to " << tile_size << " (budget "
+                     << budget_str << ", estimated " << estimated_str << ", max samples "
+                     << max_samples << ")";
+          }
+          else {
+            /* Overflow while estimating deep buffer bytes. */
+            LOG_INFO << "Deep EXR: clamping tile size to " << tile_size << " (budget "
+                     << budget_str << ", max samples " << max_samples << ")";
+          }
+        }
+      }
+    }
+  }
+
   const int64_t actual_tile_area = static_cast<int64_t>(tile_size) * tile_size;
 
-  if (actual_tile_area >= image_area && image_width <= TileManager::MAX_TILE_SIZE &&
-      image_height <= TileManager::MAX_TILE_SIZE)
+  if (!deep_tile_clamp_active && actual_tile_area >= image_area &&
+      image_width <= TileManager::MAX_TILE_SIZE && image_height <= TileManager::MAX_TILE_SIZE)
   {
     return make_int2(image_width, image_height);
   }
@@ -656,11 +679,6 @@ void Session::set_pause(bool pause)
   }
 }
 
-void Session::set_navigating(bool navigating)
-{
-  eviction_manager_.set_navigating(navigating);
-}
-
 void Session::set_output_driver(unique_ptr<OutputDriver> driver)
 {
   path_trace_->set_output_driver(std::move(driver));
@@ -730,8 +748,10 @@ bool Session::update_scene(const bool reset_samples)
   scene->integrator->set_sample_subset_length(params.sample_subset_length);
 
   /* When multiple tiles are used SAMPLE_COUNT pass is used to keep track of possible partial
-   * tile results. */
-  scene->film->set_use_sample_count(tile_manager_.has_multiple_tiles());
+   * tile results. Deep output also needs per-pixel sample counts to reconstruct hard-surface
+   * edge coverage after sorting deep hits by depth. */
+  scene->film->set_use_sample_count(tile_manager_.has_multiple_tiles() ||
+                                    scene->film->get_use_deep_output());
 
   const bool reset = scene->need_reset(false);
 

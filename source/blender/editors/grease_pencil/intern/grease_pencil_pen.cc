@@ -50,12 +50,12 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
   /* Helper class to project screen space coordinates to 3D. */
   DrawingPlacement placement;
 
-  float3 project(const float2 &screen_co) const override
+  float3 project(const float2 &screen_co) const
   {
     return this->placement.project(screen_co);
   }
 
-  IndexMask all_selected_points(const int curves_index, IndexMaskMemory &memory) const override
+  IndexMask all_selected_points(const int curves_index, IndexMaskMemory &memory) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     return ed::greasepencil::retrieve_editable_and_all_selected_points(
@@ -66,8 +66,7 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
         memory);
   }
 
-  IndexMask visible_bezier_handle_points(const int curves_index,
-                                         IndexMaskMemory &memory) const override
+  IndexMask visible_bezier_handle_points(const int curves_index, IndexMaskMemory &memory) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     return ed::greasepencil::retrieve_visible_bezier_handle_points(
@@ -78,31 +77,31 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
         memory);
   }
 
-  IndexMask editable_curves(const int curves_index, IndexMaskMemory &memory) const override
+  IndexMask editable_curves(const int curves_index, IndexMaskMemory &memory) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     return ed::greasepencil::retrieve_editable_strokes(
         *this->vc.obact, info.drawing, info.layer_index, memory);
   }
 
-  void tag_curve_changed(const int curves_index) const override
+  void tag_curve_changed(const int curves_index) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     info.drawing.tag_topology_changed();
   }
 
-  bke::CurvesGeometry &get_curves(const int curves_index) const override
+  bke::CurvesGeometry &get_curves(const int curves_index) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     return info.drawing.strokes_for_write();
   }
 
-  IndexRange curves_range() const override
+  IndexRange curves_range() const
   {
     return this->drawings.index_range();
   }
 
-  void single_point_attributes(bke::CurvesGeometry &curves, const int curves_index) const override
+  void single_point_attributes(bke::CurvesGeometry &curves, const int curves_index) const
   {
     const MutableDrawingInfo &info = this->drawings[curves_index];
     info.drawing.opacities_for_write().last() = 1.0f;
@@ -128,7 +127,7 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
     }
   }
 
-  bool can_create_new_curve(wmOperator *op) const override
+  bool can_create_new_curve(wmOperator *op) const
   {
     if (!this->grease_pencil->has_active_layer()) {
       BKE_report(op->reports, RPT_ERROR, "No active Grease Pencil layer");
@@ -168,7 +167,7 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
     return true;
   }
 
-  void update_view(bContext *C) const override
+  void update_view(bContext *C) const
   {
     GreasePencil *grease_pencil = this->grease_pencil;
 
@@ -180,7 +179,7 @@ class GreasePencilPenToolOperation : public curves::pen_tool::PenToolOperation {
 
   std::optional<wmOperatorStatus> initialize(bContext *C,
                                              wmOperator *op,
-                                             const wmEvent * /*event*/) override
+                                             const wmEvent * /*event*/)
   {
     if (this->vc.scene->toolsettings->gpencil_selectmode_edit != GP_SELECTMODE_POINT) {
       BKE_report(op->reports, RPT_ERROR, "Selection Mode must be Points");

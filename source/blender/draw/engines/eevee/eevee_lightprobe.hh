@@ -236,14 +236,14 @@ class LightProbeModule {
   void init();
 
   void begin_sync();
-  void sync_probe(const ObjectRef &ob_ref);
+  void sync_probe(const Object *ob, ObjectHandle &handle);
   void sync_world(const blender::World *world, bool has_update);
   void end_sync();
 
  private:
-  void sync_sphere(const ObjectRef &ob_ref);
-  void sync_volume(const ObjectRef &ob_ref);
-  void sync_planar(const ObjectRef &ob_ref);
+  void sync_sphere(const Object *ob, ObjectHandle &handle);
+  void sync_volume(const Object *ob, ObjectHandle &handle);
+  void sync_planar(const Object *ob, ObjectHandle &handle);
 
   /** Get the number of atlas layers needed to store light probe spheres. */
   int sphere_layer_count() const;

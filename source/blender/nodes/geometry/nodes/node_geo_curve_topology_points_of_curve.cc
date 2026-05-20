@@ -145,13 +145,18 @@ class PointsOfCurveInput final : public bke::GeometryFieldInput {
     fn(sort_weight_);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(deep_hash_cache.ensure(curve_index_));
-    hash.add(deep_hash_cache.ensure(sort_index_));
-    hash.add(deep_hash_cache.ensure(sort_weight_));
+    return 26978695677882;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    if (const auto *typed = dynamic_cast<const PointsOfCurveInput *>(&other)) {
+      return typed->curve_index_ == curve_index_ && typed->sort_index_ == sort_index_ &&
+             typed->sort_weight_ == sort_weight_;
+    }
+    return false;
   }
 
   std::optional<AttrDomain> preferred_domain(const GeometryComponent & /*component*/) const final
@@ -177,10 +182,14 @@ class CurvePointCountInput final : public bke::CurvesFieldInput {
     });
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 903847569873762;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    return dynamic_cast<const CurvePointCountInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

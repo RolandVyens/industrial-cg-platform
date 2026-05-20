@@ -66,7 +66,6 @@ static wmOperatorStatus preferences_reset_default_theme_exec(bContext *C, wmOper
   ui::style_init_default();
   WM_reinit_gizmomap_all(bmain);
   WM_event_add_notifier(C, NC_WINDOW, nullptr);
-  WM_event_add_notifier(C, NC_UI | ND_UI_FONT, nullptr);
   U.runtime.is_dirty = true;
   return OPERATOR_FINISHED;
 }

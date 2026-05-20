@@ -253,13 +253,12 @@ void convolve(Context &context,
 
   if (context.use_gpu()) {
     Result output_gpu = output_cpu.upload_to_gpu(true);
-    output.share_data(output_gpu);
-    output_gpu.release();
+    output.steal_data(output_gpu);
+    output_cpu.release();
   }
   else {
-    output.share_data(output_cpu);
+    output.steal_data(output_cpu);
   }
-  output_cpu.release();
 #else
   UNUSED_VARS(kernel, normalize_kernel);
   output.allocate_texture(input.domain());

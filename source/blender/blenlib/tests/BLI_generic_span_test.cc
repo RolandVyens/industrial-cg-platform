@@ -8,15 +8,7 @@
 
 namespace blender::tests {
 
-class GenericSpanTest : public testing::Test {
- public:
-  static void SetUpTestSuite()
-  {
-    register_cpp_types();
-  }
-};
-
-TEST_F(GenericSpanTest, TypeConstructor)
+TEST(generic_span, TypeConstructor)
 {
   GSpan span(CPPType::get<float>());
   EXPECT_EQ(span.size(), 0);
@@ -24,7 +16,7 @@ TEST_F(GenericSpanTest, TypeConstructor)
   EXPECT_TRUE(span.is_empty());
 }
 
-TEST_F(GenericSpanTest, BufferAndSizeConstructor)
+TEST(generic_span, BufferAndSizeConstructor)
 {
   int values[4] = {6, 7, 3, 2};
   void *buffer = static_cast<void *>(values);
@@ -38,14 +30,14 @@ TEST_F(GenericSpanTest, BufferAndSizeConstructor)
   EXPECT_EQ(span[3], &values[3]);
 }
 
-TEST_F(GenericSpanTest, MutableTypeConstructor)
+TEST(generic_mutable_span, TypeConstructor)
 {
   GMutableSpan span(CPPType::get<int32_t>());
   EXPECT_EQ(span.size(), 0);
   EXPECT_TRUE(span.is_empty());
 }
 
-TEST_F(GenericSpanTest, MutableBufferAndSizeConstructor)
+TEST(generic_mutable_span, BufferAndSizeConstructor)
 {
   int values[4] = {4, 7, 3, 5};
   void *buffer = static_cast<void *>(values);

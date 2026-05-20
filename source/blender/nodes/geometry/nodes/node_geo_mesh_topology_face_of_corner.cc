@@ -36,10 +36,14 @@ class CornerFaceIndexInput final : public bke::MeshFieldInput {
     return VArray<int>::from_span(mesh.corner_to_face_map());
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 2348712958475728;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    return dynamic_cast<const CornerFaceIndexInput *>(&other) != nullptr;
   }
 };
 
@@ -62,10 +66,14 @@ class CornerIndexInFaceInput final : public bke::MeshFieldInput {
     });
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 97837176448;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    return dynamic_cast<const CornerIndexInFaceInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const final

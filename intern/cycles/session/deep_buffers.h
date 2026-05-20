@@ -10,26 +10,99 @@
 
 CCL_NAMESPACE_BEGIN
 
+class Film;
+class Integrator;
+
+/* Compute deep buffer bytes for the given dimensions and max samples.
+ * Returns false on overflow. */
+bool deep_compute_buffer_bytes(int width, int height, int max_samples, size_t &bytes);
+
+/* Compute effective deep max samples, accounting for volume ray marching settings. */
+int deep_effective_max_samples(const Film *film, const Integrator *integrator);
+
 /* -------------------------------------------------------------------- */
 /** \name Deep Sample Data Structure
  *
  * Stores a single deep sample with RGBA color and depth information.
  * Each pixel can have multiple samples at different depths.
+ * Keep the flags and pack/unpack helpers below in sync with kernel/film/deep_write.h.
  * \{ */
 
-/* Must match KernelDeepSample alignment in kernel/film/deep_write.h. */
-struct alignas(32) DeepSampleData {
+constexpr uint32_t DEEP_SAMPLE_FLAG_HARD_SURFACE_METADATA = (1u << 0);
+constexpr uint32_t DEEP_SAMPLE_INFO_FLAG_MASK = 0xffu;
+constexpr uint32_t DEEP_SAMPLE_INFO_CAMERA_SAMPLE_SHIFT = 8u;
+constexpr uint32_t DEEP_SAMPLE_INFO_CAMERA_SAMPLE_MASK =
+    0xffffffffu & ~DEEP_SAMPLE_INFO_FLAG_MASK;
+
+inline uint32_t deep_sample_info_pack(const uint32_t flags, const uint32_t camera_sample)
+{
+  return (flags & DEEP_SAMPLE_INFO_FLAG_MASK) |
+         ((camera_sample << DEEP_SAMPLE_INFO_CAMERA_SAMPLE_SHIFT) &
+          DEEP_SAMPLE_INFO_CAMERA_SAMPLE_MASK);
+}
+
+inline uint32_t deep_sample_info_flags(const uint32_t info)
+{
+  return info & DEEP_SAMPLE_INFO_FLAG_MASK;
+}
+
+inline uint32_t deep_sample_info_camera_sample(const uint32_t info)
+{
+  return (info & DEEP_SAMPLE_INFO_CAMERA_SAMPLE_MASK) >> DEEP_SAMPLE_INFO_CAMERA_SAMPLE_SHIFT;
+}
+
+/* Must match KernelDeepSample alignment and layout in kernel/film/deep_write.h. */
+struct alignas(16) DeepSampleData {
   /* Color channels. */
   float r, g, b, a;
   /* Front depth (ray hit distance from camera). */
   float z;
   /* Back depth (for volumetric samples, equals z for surfaces). */
   float z_back;
+  /* Hard-surface metadata used for export-side compaction. */
+  uint32_t surface_object;
+  uint32_t surface_prim;
+  uint32_t surface_shader;
+  uint32_t packed_geometric_normal;
+  uint32_t flags;
 
-  DeepSampleData() : r(0), g(0), b(0), a(0), z(0), z_back(0) {}
+  DeepSampleData()
+      : r(0),
+        g(0),
+        b(0),
+        a(0),
+        z(0),
+        z_back(0),
+        surface_object(0),
+        surface_prim(0),
+        surface_shader(0),
+        packed_geometric_normal(0),
+        flags(0)
+  {
+  }
 
-  DeepSampleData(float r_, float g_, float b_, float a_, float z_, float z_back_)
-      : r(r_), g(g_), b(b_), a(a_), z(z_), z_back(z_back_)
+  DeepSampleData(float r_,
+                 float g_,
+                 float b_,
+                 float a_,
+                 float z_,
+                 float z_back_,
+                 uint32_t surface_object_ = 0,
+                 uint32_t surface_prim_ = 0,
+                 uint32_t surface_shader_ = 0,
+                 uint32_t packed_geometric_normal_ = 0,
+                 uint32_t flags_ = 0)
+      : r(r_),
+        g(g_),
+        b(b_),
+        a(a_),
+        z(z_),
+        z_back(z_back_),
+        surface_object(surface_object_),
+        surface_prim(surface_prim_),
+        surface_shader(surface_shader_),
+        packed_geometric_normal(packed_geometric_normal_),
+        flags(flags_)
   {
   }
 
@@ -39,6 +112,9 @@ struct alignas(32) DeepSampleData {
     return z < other.z;
   }
 };
+
+static_assert(sizeof(DeepSampleData) == 48, "DeepSampleData must stay tightly packed.");
+static_assert(alignof(DeepSampleData) == 16, "DeepSampleData alignment must match kernel.");
 
 /** \} */
 
@@ -78,18 +154,10 @@ class DeepRenderBuffers {
   /* Merge nearby samples within threshold (reduces output size). */
   void merge_nearby_samples();
 
-  /* Compute sample offsets (call after copy_from_device, before accessing via offsets). */
-  void compute_sample_offsets();
-
   /* Host-side accessors for reading sample data after copy_from_device(). */
   const uint32_t *get_sample_counts_host() const
   {
     return sample_counts_.data();
-  }
-
-  const uint32_t *get_sample_offsets_host() const
-  {
-    return sample_offsets_.data();
   }
 
   const DeepSampleData *get_sample_data_host() const
@@ -133,7 +201,7 @@ class DeepRenderBuffers {
     return sample_counts_;
   }
 
-  uint32_t *get_sample_counts_data()
+  uint32_t *get_sample_counts_ptr()
   {
     return sample_counts_.data();
   }
@@ -143,7 +211,7 @@ class DeepRenderBuffers {
     return sample_data_;
   }
 
-  DeepSampleData *get_sample_data_data()
+  DeepSampleData *get_sample_data_ptr()
   {
     return sample_data_.data();
   }
@@ -180,9 +248,6 @@ class DeepRenderBuffers {
   /* Device pointer for kernel access. */
   device_ptr d_sample_counts_ = 0;
   device_ptr d_sample_data_ = 0;
-
-  /* Computed sample offsets for each pixel (prefix sum of counts). */
-  vector<uint32_t> sample_offsets_;
 
   /* Check if buffers are allocated. */
   bool is_allocated() const

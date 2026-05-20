@@ -6,8 +6,6 @@
  * \ingroup depsgraph
  */
 
-#include "BKE_gtest_base.hh"
-
 #include "intern/builder/deg_builder_rna.h"
 
 #include "testing/testing.h"
@@ -22,9 +20,7 @@ class TestableRNANodeQuery : public RNANodeQuery {
   }
 };
 
-class DegBuilderRNATest : public bke::BlenderGTestBase {};
-
-TEST_F(DegBuilderRNATest, contains)
+TEST(deg_builder_rna, contains)
 {
   EXPECT_TRUE(TestableRNANodeQuery::contains("location", "location"));
   EXPECT_TRUE(TestableRNANodeQuery::contains("location.x", "location"));

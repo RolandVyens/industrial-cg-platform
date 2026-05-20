@@ -37,19 +37,18 @@ ImBuf *prepare_effect_imbufs(const RenderData *context,
   Scene *scene = context->scene;
   int x = context->rectx;
   int y = context->recty;
-  ImBufFlags base_flags = uninitialized_pixels ? ImBufFlags::UninitializedPixels :
-                                                 ImBufFlags::Zero;
+  int base_flags = uninitialized_pixels ? IB_uninitialized_pixels : 0;
 
   if (!ibuf1 && !ibuf2) {
     /* Hmm, global float option? */
-    out = IMB_allocImBuf(x, y, ImBufFlags::ByteData | base_flags);
+    out = IMB_allocImBuf(x, y, 32, IB_byte_data | base_flags);
   }
   else if ((ibuf1 && ibuf1->float_data()) || (ibuf2 && ibuf2->float_data())) {
     /* if any inputs are float, output is float too */
-    out = IMB_allocImBuf(x, y, ImBufFlags::FloatData | base_flags);
+    out = IMB_allocImBuf(x, y, 32, IB_float_data | base_flags);
   }
   else {
-    out = IMB_allocImBuf(x, y, ImBufFlags::ByteData | base_flags);
+    out = IMB_allocImBuf(x, y, 32, IB_byte_data | base_flags);
   }
 
   if (out->float_data()) {
@@ -290,7 +289,7 @@ EffectHandle strip_effect_handle_get(Strip *strip)
 {
   EffectHandle h = {};
   if (strip->is_effect()) {
-    h = effect_handle_get(strip->type);
+    h = effect_handle_get(StripType(strip->type));
   }
   return h;
 }
@@ -299,7 +298,7 @@ EffectHandle strip_blend_mode_handle_get(Strip *strip)
 {
   EffectHandle h = {};
   if (strip->blend_mode != STRIP_BLEND_REPLACE) {
-    h = effect_handle_for_blend_mode_get(strip->blend_mode);
+    h = effect_handle_for_blend_mode_get(StripBlendMode(strip->blend_mode));
   }
   return h;
 }
@@ -323,7 +322,7 @@ static float transition_fader_calc(const Scene *scene, const Strip *strip, float
 float effect_fader_calc(Scene *scene, Strip *strip, float timeline_frame)
 {
   if (strip->flag & SEQ_USE_EFFECT_DEFAULT_FADE) {
-    if (effect_is_transition(strip->type)) {
+    if (effect_is_transition(StripType(strip->type))) {
       return transition_fader_calc(scene, strip, timeline_frame);
     }
     return 1.0f;

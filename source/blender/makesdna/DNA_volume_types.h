@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 #include "DNA_ID.h"
 
 namespace blender {
@@ -25,13 +23,12 @@ struct VolumeRuntime;
 }
 
 /** #Volume.flag */
-enum eVolume_Flag : int {
+enum {
   VO_DS_EXPAND = (1 << 0),
 };
-ENUM_OPERATORS(eVolume_Flag)
 
 /** #Volume.sequence_mode */
-enum VolumeSequenceMode : char {
+enum VolumeSequenceMode {
   VOLUME_SEQUENCE_CLIP = 0,
   VOLUME_SEQUENCE_EXTEND = 1,
   VOLUME_SEQUENCE_REPEAT = 2,
@@ -39,7 +36,7 @@ enum VolumeSequenceMode : char {
 };
 
 /** #VolumeDisplay.wireframe_type */
-enum VolumeWireframeType : int {
+enum VolumeWireframeType {
   VOLUME_WIREFRAME_NONE = 0,
   VOLUME_WIREFRAME_BOUNDS = 1,
   VOLUME_WIREFRAME_BOXES = 2,
@@ -47,39 +44,39 @@ enum VolumeWireframeType : int {
 };
 
 /** #VolumeDisplay.wireframe_detail */
-enum VolumeWireframeDetail : int {
+enum VolumeWireframeDetail {
   VOLUME_WIREFRAME_COARSE = 0,
   VOLUME_WIREFRAME_FINE = 1,
 };
 
 /** #VolumeRender.precision */
-enum VolumeRenderPrecision : int {
+enum VolumeRenderPrecision {
   VOLUME_PRECISION_HALF = 0,
   VOLUME_PRECISION_FULL = 1,
   VOLUME_PRECISION_VARIABLE = 2,
 };
 
 /** #VolumeRender.space */
-enum VolumeRenderSpace : int {
+enum VolumeRenderSpace {
   VOLUME_SPACE_OBJECT = 0,
   VOLUME_SPACE_WORLD = 1,
 };
 
 /** #VolumeDisplay.interpolation_method */
-enum VolumeDisplayInterpMethod : int {
+enum VolumeDisplayInterpMethod {
   VOLUME_DISPLAY_INTERP_LINEAR = 0,
   VOLUME_DISPLAY_INTERP_CUBIC = 1,
   VOLUME_DISPLAY_INTERP_CLOSEST = 2,
 };
 
 /** #VolumeDisplay.axis_slice_method */
-enum AxisAlignedSlicingMethod : int {
+enum AxisAlignedSlicingMethod {
   VOLUME_AXIS_SLICE_FULL = 0,
   VOLUME_AXIS_SLICE_SINGLE = 1,
 };
 
 /** #VolumeDisplay.slice_axis */
-enum SliceAxis : int {
+enum SliceAxis {
   VOLUME_SLICE_AXIS_AUTO = 0,
   VOLUME_SLICE_AXIS_X = 1,
   VOLUME_SLICE_AXIS_Y = 2,
@@ -88,18 +85,18 @@ enum SliceAxis : int {
 
 struct VolumeDisplay {
   float density = 1.0f;
-  VolumeWireframeType wireframe_type = VOLUME_WIREFRAME_BOXES;
-  VolumeWireframeDetail wireframe_detail = VOLUME_WIREFRAME_COARSE;
-  VolumeDisplayInterpMethod interpolation_method = VOLUME_DISPLAY_INTERP_LINEAR;
-  AxisAlignedSlicingMethod axis_slice_method = VOLUME_AXIS_SLICE_FULL;
-  SliceAxis slice_axis = VOLUME_SLICE_AXIS_AUTO;
+  int wireframe_type = VOLUME_WIREFRAME_BOXES;
+  int wireframe_detail = VOLUME_WIREFRAME_COARSE;
+  int interpolation_method = 0;
+  int axis_slice_method = 0;
+  int slice_axis = 0;
   float slice_depth = 0.5f;
   int _pad[1] = {};
 };
 
 struct VolumeRender {
-  VolumeRenderPrecision precision = VOLUME_PRECISION_HALF;
-  VolumeRenderSpace space = VOLUME_SPACE_OBJECT;
+  int precision = VOLUME_PRECISION_HALF;
+  int space = VOLUME_SPACE_OBJECT;
   float step_size = 0.0f;
   float clipping = 0.001f;
 };
@@ -119,14 +116,14 @@ struct Volume {
 
   /* Sequence */
   char is_sequence = 0;
-  VolumeSequenceMode sequence_mode = VOLUME_SEQUENCE_CLIP;
+  char sequence_mode = 0;
   char _pad1[2] = {};
   int frame_start = 1;
   int frame_duration = 0;
   int frame_offset = 0;
 
   /* Flag */
-  eVolume_Flag flag = {};
+  int flag = 0;
 
   /* Grids */
   int active_grid = 0;

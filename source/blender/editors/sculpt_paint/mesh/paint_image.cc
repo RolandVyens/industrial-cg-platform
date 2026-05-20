@@ -118,6 +118,7 @@ void imapaint_region_tiles(
 void ED_imapaint_dirty_region(
     Image *ima, ImBuf *ibuf, ImageUser *iuser, int x, int y, int w, int h, bool find_old)
 {
+  ImBuf *tmpibuf = nullptr;
   int tilex, tiley, tilew, tileh, tx, ty;
   int srcx = 0, srcy = 0;
 
@@ -138,11 +139,15 @@ void ED_imapaint_dirty_region(
   for (ty = tiley; ty <= tileh; ty++) {
     for (tx = tilex; tx <= tilew; tx++) {
       ED_image_paint_tile_push(
-          undo_tiles, ima, ibuf, iuser, tx, ty, nullptr, nullptr, false, find_old);
+          undo_tiles, ima, ibuf, &tmpibuf, iuser, tx, ty, nullptr, nullptr, false, find_old);
     }
   }
 
   BKE_image_mark_dirty(ima, ibuf);
+
+  if (tmpibuf) {
+    IMB_freeImBuf(tmpibuf);
+  }
 }
 
 void imapaint_image_update(
@@ -152,12 +157,18 @@ void imapaint_image_update(
     return;
   }
 
+  IMB_partial_display_buffer_update_delayed(ibuf,
+                                            imapaintpartial.dirty_region.xmin,
+                                            imapaintpartial.dirty_region.ymin,
+                                            imapaintpartial.dirty_region.xmax,
+                                            imapaintpartial.dirty_region.ymax);
+
   /* When buffer is partial updated the planes should be set to a larger value than 8. This will
    * make sure that partial updating is working but uses more GPU memory as the gpu texture will
    * have 4 channels. When so the whole texture needs to be re-uploaded to the GPU using the new
    * texture format. */
-  if (ibuf != nullptr && ibuf->color_mode == ImColorMode::BW) {
-    ibuf->color_mode = ImColorMode::RGBA;
+  if (ibuf != nullptr && ibuf->planes == 8) {
+    ibuf->planes = 32;
     BKE_image_partial_update_mark_full_update(image);
     return;
   }

@@ -223,7 +223,7 @@ ccl_device Spectrum camera_sample_orthographic(KernelGlobals kg,
   /* ray differential */
   differential3 dP;
   dP.dx = make_float3(kernel_data.cam.dx);
-  dP.dy = make_float3(kernel_data.cam.dy);
+  dP.dy = make_float3(kernel_data.cam.dx);
 
   ray->dP = differential_make_compact(dP) * kernel_data.cam.differential_scale;
   ray->dD = differential_zero_compact();
@@ -454,17 +454,11 @@ ccl_device_inline Spectrum camera_sample(KernelGlobals kg,
                                          ccl_private Ray *ray,
                                          ccl_private int &r_cache_miss)
 {
-  float2 raster = make_float2(x, y);
-
   /* pixel filter */
-  if (kernel_data.integrator.pixel_jitter.x == FLT_MAX) {
-    const int filter_table_offset = kernel_data.tables.filter_table_offset;
-    raster.x += lookup_table_read(kg, filter_uv.x, filter_table_offset, FILTER_TABLE_SIZE);
-    raster.y += lookup_table_read(kg, filter_uv.y, filter_table_offset, FILTER_TABLE_SIZE);
-  }
-  else {
-    raster += -kernel_data.integrator.pixel_jitter;
-  }
+  const int filter_table_offset = kernel_data.tables.filter_table_offset;
+  const float2 raster = make_float2(
+      x + lookup_table_read(kg, filter_uv.x, filter_table_offset, FILTER_TABLE_SIZE),
+      y + lookup_table_read(kg, filter_uv.y, filter_table_offset, FILTER_TABLE_SIZE));
 
   /* motion blur */
   if (kernel_data.cam.shuttertime == -1.0f) {

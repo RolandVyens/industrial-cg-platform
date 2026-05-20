@@ -13,7 +13,7 @@ static void node_declare(NodeDeclarationBuilder &b)
 
 static void node_geo_exec(GeoNodeExecParams params)
 {
-  params.set_output("Index"_ustr, fn::IndexFieldInput::get_field());
+  params.set_output("Index"_ustr, Field<int>::from_input<fn::IndexFieldInput>());
 }
 
 static void node_register()

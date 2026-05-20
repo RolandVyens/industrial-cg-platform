@@ -107,6 +107,7 @@ class AddPresetPerformance(AddPresetBase, Operator):
         "cycles.debug_use_hair_bvh",
         "cycles.debug_bvh_time_steps",
         "cycles.tile_size",
+        "cycles.deep_tile_budget_mb",
     ]
 
     preset_subdir = "cycles/performance"

@@ -136,4 +136,6 @@ void sample_tree_indices(const VolumeGridType grid_type,
 
 }  // namespace blender::bke::volume_grid
 
+/** \} */
+
 #endif /* WITH_OPENVDB */

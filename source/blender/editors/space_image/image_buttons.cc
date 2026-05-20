@@ -183,7 +183,7 @@ static void ui_imageuser_layer_menu(bContext * /*C*/, ui::Layout *layout, void *
 
   const char *fake_name = ui_imageuser_layer_fake_name(rr);
   if (fake_name) {
-    ui::Button *but = uiDefButV(block,
+    ui::Button *but = uiDefButS(block,
                                 ui::ButtonType::ButMenu,
                                 fake_name,
                                 0,
@@ -199,7 +199,7 @@ static void ui_imageuser_layer_menu(bContext * /*C*/, ui::Layout *layout, void *
 
   int nr = fake_name ? 1 : 0;
   for (RenderLayer *rl = static_cast<RenderLayer *>(rr->layers.first); rl; rl = rl->next, nr++) {
-    ui::Button *but = uiDefButV(block,
+    ui::Button *but = uiDefButS(block,
                                 ui::ButtonType::ButMenu,
                                 rl->name,
                                 0,
@@ -270,7 +270,7 @@ static void ui_imageuser_pass_menu(bContext * /*C*/, ui::Layout *layout, void *r
     }
     BLI_addtail(&added_passes, BLI_genericNodeN(rpass->name));
 
-    ui::Button *but = uiDefButV(block,
+    ui::Button *but = uiDefButS(block,
                                 ui::ButtonType::ButMenu,
                                 IFACE_(rpass->name),
                                 0,
@@ -341,7 +341,7 @@ static void ui_imageuser_view_menu_rr(bContext * /*C*/, ui::Layout *layout, void
   for (rview = static_cast<RenderView *>(rr ? rr->views.last : nullptr); rview;
        rview = rview->prev, nr--)
   {
-    ui::Button *but = uiDefButV(block,
+    ui::Button *but = uiDefButS(block,
                                 ui::ButtonType::ButMenu,
                                 IFACE_(rview->name),
                                 0,
@@ -385,7 +385,7 @@ static void ui_imageuser_view_menu_multiview(bContext * /*C*/, ui::Layout *layou
 
   nr = BLI_listbase_count(&image->views) - 1;
   for (iv = static_cast<ImageView *>(image->views.last); iv; iv = iv->prev, nr--) {
-    ui::Button *but = uiDefButV(block,
+    ui::Button *but = uiDefButS(block,
                                 ui::ButtonType::ButMenu,
                                 IFACE_(iv->name),
                                 0,
@@ -969,7 +969,7 @@ void uiTemplateImageSettings(ui::Layout *layout,
   /* Note: this excludes any video formats; for them the image template does
    * not show the color depth. Color depth instead is shown as part of encoding UI block,
    * which is less confusing. */
-  const eImageFormatDepth depth_ok = BKE_imtype_valid_depths(imf->imtype);
+  const int depth_ok = BKE_imtype_valid_depths(imf->imtype);
   /* some settings depend on this being a scene that's rendered */
   const bool is_render_out = (id && GS(id->name) == ID_SCE);
 
@@ -997,10 +997,12 @@ void uiTemplateImageSettings(ui::Layout *layout,
 
   /* only display depth setting if multiple depths can be used */
   if (ELEM(depth_ok,
+           R_IMF_CHAN_DEPTH_1,
            R_IMF_CHAN_DEPTH_8,
            R_IMF_CHAN_DEPTH_10,
            R_IMF_CHAN_DEPTH_12,
            R_IMF_CHAN_DEPTH_16,
+           R_IMF_CHAN_DEPTH_24,
            R_IMF_CHAN_DEPTH_32) == 0)
   {
     col.row(true).prop(imfptr, "color_depth", ui::ITEM_R_EXPAND, std::nullopt, ICON_NONE);
@@ -1120,8 +1122,6 @@ void uiTemplateImageStereo3d(ui::Layout *layout, PointerRNA *stereo3d_format_ptr
       col.prop(stereo3d_format_ptr, "use_squeezed_frame", UI_ITEM_NONE, std::nullopt, ICON_NONE);
       break;
     }
-    case S3D_DISPLAY_PAGEFLIP:
-      break;
   }
 }
 
@@ -1231,7 +1231,7 @@ void uiTemplateImageInfo(ui::Layout *layout, bContext *C, Image *ima, ImageUser 
         ofs += BLI_snprintf_utf8_rlen(
             str + ofs, len - ofs, RPT_("%d float channel(s)"), ibuf->channels);
       }
-      else if (ibuf->color_mode == ImColorMode::RGBA) {
+      else if (ibuf->planes == R_IMF_PLANES_RGBA) {
         ofs += BLI_strncpy_utf8_rlen(str + ofs, RPT_(" RGBA float"), len - ofs);
       }
       else {
@@ -1239,7 +1239,7 @@ void uiTemplateImageInfo(ui::Layout *layout, bContext *C, Image *ima, ImageUser 
       }
     }
     else {
-      if (ibuf->color_mode == ImColorMode::RGBA) {
+      if (ibuf->planes == R_IMF_PLANES_RGBA) {
         ofs += BLI_strncpy_utf8_rlen(str + ofs, RPT_(" RGBA byte"), len - ofs);
       }
       else {
@@ -1252,7 +1252,7 @@ void uiTemplateImageInfo(ui::Layout *layout, bContext *C, Image *ima, ImageUser 
     /* Try to see if this texture is a compressed format, if not, get the generic format. */
     if (!IMB_gpu_get_compressed_format(ibuf, &texture_format)) {
       texture_format = IMB_gpu_get_texture_format(
-          ibuf, ima->flag & IMA_HIGH_BITDEPTH, ibuf->color_mode == ImColorMode::BW);
+          ibuf, ima->flag & IMA_HIGH_BITDEPTH, ibuf->planes >= 8);
     }
 
     const char *texture_format_description = GPU_texture_format_name(texture_format);

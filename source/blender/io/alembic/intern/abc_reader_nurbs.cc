@@ -22,8 +22,6 @@
 #include "BKE_curve.hh"
 #include "BKE_object.hh"
 
-#include "CLG_log.h"
-
 namespace blender {
 
 using Alembic::AbcGeom::FloatArraySamplePtr;
@@ -38,11 +36,11 @@ using Alembic::AbcGeom::IObject;
 
 namespace io::alembic {
 
-static CLG_LogRef LOG = {"io.alembic"};
-
-AbcNurbsReader::AbcNurbsReader(const AbcReaderConstructorArgs &args) : AbcObjectReader(args)
+AbcNurbsReader::AbcNurbsReader(const IObject &object, ImportSettings &settings)
+    : AbcObjectReader(object, settings)
 {
   getNurbsPatches(m_iobject);
+  get_min_max_time(m_iobject, m_schemas[0].first, m_min_time, m_max_time);
 }
 
 bool AbcNurbsReader::valid() const
@@ -120,12 +118,11 @@ void AbcNurbsReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSele
       smp = schema.getValue(sample_sel);
     }
     catch (Alembic::Util::Exception &ex) {
-      CLOG_WARN(&LOG,
-                "Error reading nurbs sample for '%s/%s' at time %f: %s",
-                m_iobject.getFullName().c_str(),
-                schema.getName().c_str(),
-                sample_sel.getRequestedTime(),
-                ex.what());
+      printf("Alembic: error reading nurbs sample for '%s/%s' at time %f: %s\n",
+             m_iobject.getFullName().c_str(),
+             schema.getName().c_str(),
+             sample_sel.getRequestedTime(),
+             ex.what());
       return;
     }
 
@@ -140,17 +137,16 @@ void AbcNurbsReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSele
     const FloatArraySamplePtr weights = smp.getPositionWeights();
 
     const size_t num_points = positions->size();
-    const bool has_weights = weights && weights->size() >= num_points;
 
     nu->bp = MEM_new_array_zeroed<BPoint>(num_points, "abc_setsplinetype");
 
     BPoint *bp = nu->bp;
     float posw_in = 1.0f;
 
-    for (size_t i = 0; i < num_points; i++, bp++) {
+    for (int i = 0; i < num_points; i++, bp++) {
       const Imath::V3f &pos_in = (*positions)[i];
 
-      if (has_weights) {
+      if (weights) {
         posw_in = (*weights)[i];
       }
 

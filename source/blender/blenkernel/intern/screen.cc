@@ -470,12 +470,6 @@ ARegion *BKE_area_region_copy(const SpaceType *st, const ARegion *region)
   BLI_duplicatelist(&dst->ui_previews, &region->ui_previews);
   BLI_listbase_clear(&dst->view_states);
   BLI_duplicatelist(&dst->view_states, &region->view_states);
-  BLI_listbase_clear(&dst->textbox_states);
-  for (const uiTextboxStateLink &textbox_state : region->textbox_states) {
-    uiTextboxStateLink *copy = MEM_new<uiTextboxStateLink>("uiTextboxStateLink", textbox_state);
-    copy->idname = BLI_strdup(textbox_state.idname);
-    BLI_addtail(&dst->textbox_states, copy);
-  }
 
   return dst;
 }
@@ -732,12 +726,6 @@ void BKE_area_region_free(SpaceType *st, ARegion *region)
   BLI_freelistN(&region->runtime->panels_category);
   BLI_freelistN(&region->panels_category_active);
   BLI_freelistN(&region->view_states);
-  for (uiTextboxStateLink &textbox_state : region->textbox_states.items_mutable()) {
-    BLI_remlink(&region->textbox_states, &textbox_state);
-    MEM_delete(textbox_state.idname);
-    MEM_delete(&textbox_state);
-  }
-
   MEM_delete(region->runtime);
 }
 
@@ -957,7 +945,7 @@ ARegion *BKE_region_find_in_listbase_by_type(const ListBaseT<ARegion> *regionbas
 
 void BKE_area_copy(ScrArea *area_dst, ScrArea *area_src)
 {
-  constexpr eScrArea_Flag flag_copy = HEADER_NO_PULLDOWN;
+  constexpr short flag_copy = HEADER_NO_PULLDOWN;
 
   area_dst->spacetype = area_src->spacetype;
   area_dst->type = area_src->type;
@@ -1093,23 +1081,6 @@ std::optional<std::string> BKE_screen_path_from_screen_to_space(const PointerRNA
   return std::nullopt;
 }
 
-std::optional<std::string> BKE_screen_path_from_screen_to_area(const PointerRNA *ptr)
-{
-  if (GS(ptr->owner_id->name) != ID_SCR) {
-    BLI_assert_unreachable();
-    return std::nullopt;
-  }
-
-  const bScreen *screen = reinterpret_cast<const bScreen *>(ptr->owner_id);
-  const ScrArea *area = static_cast<const ScrArea *>(ptr->data);
-  const int area_index = BLI_findindex(&screen->areabase, area);
-  if (area_index == -1) {
-    return std::nullopt;
-  }
-
-  return fmt::format("areas[{}]", area_index);
-}
-
 ScrArea *BKE_screen_find_big_area(const bScreen *screen, const int spacetype, const short min)
 {
   ScrArea *big = nullptr;
@@ -1226,7 +1197,7 @@ bool BKE_screen_is_used(const bScreen *screen)
 
 void BKE_screen_header_alignment_reset(bScreen *screen)
 {
-  eRegion_Alignment alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
+  int alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
   for (ScrArea &area : screen->areabase) {
     for (ARegion &region : area.regionbase) {
       if (ELEM(region.regiontype, RGN_TYPE_HEADER, RGN_TYPE_TOOL_HEADER)) {
@@ -1353,10 +1324,6 @@ static void write_area(BlendWriter *writer, ScrArea *area)
     for (uiViewStateLink &view_state : region.view_states) {
       writer->write_struct(&view_state);
     }
-    for (uiTextboxStateLink &textbox_state : region.textbox_states) {
-      writer->write_struct(&textbox_state);
-      writer->write_string(textbox_state.idname);
-    }
   }
 
   for (SpaceLink &sl : area->spacedata) {
@@ -1438,11 +1405,6 @@ static void direct_link_region(BlendDataReader *reader, ARegion *region, int spa
   BLO_read_struct_list(reader, uiList, &region->ui_lists);
   BLO_read_struct_list(reader, uiViewStateLink, &region->view_states);
 
-  BLO_read_struct_list(reader, uiTextboxStateLink, &region->textbox_states);
-  for (uiTextboxStateLink &textbox_state : region->textbox_states) {
-    BLO_read_string(reader, &textbox_state.idname);
-  }
-
   /* The area's search filter is runtime only, so we need to clear the active flag on read. */
   /* Clear runtime flags (e.g. search filter is runtime only). */
   region->flag &= ~(RGN_FLAG_SEARCH_FILTER_ACTIVE | RGN_FLAG_POLL_FAILED);
@@ -1457,7 +1419,7 @@ static void direct_link_region(BlendDataReader *reader, ARegion *region, int spa
   BLO_read_struct_list(reader, uiPreview, &region->ui_previews);
   for (uiPreview &ui_preview : region->ui_previews) {
     ui_preview.id_session_uid = MAIN_ID_SESSION_UID_UNSET;
-    ui_preview.tag = uiPreviewTag{};
+    ui_preview.tag = 0;
   }
 
   if (spacetype == SPACE_EMPTY) {
@@ -1488,7 +1450,7 @@ static void direct_link_region(BlendDataReader *reader, ARegion *region, int spa
         rv3d->smooth_timer = nullptr;
 
         rv3d->rflag &= ~(RV3D_NAVIGATING | RV3D_PAINTING);
-        rv3d->runtime_viewlock = eRegionView3D_ViewLock{};
+        rv3d->runtime_viewlock = 0;
       }
     }
     if (region->regiontype == RGN_TYPE_ASSET_SHELF) {
@@ -1508,8 +1470,8 @@ void BKE_screen_view3d_do_versions_250(View3D *v3d, ListBaseT<ARegion> *regions)
       RegionView3D *rv3d;
 
       rv3d = MEM_new<RegionView3D>("region v3d patch");
-      rv3d->persp = v3d->persp;
-      rv3d->view = v3d->view;
+      rv3d->persp = char(v3d->persp);
+      rv3d->view = char(v3d->view);
       rv3d->dist = v3d->dist;
       copy_v3_v3(rv3d->ofs, v3d->ofs);
       copy_qt_qt(rv3d->viewquat, v3d->viewquat);
@@ -1668,7 +1630,5 @@ void BKE_screen_area_blend_read_after_liblink(BlendLibReader *reader, ID *parent
     regions_remove_invalid(space_type, regionbase);
   }
 }
-
-/** \} */
 
 }  // namespace blender

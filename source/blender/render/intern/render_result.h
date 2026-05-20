@@ -117,7 +117,7 @@ struct ImBuf *render_result_rect_to_ibuf(struct RenderResult *rr,
 
 void render_result_rect_fill_zero(struct RenderResult *rr, int view_id);
 void render_result_rect_get_pixels(struct RenderResult *rr,
-                                   uint8_t *rect,
+                                   unsigned int *rect,
                                    int rectx,
                                    int recty,
                                    const struct ColorManagedViewSettings *view_settings,
@@ -140,9 +140,11 @@ void render_result_free_gpu_texture_caches(struct RenderResult *rr);
 
 #define FOREACH_VIEW_LAYER_TO_RENDER_BEGIN(re_, iter_) \
   { \
+    int nr_; \
     ViewLayer *iter_; \
-    for (iter_ = static_cast<ViewLayer *>((re_)->scene->view_layers.first); iter_ != NULL; \
-         iter_ = iter_->next) \
+    for (nr_ = 0, iter_ = static_cast<ViewLayer *>((re_)->scene->view_layers.first); \
+         iter_ != NULL; \
+         iter_ = iter_->next, nr_++) \
     { \
       if (!G.background && (re_)->r.scemode & R_SINGLE_LAYER) { \
         if (!STREQ(iter_->name, re->single_view_layer)) { \

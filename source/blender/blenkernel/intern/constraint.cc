@@ -18,11 +18,9 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_assert.h"
 #include "BLI_kdopbvh.hh"
 #include "BLI_listbase.h"
 #include "BLI_math_matrix.h"
-#include "BLI_math_quaternion.hh"
 #include "BLI_math_rotation.h"
 #include "BLI_math_vector.h"
 #include "BLI_math_vector.hh"
@@ -30,7 +28,6 @@
 #include "BLI_string_utf8.h"
 #include "BLI_string_utils.hh"
 #include "BLI_utildefines.h"
-
 #include "BLT_translation.hh"
 
 #include "DNA_action_types.h"
@@ -72,7 +69,6 @@
 #include "BKE_movieclip.hh"
 #include "BKE_object.hh"
 #include "BKE_object_types.hh"
-#include "BKE_pose.hh"
 #include "BKE_scene.hh"
 #include "BKE_shrinkwrap.hh"
 #include "BKE_tracking.hh"
@@ -180,7 +176,6 @@ bConstraintOb *BKE_constraints_make_evalob(
       if (ob && subdata) {
         cob->ob = ob;
         cob->pchan = static_cast<bPoseChannel *>(subdata);
-        cob->pchan_armbone = cob->pchan ? cob->pchan->bone_get(*ob) : nullptr;
         cob->type = datatype;
 
         if (cob->pchan->rotmode > 0) {
@@ -282,8 +277,6 @@ void BKE_constraint_mat_convertspace(Object *ob,
 
   /* are we dealing with pose-channels or objects */
   if (pchan) {
-    Bone *pchan_bone = pchan->bone_get(*ob);
-
     /* pose channels */
     switch (from) {
       case CONSTRAINT_SPACE_WORLD: /* ---------- FROM WORLDSPACE ---------- */
@@ -316,15 +309,15 @@ void BKE_constraint_mat_convertspace(Object *ob,
       {
         /* pose to local */
         if (to == CONSTRAINT_SPACE_LOCAL) {
-          if (pchan_bone) {
-            BKE_armature_mat_pose_to_bone({pchan, pchan_bone}, mat, mat);
+          if (pchan->bone) {
+            BKE_armature_mat_pose_to_bone(pchan, mat, mat);
           }
         }
         /* pose to owner local */
         else if (to == CONSTRAINT_SPACE_OWNLOCAL) {
           /* pose to local */
-          if (pchan_bone) {
-            BKE_armature_mat_pose_to_bone({pchan, pchan_bone}, mat, mat);
+          if (pchan->bone) {
+            BKE_armature_mat_pose_to_bone(pchan, mat, mat);
           }
 
           /* local to owner local (recursive) */
@@ -333,8 +326,8 @@ void BKE_constraint_mat_convertspace(Object *ob,
         }
         /* pose to local with parent */
         else if (to == CONSTRAINT_SPACE_PARLOCAL) {
-          if (pchan_bone) {
-            invert_m4_m4(imat, pchan_bone->arm_mat);
+          if (pchan->bone) {
+            invert_m4_m4(imat, pchan->bone->arm_mat);
             mul_m4_m4m4(mat, imat, mat);
           }
         }
@@ -354,14 +347,12 @@ void BKE_constraint_mat_convertspace(Object *ob,
       {
         /* local to owner local */
         if (to == CONSTRAINT_SPACE_OWNLOCAL) {
-          if (pchan_bone) {
-            copy_m4_m4(diff_mat, pchan_bone->arm_mat);
+          if (pchan->bone) {
+            copy_m4_m4(diff_mat, pchan->bone->arm_mat);
 
-            if (cob && cob->pchan) {
-              if (Bone *cob_bone = cob->pchan->bone_get(*cob->ob)) {
-                invert_m4_m4(imat, cob_bone->arm_mat);
-                mul_m4_m4m4(diff_mat, imat, diff_mat);
-              }
+            if (cob && cob->pchan && cob->pchan->bone) {
+              invert_m4_m4(imat, cob->pchan->bone->arm_mat);
+              mul_m4_m4m4(diff_mat, imat, diff_mat);
             }
 
             zero_v3(diff_mat[3]);
@@ -371,10 +362,10 @@ void BKE_constraint_mat_convertspace(Object *ob,
         }
         /* local to pose - do inverse procedure that was done for pose to local */
         else {
-          if (pchan_bone) {
+          if (pchan->bone) {
             /* We need the:
              *  `posespace_matrix = local_matrix + (parent_posespace_matrix + restpos)`. */
-            BKE_armature_mat_bone_to_pose({pchan, pchan_bone}, mat, mat);
+            BKE_armature_mat_bone_to_pose(pchan, mat, mat);
           }
 
           /* use pose-space as stepping stone for other spaces */
@@ -389,14 +380,12 @@ void BKE_constraint_mat_convertspace(Object *ob,
       }
       case CONSTRAINT_SPACE_OWNLOCAL: { /* -------------- FROM OWNER LOCAL ---------- */
         /* owner local to local */
-        if (pchan_bone) {
-          copy_m4_m4(diff_mat, pchan_bone->arm_mat);
+        if (pchan->bone) {
+          copy_m4_m4(diff_mat, pchan->bone->arm_mat);
 
-          if (cob && cob->pchan) {
-            if (Bone *cob_bone = cob->pchan->bone_get(*cob->ob)) {
-              invert_m4_m4(imat, cob_bone->arm_mat);
-              mul_m4_m4m4(diff_mat, imat, diff_mat);
-            }
+          if (cob && cob->pchan && cob->pchan->bone) {
+            invert_m4_m4(imat, cob->pchan->bone->arm_mat);
+            mul_m4_m4m4(diff_mat, imat, diff_mat);
           }
 
           zero_v3(diff_mat[3]);
@@ -414,8 +403,8 @@ void BKE_constraint_mat_convertspace(Object *ob,
       case CONSTRAINT_SPACE_PARLOCAL: /* -------------- FROM LOCAL WITH PARENT ---------- */
       {
         /* local + parent to pose */
-        if (pchan_bone) {
-          mul_m4_m4m4(mat, pchan_bone->arm_mat, mat);
+        if (pchan->bone) {
+          mul_m4_m4m4(mat, pchan->bone->arm_mat, mat);
         }
 
         /* use pose-space as stepping stone for other spaces */
@@ -736,15 +725,15 @@ static void constraint_target_to_mat4(Object *ob,
       /* Multiply the PoseSpace accumulation/final matrix for this
        * PoseChannel by the Armature Object's Matrix to get a world-space matrix.
        */
-      Bone *bone = pchan->bone_get(*ob);
-      bool is_bbone = bone && (bone->segments > 1) && (flag & CONSTRAINT_BBONE_SHAPE);
+      bool is_bbone = (pchan->bone) && (pchan->bone->segments > 1) &&
+                      (flag & CONSTRAINT_BBONE_SHAPE);
       bool full_bbone = (flag & CONSTRAINT_BBONE_SHAPE_FULL) != 0;
 
       if (headtail < 0.000001f && !(is_bbone && full_bbone)) {
         /* skip length interpolation if set to head */
         mul_m4_m4m4(mat, ob->object_to_world().ptr(), pchan->pose_mat);
       }
-      else if (is_bbone && bone->segments == pchan->runtime.bbone_segments) {
+      else if (is_bbone && pchan->bone->segments == pchan->runtime.bbone_segments) {
         /* use point along bbone */
         Mat4 *bbone = pchan->runtime.bbone_pose_mats;
         float tempmat[4][4];
@@ -752,7 +741,7 @@ static void constraint_target_to_mat4(Object *ob,
         int index;
 
         /* figure out which segment(s) the headtail value falls in */
-        BKE_pchan_bbone_deform_clamp_segment_index(*bone, headtail, &index, &fac);
+        BKE_pchan_bbone_deform_clamp_segment_index(pchan, headtail, &index, &fac);
 
         /* apply full transformation of the segment if requested */
         if (full_bbone) {
@@ -953,7 +942,7 @@ static bool default_get_tarmat_full_bbone(Depsgraph * /*depsgraph*/,
       if (no_copy == 0) { \
         datatar = ct->tar; \
         STRNCPY_UTF8(datasubtarget, ct->subtarget); \
-        con->tarspace = ct->space; \
+        con->tarspace = char(ct->space); \
       } \
 \
       BLI_freelinkN(list, ct); \
@@ -974,7 +963,7 @@ static bool default_get_tarmat_full_bbone(Depsgraph * /*depsgraph*/,
       bConstraintTarget *ctn = ct->next; \
       if (no_copy == 0) { \
         datatar = ct->tar; \
-        con->tarspace = ct->space; \
+        con->tarspace = char(ct->space); \
       } \
 \
       BLI_freelinkN(list, ct); \
@@ -1483,7 +1472,7 @@ static void followpath_new_data(void *cdata)
   data->trackflag = TRACK_Y;
   data->upflag = UP_Z;
   data->offset = 0;
-  data->followflag = eFollowPath_Flags{};
+  data->followflag = 0;
 }
 
 static void followpath_id_looper(bConstraint *con, ConstraintIDFunc func, void *userdata)
@@ -2605,7 +2594,7 @@ static void armdef_accumulate_matrix(const float obmat[4][4],
 
 /* Compute and accumulate transformation for a single target bone. */
 static void armdef_accumulate_bone(const bConstraintTarget *ct,
-                                   const bke::PChanBone pchanbone,
+                                   const bPoseChannel *pchan,
                                    const float wco[3],
                                    const bool force_envelope,
                                    float *r_totweight,
@@ -2613,8 +2602,7 @@ static void armdef_accumulate_bone(const bConstraintTarget *ct,
                                    DualQuat *r_sum_dq)
 {
   float iobmat[4][4], co[3];
-  const Bone *bone = pchanbone.bone;
-  const bPoseChannel *pchan = pchanbone.pchan;
+  const Bone *bone = pchan->bone;
   float weight = ct->weight;
 
   /* Our object's location in target pose space. */
@@ -2636,7 +2624,7 @@ static void armdef_accumulate_bone(const bConstraintTarget *ct,
     /* Blend the matrix. */
     int index;
     float blend;
-    BKE_pchan_bbone_deform_segment_index(pchanbone, co, &index, &blend);
+    BKE_pchan_bbone_deform_segment_index(pchan, co, &index, &blend);
 
     if (r_sum_dq != nullptr) {
       /* Compute the object space rest matrix of the segment. */
@@ -2697,10 +2685,10 @@ static void armdef_evaluate(bConstraint *con,
   bool use_envelopes = (data->flag & CONSTRAINT_ARMATURE_ENVELOPE) != 0;
 
   float input_co[3];
-  if (cob->pchan && cob->pchan_armbone && !(data->flag & CONSTRAINT_ARMATURE_CUR_LOCATION)) {
+  if (cob->pchan && cob->pchan->bone && !(data->flag & CONSTRAINT_ARMATURE_CUR_LOCATION)) {
     /* For constraints on bones, use the rest position to bind b-bone segments
      * and envelopes, to allow safely changing the bone location as if parented. */
-    copy_v3_v3(input_co, cob->pchan_armbone->arm_head);
+    copy_v3_v3(input_co, cob->pchan->bone->arm_head);
     mul_m4_v3(cob->ob->object_to_world().ptr(), input_co);
   }
   else {
@@ -2720,16 +2708,12 @@ static void armdef_evaluate(bConstraint *con,
     }
 
     bPoseChannel *pchan = BKE_pose_channel_find_name(ct.tar->pose, ct.subtarget);
-    if (pchan == nullptr) {
-      return;
-    }
-    Bone *pchan_bone = pchan->bone_get(*ct.tar);
-    if (!pchan_bone) {
+
+    if (pchan == nullptr || pchan->bone == nullptr) {
       return;
     }
 
-    armdef_accumulate_bone(
-        &ct, {pchan, pchan_bone}, input_co, use_envelopes, &weight, sum_mat, pdq);
+    armdef_accumulate_bone(&ct, pchan, input_co, use_envelopes, &weight, sum_mat, pdq);
   }
 
   /* Compute the final transform. */
@@ -2939,11 +2923,8 @@ static bool actcon_get_tarmat(Depsgraph *depsgraph,
                        pchan->name,
                        &anim_eval_context);
 
-    /* tchan is a temp pose channel on `pose`, and is just meant as a 'carrier' for transform data.
-     * The Armature bone that it represents is from cob->ob's armature. At the time of writing, it
-     * is only used to get its BONE_CONNECTED flag. */
-    Bone *pchan_bone = pchan->bone_get(*cob->ob);
-    BKE_pchan_calc_mat({tchan, pchan_bone});
+    /* convert animation to matrices for use here */
+    BKE_pchan_calc_mat(tchan);
     copy_m4_m4(ct->matrix, tchan->chan_mat);
 
     /* Clean up */
@@ -3492,7 +3473,7 @@ static void stretchto_new_data(void *cdata)
 {
   bStretchToConstraint *data = static_cast<bStretchToConstraint *>(cdata);
 
-  data->volmode = eStretchTo_VolMode{};
+  data->volmode = 0;
   data->plane = SWING_Y;
   data->orglength = 0.0;
   data->bulge = 1.0;
@@ -3707,7 +3688,7 @@ static void minmax_new_data(void *cdata)
 
   data->minmaxflag = TRACK_Z;
   data->offset = 0.0f;
-  data->flag = eFloor_Flags{};
+  data->flag = 0;
 }
 
 static void minmax_id_looper(bConstraint *con, ConstraintIDFunc func, void *userdata)
@@ -5588,7 +5569,7 @@ static void value_attribute_to_matrix(float r_matrix[4][4],
       copy_v3_v3(r_matrix[3], *value.get<float3>());
       return;
     case CON_ATTRIBUTE_QUATERNION:
-      quat_to_mat4(r_matrix, float4(math::normalize(*value.get<math::Quaternion>())));
+      quat_to_mat4(r_matrix, *value.get<float4>());
       return;
     case CON_ATTRIBUTE_4X4MATRIX:
       copy_m4_m4(r_matrix, value.get<float4x4>()->ptr());
@@ -6104,14 +6085,13 @@ bool BKE_constraint_apply_for_pose(
   BLI_freelinkN(&single_con, new_con);
 
   /* Prevent constraints breaking a chain. */
-  Bone *pchan_bone = pchan->bone_get(*ob);
-  if (pchan_bone->flag & BONE_CONNECTED) {
+  if (pchan->bone->flag & BONE_CONNECTED) {
     copy_v3_v3(pchan_eval->pose_mat[3], vec);
   }
 
   /* Apply transform from matrix. */
   float mat[4][4];
-  BKE_armature_mat_pose_to_bone({pchan, pchan_bone}, pchan_eval->pose_mat, mat);
+  BKE_armature_mat_pose_to_bone(pchan, pchan_eval->pose_mat, mat);
   BKE_pchan_apply_mat4(pchan, mat, true);
 
   return true;
@@ -6139,7 +6119,7 @@ void BKE_constraint_panel_expand(bConstraint *con)
 /* ......... */
 
 /* Creates a new constraint, initializes its data, and returns it */
-static bConstraint *add_new_constraint_internal(const char *name, eBConstraint_Types type)
+static bConstraint *add_new_constraint_internal(const char *name, short type)
 {
   bConstraint *con = MEM_new<bConstraint>("Constraint");
   const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_from_type(type);
@@ -6207,7 +6187,7 @@ static void add_new_constraint_to_list(Object *ob, bPoseChannel *pchan, bConstra
 static bConstraint *add_new_constraint(Object *ob,
                                        bPoseChannel *pchan,
                                        const char *name,
-                                       eBConstraint_Types type)
+                                       short type)
 {
   bConstraint *con;
 
@@ -6238,8 +6218,6 @@ static bConstraint *add_new_constraint(Object *ob,
       }
       break;
     }
-    default:
-      break;
   }
 
   return con;
@@ -6259,7 +6237,7 @@ bool BKE_constraint_target_uses_bbone(bConstraint *con, bConstraintTarget *ct)
 bConstraint *BKE_constraint_add_for_pose(Object *ob,
                                          bPoseChannel *pchan,
                                          const char *name,
-                                         eBConstraint_Types type)
+                                         short type)
 {
   if (pchan == nullptr) {
     return nullptr;
@@ -6268,7 +6246,7 @@ bConstraint *BKE_constraint_add_for_pose(Object *ob,
   return add_new_constraint(ob, pchan, name, type);
 }
 
-bConstraint *BKE_constraint_add_for_object(Object *ob, const char *name, eBConstraint_Types type)
+bConstraint *BKE_constraint_add_for_object(Object *ob, const char *name, short type)
 {
   return add_new_constraint(ob, nullptr, name, type);
 }
@@ -6658,9 +6636,20 @@ void BKE_constraint_target_matrix_get(Depsgraph *depsgraph,
         }
         break;
       }
-      case CONSTRAINT_OBTYPE_BONE:
-        BLI_assert_unreachable();
+      case CONSTRAINT_OBTYPE_BONE: /* this may occur in some cases */
+      {
+        cob->ob = nullptr; /* this might not work at all :/ */
+        cob->pchan = static_cast<bPoseChannel *>(ownerdata);
+        if (cob->pchan) {
+          copy_m4_m4(cob->matrix, cob->pchan->pose_mat);
+          copy_m4_m4(cob->startmat, cob->matrix);
+        }
+        else {
+          unit_m4(cob->matrix);
+          unit_m4(cob->startmat);
+        }
         break;
+      }
     }
 
     /* Initialize the custom space for use in calculating the matrices. */
@@ -6868,8 +6857,6 @@ void BKE_constraint_blend_write(BlendWriter *writer, ListBaseT<bConstraint> *con
           writer->write_string(data->attribute_name);
           break;
         }
-        default:
-          break;
       }
     }
 
@@ -6916,7 +6903,7 @@ void BKE_constraint_blend_read_data(BlendDataReader *reader,
       case CONSTRAINT_TYPE_SPLINEIK: {
         bSplineIKConstraint *data = static_cast<bSplineIKConstraint *>(con.data);
 
-        BLO_read_array_and_validate_size(reader, &data->points, &data->numpoints);
+        BLO_read_float_array(reader, data->numpoints, &data->points);
         break;
       }
       case CONSTRAINT_TYPE_KINEMATIC: {
@@ -6940,8 +6927,6 @@ void BKE_constraint_blend_read_data(BlendDataReader *reader,
         BLO_read_string(reader, &data->attribute_name);
         break;
       }
-      default:
-        break;
     }
   }
 }

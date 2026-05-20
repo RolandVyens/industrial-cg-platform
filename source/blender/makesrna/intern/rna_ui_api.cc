@@ -105,38 +105,6 @@ std::optional<StringRefNull> rna_translate_ui_text(
   return BLT_pgettext(BLT_I18NCONTEXT_DEFAULT, text);
 }
 
-static void rna_uiItemTextBox(Layout *layout,
-                              bContext *C,
-                              PointerRNA *ptr,
-                              const char *propname,
-                              PointerRNA *state_ptr,
-                              const char *placeholder,
-                              const char *text_ctxt,
-                              bool translate)
-{
-  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
-
-  if (!prop) {
-    RNA_warning_bare("UILayout.textbox(): property not found: %s.%s",
-                     RNA_struct_identifier(ptr->type),
-                     propname);
-    return;
-  }
-
-  std::optional<StringRefNull> placeholder_opt = std::nullopt;
-
-  if (placeholder) {
-    placeholder_opt = rna_translate_ui_text(placeholder, text_ctxt, nullptr, prop, translate);
-  }
-
-  if (state_ptr && !RNA_pointer_is_null(state_ptr)) {
-    layout->textbox_with_state(ptr, propname, state_ptr->data_as<TextboxState>(), placeholder_opt);
-  }
-  else {
-    layout->textbox(C, ptr, propname, placeholder_opt);
-  }
-}
-
 static void rna_uiItemR(Layout *layout,
                         PointerRNA *ptr,
                         const char *propname,
@@ -1531,16 +1499,6 @@ void RNA_api_ui_layout(StructRNA *srna)
   RNA_def_function_ui_description(func, "Return the icon for this enum item");
 
   /* items */
-  func = RNA_def_function(srna, "textbox", "rna_uiItemTextBox");
-  RNA_def_function_flag(func, FUNC_USE_CONTEXT);
-  api_ui_item_rna_common(func);
-  parm = RNA_def_pointer(func, "textbox_state", "TextboxState", nullptr, "");
-  RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_RNAPTR);
-  parm = RNA_def_string(
-      func, "placeholder", nullptr, 0, "", "Hint describing the expected value when empty");
-  RNA_def_property_clear_flag(parm, PROP_NEVER_NULL);
-  api_ui_item_common_translation(func);
-
   func = RNA_def_function(srna, "prop", "rna_uiItemR");
   RNA_def_function_ui_description(func,
                                   "Item. Exposes an RNA item and places it into the layout.");
@@ -1861,8 +1819,7 @@ void RNA_api_ui_layout(StructRNA *srna)
                                   "Template ID search menu button for session_uid Int properties");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
   api_ui_item_rna_common(func);
-  parm = RNA_def_enum(
-      func, "id_type", rna_enum_id_type_items, 0, "", "Type of ID to display in the search list");
+  parm = RNA_def_enum(func, "id_type", rna_enum_id_type_items, 0, "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
 
@@ -2175,9 +2132,9 @@ void RNA_api_ui_layout(StructRNA *srna)
 
   func = RNA_def_function(srna, "template_image_layers", "uiTemplateImageLayers");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
-  parm = RNA_def_pointer(func, "image", "Image", "", "Image data-block to display layers for");
+  parm = RNA_def_pointer(func, "image", "Image", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "image_user", "ImageUser", "", "Image user reading from the image");
+  parm = RNA_def_pointer(func, "image_user", "ImageUser", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
 
   func = RNA_def_function(srna, "template_image", "uiTemplateImage");
@@ -2340,20 +2297,20 @@ void RNA_api_ui_layout(StructRNA *srna)
 
   func = RNA_def_function(srna, "template_node_link", "uiTemplateNodeLink");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
-  parm = RNA_def_pointer(func, "ntree", "NodeTree", "", "Node tree containing the node");
+  parm = RNA_def_pointer(func, "ntree", "NodeTree", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "node", "Node", "", "Node owning the socket");
+  parm = RNA_def_pointer(func, "node", "Node", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "socket", "NodeSocket", "", "Socket to display the link for");
+  parm = RNA_def_pointer(func, "socket", "NodeSocket", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
 
   func = RNA_def_function(srna, "template_node_view", "uiTemplateNodeView");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
-  parm = RNA_def_pointer(func, "ntree", "NodeTree", "", "Node tree containing the node");
+  parm = RNA_def_pointer(func, "ntree", "NodeTree", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "node", "Node", "", "Node to display");
+  parm = RNA_def_pointer(func, "node", "Node", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "socket", "NodeSocket", "", "Socket to display");
+  parm = RNA_def_pointer(func, "socket", "NodeSocket", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
 
   func = RNA_def_function(srna,
@@ -2460,8 +2417,7 @@ void RNA_api_ui_layout(StructRNA *srna)
   func = RNA_def_function(srna, "template_file_select_path", "template_file_select_path");
   RNA_def_function_ui_description(func,
                                   "Item. A text button to set the active file browser path.");
-  parm = RNA_def_pointer(
-      func, "params", "FileSelectParams", "", "File browser parameters whose path is edited");
+  parm = RNA_def_pointer(func, "params", "FileSelectParams", "", "");
   RNA_def_parameter_flags(parm, PropertyFlag(0), PARM_REQUIRED);
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
 

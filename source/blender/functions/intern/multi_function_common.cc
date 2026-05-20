@@ -136,16 +136,14 @@ class DivideFunction : public MultiFunction {
         a.materialize_to_uninitialized(mask, result.data());
         return;
       }
-      if (is_inverse_exact(divisor)) {
-        /* Use multiplication by the inverse which is more efficient than division. */
-        const float inverse = 1.0f / divisor;
-        ParamsBuilder sub_params{*multiply, &mask};
-        sub_params.add_readonly_single_input(a);
-        sub_params.add_readonly_single_input_value(inverse);
-        sub_params.add_uninitialized_single_output(result);
-        multiply->call(mask, sub_params, context);
-        return;
-      }
+      /* Use multiplication by the inverse which is more efficient than division. */
+      const float inverse = 1.0f / divisor;
+      ParamsBuilder sub_params{*multiply, &mask};
+      sub_params.add_readonly_single_input(a);
+      sub_params.add_readonly_single_input_value(inverse);
+      sub_params.add_uninitialized_single_output(result);
+      multiply->call(mask, sub_params, context);
+      return;
     }
     if (a.is_single()) {
       float dividend;
@@ -159,19 +157,9 @@ class DivideFunction : public MultiFunction {
     /* General case. */
     divide_generic->call(mask, params, context);
   }
-
-  static bool is_inverse_exact(float x)
-  {
-    BLI_assert(x != 0.0f);
-    x = fabsf(x);
-    int exp;
-    /* Check that x is a power of two. */
-    const float fraction = frexpf(x, &exp);
-    return fraction == 0.5f;
-  }
 };
 
-static void register_common_functions_impl()
+void register_common_functions()
 {
   static constexpr auto exec_fast = build::exec_presets::AllSpanOrSingle();
 
@@ -664,15 +652,6 @@ static void register_common_functions_impl()
         },
         exec_fast);
   });
-}
-
-void register_common_functions()
-{
-  /* Make sure the functions are only registered once even if called multiple times. */
-  [[maybe_unused]] static bool registered = []() {
-    register_common_functions_impl();
-    return true;
-  }();
 }
 
 }  // namespace blender::fn::multi_function

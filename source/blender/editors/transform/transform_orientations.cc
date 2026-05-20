@@ -291,15 +291,14 @@ bool gimbal_axis_pose(Object *ob, const bPoseChannel *pchan, float gmat[3][3])
   }
 
   /* Apply bone transformation. */
-  const Bone *pchan_bone = pchan->bone_get(*ob);
-  mul_m3_m3m3(tmat, pchan_bone->bone_mat, mat);
+  mul_m3_m3m3(tmat, pchan->bone->bone_mat, mat);
 
   if (pchan->parent) {
     float parent_mat[3][3];
 
     copy_m3_m4(parent_mat,
-               (pchan_bone->flag & BONE_HINGE) ? pchan_bone->parent->arm_mat :
-                                                 pchan->parent->pose_mat);
+               (pchan->bone->flag & BONE_HINGE) ? pchan->parent->bone->arm_mat :
+                                                  pchan->parent->pose_mat);
     mul_m3_m3m3(mat, parent_mat, tmat);
 
     /* Needed if object transformation isn't identity. */
@@ -573,10 +572,10 @@ void applyTransformOrientation(const TransformOrientation *ts, float r_mat[3][3]
   copy_m3_m3(r_mat, ts->mat);
 }
 
-static int bone_children_clear_transflag(Object &pose_ob, bPoseChannel &pose_bone)
+static int bone_children_clear_transflag(bPose &pose, bPoseChannel &pose_bone)
 {
   int cleared = 0;
-  animrig::pose_bone_descendent_iterator(pose_ob, pose_bone, [&](bPoseChannel &child) {
+  animrig::pose_bone_descendent_iterator(pose, pose_bone, [&](bPoseChannel &child) {
     if (&child == &pose_bone) {
       return;
     }
@@ -597,7 +596,7 @@ static int armature_bone_transflags_update(Object &ob, bArmature *arm, ListBaseT
 
   for (bPoseChannel &pchan : *lb) {
     pchan.runtime.flag &= ~POSE_RUNTIME_TRANSFORM;
-    if (!ANIM_bone_in_visible_collection(arm, pchan.bone_get(ob))) {
+    if (!ANIM_bone_in_visible_collection(arm, pchan.bone)) {
       continue;
     }
     if (pchan.flag & POSE_SELECTED) {
@@ -609,7 +608,7 @@ static int armature_bone_transflags_update(Object &ob, bArmature *arm, ListBaseT
   /* No transform on children if any parent bone is selected. */
   for (bPoseChannel &pchan : *lb) {
     if (pchan.runtime.flag & POSE_RUNTIME_TRANSFORM) {
-      total -= bone_children_clear_transflag(ob, pchan);
+      total -= bone_children_clear_transflag(*ob.pose, pchan);
     }
   }
   return total;

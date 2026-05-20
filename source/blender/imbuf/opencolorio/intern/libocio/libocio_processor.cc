@@ -4,7 +4,9 @@
 
 #include "libocio_processor.hh"
 
-#include "error_handling.hh"
+#if defined(WITH_OPENCOLORIO)
+
+#  include "error_handling.hh"
 
 namespace blender::ocio {
 
@@ -40,3 +42,5 @@ OCIO_NAMESPACE::ConstProcessorRcPtr create_ocio_processor_silent(
 }
 
 }  // namespace blender::ocio
+
+#endif

@@ -11,7 +11,6 @@
 #include "scene/shader.h"
 #include "scene/stats.h"
 #include "session/buffers.h"
-#include "session/cache_eviction.h"
 #include "session/tile.h"
 
 #include "util/progress.h"
@@ -61,6 +60,8 @@ class SessionParams {
 
   bool use_auto_tile;
   int tile_size;
+  /* Deep EXR buffer budget per device (MB); 0 disables tile-size clamping. */
+  int deep_tile_budget_mb;
 
   bool use_resolution_divider;
 
@@ -86,6 +87,7 @@ class SessionParams {
 
     use_auto_tile = true;
     tile_size = 2048;
+    deep_tile_budget_mb = 1024;
 
     use_resolution_divider = true;
 
@@ -101,6 +103,7 @@ class SessionParams {
              threads == params.threads && use_profiling == params.use_profiling &&
              use_auto_tile == params.use_auto_tile && tile_size == params.tile_size &&
              use_resolution_divider == params.use_resolution_divider &&
+             deep_tile_budget_mb == params.deep_tile_budget_mb &&
              shadingsystem == params.shadingsystem);
   }
 };
@@ -142,7 +145,6 @@ class Session {
   void reset(const SessionParams &session_params, const BufferParams &buffer_params);
 
   void set_pause(bool pause);
-  void set_navigating(bool navigating);
 
   void set_samples(const int samples);
   void set_time_limit(const double time_limit);
@@ -247,9 +249,6 @@ class Session {
 
   TileManager tile_manager_;
   BufferParams buffer_params_;
-
-  /* Manages when image cache eviction happens. */
-  CacheEvictionManager eviction_manager_;
 
   /* Render scheduler is used to get work to be rendered with the current big tile. */
   RenderScheduler render_scheduler_;

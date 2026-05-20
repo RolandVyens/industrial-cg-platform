@@ -1870,6 +1870,8 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
 
     /* #View3D */
     eDrawType v3d_shading_type;
+    Object *v3d_camera;
+    short v3d_flag;
 
     /* #Region */
     int region_winx, region_winy;
@@ -1881,9 +1883,11 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
      * Without this the #wmPaintCursor can't use the pixel size & view matrices for drawing.
      */
     RV3DMatrixStore *rv3d_mats;
-    eRegionView3D_Persp rv3d_persp;
+    char rv3d_persp;
   } orig{};
   orig.v3d_shading_type = eDrawType(v3d->shading.type);
+  orig.v3d_camera = v3d->camera;
+  orig.v3d_flag = v3d->flag;
   orig.region_winx = region->winx;
   orig.region_winy = region->winy;
   orig.region_winrct = region->winrct;
@@ -1928,6 +1932,15 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
     view3d_main_region_setup_offscreen(depsgraph, scene, v3d, region, viewmat, winmat);
   }
 
+  if (viewmat || winmat) {
+    /* Now that rv3d data has been updated taking into account viewmat and winmat,
+     * we can remove the camera and flag the view as using custom matrices,
+     * to ensure engines don't recompute them. */
+    v3d->camera = nullptr;
+    v3d->flag |= V3D_CUSTOM_MATRIX;
+    rv3d->persp = (winmat[3][3] == 0.0f) ? RV3D_PERSP : RV3D_ORTHO;
+  }
+
   if (viewport) {
     GPU_viewport_tag_update(viewport);
   }
@@ -1963,6 +1976,8 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
   ui::theme::theme_restore(&orig.theme_state);
 
   v3d->shading.type = orig.v3d_shading_type;
+  v3d->camera = orig.v3d_camera;
+  v3d->flag = orig.v3d_flag;
 
   G.f &= ~G_FLAG_RENDER_VIEWPORT;
 }
@@ -2065,6 +2080,11 @@ void ED_view3d_draw_offscreen_simple(Depsgraph *depsgraph,
   v3d.lens = 0;
   v3d.xr_vignette_aperture = xr_vignette_aperture;
 
+  /* WORKAROUND: Disable overscan because it is not supported for arbitrary input matrices.
+   * The proper fix to this would be to support arbitrary matrices in `eevee::Camera::sync()`. */
+  float overscan = scene->eevee.overscan;
+  scene->eevee.overscan = 0.0f;
+
   ED_view3d_draw_offscreen(depsgraph,
                            scene,
                            drawtype,
@@ -2082,6 +2102,9 @@ void ED_view3d_draw_offscreen_simple(Depsgraph *depsgraph,
                            true,
                            ofs,
                            viewport);
+
+  /* Restore overscan. */
+  scene->eevee.overscan = overscan;
 }
 
 ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
@@ -2091,7 +2114,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
                                       ARegion *region,
                                       int sizex,
                                       int sizey,
-                                      ImBufFlags imbuf_flag,
+                                      eImBufFlags imbuf_flag,
                                       int alpha_mode,
                                       const char *viewname,
                                       const bool restore_rv3d_mats,
@@ -2109,7 +2132,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
   float winmat[4][4];
 
   /* Guess format based on output buffer. */
-  gpu::TextureFormat desired_format = flag_is_set(imbuf_flag, ImBufFlags::FloatData) ?
+  gpu::TextureFormat desired_format = (imbuf_flag & IB_float_data) ?
                                           gpu::TextureFormat::SFLOAT_16_16_16_16 :
                                           gpu::TextureFormat::UNORM_8_8_8_8;
 
@@ -2147,7 +2170,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
   GPU_offscreen_bind(ofs, true);
 
   /* read in pixels & stamp */
-  ImBuf *ibuf = IMB_allocImBuf(sizex, sizey, imbuf_flag);
+  ImBuf *ibuf = IMB_allocImBuf(sizex, sizey, 32, imbuf_flag);
 
   /* render 3d view */
   if (use_camera_view_bounds && rv3d->persp == RV3D_CAMOB && v3d->camera) {
@@ -2257,7 +2280,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf_simple(Depsgraph *depsgraph,
                                              Object *camera,
                                              int width,
                                              int height,
-                                             ImBufFlags imbuf_flag,
+                                             eImBufFlags imbuf_flag,
                                              eV3DOffscreenDrawFlag draw_flags,
                                              int alpha_mode,
                                              const char *viewname,
@@ -2614,8 +2637,8 @@ void ED_view3d_depth_override(Depsgraph *depsgraph,
   Scene *scene = DEG_get_evaluated_scene(depsgraph);
   RegionView3D *rv3d = static_cast<RegionView3D *>(region->regiondata);
 
-  eView3D_Flag flag = v3d->flag;
-  eView3D_Flag2 flag2 = v3d->flag2;
+  short flag = v3d->flag;
+  int flag2 = v3d->flag2;
   /* Setting these temporarily is not nice */
   v3d->flag &= ~V3D_SELECT_OUTLINE;
 
@@ -2771,13 +2794,9 @@ void ED_view3d_datamask(const Main &bmain,
             }
             break;
           }
-          default:
-            break;
         }
         break;
       }
-      default:
-        break;
     }
   }
 }

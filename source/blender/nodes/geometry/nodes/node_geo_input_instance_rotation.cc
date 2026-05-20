@@ -31,10 +31,14 @@ class InstanceRotationFieldInput final : public bke::InstancesFieldInput {
         [transforms](const int i) { return math::to_quaternion(math::normalize(transforms[i])); });
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 22374372;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const InstanceRotationFieldInput *>(&other) != nullptr;
   }
 };
 

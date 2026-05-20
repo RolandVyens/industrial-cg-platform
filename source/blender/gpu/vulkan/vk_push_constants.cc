@@ -8,7 +8,6 @@
 
 #include "vk_push_constants.hh"
 #include "vk_backend.hh"
-#include "vk_buffer.hh"
 #include "vk_context.hh"
 #include "vk_memory_layout.hh"
 #include "vk_shader.hh"
@@ -85,7 +84,7 @@ void VKPushConstants::Layout::init(const shader::ShaderCreateInfo &info,
   storage_type_ = storage_type;
 
   size_in_bytes_ = 0;
-  if (storage_type == StorageType::BUFFER) {
+  if (storage_type == StorageType::UNIFORM_BUFFER) {
     descriptor_set_location_ = location;
     init_struct<Std140>(info, interface, push_constants, &size_in_bytes_);
   }
@@ -149,16 +148,24 @@ VKPushConstants &VKPushConstants::operator=(VKPushConstants &&other)
   return *this;
 }
 
-VKBufferWithOffset VKPushConstants::update_uniform_buffer(VKContext &context)
+void VKPushConstants::update_uniform_buffer()
 {
-  BLI_assert(layout_->storage_type_get() == StorageType::BUFFER);
+  BLI_assert(layout_->storage_type_get() == StorageType::UNIFORM_BUFFER);
   BLI_assert(data_ != nullptr);
+  if (!uniform_buffer_) {
+    uniform_buffer_ = std::make_unique<VKUniformBuffer>(layout_->size_in_bytes(),
+                                                        "push constants buffer");
+  }
 
-  VKBufferWithOffset result =
+  uniform_buffer_->reset_data_uploaded();
+  uniform_buffer_->update(data_);
+}
 
-      context.push_constants_pool.append(
-          Span<uint8_t>(static_cast<const uint8_t *>(data_), layout_->size_in_bytes()));
-  return result;
+std::unique_ptr<VKUniformBuffer> &VKPushConstants::uniform_buffer_get()
+{
+  BLI_assert(layout_->storage_type_get() == StorageType::UNIFORM_BUFFER);
+  BLI_assert(uniform_buffer_);
+  return uniform_buffer_;
 }
 
 }  // namespace blender::gpu

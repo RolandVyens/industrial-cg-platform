@@ -81,7 +81,7 @@ struct NavigateWidgetGroup {
     struct {
       char is_persp;
       bool is_camera;
-      eRegionView3D_ViewLock viewlock;
+      char viewlock;
       char cameralock;
     } rv3d;
   } state;

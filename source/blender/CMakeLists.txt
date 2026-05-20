@@ -38,7 +38,6 @@ set(SRC_DNA_INC
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_gpencil_modifier_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_gpu_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_grease_pencil_types.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_image_enums.h
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_image_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_key_types.h
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_lattice_types.h
@@ -105,7 +104,6 @@ set(SRC_DNA_INC
 set(SRC_DNA_OTHER_INC
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_array_utils.hh
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_print.hh
-  ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_sdna_pointers.hh
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_sdna_type_ids.hh
   ${CMAKE_CURRENT_SOURCE_DIR}/makesdna/DNA_vec_defaults.h
 )
@@ -139,7 +137,6 @@ add_subdirectory(gpu/shaders)
 add_subdirectory(gpu/tests/shaders)
 add_subdirectory(imbuf)
 add_subdirectory(imbuf/intern/oiio)
-add_subdirectory(imbuf/intern/openexr)
 add_subdirectory(nodes)
 add_subdirectory(modifiers)
 add_subdirectory(sequencer)
@@ -153,6 +150,11 @@ add_subdirectory(compositor/shaders)
 
 if(WITH_BLENDER_THUMBNAILER)
   add_subdirectory(blendthumb)
+endif()
+
+
+if(WITH_IMAGE_OPENEXR)
+  add_subdirectory(imbuf/intern/openexr)
 endif()
 
 if(WITH_IMAGE_CINEON)

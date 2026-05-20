@@ -437,13 +437,13 @@ std::string ShaderCreateInfo::check_error() const
   auto register_resource = [&](const Resource &res) -> bool {
     switch (res.bind_type) {
       case Resource::BindType::UNIFORM_BUFFER:
-        return ubos.add(res.slot);
-      case Resource::BindType::STORAGE_BUFFER:
-        return ssbos.add(res.slot);
-      case Resource::BindType::SAMPLER:
-        return samplers.add(res.slot);
-      case Resource::BindType::IMAGE:
         return images.add(res.slot);
+      case Resource::BindType::STORAGE_BUFFER:
+        return samplers.add(res.slot);
+      case Resource::BindType::SAMPLER:
+        return ubos.add(res.slot);
+      case Resource::BindType::IMAGE:
+        return ssbos.add(res.slot);
       default:
         return false;
     }

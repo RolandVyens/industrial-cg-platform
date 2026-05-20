@@ -2,9 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-set(THORVG_EXTRA_OPTIONS
-  -Dloaders=svg
-  -Dextra=  # Set to none, disable building with OpenMP
+set(THORVG_EXTRA_ARGS
 )
 
 ExternalProject_Add(external_thorvg
@@ -17,10 +15,9 @@ ExternalProject_Add(external_thorvg
   CONFIGURE_COMMAND ${CONFIGURE_ENV} &&
     ${MESON} setup
       --prefix ${LIBDIR}/thorvg
-      --libdir lib
-      --default-library static
       ${MESON_BUILD_TYPE}
-      ${THORVG_EXTRA_OPTIONS}
+      --default-library static
+      --libdir lib
       ${BUILD_DIR}/thorvg/src/external_thorvg-build
       ${BUILD_DIR}/thorvg/src/external_thorvg
 
@@ -45,16 +42,16 @@ if(WIN32)
         ${LIBDIR}/thorvg/include
         ${HARVEST_TARGET}/thorvg/include
       COMMAND ${CMAKE_COMMAND} -E copy
-        ${LIBDIR}/thorvg/lib/libthorvg-1.a
-        ${HARVEST_TARGET}/thorvg/lib/libthorvg-1.lib
+        ${LIBDIR}/thorvg/lib/libthorvg.a
+        ${HARVEST_TARGET}/thorvg/lib/libthorvg.lib
       DEPENDEES install
     )
   endif()
   if(BUILD_MODE STREQUAL Debug)
     ExternalProject_Add_Step(external_thorvg after_install
       COMMAND ${CMAKE_COMMAND} -E copy
-        ${LIBDIR}/thorvg/lib/libthorvg-1.a
-        ${HARVEST_TARGET}/thorvg/lib/libthorvg-1_d.lib
+        ${LIBDIR}/thorvg/lib/libthorvg.a
+        ${HARVEST_TARGET}/thorvg/lib/libthorvg_d.lib
       DEPENDEES install
     )
   endif()

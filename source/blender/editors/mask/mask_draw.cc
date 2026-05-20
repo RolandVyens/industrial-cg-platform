@@ -723,38 +723,37 @@ void ED_mask_draw_region(
     if (stabmat) {
       GPU_matrix_mul(stabmat);
     }
-    PixelBitmapDrawer drawer(GPU_SHADER_2D_IMAGE_SHUFFLE_COLOR);
-    GPU_shader_uniform_float_ex(drawer.shader_get(),
-                                GPU_shader_get_uniform(drawer.shader_get(), "shuffle"),
-                                4,
-                                1,
-                                buf_col);
+    IMMDrawPixelsTexState state = immDrawPixelsTexSetup(GPU_SHADER_2D_IMAGE_SHUFFLE_COLOR);
+    GPU_shader_uniform_float_ex(
+        state.shader, GPU_shader_get_uniform(state.shader, "shuffle"), 4, 1, buf_col);
 
     if (overlay_mode == MASK_OVERLAY_COMBINED) {
       const float blend_col[4] = {0.0f, 0.0f, 0.0f, blend_factor};
 
-      drawer.draw(0.0f,
-                  0.0f,
-                  width,
-                  height,
-                  gpu::TextureFormat::SFLOAT_16,
-                  false,
-                  buffer,
-                  1.0f,
-                  1.0f,
-                  blend_col);
+      immDrawPixelsTexTiled(&state,
+                            0.0f,
+                            0.0f,
+                            width,
+                            height,
+                            gpu::TextureFormat::SFLOAT_16,
+                            false,
+                            buffer,
+                            1.0f,
+                            1.0f,
+                            blend_col);
     }
     else {
-      drawer.draw(0.0f,
-                  0.0f,
-                  width,
-                  height,
-                  gpu::TextureFormat::SFLOAT_16,
-                  false,
-                  buffer,
-                  1.0f,
-                  1.0f,
-                  nullptr);
+      immDrawPixelsTexTiled(&state,
+                            0.0f,
+                            0.0f,
+                            width,
+                            height,
+                            gpu::TextureFormat::SFLOAT_16,
+                            false,
+                            buffer,
+                            1.0f,
+                            1.0f,
+                            nullptr);
     }
     GPU_matrix_pop();
 

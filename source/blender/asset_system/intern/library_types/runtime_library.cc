@@ -24,9 +24,4 @@ std::optional<AssetLibraryReference> RuntimeAssetLibrary::library_reference() co
   return library_ref;
 }
 
-std::optional<eAssetImportMethod> RuntimeAssetLibrary::import_method() const
-{
-  return {};
-}
-
 }  // namespace blender::asset_system

@@ -19,7 +19,6 @@
 #include "BKE_armature.hh"
 #include "BKE_fcurve.hh"
 #include "BKE_global.hh"
-#include "BKE_gtest_base.hh"
 #include "BKE_idtype.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_main.hh"
@@ -27,6 +26,9 @@
 
 #include "BLI_listbase.h"
 #include "BLI_string_utf8.h"
+
+#include "CLG_log.h"
+#include "testing/testing.h"
 
 #include <functional>
 #include <optional>
@@ -97,9 +99,7 @@ static void check_keylist_find_next_range(const AnimKeylist *keylist,
   check_keylist_find_range(keylist, ED_keylist_find_next, frame_from, frame_to, expected_frame);
 }
 
-class KeyListTest : public bke::BlenderGTestBase {};
-
-TEST_F(KeyListTest, find_next)
+TEST(keylist, find_next)
 {
   AnimKeylist *keylist = create_test_keylist();
 
@@ -119,7 +119,7 @@ static void check_keylist_find_prev_range(const AnimKeylist *keylist,
   check_keylist_find_range(keylist, ED_keylist_find_prev, frame_from, frame_to, expected_frame);
 }
 
-TEST_F(KeyListTest, find_prev)
+TEST(keylist, find_prev)
 {
   AnimKeylist *keylist = create_test_keylist();
 
@@ -139,7 +139,7 @@ static void check_keylist_find_exact_range(const AnimKeylist *keylist,
   check_keylist_find_range(keylist, ED_keylist_find_exact, frame_from, frame_to, expected_frame);
 }
 
-TEST_F(KeyListTest, find_exact)
+TEST(keylist, find_exact)
 {
   AnimKeylist *keylist = create_test_keylist();
 
@@ -154,7 +154,7 @@ TEST_F(KeyListTest, find_exact)
   ED_keylist_free(keylist);
 }
 
-TEST_F(KeyListTest, find_closest)
+TEST(keylist, find_closest)
 {
   AnimKeylist *keylist = create_test_keylist();
 
@@ -188,7 +188,7 @@ TEST_F(KeyListTest, find_closest)
   ED_keylist_free(keylist);
 }
 
-class KeylistSummaryTest : public bke::BlenderGTestBase {
+class KeylistSummaryTest : public testing::Test {
  public:
   Main *bmain;
   animrig::Action *action;
@@ -200,6 +200,20 @@ class KeylistSummaryTest : public bke::BlenderGTestBase {
 
   SpaceAction saction = {};
   bAnimContext ac = {nullptr};
+
+  static void SetUpTestSuite()
+  {
+    /* BKE_id_free() hits a code path that uses CLOG, which crashes if not initialized properly. */
+    CLG_init();
+
+    /* To make id_can_have_animdata() and friends work, the `id_types` array needs to be set up. */
+    BKE_idtype_init();
+  }
+
+  static void TearDownTestSuite()
+  {
+    CLG_exit();
+  }
 
   void SetUp() override
   {

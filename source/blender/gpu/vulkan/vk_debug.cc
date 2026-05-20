@@ -95,6 +95,8 @@ void VKContext::process_frame_timings()
 
 bool VKContext::debug_capture_begin(const char *title)
 {
+  flush_render_graph(RenderGraphFlushFlags::SUBMIT | RenderGraphFlushFlags::WAIT_FOR_COMPLETION |
+                     RenderGraphFlushFlags::RENEW_RENDER_GRAPH);
   return VKBackend::get().debug_capture_begin(title);
 }
 
@@ -114,6 +116,8 @@ bool VKBackend::debug_capture_begin(const char *title)
 
 void VKContext::debug_capture_end()
 {
+  flush_render_graph(RenderGraphFlushFlags::SUBMIT | RenderGraphFlushFlags::WAIT_FOR_COMPLETION |
+                     RenderGraphFlushFlags::RENEW_RENDER_GRAPH);
   VKBackend::get().debug_capture_end();
 }
 
@@ -258,7 +262,7 @@ messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 
 void VKDebuggingTools::init_messenger(VkInstance vk_instance)
 {
-  if (vk_debug_utils_messenger != VK_NULL_HANDLE) {
+  if (vk_debug_utils_messenger) {
     return;
   }
 
@@ -286,13 +290,13 @@ void VKDebuggingTools::init_messenger(VkInstance vk_instance)
 
 void VKDebuggingTools::destroy_messenger(VkInstance vk_instance)
 {
-  if (vk_debug_utils_messenger == VK_NULL_HANDLE) {
+  if (vk_debug_utils_messenger == nullptr) {
     return;
   }
 
   VKDevice &device = VKBackend::get().device;
   device.functions.vkDestroyDebugUtilsMessenger(vk_instance, vk_debug_utils_messenger, nullptr);
-  vk_debug_utils_messenger = VK_NULL_HANDLE;
+  vk_debug_utils_messenger = nullptr;
 }
 
 };  // namespace gpu::debug

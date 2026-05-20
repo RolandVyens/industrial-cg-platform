@@ -67,17 +67,17 @@ template<typename T> struct Bounds {
    * Returns true if \a point is inside the bounds.
    * This matches the behavior of #BLI_rctf_isect_pt/#BLI_rcti_isect_pt.
    */
-  bool contains(const T &point) const;
+  bool contains(const T &point);
 
   /**
    * Returns true if the \a other bounds is inside or intersect this one.
    */
-  bool intersects(const Bounds<T> &other) const;
+  bool intersects(const Bounds<T> &other);
   /**
    * Returns true if a line segment from \a start to \a end is inside or intersects the bounds.
    * This matches the behavior of #BLI_rctf_isect_segment/#BLI_rcti_isect_segment.
    */
-  bool intersects_segment(const T &start, const T &end) const;
+  bool intersects_segment(const T &start, const T &end);
 };
 
 }  // namespace blender

@@ -76,14 +76,11 @@ enum eCurveElem_Types {
 /**
  * Returns 1 in case (de)selection was successful.
  */
-bool select_beztriple(BezTriple *bezt,
-                      bool selstatus,
-                      eBezTriple_Flag flag,
-                      eVisible_Types hidden);
+bool select_beztriple(BezTriple *bezt, bool selstatus, uint8_t flag, eVisible_Types hidden);
 /**
  * Returns 1 in case (de)selection was successful.
  */
-bool select_bpoint(BPoint *bp, bool selstatus, eBezTriple_Flag flag, bool hidden);
+bool select_bpoint(BPoint *bp, bool selstatus, uint8_t flag, bool hidden);
 
 void FONT_OT_text_insert(wmOperatorType *ot);
 void FONT_OT_line_break(wmOperatorType *ot);
@@ -171,13 +168,13 @@ void ed_dissolve_bez_segment(BezTriple *bezt_prev,
 
 /* helper functions */
 void ed_editnurb_translate_flag(ListBaseT<Nurb> *editnurb,
-                                eBezTriple_Flag flag,
+                                uint8_t flag,
                                 const float vec[3],
                                 bool is_2d);
 /**
  * Only for #OB_SURF.
  */
-bool ed_editnurb_extrude_flag(EditNurb *editnurb, eBezTriple_Flag flag);
+bool ed_editnurb_extrude_flag(EditNurb *editnurb, uint8_t flag);
 /**
  * \param axis: is in world-space.
  * \param cent: is in object-space.
@@ -229,7 +226,7 @@ bool ED_curve_pick_vert(ViewContext *vc,
 /**
  * Pick the nearest `r_nurb` and `r_bezt` or `r_bp`.
  * \param select: selected vertices have a disadvantage.
- * \param dist_px: The selection distance in pixels.
+ * \param sel_dist_mul: A multiplier on the default select distance.
  * \param r_handle: For bezier triples, set the handle index [0, 1, 2].
  */
 bool ED_curve_pick_vert_ex(ViewContext *vc,

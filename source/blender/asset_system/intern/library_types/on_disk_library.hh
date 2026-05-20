@@ -20,7 +20,6 @@ class OnDiskAssetLibrary : public AssetLibrary {
                      bool is_read_only);
 
   std::optional<AssetLibraryReference> library_reference() const override;
-  std::optional<eAssetImportMethod> import_method() const override;
   void refresh_catalogs() override;
 
   virtual bool is_enabled() const;

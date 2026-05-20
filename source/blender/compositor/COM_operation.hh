@@ -114,8 +114,9 @@ class Operation {
    * output results. */
   virtual void execute() = 0;
 
-  /* Log the data of the operation into the context logger. */
-  virtual void log_data();
+  /* Compute and set a preview of the operation if needed. This method defaults to an empty
+   * implementation and should be implemented by operations which can have previews. */
+  virtual void compute_preview();
 
   /* Add the given result to the results_ map identified by the given output identifier. This
    * should be called during operation construction for all outputs. The provided result shouldn't

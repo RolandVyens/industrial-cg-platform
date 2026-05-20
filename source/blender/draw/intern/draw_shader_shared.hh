@@ -564,11 +564,8 @@ struct [[host_shared]] ObjectAttribute {
   /**
    * Go through all possible source of the given object uniform attribute.
    * Returns true if the attribute was correctly filled.
-   *
-   * \param instance_index: The index of synced the instance within the ObjectRef::duplis_,
-   *                        or just 0 if the ObjectRef doesn't contain any instances.
    */
-  bool sync(const draw::ObjectRef &ref, const GPUUniformAttr &attr, int instance_index);
+  bool sync(const draw::ObjectRef &ref, const GPUUniformAttr &attr);
 #endif
 };
 #pragma pack(pop)

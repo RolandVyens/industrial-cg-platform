@@ -184,7 +184,7 @@ set(CMAKE_OPTIMIZE_DEPENDENCIES ON CACHE INTERNAL "")
 # Declare Options
 
 # Blender internal features
-option(WITH_BLENDER "Build Blender (disable to build only Cycles stand-alone)." ON)
+option(WITH_BLENDER "Build blender (disable to build only Cycles stand-alone)." ON)
 mark_as_advanced(WITH_BLENDER)
 
 if(WIN32)
@@ -224,8 +224,8 @@ Enable internal API error checking to track invalid data to prevent crash on acc
 )
 mark_as_advanced(WITH_PYTHON_SAFETY)
 option(WITH_PYTHON_MODULE "\
-Enable building as a Python module which runs without a user interface, \
-like running regular Blender in background mode (only enable for development), \
+Enable building as a python module which runs without a user interface, \
+like running regular blender in background mode (only enable for development), \
 installs to PYTHON_SITE_PACKAGES (or CMAKE_INSTALL_PREFIX if WITH_INSTALL_PORTABLE is enabled)."
   OFF
 )
@@ -302,10 +302,11 @@ option(WITH_FFTW3 "Enable FFTW3 support (Used for smoke, ocean sim, glare, and a
 option(WITH_PUGIXML "Enable PugiXML support (Used for OpenImageIO, Grease Pencil SVG export)" ON)
 option(WITH_BULLET "Enable Bullet (Physics Engine)" ON)
 option(WITH_SYSTEM_BULLET "\
-Use the system's Bullet library (currently unsupported due to missing features in upstream)"
+Use the systems bullet library (currently unsupported due to missing features in upstream!)"
   OFF
 )
 mark_as_advanced(WITH_SYSTEM_BULLET)
+option(WITH_OPENCOLORIO "Enable OpenColorIO color management" ON)
 
 option(WITH_XR_OPENXR "Enable VR features through the OpenXR specification" ON)
 
@@ -316,7 +317,7 @@ option(WITH_OPENIMAGEDENOISE "Enable the OpenImageDenoise compositing node" ON)
 
 option(WITH_OPENSUBDIV "Enable OpenSubdiv for surface subdivision" ON)
 
-option(WITH_POTRACE "Enable features relying on Potrace" ON)
+option(WITH_POTRACE "Enable features relying on potrace" ON)
 option(WITH_OPENVDB "Enable features relying on OpenVDB" ON)
 option(WITH_OPENVDB_BLOSC "\
 Enable blosc compression for OpenVDB, only enable if OpenVDB was built with blosc support"
@@ -328,7 +329,7 @@ Assume OpenVDB library has been compiled with version 3 ABI compatibility"
 )
 mark_as_advanced(WITH_OPENVDB_3_ABI_COMPATIBLE)
 option(WITH_NANOVDB "Enable usage of NanoVDB data structure for rendering on the GPU" ON)
-option(WITH_HARU "Enable features relying on Libharu (Grease Pencil PDF export)" ON)
+option(WITH_HARU "Enable features relying on Libharu (Grease pencil PDF export)" ON)
 
 # GHOST Windowing Library Options
 option(WITH_GHOST_DEBUG "Enable debugging output for the GHOST library" OFF)
@@ -375,10 +376,17 @@ endif()
 option(WITH_HEADLESS "Build without graphical support (renderfarm, server mode only)" OFF)
 mark_as_advanced(WITH_HEADLESS)
 
-option(WITH_QUADRIFLOW "Build with QuadriFlow remesher support" ON)
+option(WITH_QUADRIFLOW "Build with quadriflow remesher support" ON)
 
-option(WITH_AUDASPACE "Build with Audaspace (base Blender audio library)" ON)
-option(WITH_SYSTEM_AUDASPACE "Build with external Audaspace library installed on the system" OFF)
+option(WITH_AUDASPACE "\
+Build with blenders audio library (only disable if you know what you're doing!)"
+  ON
+)
+option(WITH_SYSTEM_AUDASPACE "\
+Build with external audaspace library installed on the system \
+(only enable if you know what you're doing!)"
+  OFF
+)
 option(WITH_RUBBERBAND "\
 Build with Rubber Band for audio time-stretching and pitch-scaling (used by Audaspace)"
   ON
@@ -392,12 +400,12 @@ set_and_warn_dependency(WITH_AUDASPACE WITH_RUBBERBAND OFF)
 set_and_warn_incompatible(WITH_SYSTEM_AUDASPACE WITH_RUBBERBAND OFF)
 
 if(WITH_GHOST_X11)
-  option(WITH_X11_XINPUT "Enable X11 Xinput (tablet support and Unicode input)" ON)
+  option(WITH_X11_XINPUT "Enable X11 Xinput (tablet support and unicode input)" ON)
   option(WITH_X11_XFIXES "Enable X11 XWayland cursor warping workaround" ON)
 endif()
 
 if(UNIX AND NOT APPLE)
-  option(WITH_SYSTEM_FREETYPE "Use the FreeType library provided by the operating system" OFF)
+  option(WITH_SYSTEM_FREETYPE "Use the freetype library provided by the operating system" OFF)
 else()
   set(WITH_SYSTEM_FREETYPE OFF)
 endif()
@@ -424,12 +432,13 @@ option(WITH_MOD_OCEANSIM "Enable Ocean Modifier" ON)
 option(WITH_UV_SLIM "SLIM UV unwrapping solver" ON)
 
 # Image format support
+option(WITH_IMAGE_OPENEXR "Enable OpenEXR Support (http://www.openexr.com)" ON)
 option(WITH_IMAGE_OPENJPEG "Enable OpenJpeg Support (http://www.openjpeg.org)" ON)
 option(WITH_IMAGE_CINEON "Enable CINEON and DPX Image Support" ON)
 option(WITH_IMAGE_WEBP "Enable WebP Image Support" ON)
 
 # Audio/Video format support
-option(WITH_CODEC_FFMPEG "Enable FFmpeg Support (http://ffmpeg.org)" ON)
+option(WITH_CODEC_FFMPEG "Enable FFMPeg Support (http://ffmpeg.org)" ON)
 option(WITH_CODEC_SNDFILE "Enable libsndfile Support (http://www.mega-nerd.com/libsndfile)" ON)
 
 # Alembic support
@@ -452,18 +461,18 @@ Enable Storm tests using the Vulkan backend. Requires WITH_HYDRA."
 mark_as_advanced(WITH_STORM_TESTS_VULKAN)
 
 # RTL Languages, Complex Shaping, OpenType Features
-option(WITH_FRIBIDI "Enable features relying on FriBidi" OFF)
-option(WITH_HARFBUZZ "Enable features relying on HarfBuzz" OFF)
+option(WITH_FRIBIDI "Enable features relying on fribidi" OFF)
+option(WITH_HARFBUZZ "Enable features relying on harfbuzz" OFF)
 
 # 3D format support
 option(WITH_IO_WAVEFRONT_OBJ "Enable Wavefront-OBJ 3D file format support (*.obj)" ON)
 option(WITH_IO_PLY "Enable PLY 3D file format support (*.ply)" ON)
 option(WITH_IO_STL "Enable STL 3D file format support (*.stl)" ON)
 option(WITH_IO_FBX "Enable FBX 3D file format support (*.fbx)" ON)
-option(WITH_IO_GREASE_PENCIL "Enable Grease Pencil file format IO (*.svg, *.pdf)" ON)
+option(WITH_IO_GREASE_PENCIL "Enable grease-pencil file format IO (*.svg, *.pdf)" ON)
 
 # Sound output
-option(WITH_SDL_AUDIO "Enable SDL audio support" OFF)
+option(WITH_SDL "Enable SDL for sound" OFF)
 option(WITH_OPENAL "Enable OpenAL Support (http://www.openal.org)" ON)
 if(APPLE)
   option(WITH_COREAUDIO "Enable CoreAudio for audio support on macOS" ON)
@@ -484,8 +493,8 @@ endif()
 if(UNIX AND NOT APPLE)
   option(WITH_PULSEAUDIO "Enable PulseAudio for audio support on Linux" ON)
   option(WITH_PULSEAUDIO_DYNLOAD "Enable runtime dynamic PulseAudio libraries loading" OFF)
-  option(WITH_PIPEWIRE "Enable PipeWire for audio support on Linux" ON)
-  option(WITH_PIPEWIRE_DYNLOAD "Enable runtime dynamic PipeWire libraries loading" OFF)
+  option(WITH_PIPEWIRE "Enable Pipewire for audio support on Linux" ON)
+  option(WITH_PIPEWIRE_DYNLOAD "Enable runtime dynamic Pipewire libraries loading" OFF)
 else()
   set(WITH_PULSEAUDIO OFF)
   set(WITH_PIPEWIRE OFF)
@@ -498,11 +507,10 @@ endif()
 
 # Compression
 option(WITH_DRACO "Enable Draco mesh compression Python module (used for glTF)" ON)
-option(WITH_MESHOPTIMIZER "Enable meshoptimizer compression Python module (used for glTF)" ON)
 
 # Camera/motion tracking
 option(WITH_LIBMV "Enable Libmv structure from motion library" ON)
-option(WITH_LIBMV_SCHUR_SPECIALIZATIONS "Enable fixed-size Schur specializations." ON)
+option(WITH_LIBMV_SCHUR_SPECIALIZATIONS "Enable fixed-size schur specializations." ON)
 mark_as_advanced(WITH_LIBMV_SCHUR_SPECIALIZATIONS)
 
 # Logging/unit test libraries.
@@ -529,7 +537,7 @@ that point to pre-compiled libraries will be left as-is."
 
   option(WITH_STATIC_LIBS "\
 Try to link with static libraries, as much as possible, \
-to make Blender more portable across distributions"
+to make blender more portable across distributions"
     OFF
   )
 endif()
@@ -550,7 +558,7 @@ Install redistributable runtime, otherwise install into CMAKE_INSTALL_PREFIX"
   )
 endif()
 
-option(WITH_PYTHON_INSTALL "Copy system Python into the Blender install directory" ON)
+option(WITH_PYTHON_INSTALL "Copy system python into the blender install directory" ON)
 
 option(WITH_INSTALL_COPYRIGHT "\
 Copy the official Blender Authors copyright.txt into the Blender install directory"
@@ -573,11 +581,11 @@ Path to python site-packages or dist-packages containing 'numpy' module"
   mark_as_advanced(PYTHON_NUMPY_INCLUDE_DIRS)
 endif()
 if(WITH_PYTHON_INSTALL)
-  option(WITH_PYTHON_INSTALL_NUMPY "Copy system NumPy into the Blender install directory" ON)
+  option(WITH_PYTHON_INSTALL_NUMPY "Copy system NumPy into the blender install directory" ON)
 
   if(UNIX AND NOT APPLE)
     option(WITH_PYTHON_INSTALL_REQUESTS "\
-Copy system requests into the Blender install directory"
+Copy system requests into the blender install directory"
       ON
     )
     set(PYTHON_REQUESTS_PATH "" CACHE PATH "\
@@ -586,7 +594,7 @@ Path to python site-packages or dist-packages containing 'requests' module"
     mark_as_advanced(PYTHON_REQUESTS_PATH)
   endif()
 
-  option(WITH_PYTHON_INSTALL_ZSTANDARD "Copy Zstandard into the Blender install directory" ON)
+  option(WITH_PYTHON_INSTALL_ZSTANDARD "Copy zstandard into the blender install directory" ON)
   set(PYTHON_ZSTANDARD_PATH "" CACHE PATH "\
 Path to python site-packages or dist-packages containing 'zstandard' module"
   )
@@ -610,7 +618,7 @@ option(WITH_CYCLES_PRECOMPUTE "Build Cycles data precomputation tool" OFF)
 option(WITH_CYCLES_HYDRA_RENDER_DELEGATE "Build Cycles Hydra render delegate" OFF)
 
 option(WITH_CYCLES_PARALLEL_DEVICE_KERNEL_BUILD
-       "Build Cycles kernels of different devices in parallel (faster, but uses more memory)" OFF)
+       "Build Cycles kernels of difference devices in parallel (faster, but uses more memory)" OFF)
 mark_as_advanced(WITH_CYCLES_PARALLEL_DEVICE_KERNEL_BUILD)
 
 option(WITH_CYCLES_DEBUG_NAN "\
@@ -648,7 +656,7 @@ if(NOT APPLE AND NOT (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64"))
 
   option(WITH_CYCLES_CUDA_BINARIES "Build Cycles NVIDIA CUDA binaries" OFF)
   set(CYCLES_CUDA_BINARIES_ARCH
-    sm_50 sm_52 sm_60 sm_70 sm_75 sm_86 sm_120 compute_75
+    sm_50 sm_52 sm_60 sm_61 sm_70 sm_75 sm_86 sm_89 sm_120 compute_75
     CACHE STRING "CUDA architectures to build binaries for"
   )
   option(WITH_CYCLES_CUDA_BUILD_SERIAL "\
@@ -897,7 +905,7 @@ endif()
 
 
 # GPU Module
-option(WITH_RENDERDOC "Use RenderDoc API to capture frames" OFF)
+option(WITH_RENDERDOC "Use Renderdoc API to capture frames" OFF)
 
 option(WITH_GPU_SHADER_ASSERT "\
 Globally enable in-shader asserts.
@@ -911,26 +919,16 @@ mark_as_advanced(
 )
 
 option(WITH_GPU_SHADER_CPP_COMPILATION "\
-Compile shaders using C++. \
-Allows testing shader compilation offline and enables C++ IDE support for shader code"
+Compiler shaders using C++. \
+Allows testing shader compilation offline and enable C++ IDE support for shader code"
   ON
 )
 mark_as_advanced(WITH_GPU_SHADER_CPP_COMPILATION)
 
 
-# Profiling
-option(WITH_TRACY "\
-Enable profiling via the Tracy Frame Profiler. \
-This option adds a `tracy_profiler` target for building the profiler GUI front-end. \
-Requires internet access."
-  OFF
-)
-mark_as_advanced(WITH_TRACY)
-
-
 # OpenGL
 if(NOT APPLE)
-  option(WITH_OPENGL_BACKEND "Enable OpenGL support as graphics backend" ON)
+  option(WITH_OPENGL_BACKEND "Enable OpenGL support as graphic backend" ON)
   mark_as_advanced(WITH_OPENGL_BACKEND)
 else()
   set(WITH_OPENGL_BACKEND OFF)
@@ -1303,8 +1301,11 @@ set_and_warn_dependency(WITH_AUDASPACE WITH_OPENAL OFF)
 set_and_warn_dependency(WITH_AUDASPACE WITH_COREAUDIO OFF)
 set_and_warn_dependency(WITH_AUDASPACE WITH_JACK OFF)
 set_and_warn_dependency(WITH_AUDASPACE WITH_PULSEAUDIO OFF)
-set_and_warn_dependency(WITH_AUDASPACE WITH_SDL_AUDIO OFF)
 set_and_warn_dependency(WITH_AUDASPACE WITH_WASAPI OFF)
+
+if(NOT WITH_SDL AND WITH_GHOST_SDL)
+  message(FATAL_ERROR "WITH_GHOST_SDL requires WITH_SDL")
+endif()
 
 # python module, needs some different options
 if(WITH_PYTHON_MODULE AND WITH_PYTHON_INSTALL)
@@ -1313,7 +1314,6 @@ endif()
 
 set_and_warn_dependency(WITH_PYTHON WITH_CYCLES        OFF)
 set_and_warn_dependency(WITH_PYTHON WITH_DRACO         OFF)
-set_and_warn_dependency(WITH_PYTHON WITH_MESHOPTIMIZER OFF)
 set_and_warn_dependency(WITH_PYTHON WITH_MOD_FLUID     OFF)
 
 if(WITH_CYCLES)
@@ -1329,6 +1329,11 @@ set_and_warn_dependency(WITH_TBB WITH_MOD_FLUID         OFF)
 
 # NanoVDB requires OpenVDB to convert the data structure
 set_and_warn_dependency(WITH_OPENVDB WITH_NANOVDB       OFF)
+
+# OpenVDB, Alembic and OSL uses `half` or `imath` from OpenEXR
+set_and_warn_dependency(WITH_IMAGE_OPENEXR WITH_OPENVDB OFF)
+set_and_warn_dependency(WITH_IMAGE_OPENEXR WITH_ALEMBIC OFF)
+set_and_warn_dependency(WITH_IMAGE_OPENEXR WITH_CYCLES_OSL OFF)
 
 # Hydra requires USD.
 set_and_warn_dependency(WITH_USD WITH_HYDRA OFF)
@@ -1430,12 +1435,6 @@ set(WITH_BINRELOC OFF)
 
 # MACOSX only, set to avoid uninitialized
 set(EXETYPE "")
-
-# WITH_SDL is uncached, depends on either WITH_SDL_AUDIO, WITH_GHOST_SDL or WITH_CYCLES_STANDALONE_GUI being set.
-set(WITH_SDL OFF)
-if(WITH_SDL_AUDIO OR WITH_GHOST_SDL OR WITH_CYCLES_STANDALONE_GUI)
-  set(WITH_SDL ON)
-endif()
 
 # C/C++ flags
 set(PLATFORM_CFLAGS "")
@@ -1553,10 +1552,10 @@ endif()
 # Add the default compiler SIMD flags if enabled
 #
 if(WITH_COMPILER_SIMD)
-  set(COMPILER_SIMD_FLAGS "")
-  get_compiler_simd_flags(COMPILER_SIMD_FLAGS)
-  string(APPEND CMAKE_CXX_FLAGS " ${COMPILER_SIMD_FLAGS}")
-  string(APPEND CMAKE_C_FLAGS " ${COMPILER_SIMD_FLAGS}")
+  set(COMPILER_SSE42_FLAG "")
+  get_sse_flags(COMPILER_SSE42_FLAG)
+  string(APPEND CMAKE_CXX_FLAGS " ${COMPILER_SSE42_FLAG}")
+  string(APPEND CMAKE_C_FLAGS " ${COMPILER_SSE42_FLAG}")
 endif()
 
 # Enable SSE2NEON SIMD support if found.
@@ -2044,7 +2043,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     C_AND_CXX_WARN_NO_FORMAT -Wno-format
     C_AND_CXX_WARN_NO_SWITCH -Wno-switch
     C_AND_CXX_WARN_NO_UNUSED_VARIABLE -Wno-unused-variable
-    C_AND_CXX_WARN_NO_UNUSED_BUT_SET_VARIABLE -Wno-unused-but-set-variable
     C_AND_CXX_WARN_NO_UNINITIALIZED -Wno-uninitialized
     C_AND_CXX_WARN_NO_IMPLICIT_FALLTHROUGH -Wno-implicit-fallthrough
   )
@@ -2530,6 +2528,7 @@ if(FIRST_RUN)
   info_cfg_option(WITH_INPUT_IME)
   info_cfg_option(WITH_INTERNATIONAL)
   info_cfg_option(WITH_MANIFOLD)
+  info_cfg_option(WITH_OPENCOLORIO)
   info_cfg_option(WITH_OPENIMAGEDENOISE)
   info_cfg_option(WITH_OPENSUBDIV)
   info_cfg_option(WITH_OPENVDB)
@@ -2566,11 +2565,9 @@ if(FIRST_RUN)
     endif()
   endif()
 
-  info_cfg_text("Profiling Options:")
-  info_cfg_option(WITH_TRACY)
-
   info_cfg_text("Image Formats:")
   info_cfg_option(WITH_IMAGE_CINEON)
+  info_cfg_option(WITH_IMAGE_OPENEXR)
   info_cfg_option(WITH_IMAGE_OPENJPEG)
 
   info_cfg_text("Audio:")
@@ -2584,7 +2581,7 @@ if(FIRST_RUN)
   info_cfg_option(WITH_OPENAL)
   info_cfg_option(WITH_PULSEAUDIO)
   info_cfg_option(WITH_PULSEAUDIO_DYNLOAD)
-  info_cfg_option(WITH_SDL_AUDIO)
+  info_cfg_option(WITH_SDL)
   info_cfg_option(WITH_WASAPI)
 
   if(WITH_PYTHON)

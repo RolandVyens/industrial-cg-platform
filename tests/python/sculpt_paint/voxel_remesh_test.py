@@ -1,19 +1,20 @@
 # SPDX-FileCopyrightText: 2025 Blender Authors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later */
-"""
-blender -b --factory-startup --python tests/python/sculpt_paint/voxel_remesh_test.py
-"""
 
 __all__ = (
     "main",
 )
 
 import os
-import sys
 import unittest
+import sys
 
 import bpy
+
+"""
+blender -b --factory-startup --python tests/python/sculpt_paint/voxel_remesh_test.py
+"""
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 

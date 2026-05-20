@@ -976,7 +976,6 @@ struct ScopeParser {
           close_scope(curr, ScopeType::Subscript);
           match(']');
           return;
-        case Comma: /* For structure binding. */
         case Number:
         case Word:
         case This:

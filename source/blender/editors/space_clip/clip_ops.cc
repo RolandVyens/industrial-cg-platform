@@ -148,7 +148,7 @@ static void sclip_zoom_set_factor_exec(bContext *C, const wmEvent *event, float 
     mpos = location;
   }
 
-  sclip_zoom_set_factor(C, factor, mpos, mpos ? (U.uiflag & USER_ZOOM_TO_MOUSEPOS) != 0 : false);
+  sclip_zoom_set_factor(C, factor, mpos, mpos ? (U.uiflag & USER_ZOOM_TO_MOUSEPOS) : false);
 
   ED_region_tag_redraw(region);
 }
@@ -1377,8 +1377,7 @@ static void proxy_task_func(TaskPool *__restrict pool, void *task_data)
 
     ibuf = IMB_load_image_from_memory(mem,
                                       size,
-                                      ImBufFlags::ByteData | ImBufFlags::MultiLayer |
-                                          ImBufFlags::AlphaDetect,
+                                      IB_byte_data | IB_multilayer | IB_alphamode_detect,
                                       "proxy frame",
                                       nullptr,
                                       data->clip->colorspace_settings.name);
@@ -1597,7 +1596,7 @@ void CLIP_OT_rebuild_proxy(wmOperatorType *ot)
 static wmOperatorStatus mode_set_exec(bContext *C, wmOperator *op)
 {
   SpaceClip *sc = CTX_wm_space_clip(C);
-  const eSpaceClip_Mode mode = eSpaceClip_Mode(RNA_enum_get(op->ptr, "mode"));
+  int mode = RNA_enum_get(op->ptr, "mode");
 
   sc->mode = mode;
 

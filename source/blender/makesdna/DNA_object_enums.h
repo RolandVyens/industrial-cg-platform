@@ -10,12 +10,10 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 /** #Object.mode */
-enum eObjectMode : int {
+enum eObjectMode {
   OB_MODE_OBJECT = 0,
   OB_MODE_EDIT = 1 << 0,
   OB_MODE_SCULPT = 1 << 1,
@@ -31,10 +29,9 @@ enum eObjectMode : int {
   OB_MODE_VERTEX_GREASE_PENCIL = 1 << 11,
   OB_MODE_SCULPT_CURVES = 1 << 12,
 };
-ENUM_OPERATORS(eObjectMode)
 
 /** #Object.dt, #View3DShading.type */
-enum eDrawType : char {
+enum eDrawType {
   OB_BOUNDBOX = 1,
   OB_WIRE = 2,
   OB_SOLID = 3,

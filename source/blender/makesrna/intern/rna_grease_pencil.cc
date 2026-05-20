@@ -781,7 +781,7 @@ static int rna_group_color_tag_get(PointerRNA *ptr)
 static void rna_group_color_tag_set(PointerRNA *ptr, int value)
 {
   GreasePencilLayerTreeGroup *group = static_cast<GreasePencilLayerTreeGroup *>(ptr->data);
-  group->color_tag = GroupColorTag(value);
+  group->color_tag = value;
   WM_main_add_notifier(NC_GPENCIL | ND_DATA | NA_SELECTED, nullptr);
 }
 
@@ -1615,8 +1615,6 @@ static void rna_def_grease_pencil_data(BlenderRNA *brna)
 
   /* Onion skinning. */
   rna_def_grease_pencil_onion_skinning(srna);
-
-  RNA_api_grease_pencil(srna);
 }
 
 void RNA_def_grease_pencil(BlenderRNA *brna)

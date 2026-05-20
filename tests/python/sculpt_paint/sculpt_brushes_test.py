@@ -1,21 +1,23 @@
 # SPDX-FileCopyrightText: 2025 Blender Authors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later */
-"""
-blender -b --factory-startup --python tests/python/sculpt_paint/sculpt_brushes_test.py -- --testdir tests/files/mesh_paint/
-"""
 
 __all__ = (
     "main",
 )
 
-import math
 import os
-import pathlib
-import sys
+import math
 import unittest
+import sys
+import pathlib
+import numpy as np
 
 import bpy
+
+"""
+blender -b --factory-startup --python tests/python/sculpt_paint/sculpt_brushes_test.py -- --testdir tests/files/mesh_paint/
+"""
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 from modules.test_helpers import AttributeType, BackendType, COLOR_BACKEND_TYPES, MASK_BACKEND_TYPES, get_attribute_data, set_view3d_context_override, generate_stroke, generate_monkey

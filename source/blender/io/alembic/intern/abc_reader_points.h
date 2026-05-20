@@ -18,7 +18,7 @@ class AbcPointsReader final : public AbcObjectReader {
   Alembic::AbcGeom::IPointsSchema::Sample m_sample;
 
  public:
-  AbcPointsReader(const AbcReaderConstructorArgs &args);
+  AbcPointsReader(const Alembic::Abc::IObject &object, ImportSettings &settings);
 
   bool valid() const override;
   bool accepts_object_type(const Alembic::AbcCoreAbstract::ObjectHeader &alembic_header,
@@ -29,7 +29,9 @@ class AbcPointsReader final : public AbcObjectReader {
 
   void read_geometry(bke::GeometrySet &geometry_set,
                      const Alembic::Abc::ISampleSelector &sample_sel,
-                     const AbcReadGeometryParams &read_params,
+                     int read_flag,
+                     const char *velocity_name,
+                     float velocity_scale,
                      const char **r_err_str) override;
 };
 

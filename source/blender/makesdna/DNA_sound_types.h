@@ -7,8 +7,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 #include "DNA_ID.h"
 
 namespace blender {
@@ -20,7 +18,7 @@ struct SoundRuntime;
 struct PackedFile;
 
 /** #bSound.flags */
-enum eSound_Flag : short {
+enum {
 #ifdef DNA_DEPRECATED_ALLOW
   /* deprecated! used for sound actuator loading */
   SOUND_FLAGS_3D = (1 << 3),
@@ -28,7 +26,6 @@ enum eSound_Flag : short {
   SOUND_FLAGS_CACHING = (1 << 4),
   SOUND_FLAGS_MONO = (1 << 5),
 };
-ENUM_OPERATORS(eSound_Flag)
 
 struct bSound {
 #ifdef __cplusplus
@@ -64,9 +61,8 @@ struct bSound {
   /* Description of Audio channels, as of #eSoundChannels. */
   int audio_channels = 0;
   int samplerate = 0;
-  eSound_Flag flags = {};
-  short stream_index = 0;
-  char _pad1[4] = {};
+  short flags = 0;
+  char _pad1[6] = {};
 
   bke::SoundRuntime *runtime = nullptr;
   void *_pad2 = nullptr;

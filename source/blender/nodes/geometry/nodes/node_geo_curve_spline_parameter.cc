@@ -197,10 +197,14 @@ class CurveParameterFieldInput final : public bke::CurvesFieldInput {
     }
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 29837456298;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const CurveParameterFieldInput *>(&other) != nullptr;
   }
 };
 
@@ -227,10 +231,14 @@ class CurveLengthParameterFieldInput final : public bke::CurvesFieldInput {
     }
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 345634563454;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const CurveLengthParameterFieldInput *>(&other) != nullptr;
   }
 };
 
@@ -256,10 +264,14 @@ class IndexOnSplineFieldInput final : public bke::CurvesFieldInput {
     return VArray<int>::from_container(std::move(result));
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const final
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    return 4536246522;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const final
+  {
+    return dynamic_cast<const IndexOnSplineFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

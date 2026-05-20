@@ -163,8 +163,6 @@ class bNodeTreeRuntime : NonCopyable, NonMovable {
 
   /** Contains RNA types generated for the geometry nodes modifier interface. */
   std::shared_ptr<nodes::GeneratedTreeSrnaData> geometry_nodes_srna_data;
-  /** Contains RNA types generated for the compositor strip modifier interface. */
-  std::shared_ptr<nodes::GeneratedTreeSrnaData> compositor_nodes_srna_data;
 
   /** Information about how inputs and outputs of the node group interact with fields. */
   std::unique_ptr<nodes::FieldInferencingInterface> field_inferencing_interface;
@@ -245,6 +243,12 @@ class bNodeTreeRuntime : NonCopyable, NonMovable {
    * those are not used when the node tree is evaluated.
    */
   std::unique_ptr<nodes::EvalDependencies> eval_dependencies;
+
+  /**
+   * Node previews for the compositor.
+   * Only available in base node trees (e.g. scene->compositing_node_group).
+   */
+  Map<bNodeInstanceKey, bNodePreview> previews;
 
   /** Only valid when #topology_cache_is_dirty is false. */
   Vector<bNodeLink *> links;

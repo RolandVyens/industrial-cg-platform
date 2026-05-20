@@ -12,7 +12,6 @@
 
 #include "BKE_appdir.hh"
 #include "BKE_blender_version.h"
-#include "BKE_gtest_base.hh"
 #include "BKE_main.hh"
 
 #include "BLI_fileops.h"

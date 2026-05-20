@@ -38,7 +38,6 @@ void action_operatortypes()
   WM_operatortype_append(ACTION_OT_select_more);
   WM_operatortype_append(ACTION_OT_select_less);
   WM_operatortype_append(ACTION_OT_select_leftright);
-  WM_operatortype_append(ACTION_OT_select_by_type);
 
   /* editing */
   WM_operatortype_append(ACTION_OT_snap);

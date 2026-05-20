@@ -85,13 +85,11 @@ static void node_shader_update_tex_gabor(bNodeTree *ntree, bNode *node)
 {
   const NodeTexGabor &storage = node_storage(*node);
 
-  bNodeSocket *orientation_2d_socket = bke::node_find_socket(
-      *node, SOCK_IN, "Orientation 2D"_ustr);
+  bNodeSocket *orientation_2d_socket = bke::node_find_socket(*node, SOCK_IN, "Orientation 2D");
   bke::node_set_socket_availability(
       *ntree, *orientation_2d_socket, storage.type == SHD_GABOR_TYPE_2D);
 
-  bNodeSocket *orientation_3d_socket = bke::node_find_socket(
-      *node, SOCK_IN, "Orientation 3D"_ustr);
+  bNodeSocket *orientation_3d_socket = bke::node_find_socket(*node, SOCK_IN, "Orientation 3D");
   bke::node_set_socket_availability(
       *ntree, *orientation_3d_socket, storage.type == SHD_GABOR_TYPE_3D);
 }
@@ -189,13 +187,6 @@ class GaborNoiseFunction : public mf::MultiFunction {
         break;
       }
     }
-  }
-
-  void hash_unique(UniqueHashBytes &hash) const override
-  {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(type_);
   }
 
   ExecutionHints get_execution_hints() const override

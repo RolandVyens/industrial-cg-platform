@@ -377,9 +377,9 @@ World *ED_preview_prepare_world_simple(Main *pr_main)
   bNode *output = node_add_node(nullptr, *ntree, "ShaderNodeOutputWorld"_ustr);
   node_add_link(*world->nodetree,
                 *background,
-                *node_find_socket(*background, SOCK_OUT, "Background"_ustr),
+                *node_find_socket(*background, SOCK_OUT, "Background"),
                 *output,
-                *node_find_socket(*output, SOCK_IN, "Surface"_ustr));
+                *node_find_socket(*output, SOCK_IN, "Surface"));
   node_set_active(*ntree, *output);
 
   world->nodetree = ntree;
@@ -393,8 +393,8 @@ void ED_preview_world_simple_set_rgb(World *world, const float color[4])
   bNode *background = bke::node_find_node_by_name(*world->nodetree, "Background");
   BLI_assert(background != nullptr);
 
-  auto *color_socket = static_cast<bNodeSocketValueRGBA *>(
-      bke::node_find_socket(*background, SOCK_IN, "Color"_ustr)->default_value);
+  auto color_socket = static_cast<bNodeSocketValueRGBA *>(
+      bke::node_find_socket(*background, SOCK_IN, "Color")->default_value);
   copy_v4_v4(color_socket->value, color);
 }
 
@@ -514,7 +514,7 @@ static Scene *preview_prepare_scene(
 
     /* Only enable the combined render-pass. */
     view_layer->passflag = SCE_PASS_COMBINED;
-    view_layer->eevee.render_passes = eViewLayerEEVEEPassType{};
+    view_layer->eevee.render_passes = 0;
 
     /* This flag tells render to not execute depsgraph or F-Curves etc. */
     sce->r.scemode |= R_BUTS_PREVIEW;
@@ -920,7 +920,7 @@ static void object_preview_render(const PreviewImage *prv_img,
                                                       DEG_get_evaluated(depsgraph, scene->camera),
                                                       prv_img->w[icon_size],
                                                       prv_img->h[icon_size],
-                                                      ImBufFlags::ByteData,
+                                                      IB_byte_data,
                                                       V3D_OFSDRAW_OVERRIDE_SCENE_SETTINGS,
                                                       R_ALPHAPREMUL,
                                                       nullptr,
@@ -1038,7 +1038,7 @@ static void action_preview_render(const PreviewImage *prv_img,
                                                       camera_eval,
                                                       prv_img->w[icon_size],
                                                       prv_img->h[icon_size],
-                                                      ImBufFlags::ByteData,
+                                                      IB_byte_data,
                                                       V3D_OFSDRAW_NONE,
                                                       R_ADDSKY,
                                                       nullptr,
@@ -1100,7 +1100,7 @@ static void scene_preview_render(const PreviewImage *prv_img,
                                                       camera_eval,
                                                       prv_img->w[icon_size],
                                                       prv_img->h[icon_size],
-                                                      ImBufFlags::ByteData,
+                                                      IB_byte_data,
                                                       V3D_OFSDRAW_NONE,
                                                       R_ADDSKY,
                                                       nullptr,
@@ -1162,7 +1162,9 @@ static void shader_preview_texture(ShaderPreview *sp, Tex *tex, Scene *sce, Rend
   RenderResult *rr = RE_AcquireResultWrite(re);
   RenderView *rv = static_cast<RenderView *>(rr->views.first);
   ImBuf *rv_ibuf = RE_RenderViewEnsureImBuf(rr, rv);
-  rv_ibuf->assign_float_data(MEM_new_array_zeroed<float>(size_t(4) * width * height, __func__));
+  IMB_assign_float_buffer(rv_ibuf,
+                          MEM_new_array_zeroed<float>(4 * width * height, "texture render result"),
+                          IB_TAKE_OWNERSHIP);
   RE_ReleaseResult(re);
 
   /* Get texture image pool (if any) */
@@ -1285,8 +1287,10 @@ static void shader_preview_render(ShaderPreview *sp, ID *id, int split, int firs
 
   /* handle results */
   if (sp->pr_method == PR_ICON_RENDER) {
+    // char *rct = (char *)(sp->pr_rect + 32 * 16 + 16);
+
     if (sp->pr_rect) {
-      RE_ResultGet32(re, reinterpret_cast<uint8_t *>(sp->pr_rect));
+      RE_ResultGet32(re, sp->pr_rect);
     }
   }
 
@@ -1788,7 +1792,7 @@ Set<std::string> &PreviewLoadJob::known_downloaded_previews()
 PreviewLoadJob &PreviewLoadJob::ensure_job(wmWindowManager *wm, wmWindow *win)
 {
   wmJob *wm_job = WM_jobs_get(
-      wm, win, nullptr, "Loading previews...", eWM_JobFlag{}, WM_JOB_TYPE_LOAD_PREVIEW);
+      wm, win, nullptr, "Loading previews...", eWM_JobFlag(0), WM_JOB_TYPE_LOAD_PREVIEW);
 
   if (!WM_jobs_is_running(wm_job)) {
     PreviewLoadJob *job_data = MEM_new<PreviewLoadJob>("PreviewLoadJobData");
@@ -1842,37 +1846,28 @@ void PreviewLoadJob::push_load_request(PreviewImage *preview, const eIconSizes i
     std::lock_guard lock(requested_previews_mutex_);
 
     /* Typically shouldn't happen, since previews are flagged with #PRV_RENDERING when loading,
-     * which should prevent double requests. However, a #PreviewImage might be tagged for deletion
-     * and recreated while a request is still pending. In that case, update the preview pointer.
+     * which should prevent double requests. However, a #PreviewImage might be deleted and
+     * recreated while a request is still pending. In that case, update the preview pointer.
      *
-     * This happens when reloading online asset libraries with running preview downloads. The
-     * assets are destructed then, the preview removed from the global cache (so it won't be
-     * reused by the subsequent re-request) and tagged for freeing. */
-    if (std::unique_ptr<RequestedPreview> *existing_request_uptr = requested_previews_.lookup_ptr(
-            key))
+     * This happens when reloading online asset libraries with running preview downloads. */
+    if (std::unique_ptr<RequestedPreview> *existing_request = requested_previews_.lookup_ptr(key))
     {
-      RequestedPreview *existing_request = existing_request_uptr->get();
-      if (existing_request->preview != preview) {
-        /* This will free the preview if it's tagged with #PRV_TAG_DEFERRED_DELETE. That's
-         * important since the global cache doesn't hold it anymore and therefore won't free it.
-         * It's up to us here to end loading properly. */
-        BKE_previewimg_render_end(existing_request->preview, icon_size, PRV_RENDER_STATUS_FAILED);
-        existing_request->preview = preview;
-      }
-      return;
-    }
-
-    std::unique_ptr<RequestedPreview> new_request = std::make_unique<RequestedPreview>(preview,
-                                                                                       icon_size);
-    request = new_request.get();
-
-    if (is_downloading) {
-      request->state = PreviewState::Downloading;
+      request = existing_request->get();
+      request->preview = preview;
     }
     else {
-      request->state = PreviewState::LoadingFromDisk;
+      std::unique_ptr<RequestedPreview> new_request = std::make_unique<RequestedPreview>(
+          preview, icon_size);
+      request = new_request.get();
+
+      if (is_downloading) {
+        request->state = PreviewState::Downloading;
+      }
+      else {
+        request->state = PreviewState::LoadingFromDisk;
+      }
+      requested_previews_.add(key, std::move(new_request));
     }
-    requested_previews_.add(key, std::move(new_request));
   }
 
   /* NOTE: The request gets pushed to the queue, even when state == PreviewState::Downloading, even

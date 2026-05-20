@@ -35,6 +35,7 @@ class Light : public Geometry {
   NODE_SOCKET_API(float3, strength)
 
   NODE_SOCKET_API(bool, cast_shadow)
+  NODE_SOCKET_API(float3, shadow_color)
   NODE_SOCKET_API(bool, use_mis)
   NODE_SOCKET_API(bool, use_caustics)
 

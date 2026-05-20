@@ -170,8 +170,8 @@ void SourceProcessor::lower_resource_access_functions(Parser &parser)
       string_view func_name = tokens[0].str();
       if (func_name != "specialization_constant_get" && func_name != "shared_variable_get" &&
           func_name != "push_constant_get" && func_name != "interface_get" &&
-          func_name != "resource_table_get" && func_name != "attribute_get" &&
-          func_name != "buffer_get" && func_name != "sampler_get" && func_name != "image_get")
+          func_name != "attribute_get" && func_name != "buffer_get" &&
+          func_name != "sampler_get" && func_name != "image_get")
       {
         return;
       }
@@ -180,10 +180,6 @@ void SourceProcessor::lower_resource_access_functions(Parser &parser)
       /* We can be in expression scope. Take parent scope until we find a local scope. */
       while (scope.type() != ScopeType::Function && scope.type() != ScopeType::Local) {
         scope = scope.scope();
-      }
-
-      if (func_name == "resource_table_get") {
-        info_name += "_infos_";
       }
 
       string condition = "defined(CREATE_INFO_" + info_name + ")";
@@ -357,7 +353,7 @@ void SourceProcessor::lower_resource_table(Parser &parser)
       }
       else if (type == "specialization_constant") {
         resource.res_type = type;
-        resource.res_value = attribute[1].scope().str_exclusive();
+        resource.res_value = attribute[2].str();
       }
       else if (type == "condition") {
         attribute[1].scope().foreach_token(Word, [&](const Token tok) {
@@ -495,7 +491,7 @@ void SourceProcessor::lower_resource_table(Parser &parser)
     body.foreach_declaration([&](Scope attributes,
                                  Token const_tok,
                                  Token type,
-                                 Scope /*template_scope*/, /* TODO */
+                                 Scope /*template_scope TODO */,
                                  Token name,
                                  Scope array,
                                  Token decl_end) {

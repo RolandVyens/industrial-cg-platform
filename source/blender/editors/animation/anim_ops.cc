@@ -122,11 +122,10 @@ static bool change_frame_poll(bContext *C)
       if (!CTX_data_sequencer_scene(C)) {
         return false;
       }
-      /* In the combined sequencer/preview view, both window and preview regions share an active
-       * tool, so check the type to avoid conflicts with actions which can have the same key bound
-       * (2D cursor for example). */
+      /* Check the region type so tools (which are shared between preview/strip view)
+       * don't conflict with actions which can have the same key bound (2D cursor for example). */
       const ARegion *region = CTX_wm_region(C);
-      if (region && ELEM(region->regiontype, RGN_TYPE_WINDOW, RGN_TYPE_SCRUBBING)) {
+      if (region && region->regiontype == RGN_TYPE_WINDOW) {
         return true;
       }
     }
@@ -618,7 +617,7 @@ static float frame_from_event(bContext *C, const wmEvent *event)
   frame = ui::view2d_region_to_view_x(&region->v2d, event->mval[0]);
 
   /* respect preview range restrictions (if only allowed to move around within that range) */
-  if ((scene->r.flag & SCER_LOCK_FRAME_SELECTION) || (region->regiontype == RGN_TYPE_SCRUBBING)) {
+  if (scene->r.flag & SCER_LOCK_FRAME_SELECTION) {
     const ScenePlaybackRange playback_range = BKE_scene_get_playback_range(scene);
     CLAMP(frame, playback_range.start_frame, playback_range.end_frame);
   }
@@ -1545,7 +1544,7 @@ static wmOperatorStatus replace_action_new_invoke(bContext *C,
  */
 static void ANIM_OT_replace_action_new(wmOperatorType *ot)
 {
-  ot->name = "Replace with New Action";
+  ot->name = "Replace with new Action";
   ot->idname = "ANIM_OT_replace_action_new";
   ot->description =
       "Swap all users of one action to a new action. This ignores the NLA and Action Constraints";

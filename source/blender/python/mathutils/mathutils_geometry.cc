@@ -387,12 +387,13 @@ static PyObject *M_Geometry_normal(PyObject * /*self*/, PyObject *args)
 
   if (coords_len < 3) {
     PyErr_SetString(PyExc_ValueError, "Expected 3 or more vectors");
-  }
-  else {
-    normal_poly_v3(n, coords, coords_len);
-    ret = Vector_CreatePyObject(n, 3, nullptr);
+    goto finally;
   }
 
+  normal_poly_v3(n, coords, coords_len);
+  ret = Vector_CreatePyObject(n, 3, nullptr);
+
+finally:
   PyMem_Free(coords);
   return ret;
 }
@@ -1762,13 +1763,12 @@ static PyObject *M_Geometry_delaunay_2d_cdt(PyObject * /*self*/, PyObject *args)
   PyObject *ret_value = nullptr;
 
   if (!PyArg_ParseTuple(args,
-                        "OOOif|O&:delaunay_2d_cdt",
+                        "OOOif|p:delaunay_2d_cdt",
                         &vert_coords,
                         &edges,
                         &faces,
                         &output_type,
                         &epsilon,
-                        PyC_ParseBool,
                         &need_ids))
   {
     return nullptr;

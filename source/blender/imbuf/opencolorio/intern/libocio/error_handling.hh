@@ -4,9 +4,11 @@
 
 #pragma once
 
-#include "BLI_string_ref.hh"
+#if defined(WITH_OPENCOLORIO)
 
-#include "../opencolorio.hh"
+#  include "BLI_string_ref.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -14,3 +16,5 @@ void report_exception(const OCIO_NAMESPACE::Exception &exception);
 void report_error(StringRefNull error);
 
 }  // namespace blender::ocio
+
+#endif

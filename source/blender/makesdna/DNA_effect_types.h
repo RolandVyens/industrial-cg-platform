@@ -10,14 +10,12 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 /* Don't forget, new effects also in `writefile.cc` for DNA! */
 
 /** #PartEff::flag. */
-enum ePartEff_Flag : short {
+enum {
   // PAF_UNUSED_0 = 1 << 0, /* DEPRECATED, dirty. */
   PAF_BSPLINE = 1 << 1,
   PAF_STATIC = 1 << 2,
@@ -36,35 +34,32 @@ enum ePartEff_Flag : short {
   /** Show particles after they've died. */
   PAF_DIED = 1 << 11,
 };
-ENUM_OPERATORS(ePartEff_Flag)
 
 /** #PartEff::flag2, for pos/neg #PartEff::flag2neg. */
-enum ePartEff_Flag2 : short {
+enum {
   PAF_TEXTIME = 1, /* Texture timing. */
 };
-ENUM_OPERATORS(ePartEff_Flag2)
 
 /** #PartEff::type. */
-enum eEffect_Type : short {
+enum {
   EFF_BUILD = 0,
   EFF_PARTICLE = 1,
   EFF_WAVE = 2,
 };
 
 /** #PartEff::flag. */
-enum eEffect_Flag : short {
+enum {
   EFF_SELECT = 1,
 };
-ENUM_OPERATORS(eEffect_Flag)
 
 /** #PartEff::stype. */
-enum ePartEff_SType : short {
+enum {
   PAF_NORMAL = 0,
   PAF_VECT = 1,
 };
 
 /** #PartEff::texmap. */
-enum ePartEff_TexMap : short {
+enum {
   PAF_TEXINT = 0,
   PAF_TEXRGB = 1,
   PAF_TEXGRAD = 2,
@@ -72,18 +67,14 @@ enum ePartEff_TexMap : short {
 
 struct Effect {
   struct Effect *next = nullptr, *prev = nullptr;
-  eEffect_Type type = EFF_BUILD;
-  eEffect_Flag flag = {};
-  short buttype = 0;
+  short type = 0, flag = 0, buttype = 0;
   char _pad0[2] = {};
 };
 
 struct BuildEff {
   /* NOTE: match #Effect. */
   struct BuildEff *next = nullptr, *prev = nullptr;
-  eEffect_Type type = EFF_BUILD;
-  eEffect_Flag flag = {};
-  short buttype = 0;
+  short type = 0, flag = 0, buttype = 0;
   /* End header. */
 
   char _pad0[2] = {};
@@ -105,13 +96,10 @@ struct Collection;
 struct PartEff {
   /* NOTE: match #Effect. */
   struct PartEff *next = nullptr, *prev = nullptr;
-  eEffect_Type type = EFF_BUILD;
-  ePartEff_Flag flag = {};
-  short buttype = 0;
+  short type = 0, flag = 0, buttype = 0;
   /* End header. */
 
-  ePartEff_SType stype = PAF_NORMAL;
-  short vertgroup = 0, userjit = 0;
+  short stype = 0, vertgroup = 0, userjit = 0;
 
   float sta = 0, end = 0, lifetime = 0;
   int totpart = 0, totkey = 0, seed = 0;
@@ -125,10 +113,8 @@ struct PartEff {
 
   float mult[4] = {}, life[4] = {};
   short child[4] = {}, mat[4] = {};
-  ePartEff_TexMap texmap = PAF_TEXINT;
-  short curmult = 0;
-  short staticstep = 0, omat = 0, timetex = 0, speedtex = 0;
-  ePartEff_Flag2 flag2 = {}, flag2neg = {};
+  short texmap = 0, curmult = 0;
+  short staticstep = 0, omat = 0, timetex = 0, speedtex = 0, flag2 = 0, flag2neg = 0;
   short disp = 0, vertgroup_v = 0;
 
   char vgroupname[/*MAX_VGROUP_NAME*/ 64] = "";
@@ -143,9 +129,7 @@ struct PartEff {
 struct WaveEff {
   /* NOTE: match #Effect. */
   struct WaveEff *next = nullptr, *prev = nullptr;
-  eEffect_Type type = EFF_BUILD;
-  eEffect_Flag flag = {};
-  short buttype = 0, stype = 0;
+  short type = 0, flag = 0, buttype = 0, stype = 0;
   /* End header. */
 
   float startx = 0, starty = 0, height = 0, width = 0;

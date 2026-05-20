@@ -7,7 +7,6 @@
 #include "BKE_attribute.hh"
 #include "BKE_curves.hh"
 #include "BKE_grease_pencil.hh"
-#include "BKE_gtest_base.hh"
 #include "BKE_idtype.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_main.hh"
@@ -57,9 +56,7 @@ static void expect_near_positions(const Span<float3> actual, const Span<float2> 
   }
 }
 
-class GreasePencilTrimTest : public bke::BlenderGTestBase {};
-
-TEST_F(GreasePencilTrimTest, trim_two_edges)
+TEST(grease_pencil_trim, trim_two_edges)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -91,7 +88,7 @@ TEST_F(GreasePencilTrimTest, trim_two_edges)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_sub_edges)
+TEST(grease_pencil_trim, trim_sub_edges)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -127,7 +124,7 @@ TEST_F(GreasePencilTrimTest, trim_sub_edges)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_plus_intersection)
+TEST(grease_pencil_trim, trim_plus_intersection)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -158,7 +155,7 @@ TEST_F(GreasePencilTrimTest, trim_plus_intersection)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_t_intersection_to_corner)
+TEST(grease_pencil_trim, trim_t_intersection_to_corner)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -187,7 +184,7 @@ TEST_F(GreasePencilTrimTest, trim_t_intersection_to_corner)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_t_intersection_line)
+TEST(grease_pencil_trim, trim_t_intersection_line)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -223,7 +220,7 @@ TEST_F(GreasePencilTrimTest, trim_t_intersection_line)
   }
 }
 
-TEST_F(GreasePencilTrimTest, trim_figure_eight)
+TEST(grease_pencil_trim, trim_figure_eight)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -253,7 +250,7 @@ TEST_F(GreasePencilTrimTest, trim_figure_eight)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry)
+TEST(grease_pencil_trim, trim_no_geometry)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -273,7 +270,7 @@ TEST_F(GreasePencilTrimTest, trim_no_geometry)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry_loop)
+TEST(grease_pencil_trim, trim_no_geometry_loop)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -292,7 +289,7 @@ TEST_F(GreasePencilTrimTest, trim_no_geometry_loop)
   EXPECT_EQ(dst.cyclic()[0], true);
 }
 
-TEST_F(GreasePencilTrimTest, trim_cyclical_corner)
+TEST(grease_pencil_trim, trim_cyclical_corner)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -321,7 +318,7 @@ TEST_F(GreasePencilTrimTest, trim_cyclical_corner)
   expect_near_positions(dst.positions(), expected_positions);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry_edge_end_intersection)
+TEST(grease_pencil_trim, trim_no_geometry_edge_end_intersection)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -343,7 +340,7 @@ TEST_F(GreasePencilTrimTest, trim_no_geometry_edge_end_intersection)
   EXPECT_EQ(dst.cyclic()[1], false);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry_cyclical_loop)
+TEST(grease_pencil_trim, trim_no_geometry_cyclical_loop)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -365,7 +362,7 @@ TEST_F(GreasePencilTrimTest, trim_no_geometry_cyclical_loop)
   EXPECT_EQ(dst.cyclic()[1], false);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry_point_intersection)
+TEST(grease_pencil_trim, trim_no_geometry_point_intersection)
 {
   using namespace bke::greasepencil;
   using namespace bke;
@@ -387,7 +384,7 @@ TEST_F(GreasePencilTrimTest, trim_no_geometry_point_intersection)
   EXPECT_EQ(dst.cyclic()[1], false);
 }
 
-TEST_F(GreasePencilTrimTest, trim_no_geometry_self_intersection_degeneracy)
+TEST(grease_pencil_trim, trim_no_geometry_self_intersection_degeneracy)
 {
   using namespace bke::greasepencil;
   using namespace bke;

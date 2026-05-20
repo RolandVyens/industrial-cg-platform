@@ -18,6 +18,7 @@
 #include "GPU_material.hh"
 
 #include "COM_result.hh"
+#include "COM_utilities_gpu_material.hh"
 
 #include "node_composite_util.hh"
 
@@ -97,10 +98,10 @@ static int node_gpu_material(GPUMaterial *material,
   const float max = 1.0f;
   GPU_link(material,
            "clamp_value",
-           GPU_node_get_input_link(*node, inputs, "Fac"),
+           get_shader_node_input_link(*node, inputs, "Fac"),
            GPU_constant(&min),
            GPU_constant(&max),
-           &GPU_node_get_input(*node, inputs, "Fac").link);
+           &get_shader_node_input(*node, inputs, "Fac").link);
 
   /* If the RGB curves do nothing, use a function that skips RGB computations. */
   if (BKE_curvemapping_is_map_identity(curve_mapping, 0) &&

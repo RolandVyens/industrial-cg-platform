@@ -6,7 +6,9 @@
  * \ingroup draw
  */
 
-#pragma once
+#ifndef GPU_SHADER
+#  pragma once
+#endif
 
 #define SUBDIV_GROUP_SIZE 64
 

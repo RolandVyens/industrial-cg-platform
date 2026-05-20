@@ -19,11 +19,12 @@
 
 #pragma once
 
+#include "BLI_utility_mixins.hh"
 #include "BLI_vector.hh"
 
 #include "gpu_shader_create_info.hh"
 
-#include "vk_buffer.hh"
+#include "vk_common.hh"
 #include "vk_descriptor_set.hh"
 
 namespace blender::gpu {
@@ -59,7 +60,7 @@ class VKPushConstants {
     /**
      * Fallback when push constants doesn't meet the device requirements.
      */
-    BUFFER,
+    UNIFORM_BUFFER,
   };
 
   /**
@@ -67,7 +68,7 @@ class VKPushConstants {
    */
   struct Layout {
     static constexpr StorageType STORAGE_TYPE_DEFAULT = StorageType::PUSH_CONSTANTS;
-    static constexpr StorageType STORAGE_TYPE_FALLBACK = StorageType::BUFFER;
+    static constexpr StorageType STORAGE_TYPE_FALLBACK = StorageType::UNIFORM_BUFFER;
 
     struct PushConstant {
       /* Used as lookup based on ShaderInput. */
@@ -97,8 +98,8 @@ class VKPushConstants {
      * Returns:
      * - StorageType::NONE: No push constants are needed.
      * - StorageType::PUSH_CONSTANTS: Regular vulkan push constants can be used.
-     * - StorageType::BUFFER: The push constants don't fit in the limits of the given
-     *   device. A buffer should be used as a fallback method.
+     * - StorageType::UNIFORM_BUFFER: The push constants don't fit in the limits of the given
+     *   device. A uniform buffer should be used as a fallback method.
      */
     static StorageType determine_storage_type(const shader::ShaderCreateInfo &info,
                                               const VKDevice &device);
@@ -109,8 +110,8 @@ class VKPushConstants {
      *
      * interface: Uniform locations of the interface are used as lookup key.
      * storage_type: The type of storage for push constants to use.
-     * location: When storage_type=StorageType::BUFFER this contains
-     *    the location in the descriptor set where the buffer can be
+     * location: When storage_type=StorageType::UNIFORM_BUFFER this contains
+     *    the location in the descriptor set where the uniform buffer can be
      *    bound.
      */
     void init(const shader::ShaderCreateInfo &info,
@@ -127,9 +128,9 @@ class VKPushConstants {
     }
 
     /**
-     * Get the binding location for the buffer.
+     * Get the binding location for the uniform buffer.
      *
-     * Only valid when storage_type=StorageType::BUFFER.
+     * Only valid when storage_type=StorageType::UNIFORM_BUFFER.
      */
     VKDescriptorSet::Location descriptor_set_location_get() const
     {
@@ -156,6 +157,9 @@ class VKPushConstants {
  private:
   const Layout *layout_ = nullptr;
   void *data_ = nullptr;
+
+  /** Uniform buffer used to store the push constants when they don't fit. */
+  std::unique_ptr<VKUniformBuffer> uniform_buffer_;
 
  public:
   VKPushConstants();
@@ -227,7 +231,7 @@ class VKPushConstants {
       return;
     }
 
-    /* Store elements in buffer as array. In Std140 arrays have an element stride of 16
+    /* Store elements in uniform buffer as array. In Std140 arrays have an element stride of 16
      * bytes. */
     BLI_assert(sizeof(T) == 4);
     const T *src = input_data;
@@ -253,11 +257,19 @@ class VKPushConstants {
   }
 
   /**
-   * When storage type = StorageType::BUFFER use this method to update the buffer.
+   * When storage type = StorageType::UNIFORM_BUFFER use this method to update the uniform
+   * buffer.
    *
    * It must be called just before adding a draw/compute command to the command queue.
    */
-  VKBufferWithOffset update_uniform_buffer(VKContext &context);
+  void update_uniform_buffer();
+
+  /**
+   * Get a reference to the uniform buffer.
+   *
+   * Only valid when storage type = StorageType::UNIFORM_BUFFER.
+   */
+  std::unique_ptr<VKUniformBuffer> &uniform_buffer_get();
 };
 
 }  // namespace blender::gpu

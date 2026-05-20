@@ -21,12 +21,6 @@ COMPUTE_SOURCE("compositor_convert.glsl")
 SAMPLER(0, isampler2D, input_tx)
 GPU_SHADER_CREATE_END()
 
-GPU_SHADER_CREATE_INFO(compositor_convert_float4x4_shared)
-LOCAL_GROUP_SIZE(16, 16)
-COMPUTE_SOURCE("compositor_convert.glsl")
-SAMPLER(0, sampler2DArray, input_tx)
-GPU_SHADER_CREATE_END()
-
 /* --------------------------------------------------------------------
  * Float to other.
  */
@@ -84,13 +78,6 @@ GPU_SHADER_CREATE_INFO(compositor_convert_float_to_bool)
 ADDITIONAL_INFO(compositor_convert_float_shared)
 IMAGE(0, SINT_8, write, iimage2D, output_img)
 COMPUTE_FUNCTION("convert_float_to_bool")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-GPU_SHADER_CREATE_INFO(compositor_convert_float_to_quaternion)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_float_to_quaternion")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
@@ -334,13 +321,6 @@ COMPUTE_FUNCTION("convert_float2_to_bool")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
-GPU_SHADER_CREATE_INFO(compositor_convert_float2_to_quaternion)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_float2_to_quaternion")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
 /* --------------------------------------------------------------------
  * Float3 to other.
  */
@@ -398,13 +378,6 @@ GPU_SHADER_CREATE_INFO(compositor_convert_float3_to_bool)
 ADDITIONAL_INFO(compositor_convert_float_shared)
 IMAGE(0, SINT_8, write, iimage2D, output_img)
 COMPUTE_FUNCTION("convert_float3_to_bool")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-GPU_SHADER_CREATE_INFO(compositor_convert_float3_to_quaternion)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_float3_to_quaternion")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
@@ -531,13 +504,6 @@ COMPUTE_FUNCTION("convert_float4_to_bool")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()
 
-GPU_SHADER_CREATE_INFO(compositor_convert_float4_to_quaternion)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_float4_to_quaternion")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
 /* --------------------------------------------------------------------
  * Bool to other.
  */
@@ -606,48 +572,5 @@ GPU_SHADER_CREATE_INFO(compositor_convert_color_to_alpha)
 ADDITIONAL_INFO(compositor_convert_float_shared)
 IMAGE(0, SFLOAT_16, write, image2D, output_img)
 COMPUTE_FUNCTION("convert_color_to_alpha")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-/* --------------------------------------------------------------------
- * Float4x4 to other.
- */
-
-GPU_SHADER_CREATE_INFO(compositor_convert_float4x4_to_quaternion)
-ADDITIONAL_INFO(compositor_convert_float4x4_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_float4x4_to_quaternion")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-/* --------------------------------------------------------------------
- * Quaternion to other.
- */
-
-GPU_SHADER_CREATE_INFO(compositor_convert_quaternion_to_float2)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_quaternion_to_float2")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-GPU_SHADER_CREATE_INFO(compositor_convert_quaternion_to_float3)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_quaternion_to_float3")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-GPU_SHADER_CREATE_INFO(compositor_convert_quaternion_to_float4)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2D, output_img)
-COMPUTE_FUNCTION("convert_quaternion_to_float4")
-DO_STATIC_COMPILATION()
-GPU_SHADER_CREATE_END()
-
-GPU_SHADER_CREATE_INFO(compositor_convert_quaternion_to_float4x4)
-ADDITIONAL_INFO(compositor_convert_float_shared)
-IMAGE(0, SFLOAT_16_16_16_16, write, image2DArray, output_img)
-COMPUTE_FUNCTION("convert_quaternion_to_float4x4")
 DO_STATIC_COMPILATION()
 GPU_SHADER_CREATE_END()

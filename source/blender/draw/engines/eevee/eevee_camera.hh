@@ -176,8 +176,7 @@ class Camera {
  private:
   void update_bounds();
 
-  float4x4 projection_crop_matrix(int2 film_offset, int2 film_extent, int2 display_extent);
-  float4x4 projection_overscan_matrix(int2 film_extent, int2 film_overscan);
+  CameraParams v3d_camera_params_get() const;
 };
 
 /** \} */

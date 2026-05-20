@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
 #include "BLI_math_constants.h"
 
 #include "DNA_ID.h"
@@ -32,15 +31,14 @@ struct Tex;
  * \{ */
 
 /** #TexMapping::flag bit-mask. */
-enum eTexMapping_Flag : int {
+enum {
   TEXMAP_CLIP_MIN = 1 << 0,
   TEXMAP_CLIP_MAX = 1 << 1,
   TEXMAP_UNIT_MATRIX = 1 << 2,
 };
-ENUM_OPERATORS(eTexMapping_Flag)
 
 /** #TexMapping::type. */
-enum eTexMapping_Type : int {
+enum {
   TEXMAP_TYPE_POINT = 0,
   TEXMAP_TYPE_TEXTURE = 1,
   TEXMAP_TYPE_VECTOR = 2,
@@ -48,10 +46,9 @@ enum eTexMapping_Type : int {
 };
 
 /** #ColorMapping::flag bit-mask. */
-enum eColorMapping_Flag : int {
+enum {
   COLORMAP_USE_RAMP = 1,
 };
-ENUM_OPERATORS(eColorMapping_Flag)
 
 /** \} */
 
@@ -60,7 +57,7 @@ ENUM_OPERATORS(eColorMapping_Flag)
  * \{ */
 
 /** #Tex::type. */
-enum eTex_Type : short {
+enum {
   TEX_CLOUDS = 1,
   TEX_WOOD = 2,
   TEX_MARBLE = 3,
@@ -80,7 +77,7 @@ enum eTex_Type : short {
 };
 
 /** #Tex::stype musgrave. */
-enum eTex_MusgraveType : short {
+enum {
   TEX_MFRACTAL = 0,
   TEX_RIDGEDMF = 1,
   TEX_HYBRIDMF = 2,
@@ -89,7 +86,7 @@ enum eTex_MusgraveType : short {
 };
 
 /** #Tex::noisebasis, #Tex::noisebasis2. */
-enum eTex_NoiseBasis : short {
+enum {
   TEX_BLENDER = 0,
   TEX_STDPERLIN = 1,
   TEX_NEWPERLIN = 2,
@@ -103,7 +100,7 @@ enum eTex_NoiseBasis : short {
 };
 
 /** #Tex::vn_distm voronoi distance metrics. */
-enum eTex_VoronoiDistMetric : short {
+enum {
   TEX_DISTANCE = 0,
   TEX_DISTANCE_SQUARED = 1,
   TEX_MANHATTAN = 2,
@@ -114,7 +111,7 @@ enum eTex_VoronoiDistMetric : short {
 };
 
 /** #Tex::imaflag bit-mask. */
-enum eTex_ImaFlag : short {
+enum {
   TEX_INTERPOL = 1 << 0,
   TEX_USEALPHA = 1 << 1,
   TEX_IMAROT = 1 << 4,
@@ -122,10 +119,9 @@ enum eTex_ImaFlag : short {
   TEX_NORMALMAP = 1 << 11,
   TEX_DERIVATIVEMAP = 1 << 14,
 };
-ENUM_OPERATORS(eTex_ImaFlag)
 
 /** #Tex::flag bit-mask. */
-enum eTex_Flag : short {
+enum {
   TEX_COLORBAND = 1 << 0,
   TEX_FLIPBLEND = 1 << 1,
   TEX_NEGALPHA = 1 << 2,
@@ -138,10 +134,9 @@ enum eTex_Flag : short {
   TEX_DS_EXPAND = 1 << 9,
   TEX_NO_CLAMP = 1 << 10,
 };
-ENUM_OPERATORS(eTex_Flag)
 
 /** #Tex::extend (starts with 1 because of backward compatibility). */
-enum eTex_Extend : short {
+enum {
   TEX_EXTEND = 1,
   TEX_CLIP = 2,
   TEX_REPEAT = 3,
@@ -150,20 +145,20 @@ enum eTex_Extend : short {
 };
 
 /** #Tex::noisetype type. */
-enum eTex_NoiseType : short {
+enum {
   TEX_NOISESOFT = 0,
   TEX_NOISEPERL = 1,
 };
 
 /** #Tex::noisebasis2 wood waveforms. */
-enum eTex_WoodWaveform : short {
+enum {
   TEX_SIN = 0,
   TEX_SAW = 1,
   TEX_TRI = 2,
 };
 
 /** #Tex::stype wood types. */
-enum eTex_WoodType : short {
+enum {
   TEX_BAND = 0,
   TEX_RING = 1,
   TEX_BANDNOISE = 2,
@@ -171,20 +166,20 @@ enum eTex_WoodType : short {
 };
 
 /** #Tex::stype cloud types. */
-enum eTex_CloudType : short {
+enum {
   TEX_DEFAULT = 0,
   TEX_COLOR = 1,
 };
 
 /** #Tex::stype marble types. */
-enum eTex_MarbleType : short {
+enum {
   TEX_SOFT = 0,
   TEX_SHARP = 1,
   TEX_SHARPER = 2,
 };
 
 /** #Tex::stype blend types. */
-enum eTex_BlendType : short {
+enum {
   TEX_LIN = 0,
   TEX_QUAD = 1,
   TEX_EASE = 2,
@@ -195,7 +190,7 @@ enum eTex_BlendType : short {
 };
 
 /** #Tex::stype stucci types. */
-enum eTex_StucciType : short {
+enum {
   TEX_PLASTIC = 0,
   TEX_WALLIN = 1,
   TEX_WALLOUT = 2,
@@ -208,7 +203,7 @@ enum eTex_StucciType : short {
  * \{ */
 
 /** #Tex::vn_coltype voronoi color types. */
-enum eTex_VoronoiColType : short {
+enum {
   TEX_INTENSITY = 0,
   TEX_COL1 = 1,
   TEX_COL2 = 2,
@@ -216,7 +211,7 @@ enum eTex_VoronoiColType : short {
 };
 
 /** Return value. */
-enum eTex_ReturnValue : short {
+enum {
   TEX_INT = 0,
   TEX_RGB = 1,
 };
@@ -227,7 +222,7 @@ enum eTex_ReturnValue : short {
  * - #World::pr_texture
  * - #FreestyleLineStyle::pr_texture
  */
-enum eTex_PreviewType : short {
+enum {
   TEX_PR_TEXTURE = 0,
   TEX_PR_OTHER = 1,
   TEX_PR_BOTH = 2,
@@ -238,7 +233,7 @@ enum eTex_PreviewType : short {
  * #TexMapping::projy
  * #TexMapping::projz
  */
-enum eTex_Projection : char {
+enum {
   PROJ_N = 0,
   PROJ_X = 1,
   PROJ_Y = 2,
@@ -252,7 +247,7 @@ enum eTex_Projection : char {
  * \{ */
 
 /** #MTex::mapping. */
-enum eMTex_Mapping : char {
+enum {
   MTEX_FLAT = 0,
   MTEX_CUBE = 1,
   MTEX_TUBE = 2,
@@ -260,7 +255,7 @@ enum eMTex_Mapping : char {
 };
 
 /** #MTex::blendtype. */
-enum eMTex_BlendType : short {
+enum {
   MTEX_BLEND = 0,
   MTEX_MUL = 1,
   MTEX_ADD = 2,
@@ -280,7 +275,7 @@ enum eMTex_BlendType : short {
 };
 
 /** #MTex::brush_map_mode. */
-enum eMTex_BrushMapMode : char {
+enum {
   MTEX_MAP_MODE_VIEW = 0,
   MTEX_MAP_MODE_TILED = 1,
   MTEX_MAP_MODE_3D = 2,
@@ -290,11 +285,10 @@ enum eMTex_BrushMapMode : char {
 };
 
 /** #MTex::brush_angle_mode. */
-enum eMTex_BrushAngleMode : char {
+enum {
   MTEX_ANGLE_RANDOM = 1,
   MTEX_ANGLE_RAKE = 2,
 };
-ENUM_OPERATORS(eMTex_BrushAngleMode)
 
 /** \} */
 
@@ -305,17 +299,14 @@ ENUM_OPERATORS(eMTex_BrushAngleMode)
 struct MTex {
   DNA_DEFINE_CXX_METHODS(MTex)
 
-  short texco = TEXCO_UV, mapto = MAP_COL;
-  eMTex_BlendType blendtype = MTEX_BLEND;
+  short texco = TEXCO_UV, mapto = MAP_COL, blendtype = MTEX_BLEND;
   char _pad2[2] = {};
   struct Object *object = nullptr;
   struct Tex *tex = nullptr;
   char uvname[/*MAX_CUSTOMDATA_LAYER_NAME*/ 68] = "";
 
-  eTex_Projection projx = PROJ_X, projy = PROJ_Y, projz = PROJ_Z;
-  eMTex_Mapping mapping = MTEX_FLAT;
-  eMTex_BrushMapMode brush_map_mode = MTEX_MAP_MODE_VIEW;
-  eMTex_BrushAngleMode brush_angle_mode = {};
+  char projx = PROJ_X, projy = PROJ_Y, projz = PROJ_Z, mapping = MTEX_FLAT;
+  char brush_map_mode = MTEX_MAP_MODE_VIEW, brush_angle_mode = 0;
 
   /**
    * Match against the texture node (#TEX_NODE_OUTPUT, #bNode::custom1 value).
@@ -382,24 +373,20 @@ struct Tex {
   float vn_w3 = 0.0;
   float vn_w4 = 0.0;
   float vn_mexp = 2.5;
-  eTex_VoronoiDistMetric vn_distm = {};
-  eTex_VoronoiColType vn_coltype = {};
+  short vn_distm = 0, vn_coltype = 0;
 
   /* noisedepth MUST be <= 30 else we get floating point exceptions */
-  short noisedepth = 2;
-  eTex_NoiseType noisetype = {};
+  short noisedepth = 2, noisetype = 0;
 
   /* newnoise: noisebasis type for clouds/marble/etc, noisebasis2 only used for distorted noise */
-  eTex_NoiseBasis noisebasis = {}, noisebasis2 = {};
+  short noisebasis = 0, noisebasis2 = 0;
 
-  eTex_ImaFlag imaflag = TEX_INTERPOL | TEX_USEALPHA;
-  eTex_Flag flag = TEX_CHECKER_ODD | TEX_NO_CLAMP;
-  eTex_Type type = TEX_IMAGE;
-  short stype = 0;
+  short imaflag = TEX_INTERPOL | TEX_USEALPHA, flag = TEX_CHECKER_ODD | TEX_NO_CLAMP;
+  short type = TEX_IMAGE, stype = 0;
 
   float cropxmin = 0.0, cropymin = 0.0, cropxmax = 1.0, cropymax = 1.0;
   short xrepeat = 1, yrepeat = 1;
-  eTex_Extend extend = TEX_REPEAT;
+  short extend = TEX_REPEAT;
 
   /* Variables only used for versioning, moved to struct member `iuser`. */
   short _pad0 = {};
@@ -429,10 +416,9 @@ struct TexMapping {
   /** Rotation in radians. */
   float rot[3] = {};
   float size[3] = {};
-  eTexMapping_Flag flag = {};
-  eTex_Projection projx = {}, projy = {}, projz = {};
-  char mapping = 0;
-  eTexMapping_Type type = {};
+  int flag = 0;
+  char projx = 0, projy = 0, projz = 0, mapping = 0;
+  int type = 0;
 
   float mat[4][4] = {};
   float min[3] = {}, max[3] = {};
@@ -443,7 +429,7 @@ struct ColorMapping {
   struct ColorBand coba;
 
   float bright = 0, contrast = 0, saturation = 0;
-  eColorMapping_Flag flag = {};
+  int flag = 0;
 
   float blend_color[3] = {};
   float blend_factor = 0;

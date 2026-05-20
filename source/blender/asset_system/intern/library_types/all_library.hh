@@ -21,7 +21,6 @@ class AllAssetLibrary : public AssetLibrary {
   AllAssetLibrary();
 
   std::optional<AssetLibraryReference> library_reference() const override;
-  std::optional<eAssetImportMethod> import_method() const override;
   void refresh_catalogs() override;
 
   /**

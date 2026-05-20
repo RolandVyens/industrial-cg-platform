@@ -18,15 +18,120 @@ CCL_NAMESPACE_BEGIN
 
 #ifdef __DEEP_OUTPUT__
 
+/* Keep these flags and pack/unpack helpers in sync with session/deep_buffers.h. */
+constexpr uint32_t DEEP_SAMPLE_FLAG_HARD_SURFACE_METADATA = (1u << 0);
+constexpr uint32_t DEEP_SAMPLE_INFO_FLAG_MASK = 0xffu;
+constexpr uint32_t DEEP_SAMPLE_INFO_CAMERA_SAMPLE_SHIFT = 8u;
+constexpr uint32_t DEEP_SAMPLE_INFO_CAMERA_SAMPLE_MASK =
+    0xffffffffu & ~DEEP_SAMPLE_INFO_FLAG_MASK;
+constexpr uint32_t DEEP_INVALID_SAMPLE_INDEX = 0xffffffffu;
+
 /**
  * Deep sample data structure for kernel use.
  * Matches DeepSampleData in session/deep_buffers.h.
  */
-struct ccl_align(32) KernelDeepSample {
+struct ccl_align(16) KernelDeepSample {
   float r, g, b, a;
   float z;
   float z_back;
+  uint32_t surface_object;
+  uint32_t surface_prim;
+  uint32_t surface_shader;
+  uint32_t packed_geometric_normal;
+  uint32_t flags;
 };
+
+static_assert(sizeof(KernelDeepSample) == 48, "KernelDeepSample layout must match host.");
+
+ccl_device_inline void deep_make_surface_key(const int object,
+                                             const int prim,
+                                             const int shader,
+                                             uint32_t &surface_object,
+                                             uint32_t &surface_prim,
+                                             uint32_t &surface_shader)
+{
+  surface_object = uint32_t(object);
+  surface_prim = uint32_t(prim);
+  surface_shader = uint32_t(shader);
+}
+
+ccl_device_inline float2 deep_encode_octahedral_normal(const float3 normal)
+{
+  const float3 n = safe_normalize(normal);
+  const float inv_l1 = 1.0f / (fabsf(n.x) + fabsf(n.y) + fabsf(n.z) + 1e-20f);
+  float2 encoded = make_float2(n.x * inv_l1, n.y * inv_l1);
+
+  if (n.z < 0.0f) {
+    encoded = make_float2(copysignf(1.0f - fabsf(encoded.y), encoded.x),
+                          copysignf(1.0f - fabsf(encoded.x), encoded.y));
+  }
+
+  return encoded;
+}
+
+ccl_device_inline uint32_t deep_pack_unorm_16(const float value)
+{
+  return (uint32_t)clamp(int((clamp(value, 0.0f, 1.0f) * 65535.0f) + 0.5f), 0, 65535);
+}
+
+ccl_device_inline uint32_t deep_pack_geometric_normal(const float3 normal)
+{
+  const float2 encoded = deep_encode_octahedral_normal(normal);
+  const float2 unorm = encoded * 0.5f + make_float2(0.5f, 0.5f);
+  return deep_pack_unorm_16(unorm.x) | (deep_pack_unorm_16(unorm.y) << 16);
+}
+
+ccl_device_inline uint32_t deep_pack_sample_info(const uint32_t flags,
+                                                 const uint32_t camera_sample)
+{
+  return (flags & DEEP_SAMPLE_INFO_FLAG_MASK) |
+         ((camera_sample << DEEP_SAMPLE_INFO_CAMERA_SAMPLE_SHIFT) &
+          DEEP_SAMPLE_INFO_CAMERA_SAMPLE_MASK);
+}
+
+ccl_device_inline uint32_t film_write_deep_sample_with_metadata(
+    KernelGlobals kg,
+    const uint32_t pixel_index,
+    ccl_global KernelDeepSample *ccl_restrict deep_samples,
+    ccl_global uint32_t *ccl_restrict sample_counts,
+    const float alpha,
+    const float z,
+    const float z_back,
+    const uint32_t surface_object,
+    const uint32_t surface_prim,
+    const uint32_t surface_shader,
+    const uint32_t packed_geometric_normal,
+    const uint32_t sample_info)
+{
+  /* Bounds check: ensure pixel index is within allocated buffer. */
+  const uint32_t num_pixels = kernel_data.film.deep_width * kernel_data.film.deep_height;
+  if (pixel_index >= num_pixels) {
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+
+  const uint32_t sample_idx = atomic_fetch_and_add_uint32(&sample_counts[pixel_index], 1);
+
+  if (sample_idx >= kernel_data.film.deep_max_samples) {
+    atomic_fetch_and_add_uint32(&sample_counts[pixel_index], -1);
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+
+  const uint64_t offset = uint64_t(pixel_index) * kernel_data.film.deep_max_samples + sample_idx;
+
+  deep_samples[offset].r = 0.0f;
+  deep_samples[offset].g = 0.0f;
+  deep_samples[offset].b = 0.0f;
+  deep_samples[offset].a = alpha;
+  deep_samples[offset].z = z;
+  deep_samples[offset].z_back = z_back;
+  deep_samples[offset].surface_object = surface_object;
+  deep_samples[offset].surface_prim = surface_prim;
+  deep_samples[offset].surface_shader = surface_shader;
+  deep_samples[offset].packed_geometric_normal = packed_geometric_normal;
+  deep_samples[offset].flags = sample_info;
+
+  return sample_idx;
+}
 
 /**
  * Write a deep sample for the current pixel.
@@ -41,7 +146,7 @@ struct ccl_align(32) KernelDeepSample {
  * \param z: Front depth (distance from camera)
  * \param z_back: Back depth (same as z for surfaces, different for volumes)
  */
-ccl_device_inline void film_write_deep_sample(
+ccl_device_inline uint32_t film_write_deep_sample(
     KernelGlobals kg,
     const uint32_t pixel_index,
     ccl_global KernelDeepSample *ccl_restrict deep_samples,
@@ -49,33 +154,8 @@ ccl_device_inline void film_write_deep_sample(
     const float z,
     const float z_back)
 {
-  /* Bounds check: ensure pixel index is within allocated buffer. */
-  const uint32_t num_pixels = kernel_data.film.deep_width * kernel_data.film.deep_height;
-  if (pixel_index >= num_pixels) {
-    return;
-  }
-
-  /* Atomically increment sample count and get our slot index. */
-  const uint32_t sample_idx = atomic_fetch_and_add_uint32(&sample_counts[pixel_index], 1);
-
-  /* Check against maximum samples per pixel. */
-  if (sample_idx >= kernel_data.film.deep_max_samples) {
-    /* Decrement count since we couldn't store the sample. */
-    atomic_fetch_and_add_uint32(&sample_counts[pixel_index], -1);
-    return;
-  }
-
-  /* Calculate offset into sample data buffer
-   * Layout: pixel[0].samples[0..max], pixel[1].samples[0..max], ... */
-  const uint64_t offset = uint64_t(pixel_index) * kernel_data.film.deep_max_samples + sample_idx;
-
-  /* Alpha-only deep samples (RGB=0). Color is applied via Deep Recolor post-processing. */
-  deep_samples[offset].r = 0.0f;
-  deep_samples[offset].g = 0.0f;
-  deep_samples[offset].b = 0.0f;
-  deep_samples[offset].a = 1.0f; /* Solid alpha for opaque surfaces. */
-  deep_samples[offset].z = z;
-  deep_samples[offset].z_back = z_back;
+  return film_write_deep_sample_with_metadata(
+      kg, pixel_index, deep_samples, sample_counts, 1.0f, z, z_back, 0, 0, 0, 0, 0);
 }
 
 /**
@@ -83,7 +163,7 @@ ccl_device_inline void film_write_deep_sample(
  *
  * \param alpha: Explicit alpha value (0 = fully transparent, 1 = fully opaque)
  */
-ccl_device_inline void film_write_deep_sample_transparent(
+ccl_device_inline uint32_t film_write_deep_sample_transparent(
     KernelGlobals kg,
     const uint32_t pixel_index,
     ccl_global KernelDeepSample *ccl_restrict deep_samples,
@@ -92,28 +172,37 @@ ccl_device_inline void film_write_deep_sample_transparent(
     const float z,
     const float z_back)
 {
-  /* Bounds check: ensure pixel index is within allocated buffer. */
-  const uint32_t num_pixels = kernel_data.film.deep_width * kernel_data.film.deep_height;
-  if (pixel_index >= num_pixels) {
-    return;
-  }
+  return film_write_deep_sample_with_metadata(
+      kg, pixel_index, deep_samples, sample_counts, alpha, z, z_back, 0, 0, 0, 0, 0);
+}
 
-  const uint32_t sample_idx = atomic_fetch_and_add_uint32(&sample_counts[pixel_index], 1);
-
-  if (sample_idx >= kernel_data.film.deep_max_samples) {
-    atomic_fetch_and_add_uint32(&sample_counts[pixel_index], -1);
-    return;
-  }
-
-  const uint64_t offset = (uint64_t)pixel_index * kernel_data.film.deep_max_samples + sample_idx;
-
-  /* Alpha-only deep samples (RGB=0). Color is applied via Deep Recolor post-processing. */
-  deep_samples[offset].r = 0.0f;
-  deep_samples[offset].g = 0.0f;
-  deep_samples[offset].b = 0.0f;
-  deep_samples[offset].a = alpha;
-  deep_samples[offset].z = z;
-  deep_samples[offset].z_back = z_back;
+ccl_device_inline uint32_t film_write_deep_surface_sample_transparent(
+    KernelGlobals kg,
+    const uint32_t pixel_index,
+    ccl_global KernelDeepSample *ccl_restrict deep_samples,
+    ccl_global uint32_t *ccl_restrict sample_counts,
+    const float alpha,
+    const float z,
+    const float z_back,
+    const uint32_t surface_object,
+    const uint32_t surface_prim,
+    const uint32_t surface_shader,
+    const uint32_t packed_geometric_normal,
+    const uint32_t camera_sample)
+{
+  return film_write_deep_sample_with_metadata(
+      kg,
+      pixel_index,
+      deep_samples,
+      sample_counts,
+      alpha,
+      z,
+      z_back,
+      surface_object,
+      surface_prim,
+      surface_shader,
+      packed_geometric_normal,
+      deep_pack_sample_info(DEEP_SAMPLE_FLAG_HARD_SURFACE_METADATA, camera_sample));
 }
 
 /**
@@ -136,6 +225,26 @@ ccl_device_inline void film_write_deep_sample_volume(
   /* Volumes use z_back to represent the volume thickness. */
   film_write_deep_sample_transparent(
       kg, pixel_index, deep_samples, sample_counts, alpha, z_entry, z_exit);
+}
+
+ccl_device_inline void film_accumulate_deep_surface_rgb(
+    KernelGlobals kg,
+    const uint32_t pixel_index,
+    const uint32_t sample_idx,
+    ccl_global KernelDeepSample *ccl_restrict deep_samples,
+    const Spectrum contribution)
+{
+  if (!kernel_data.film.use_deep_output || deep_samples == nullptr ||
+      sample_idx == DEEP_INVALID_SAMPLE_INDEX)
+  {
+    return;
+  }
+
+  const uint64_t offset = uint64_t(pixel_index) * kernel_data.film.deep_max_samples + sample_idx;
+  const float3 contribution_rgb = spectrum_to_rgb(contribution);
+  atomic_add_and_fetch_float(&deep_samples[offset].r, contribution_rgb.x);
+  atomic_add_and_fetch_float(&deep_samples[offset].g, contribution_rgb.y);
+  atomic_add_and_fetch_float(&deep_samples[offset].b, contribution_rgb.z);
 }
 
 /** \} */

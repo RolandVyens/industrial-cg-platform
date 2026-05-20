@@ -40,10 +40,6 @@ namespace blender {
 
 namespace draw::edit_select {
 
-/* -------------------------------------------------------------------- */
-/** \name Select Engine
- * \{ */
-
 #define USE_CAGE_OCCLUSION
 
 struct Instance : public DrawEngine {
@@ -359,8 +355,6 @@ struct Instance : public DrawEngine {
       }
       case OB_CURVES_LEGACY:
       case OB_SURF:
-        break;
-      default:
         break;
     }
     BLI_assert_unreachable();

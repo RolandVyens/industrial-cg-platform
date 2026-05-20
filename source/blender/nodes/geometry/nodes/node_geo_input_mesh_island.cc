@@ -47,21 +47,20 @@ class IslandFieldInput final : public bke::MeshFieldInput {
         VArray<int>::from_container(std::move(output)), AttrDomain::Point, domain);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random constant hash. */
+    return 635467354;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const IslandFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
   {
     return AttrDomain::Point;
-  }
-
-  bke::NativeFieldDomain native_domain_info(const Mesh & /*mesh*/) const override
-  {
-    /* Domain interpolation will not mix values for separate islands. */
-    return bke::NativeFieldDomain::Constant();
   }
 };
 
@@ -86,20 +85,20 @@ class IslandCountFieldInput final : public bke::MeshFieldInput {
     return VArray<int>::from_single(islands_num, mesh.attributes().domain_size(domain));
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random hash. */
+    return 45634572457;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const IslandCountFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
   {
     return AttrDomain::Point;
-  }
-
-  bke::NativeFieldDomain native_domain_info(const Mesh & /*mesh*/) const override
-  {
-    return bke::NativeFieldDomain::Constant();
   }
 };
 

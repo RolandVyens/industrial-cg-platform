@@ -5,16 +5,29 @@
 #include "AS_asset_catalog.hh"
 #include "AS_asset_library.hh"
 
-#include "BKE_gtest_base.hh"
+#include "BKE_callbacks.hh"
 
 #include "asset_library_service.hh"
+
+#include "CLG_log.h"
 
 #include "testing/testing.h"
 
 namespace blender::asset_system::tests {
 
-class AssetLibraryTest : public bke::BlenderGTestBase {
+class AssetLibraryTest : public testing::Test {
  public:
+  static void SetUpTestSuite()
+  {
+    CLG_init();
+    BKE_callback_global_init();
+  }
+  static void TearDownTestSuite()
+  {
+    CLG_exit();
+    BKE_callback_global_finalize();
+  }
+
   void TearDown() override
   {
     asset_system::AssetLibraryService::destroy();

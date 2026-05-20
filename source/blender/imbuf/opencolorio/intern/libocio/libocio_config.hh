@@ -4,18 +4,20 @@
 
 #pragma once
 
-#include "MEM_guardedalloc.h"
+#if defined(WITH_OPENCOLORIO)
 
-#include "BLI_vector.hh"
+#  include "MEM_guardedalloc.h"
 
-#include "OCIO_config.hh"
+#  include "BLI_vector.hh"
 
-#include "libocio_colorspace.hh"
-#include "libocio_display.hh"
-#include "libocio_gpu_shader_binder.hh"
-#include "libocio_look.hh"
+#  include "OCIO_config.hh"
 
-#include "../opencolorio.hh"
+#  include "libocio_colorspace.hh"
+#  include "libocio_display.hh"
+#  include "libocio_gpu_shader_binder.hh"
+#  include "libocio_look.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -42,7 +44,7 @@ class LibOCIOConfig : public Config {
   LibOCIOGPUShaderBinder gpu_shader_binder_{*this};
 
  public:
-  ~LibOCIOConfig() override;
+  ~LibOCIOConfig();
 
   static std::unique_ptr<Config> create_from_environment();
 
@@ -107,3 +109,5 @@ class LibOCIOConfig : public Config {
 };
 
 }  // namespace blender::ocio
+
+#endif

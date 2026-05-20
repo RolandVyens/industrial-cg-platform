@@ -136,7 +136,8 @@ bool RNA_property_overridable_get(const PointerRNA *ptr, PropertyRNA *prop)
     }
     else if (!RNA_struct_in_public_namespace(ptr->type)) {
       if (const std::optional<AncestorPointerRNA> ancestor =
-              RNA_struct_search_closest_ancestor_by_type(ptr, RNA_Modifier))
+              RNA_struct_search_closest_ancestor_by_type(const_cast<PointerRNA *>(ptr),
+                                                         RNA_Modifier))
       {
         ModifierData *mod = static_cast<ModifierData *>(ancestor->data);
         if (mod->flag & eModifierFlag_OverrideLibrary_Local) {
@@ -185,7 +186,7 @@ bool RNA_property_overridable_library_set(PointerRNA * /*ptr*/,
   /* Only works for pure custom properties IDProps. */
   if (prop->magic != RNA_MAGIC) {
     IDProperty *idprop = reinterpret_cast<IDProperty *>(prop);
-    constexpr eIDPropertyFlag flags = IDP_FLAG_OVERRIDABLE_LIBRARY | IDP_FLAG_STATIC_TYPE;
+    constexpr short flags = (IDP_FLAG_OVERRIDABLE_LIBRARY | IDP_FLAG_STATIC_TYPE);
     idprop->flag = is_overridable ? (idprop->flag | flags) : (idprop->flag & ~flags);
     return true;
   }
@@ -259,7 +260,7 @@ bool RNA_property_equals(
   rna_property_rna_or_id_get(prop, ptr_b, &prop_b);
 
   return (rna_property_override_diff(
-              bmain, &prop_a, &prop_b, nullptr, 0, mode, nullptr, eRNAOverrideMatch{}, nullptr) ==
+              bmain, &prop_a, &prop_b, nullptr, 0, mode, nullptr, eRNAOverrideMatch(0), nullptr) ==
           0);
 }
 
@@ -782,7 +783,7 @@ bool RNA_struct_override_matches(Main *bmain,
     }
 #endif
 
-    eRNAOverrideMatchResult report_flags = eRNAOverrideMatchResult{};
+    eRNAOverrideMatchResult report_flags = eRNAOverrideMatchResult(0);
     const int diff = rna_property_override_diff(bmain,
                                                 &prop_local,
                                                 &prop_reference,
@@ -890,8 +891,7 @@ bool RNA_struct_override_matches(Main *bmain,
                * a NOOP operation to enforce no change on that property, etc.). */
               op->tag |= LIBOVERRIDE_PROP_TAG_NEEDS_RETORE;
               opop_restore->tag |= LIBOVERRIDE_PROP_TAG_NEEDS_RETORE;
-              BKE_lib_override_library_tag_set(
-                  *liboverride, IDOverrideLibraryTag::TAG_NEEDS_RESTORE, true);
+              liboverride->runtime->tag |= LIBOVERRIDE_TAG_NEEDS_RESTORE;
 
               CLOG_DEBUG(
                   &LOG,
@@ -1728,7 +1728,7 @@ IDOverrideLibraryPropertyOperation *RNA_property_override_property_operation_get
     Main *bmain,
     PointerRNA *ptr,
     PropertyRNA *prop,
-    const eID_OverrideLib_Op operation,
+    const short operation,
     const int index,
     const bool strict,
     bool *r_strict,
@@ -1753,7 +1753,7 @@ eRNAOverrideStatus RNA_property_override_library_status(Main *bmain,
                                                         PropertyRNA *prop,
                                                         const int index)
 {
-  eRNAOverrideStatus override_status = eRNAOverrideStatus{};
+  eRNAOverrideStatus override_status = eRNAOverrideStatus(0);
 
   if (!ptr || !prop || !ptr->owner_id || !ID_IS_OVERRIDE_LIBRARY(ptr->owner_id)) {
     return override_status;

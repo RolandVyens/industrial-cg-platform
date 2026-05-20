@@ -197,7 +197,7 @@ static void rna_Pose_ik_solver_set(PointerRNA *ptr, int value)
     /* the solver has changed, must clean any temporary structures */
     BIK_clear_data(pose);
     MEM_SAFE_DELETE(pose->ikparam);
-    pose->iksolver = ePose_IKSolverType(value);
+    pose->iksolver = value;
     BKE_pose_ikparam_init(pose);
   }
 }
@@ -206,12 +206,11 @@ static void rna_Pose_ik_solver_update(Main *bmain, Scene * /*scene*/, PointerRNA
 {
   Object *ob = id_cast<Object *>(ptr->owner_id);
   bPose *pose = static_cast<bPose *>(ptr->data);
-  BLI_assert(ob->pose == pose);
 
   BKE_pose_tag_recalc(bmain, pose); /* checks & sorts pose channels */
   DEG_relations_tag_update(bmain);
 
-  BKE_pose_update_constraint_flags(*ob);
+  BKE_pose_update_constraint_flags(pose);
 
   ed::object::object_test_constraints(bmain, ob);
 
@@ -245,15 +244,11 @@ static void rna_PoseChannel_rotation_mode_set(PointerRNA *ptr, int value)
   bPoseChannel *pchan = static_cast<bPoseChannel *>(ptr->data);
 
   /* use API Method for conversions... */
-  BKE_rotMode_change_values(pchan->quat,
-                            pchan->eul,
-                            pchan->rotAxis,
-                            &pchan->rotAngle,
-                            pchan->rotmode,
-                            eRotationModes(value));
+  BKE_rotMode_change_values(
+      pchan->quat, pchan->eul, pchan->rotAxis, &pchan->rotAngle, pchan->rotmode, short(value));
 
   /* finally, set the new rotation type */
-  pchan->rotmode = eRotationModes(clamp_i(value, ROT_MODE_MIN, ROT_MODE_MAX));
+  pchan->rotmode = clamp_i(value, ROT_MODE_MIN, ROT_MODE_MAX);
 }
 
 static float rna_PoseChannel_length_get(PointerRNA *ptr)
@@ -298,7 +293,7 @@ static PointerRNA rna_PoseChannel_bone_get(PointerRNA *ptr)
   /* Replace the id_data pointer with the Armature ID. */
   tmp_ptr.owner_id = ob->data;
 
-  return RNA_pointer_create_with_parent(tmp_ptr, RNA_Bone, pchan->bone_get(*ob));
+  return RNA_pointer_create_with_parent(tmp_ptr, RNA_Bone, pchan->bone);
 }
 
 static bool rna_PoseChannel_has_ik_get(PointerRNA *ptr)
@@ -387,7 +382,7 @@ static bConstraint *rna_PoseChannel_constraints_new(ID *id,
                                                     int type)
 {
   Object *ob = id_cast<Object *>(id);
-  bConstraint *new_con = BKE_constraint_add_for_pose(ob, pchan, nullptr, eBConstraint_Types(type));
+  bConstraint *new_con = BKE_constraint_add_for_pose(ob, pchan, nullptr, type);
 
   ed::object::constraint_dependency_tag_update(main, ob, new_con);
   WM_main_add_notifier(NC_OBJECT | ND_CONSTRAINT | NA_ADDED, id);
@@ -512,8 +507,8 @@ static int rna_PoseChannel_proxy_editable(const PointerRNA * /*ptr*/, const char
   Object *ob = (Object *)ptr->owner_id;
   bArmature *arm = ob->data;
   bPoseChannel *pchan = (bPoseChannel *)ptr->data;
-  Bone *bone = pchan->bone_get(*ob);
-  if (bone && (bone->layer & arm->layer_protected)) {
+
+  if (pchan->bone && (pchan->bone->layer & arm->layer_protected)) {
     *r_info = "Can't edit property of a proxy on a protected layer";
     return 0;
   }
@@ -612,8 +607,7 @@ static bool rna_PoseBones_lookup_string(PointerRNA *ptr, const char *key, Pointe
 static void rna_PoseChannel_matrix_basis_get(PointerRNA *ptr, float *values)
 {
   bPoseChannel *pchan = static_cast<bPoseChannel *>(ptr->data);
-  Object *ob = id_cast<Object *>(ptr->owner_id);
-  BKE_pchan_to_mat4({pchan, pchan->bone_get(*ob)}, reinterpret_cast<float (*)[4]>(values));
+  BKE_pchan_to_mat4(pchan, reinterpret_cast<float (*)[4]>(values));
 }
 
 static void rna_PoseChannel_matrix_basis_set(PointerRNA *ptr, const float *values)

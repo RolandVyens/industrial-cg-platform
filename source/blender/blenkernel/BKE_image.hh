@@ -12,8 +12,6 @@
 #include "BLI_compiler_attrs.h"
 #include "BLI_mutex.hh"
 
-#include "IMB_imbuf_enums.h"
-
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -32,7 +30,6 @@ struct rcti;
 struct Depsgraph;
 struct ID;
 struct ImBuf;
-struct ImBufCache;
 struct MovieReader;
 struct Image;
 struct ImageFormatData;
@@ -41,6 +38,7 @@ struct ImageTile;
 struct ImbFormatOptions;
 struct Library;
 struct Main;
+struct MovieCache;
 struct Object;
 struct PartialUpdateRegister;
 struct PartialUpdateUser;
@@ -67,7 +65,7 @@ struct ImageRuntime {
    */
   Mutex cache_mutex;
 
-  ImBufCache *cache = nullptr;
+  MovieCache *cache = nullptr;
 
   /* The 2 is for the left/right stereo eyes. */
   gpu::Texture *gputexture[/*TEXTARGET_COUNT*/ 3][2] = {};
@@ -168,12 +166,12 @@ bool BKE_imbuf_write_as(ImBuf *ibuf,
  * Used by sequencer too.
  */
 MovieReader *openanim(const char *filepath,
-                      ImBufFlags ibuf_flags,
+                      int ibuf_flags,
                       int streamindex,
                       bool keep_original_colorspace,
                       char colorspace[IMA_MAX_SPACE]);
 MovieReader *openanim_noload(const char *filepath,
-                             ImBufFlags flags,
+                             int flags,
                              int streamindex,
                              bool keep_original_colorspace,
                              char colorspace[IMA_MAX_SPACE]);
@@ -455,14 +453,14 @@ void BKE_image_merge(Main *bmain, Image *dest, Image *source);
 bool BKE_image_scale(Image *image, int width, int height, ImageUser *iuser);
 
 /**
- * Check if image might contain alpha.
+ * Check if texture has alpha `planes == 32 || planes == 16`.
  */
 bool BKE_image_has_alpha(Image *image);
 
 /**
- * Check if image has an associated GPU texture.
+ * Check if texture has GPU texture code.
  */
-bool BKE_image_has_gpu_texture(Image *ima);
+bool BKE_image_has_opengl_texture(Image *ima);
 
 /**
  * Get tile index for tiled images.

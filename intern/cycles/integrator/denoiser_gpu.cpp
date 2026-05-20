@@ -33,8 +33,7 @@ bool DenoiserGPU::denoise_buffer(const BufferParams &buffer_params,
                                  const BufferParams &denoised_buffer_params,
                                  RenderBuffers *render_buffers,
                                  const int num_samples,
-                                 const bool allow_inplace_modification,
-                                 const float2 pixel_jitter)
+                                 const bool allow_inplace_modification)
 {
   Device *denoiser_device = get_denoiser_device();
   if (!denoiser_device) {
@@ -79,8 +78,7 @@ bool DenoiserGPU::denoise_buffer(const BufferParams &buffer_params,
                            denoised_buffer_params,
                            local_buffer_used ? &local_render_buffers : render_buffers,
                            num_samples,
-                           local_buffer_used || allow_inplace_modification,
-                           pixel_jitter);
+                           local_buffer_used || allow_inplace_modification);
 
     if (!denoise_ensure(context)) {
       return false;
@@ -169,16 +167,14 @@ DenoiserGPU::DenoiseContext::DenoiseContext(Device *device,
                                             const BufferParams &denoised_buffer_params,
                                             RenderBuffers *render_buffers,
                                             const int num_samples,
-                                            const bool allow_inplace_modification,
-                                            const float2 pixel_jitter)
+                                            const bool allow_inplace_modification)
     : denoise_params(params),
       render_buffers(render_buffers),
       buffer_params(buffer_params),
       denoised_buffer_params(denoised_buffer_params),
       guiding_buffer(device, "denoiser guiding passes buffer", true),
       use_guiding_passes(params.passes != DENOISER_PASS_NONE),
-      num_samples(num_samples),
-      pixel_jitter(pixel_jitter)
+      num_samples(num_samples)
 {
   pass_motion = buffer_params.get_pass_offset(PASS_MOTION);
   pass_sample_count = buffer_params.get_pass_offset(PASS_SAMPLE_COUNT);

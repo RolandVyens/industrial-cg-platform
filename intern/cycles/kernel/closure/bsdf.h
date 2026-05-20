@@ -44,7 +44,7 @@ ccl_device_inline float bsdf_get_roughness_pass_squared(const ccl_private Shader
 {
   if (sc->type == CLOSURE_BSDF_OREN_NAYAR_ID) {
     ccl_private OrenNayarBsdf *bsdf = (ccl_private OrenNayarBsdf *)sc;
-    return sqr(sqr(bsdf->param.roughness));
+    return sqr(sqr(bsdf->roughness));
   }
 
   /* For the Principled BSDF, we want the Roughness pass to return the value that
@@ -55,15 +55,6 @@ ccl_device_inline float bsdf_get_roughness_pass_squared(const ccl_private Shader
   }
 
   return bsdf_get_specular_roughness_squared(sc);
-}
-
-/* Widen the compact ray differential dD after a non-specular bounce so that
- * texture mip selection on subsequent hits reflects the BSDF lobe's angular
- * spread. This significantly save memory, and is needed to make image cache
- * memory usage scale with render tile size rather than overall resolution. */
-ccl_device_forceinline float bsdf_widen_dD(const float prev_dD, const float2 sampled_roughness)
-{
-  return max(prev_dD, min(sampled_roughness.x, sampled_roughness.y));
 }
 
 /* An additional term to smooth illumination on grazing angles when using bump mapping
@@ -422,7 +413,6 @@ ccl_device_inline int bsdf_label(const KernelGlobals kg,
     case CLOSURE_BSSRDF_BURLEY_ID:
     case CLOSURE_BSSRDF_RANDOM_WALK_ID:
     case CLOSURE_BSSRDF_RANDOM_WALK_SKIN_ID:
-    case CLOSURE_BSSRDF_RANDOM_WALK_LEGACY_ID:
       label = LABEL_REFLECT | LABEL_DIFFUSE;
       break;
 #ifdef __SVM__

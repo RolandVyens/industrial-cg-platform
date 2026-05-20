@@ -4,8 +4,13 @@
 
 #include "session/deep_buffers.h"
 
-#include "device/device.h"
+#include <limits>
+
 #include "IMB_deep_sample_merge.hh"
+
+#include "device/device.h"
+#include "scene/film.h"
+#include "scene/integrator.h"
 #include "util/algorithm.h"
 #include "util/log.h"
 
@@ -72,6 +77,58 @@ template<> struct DeepSampleTraits<ccl::DeepSampleData> {
 
 CCL_NAMESPACE_BEGIN
 
+bool deep_compute_buffer_bytes(int width, int height, int max_samples, size_t &bytes)
+{
+  if (width <= 0 || height <= 0 || max_samples <= 0) {
+    bytes = 0;
+    return true;
+  }
+  const size_t max_size = std::numeric_limits<size_t>::max();
+  const size_t w = static_cast<size_t>(width);
+  const size_t h = static_cast<size_t>(height);
+  if (w > max_size / h) {
+    return false;
+  }
+  const size_t num_pixels = w * h;
+  const size_t samples = static_cast<size_t>(max_samples);
+  if (samples > 0 && num_pixels > max_size / samples) {
+    return false;
+  }
+  const size_t total_samples = num_pixels * samples;
+  if (num_pixels > max_size / sizeof(uint32_t)) {
+    return false;
+  }
+  const size_t count_bytes = num_pixels * sizeof(uint32_t);
+  if (total_samples > max_size / sizeof(DeepSampleData)) {
+    return false;
+  }
+  const size_t data_bytes = total_samples * sizeof(DeepSampleData);
+  if (count_bytes > max_size - data_bytes) {
+    return false;
+  }
+  bytes = count_bytes + data_bytes;
+  return true;
+}
+
+int deep_effective_max_samples(const Film *film, const Integrator *integrator)
+{
+  if (!film) {
+    return 0;
+  }
+
+  int max_samples = film->get_deep_max_samples();
+  if (integrator && integrator->get_volume_ray_marching()) {
+    constexpr int deep_volume_max_samples_cap = 256;
+    const int max_steps = integrator->get_volume_max_steps();
+    const int min_required = min(max_steps, deep_volume_max_samples_cap);
+    if (max_samples < min_required) {
+      max_samples = min_required;
+    }
+  }
+
+  return max_samples;
+}
+
 namespace {
 constexpr float deep_volume_depth_epsilon = 1e-6f;
 }  // namespace
@@ -81,9 +138,9 @@ constexpr float deep_volume_depth_epsilon = 1e-6f;
  * \{ */
 
 DeepRenderBuffers::DeepRenderBuffers(Device *device)
-    : sample_counts_(device, "deep_sample_counts", MEM_READ_WRITE),
-      sample_data_(device, "deep_sample_data", MEM_READ_WRITE),
-      device_(device)
+    : device_(device),
+      sample_counts_(device, "deep_sample_counts", MEM_READ_WRITE),
+      sample_data_(device, "deep_sample_data", MEM_READ_WRITE)
 {
 }
 
@@ -239,24 +296,8 @@ void DeepRenderBuffers::merge_nearby_samples()
         num_samples,
         depth_merge_threshold_,
         alpha_merge_threshold_,
-        deep_volume_depth_epsilon);
-  }
-}
-
-void DeepRenderBuffers::compute_sample_offsets()
-{
-  if (!is_allocated()) {
-    return;
-  }
-
-  const size_t num_pixels = static_cast<size_t>(width_) * height_;
-  sample_offsets_.resize(num_pixels);
-
-  /* Compute prefix sum of sample counts.
-   * Note: For deep buffers we use a fixed layout where each pixel has
-   * max_samples_per_pixel slots, so offset = pixel_index * max_samples_per_pixel. */
-  for (size_t i = 0; i < num_pixels; i++) {
-    sample_offsets_[i] = i * max_samples_per_pixel_;
+        deep_volume_depth_epsilon,
+        true);
   }
 }
 

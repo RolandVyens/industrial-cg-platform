@@ -318,10 +318,6 @@ namespace blender {
 
 static CLG_LogRef LOG_COMPARE_OVERRIDE = {"rna.rna_compare_override"};
 
-/* -------------------------------------------------------------------- */
-/** \name RNA Runtime Callbacks
- * \{ */
-
 /* Struct */
 
 static void rna_Struct_identifier_get(PointerRNA *ptr, char *value)
@@ -2493,9 +2489,8 @@ bool rna_property_override_store_default(Main * /*bmain*/,
           case LIBOVERRIDE_OP_ADD:
           case LIBOVERRIDE_OP_SUBTRACT: {
             const int fac = opop->operation == LIBOVERRIDE_OP_ADD ? 1 : -1;
-            const eID_OverrideLib_Op other_op = opop->operation == LIBOVERRIDE_OP_ADD ?
-                                                    LIBOVERRIDE_OP_SUBTRACT :
-                                                    LIBOVERRIDE_OP_ADD;
+            const int other_op = opop->operation == LIBOVERRIDE_OP_ADD ? LIBOVERRIDE_OP_SUBTRACT :
+                                                                         LIBOVERRIDE_OP_ADD;
             bool do_set = true;
             array_b = (len_local > RNA_STACK_ARRAY) ?
                           MEM_new_array_uninitialized<int>(size_t(len_local), __func__) :
@@ -2543,9 +2538,8 @@ bool rna_property_override_store_default(Main * /*bmain*/,
           case LIBOVERRIDE_OP_ADD:
           case LIBOVERRIDE_OP_SUBTRACT: {
             const int fac = opop->operation == LIBOVERRIDE_OP_ADD ? 1 : -1;
-            const eID_OverrideLib_Op other_op = opop->operation == LIBOVERRIDE_OP_ADD ?
-                                                    LIBOVERRIDE_OP_SUBTRACT :
-                                                    LIBOVERRIDE_OP_ADD;
+            const int other_op = opop->operation == LIBOVERRIDE_OP_ADD ? LIBOVERRIDE_OP_SUBTRACT :
+                                                                         LIBOVERRIDE_OP_ADD;
             int b = fac * (RNA_PROPERTY_GET_SINGLE(int, ptr_local, prop_local, index) - value);
             if (b < prop_min || b > prop_max) {
               opop->operation = other_op;
@@ -2583,9 +2577,8 @@ bool rna_property_override_store_default(Main * /*bmain*/,
           case LIBOVERRIDE_OP_ADD:
           case LIBOVERRIDE_OP_SUBTRACT: {
             const float fac = opop->operation == LIBOVERRIDE_OP_ADD ? 1.0 : -1.0;
-            const eID_OverrideLib_Op other_op = opop->operation == LIBOVERRIDE_OP_ADD ?
-                                                    LIBOVERRIDE_OP_SUBTRACT :
-                                                    LIBOVERRIDE_OP_ADD;
+            const int other_op = opop->operation == LIBOVERRIDE_OP_ADD ? LIBOVERRIDE_OP_SUBTRACT :
+                                                                         LIBOVERRIDE_OP_ADD;
             bool do_set = true;
             array_b = (len_local > RNA_STACK_ARRAY) ?
                           MEM_new_array_uninitialized<float>(size_t(len_local), __func__) :
@@ -2656,9 +2649,8 @@ bool rna_property_override_store_default(Main * /*bmain*/,
           case LIBOVERRIDE_OP_ADD:
           case LIBOVERRIDE_OP_SUBTRACT: {
             const float fac = opop->operation == LIBOVERRIDE_OP_ADD ? 1.0f : -1.0f;
-            const eID_OverrideLib_Op other_op = opop->operation == LIBOVERRIDE_OP_ADD ?
-                                                    LIBOVERRIDE_OP_SUBTRACT :
-                                                    LIBOVERRIDE_OP_ADD;
+            const int other_op = opop->operation == LIBOVERRIDE_OP_ADD ? LIBOVERRIDE_OP_SUBTRACT :
+                                                                         LIBOVERRIDE_OP_ADD;
             float b = fac * (RNA_PROPERTY_GET_SINGLE(float, ptr_local, prop_local, index) - value);
             if (b < prop_min || b > prop_max) {
               opop->operation = other_op;
@@ -2756,7 +2748,7 @@ bool rna_property_override_apply_default(Main *bmain,
 
   const bool is_array = len_dst > 0;
   const int index = is_array ? opop->subitem_reference_index : 0;
-  const eID_OverrideLib_Op override_op = opop->operation;
+  const short override_op = opop->operation;
 
   bool ret_success = true;
 
@@ -2777,9 +2769,7 @@ bool rna_property_override_apply_default(Main *bmain,
             RNA_property_boolean_set_array(ptr_dst, prop_dst, array_a);
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on boolean array",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on boolean");
             return false;
         }
 
@@ -2795,9 +2785,7 @@ bool rna_property_override_apply_default(Main *bmain,
             RNA_PROPERTY_SET_SINGLE(boolean, ptr_dst, prop_dst, index, value);
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on boolean",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on boolean");
             return false;
         }
       }
@@ -2839,9 +2827,7 @@ bool rna_property_override_apply_default(Main *bmain,
             }
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on integer array",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on integer");
             return false;
         }
 
@@ -2879,9 +2865,7 @@ bool rna_property_override_apply_default(Main *bmain,
                                         storage_value);
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on integer",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on integer");
             return false;
         }
       }
@@ -2929,9 +2913,7 @@ bool rna_property_override_apply_default(Main *bmain,
             }
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on float array",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on float");
             return false;
         }
 
@@ -2977,9 +2959,7 @@ bool rna_property_override_apply_default(Main *bmain,
                                         storage_value);
             break;
           default:
-            CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                       "Unsupported '%s' RNA override operation on float",
-                       BKE_lib_override_operation_as_string(override_op).c_str());
+            BLI_assert_msg(0, "Unsupported RNA override operation on float");
             return false;
         }
       }
@@ -2993,9 +2973,7 @@ bool rna_property_override_apply_default(Main *bmain,
           break;
         /* TODO: support add/sub, for bitflags? */
         default:
-          CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                     "Unsupported '%s' RNA override operation on enum",
-                     BKE_lib_override_operation_as_string(override_op).c_str());
+          BLI_assert_msg(0, "Unsupported RNA override operation on enum");
           return false;
       }
       break;
@@ -3008,9 +2986,7 @@ bool rna_property_override_apply_default(Main *bmain,
           RNA_property_pointer_set(ptr_dst, prop_dst, value, nullptr);
           break;
         default:
-          CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                     "Unsupported '%s' RNA override operation on pointer",
-                     BKE_lib_override_operation_as_string(override_op).c_str());
+          BLI_assert_msg(0, "Unsupported RNA override operation on pointer");
           return false;
       }
       break;
@@ -3024,9 +3000,7 @@ bool rna_property_override_apply_default(Main *bmain,
           RNA_property_string_set(ptr_dst, prop_dst, value);
           break;
         default:
-          CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                     "Unsupported '%s' RNA override operation on string",
-                     BKE_lib_override_operation_as_string(override_op).c_str());
+          BLI_assert_msg(0, "Unsupported RNA override operation on string");
           return false;
       }
 
@@ -3109,9 +3083,7 @@ bool rna_property_override_apply_default(Main *bmain,
           break;
         }
         default:
-          CLOG_ERROR(&LOG_COMPARE_OVERRIDE,
-                     "Unsupported '%s' RNA override operation on collection",
-                     BKE_lib_override_operation_as_string(override_op).c_str());
+          BLI_assert_msg(0, "Unsupported RNA override operation on collection");
           return false;
       }
       break;
@@ -3646,10 +3618,7 @@ static void rna_def_number_property(StructRNA *srna, PropertyType type)
   else {
     RNA_def_property_float_funcs(prop, "rna_FloatProperty_hard_min_get", nullptr, nullptr);
   }
-  RNA_def_property_ui_text(
-      prop,
-      "Hard Minimum",
-      "Hard minimum, trying to assign a value below will silently assign this minimum instead");
+  RNA_def_property_ui_text(prop, "Hard Minimum", "Minimum value used by buttons");
 
   prop = RNA_def_property(srna, "hard_max", type, PROP_NONE);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
@@ -3659,10 +3628,7 @@ static void rna_def_number_property(StructRNA *srna, PropertyType type)
   else {
     RNA_def_property_float_funcs(prop, "rna_FloatProperty_hard_max_get", nullptr, nullptr);
   }
-  RNA_def_property_ui_text(
-      prop,
-      "Hard Maximum",
-      "Hard maximum, trying to assign a value above will silently assign this maximum instead");
+  RNA_def_property_ui_text(prop, "Hard Maximum", "Maximum value used by buttons");
 
   prop = RNA_def_property(srna, "soft_min", type, PROP_NONE);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
@@ -3672,10 +3638,7 @@ static void rna_def_number_property(StructRNA *srna, PropertyType type)
   else {
     RNA_def_property_float_funcs(prop, "rna_FloatProperty_soft_min_get", nullptr, nullptr);
   }
-  RNA_def_property_ui_text(
-      prop,
-      "Soft Minimum",
-      "Soft minimum (>= hard_min), user cannot drag widgets below this value in the UI");
+  RNA_def_property_ui_text(prop, "Soft Minimum", "Minimum value used by buttons");
 
   prop = RNA_def_property(srna, "soft_max", type, PROP_NONE);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
@@ -3685,10 +3648,7 @@ static void rna_def_number_property(StructRNA *srna, PropertyType type)
   else {
     RNA_def_property_float_funcs(prop, "rna_FloatProperty_soft_max_get", nullptr, nullptr);
   }
-  RNA_def_property_ui_text(
-      prop,
-      "Soft Maximum",
-      "Soft maximum (<= hard_max), user cannot drag widgets above this value in the UI");
+  RNA_def_property_ui_text(prop, "Soft Maximum", "Maximum value used by buttons");
 
   prop = RNA_def_property(srna, "step", type, PROP_UNSIGNED);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);

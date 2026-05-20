@@ -203,10 +203,7 @@ class OBJECT_PT_collections(ObjectButtonsPanel, Panel):
             col.context_pointer_set("collection", collection)
 
             row = col.box().row()
-            icon = 'OUTLINER_COLLECTION'
-            if collection.color_tag != 'NONE':
-                icon = 'COLLECTION_' + collection.color_tag
-            row.prop(collection, "name", text="", icon=icon)
+            row.prop(collection, "name", text="")
             row.operator("object.collection_remove", text="", icon='X', emboss=False)
             row.menu("COLLECTION_MT_context_menu", icon='DOWNARROW_HLT', text="")
 
@@ -437,7 +434,6 @@ class OBJECT_PT_visibility(ObjectButtonsPanel, Panel):
             if ob.type in {'LIGHT'}:
                 layout.separator()
                 col = layout.column(heading="Ray Visibility")
-                col.prop(ob, "visible_camera", text="Camera", toggle=False)
                 col.prop(ob, "visible_diffuse", text="Diffuse", toggle=False)
                 col.prop(ob, "visible_glossy", text="Glossy", toggle=False)
                 col.prop(ob, "visible_transmission", text="Transmission", toggle=False)

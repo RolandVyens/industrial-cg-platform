@@ -84,6 +84,32 @@ function(path_strip_trailing_slash
   set(${path_new} "${${path_new}}" PARENT_SCOPE)
 endfunction()
 
+# Our own version of `cmake_path(IS_PREFIX ..)`.
+# This can be removed when 3.20 or greater is the minimum supported version.
+#
+# Return values:
+# - `${result_var}`: `TRUE` if `path_prefix` is a prefix of `path`.
+function(path_is_prefix
+  path_prefix path result_var
+  )
+  # Remove when CMAKE version is bumped to "3.20" or greater.
+  # `cmake_path(IS_PREFIX ${path_prefix} ${path} NORMALIZE result_var)`
+  # Get the normalized paths (needed to remove `..`).
+  get_filename_component(_abs_prefix "${${path_prefix}}" ABSOLUTE)
+  get_filename_component(_abs_suffix "${${path}}" ABSOLUTE)
+  string(LENGTH "${_abs_prefix}" _len)
+  string(SUBSTRING "${_abs_suffix}" 0 "${_len}" _substr)
+  string(COMPARE EQUAL "${_abs_prefix}" "${_substr}" _is_prefix)
+  # Ensure "/foo/bar" isn't considered a prefix of "/foo/bar_baz".
+  # Checking "/" is sufficient on WIN32 since `get_filename_component` normalizes paths.
+  if(_is_prefix)
+    string(SUBSTRING "${_abs_suffix}" "${_len}" 1 _next_char)
+    if(NOT "${_next_char}" STREQUAL "" AND NOT "${_next_char}" STREQUAL "/")
+      set(_is_prefix FALSE)
+    endif()
+  endif()
+  set("${result_var}" "${_is_prefix}" PARENT_SCOPE)
+endfunction()
 
 # foo_bar.spam --> foo_barMySuffix.spam
 #
@@ -594,44 +620,33 @@ function(setup_platform_linker_libs
 endfunction()
 
 # Return values:
-# - `${_simd_flags}`: compiler flags to enable SIMD support.
-function(get_compiler_simd_flags
-  _simd_flags)
+# - `${_sse42_flags}`: compiler flags to enable SSE4.2 support.
+function(get_sse_flags
+  _sse42_flags)
 
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64)" OR CMAKE_OSX_ARCHITECTURES MATCHES x86_64)
-    # message(STATUS "Detecting SIMD support")
+    # message(STATUS "Detecting SSE support")
     if((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
-      set(${_simd_flags} "-march=x86-64-v2" PARENT_SCOPE)
+      set(${_sse42_flags} "-march=x86-64-v2" PARENT_SCOPE)
     elseif(MSVC)
       # MSVC has no specific compile flags for SSE42 (only for AVX).
-      set(${_simd_flags} PARENT_SCOPE)
+      set(${_sse42_flags} PARENT_SCOPE)
       # It also doesn't define __SSE__/__MMX__ flags and only does the AVX and higher flags.
       # For consistency we define these flags for MSVC.
       add_compile_definitions(__MMX__ __SSE__ __SSE2__ __SSE3__ __SSE4_1__ __SSE4_2__)
     elseif(CMAKE_C_COMPILER_ID STREQUAL "Intel")
       if(WIN32)
-        set(${_simd_flags} "/QxSSE4.2" PARENT_SCOPE)
+        set(${_sse42_flags} "/QxSSE4.2" PARENT_SCOPE)
       else()
-        set(${_simd_flags} "-xsse4.2" PARENT_SCOPE)
+        set(${_sse42_flags} "-xsse4.2" PARENT_SCOPE)
       endif()
     else()
-      message(WARNING "SIMD flags for this compiler: '${CMAKE_C_COMPILER_ID}' not known")
-      set(${_simd_flags} PARENT_SCOPE)
-    endif()
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64" OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
-    if((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
-      if(UNIX AND NOT APPLE)
-        # Target ARMv8.2-A with dot product and half float.
-        set(${_simd_flags} "-march=armv8.2-a+dotprod+fp16+lse" PARENT_SCOPE)
-      else()
-        set(${_simd_flags} PARENT_SCOPE)
-      endif()
-    else()
-      set(${_simd_flags} PARENT_SCOPE)
+      message(WARNING "SSE flags for this compiler: '${CMAKE_C_COMPILER_ID}' not known")
+      set(${_sse42_flags} PARENT_SCOPE)
     endif()
   else()
-    # Not a supported system, don't set any SIMD compiler flags.
-    set(${_simd_flags} PARENT_SCOPE)
+    # Not a 64bit x86 system, don't set any SSE x86 compiler flags.
+    set(${_sse42_flags} PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -1155,7 +1170,7 @@ function(glsl_to_c
 
   # remove ../'s
   get_filename_component(_file_from ${CMAKE_CURRENT_SOURCE_DIR}/${file_from}    REALPATH)
-  get_filename_component(_file_tmp  ${CMAKE_CURRENT_BINARY_DIR}/${file_from}.tmp   REALPATH)
+  get_filename_component(_file_tmp  ${CMAKE_CURRENT_BINARY_DIR}/${file_from}    REALPATH)
   get_filename_component(_file_meta ${CMAKE_CURRENT_BINARY_DIR}/${file_from}.hh REALPATH)
   get_filename_component(_file_info ${CMAKE_CURRENT_BINARY_DIR}/${file_from}.info  REALPATH)
   get_filename_component(_file_to   ${CMAKE_CURRENT_BINARY_DIR}/${file_from}.c  REALPATH)
@@ -1174,15 +1189,11 @@ function(glsl_to_c
   set(${list_to_add} ${${list_to_add}} PARENT_SCOPE)
 
   add_custom_command(
-    OUTPUT  ${_file_tmp} ${_file_meta} ${_file_info} ${_file_dep}
+    OUTPUT  ${_file_to} ${_file_meta} ${_file_info} ${_file_dep}
     DEPFILE ${_file_dep}
     COMMAND "$<TARGET_FILE:shader_tool>" ${_file_from} ${_file_tmp} ${_file_meta} ${_file_info} ${_file_dep} ${_inc_list}
-    DEPENDS ${_file_from} shader_tool)
-
-  add_custom_command(
-    OUTPUT  ${_file_to}
     COMMAND "$<TARGET_FILE:datatoc>" ${_file_tmp} ${_file_to}
-    DEPENDS ${_file_tmp} datatoc)
+    DEPENDS ${_file_from} datatoc shader_tool)
 
   set_source_files_properties(${_file_tmp} PROPERTIES GENERATED TRUE)
   set_source_files_properties(${_file_to}  PROPERTIES GENERATED TRUE)
@@ -1635,26 +1646,9 @@ function(compile_sources_as_cpp
   define
   )
 
-  # On Windows, MSVC/Clang echo the filename being compiled to the console.
-  # Ninja suppresses this only for recognized C++ extensions (.cc/.cpp etc.),
-  # not .glsl. Generate a .cc wrapper per source so Ninja suppresses the echo.
-  # On other platforms, just set LANGUAGE CXX directly on each source file.
-
-  if(WIN32)
-    foreach(glsl_file ${sources})
-      get_filename_component(_file_from ${CMAKE_CURRENT_SOURCE_DIR}/${glsl_file}   REALPATH)
-      get_filename_component(_file_to   ${CMAKE_CURRENT_BINARY_DIR}/${glsl_file}.cc REALPATH)
-      file(WRITE "${_file_to}" "#include \"${_file_from}\"\n")
-      list(APPEND sources ${_file_to})
-      # Mark the original file as header only, so no attempt will be made at compiling it
-      # regardless of extention.
-      set_source_files_properties(${glsl_file} PROPERTIES HEADER_FILE_ONLY TRUE)
-    endforeach()
-  else()
-    foreach(glsl_file ${sources})
-      set_source_files_properties(${glsl_file} PROPERTIES LANGUAGE CXX)
-    endforeach()
-  endif()
+  foreach(glsl_file ${sources})
+    set_source_files_properties(${glsl_file} PROPERTIES LANGUAGE CXX)
+  endforeach()
 
   add_library(${library} OBJECT ${sources})
   set_target_properties(${library} PROPERTIES LINKER_LANGUAGE CXX)

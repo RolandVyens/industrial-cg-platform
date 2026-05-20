@@ -45,20 +45,16 @@ PyDoc_STRVAR(
     "Class gathering the elements of the ViewMap (i.e., :class:`ViewVertex`\n"
     "and :class:`ViewEdge`) that are issued from the same input shape.\n"
     "\n"
-    ".. method:: __init__(*args)\n"
-    "\n"
-    "   Accepted call signatures:\n"
-    "\n"
-    "   - ``__init__()``\n"
-    "   - ``__init__(brother)``\n"
-    "   - ``__init__(sshape)``\n"
+    ".. method:: __init__()\n"
+    "            __init__(brother)\n"
+    "            __init__(sshape)\n"
     "\n"
     "   Builds a :class:`ViewShape` using the default constructor,\n"
     "   copy constructor, or from a :class:`SShape`.\n"
     "\n"
-    "   :param brother: A ViewShape object.\n"
+    "   :arg brother: A ViewShape object.\n"
     "   :type brother: :class:`ViewShape`\n"
-    "   :param sshape: An SShape object.\n"
+    "   :arg sshape: An SShape object.\n"
     "   :type sshape: :class:`SShape`\n");
 static int ViewShape_init(BPy_ViewShape *self, PyObject *args, PyObject *kwds)
 {
@@ -116,7 +112,7 @@ PyDoc_STRVAR(
     "\n"
     "   Adds a ViewEdge to the list of ViewEdge objects.\n"
     "\n"
-    "   :param edge: A ViewEdge object.\n"
+    "   :arg edge: A ViewEdge object.\n"
     "   :type edge: :class:`ViewEdge`\n");
 static PyObject *ViewShape_add_edge(BPy_ViewShape *self, PyObject *args, PyObject *kwds)
 {
@@ -137,7 +133,7 @@ PyDoc_STRVAR(
     "\n"
     "   Adds a ViewVertex to the list of the ViewVertex objects.\n"
     "\n"
-    "   :param vertex: A ViewVertex object.\n"
+    "   :arg vertex: A ViewVertex object.\n"
     "   :type vertex: :class:`ViewVertex`\n");
 static PyObject *ViewShape_add_vertex(BPy_ViewShape *self, PyObject *args, PyObject *kwds)
 {
@@ -223,7 +219,7 @@ PyDoc_STRVAR(
     ViewShape_vertices_doc,
     "The list of ViewVertex objects contained in this ViewShape.\n"
     "\n"
-    ":type: list[:class:`ViewVertex`]\n");
+    ":type: List of :class:`ViewVertex`\n");
 static PyObject *ViewShape_vertices_get(BPy_ViewShape *self, void * /*closure*/)
 {
   vector<ViewVertex *> vertices = self->vs->vertices();
@@ -267,7 +263,7 @@ PyDoc_STRVAR(
     ViewShape_edges_doc,
     "The list of ViewEdge objects contained in this ViewShape.\n"
     "\n"
-    ":type: list[:class:`ViewEdge`]\n");
+    ":type: List of :class:`ViewEdge`\n");
 static PyObject *ViewShape_edges_get(BPy_ViewShape *self, void * /*closure*/)
 {
   vector<ViewEdge *> edges = self->vs->edges();
@@ -320,10 +316,9 @@ static PyObject *ViewShape_name_get(BPy_ViewShape *self, void * /*closure*/)
 PyDoc_STRVAR(
     /* Wrap. */
     ViewShape_library_path_doc,
-    "The library path of the ViewShape, or None if the ViewShape is not part of\n"
-    "a library.\n"
+    "The library path of the ViewShape.\n"
     "\n"
-    ":type: str | None\n");
+    ":type: str, or None if the ViewShape is not part of a library.\n");
 static PyObject *ViewShape_library_path_get(BPy_ViewShape *self, void * /*closure*/)
 {
   return blender::PyC_UnicodeFromStdStr(self->vs->getLibraryPath());

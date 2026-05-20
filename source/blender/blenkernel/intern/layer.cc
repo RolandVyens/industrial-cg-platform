@@ -50,8 +50,6 @@
 #include "DEG_depsgraph_debug.hh"
 #include "DEG_depsgraph_query.hh"
 
-#include "SEQ_relations.hh"
-
 #include "DRW_engine.hh"
 
 #include "RE_engine.h"
@@ -65,11 +63,11 @@ namespace blender {
 static CLG_LogRef LOG = {"object.layer"};
 
 /* Set of flags which are dependent on a collection settings. */
-static const eBase_Flag g_base_collection_flags = (BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT |
-                                                   BASE_ENABLED_AND_VISIBLE_IN_DEFAULT_VIEWPORT |
-                                                   BASE_SELECTABLE | BASE_ENABLED_VIEWPORT |
-                                                   BASE_ENABLED_RENDER | BASE_HOLDOUT |
-                                                   BASE_INDIRECT_ONLY);
+static const short g_base_collection_flags = (BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT |
+                                              BASE_ENABLED_AND_VISIBLE_IN_DEFAULT_VIEWPORT |
+                                              BASE_SELECTABLE | BASE_ENABLED_VIEWPORT |
+                                              BASE_ENABLED_RENDER | BASE_HOLDOUT |
+                                              BASE_INDIRECT_ONLY);
 
 /* prototype */
 static void object_bases_iterator_next(BLI_Iterator *iter, const int flag);
@@ -304,7 +302,7 @@ void BKE_view_layer_free_object_content(ViewLayer *view_layer)
 void BKE_view_layer_selected_objects_tag(const Main &bmain,
                                          const Scene *scene,
                                          ViewLayer *view_layer,
-                                         const eObject_Flag tag)
+                                         const int tag)
 {
   BKE_view_layer_synced_ensure(bmain, scene, view_layer);
   for (Base &base : *BKE_view_layer_object_bases_get(view_layer)) {
@@ -601,9 +599,6 @@ void BKE_view_layer_rename(Main *bmain, Scene *scene, ViewLayer *view_layer, con
       }
     }
   }
-
-  /* Update any sequencer scene strips referencing this view layer by name. */
-  seq::relations_update_view_layer_scene_strips(bmain, scene, oldname, view_layer->name);
 
   /* Dependency graph uses view layer name based lookups. */
   DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
@@ -1151,7 +1146,7 @@ static void layer_collection_sync(ViewLayer *view_layer,
                                   LayerCollectionResync *layer_resync,
                                   BLI_mempool *layer_resync_mempool,
                                   ListBaseT<Base> *r_lb_new_object_bases,
-                                  const eLayerCollection_Flag parent_layer_flag,
+                                  const short parent_layer_flag,
                                   const short parent_collection_restrict,
                                   const short parent_layer_restrict,
                                   const ushort parent_local_collections_bits)
@@ -1263,7 +1258,7 @@ static void layer_collection_sync(ViewLayer *view_layer,
                           child_local_collections_bits);
 
     /* Layer collection exclude is not inherited. */
-    child_layer->runtime_flag = {};
+    child_layer->runtime_flag = 0;
     if (child_layer->flag & LAYER_COLLECTION_EXCLUDE) {
       continue;
     }
@@ -1427,8 +1422,7 @@ bool BKE_layer_collection_sync(const Main &bmain, const Scene *scene, ViewLayer 
 
   /* Generate new layer connections and object bases when collections changed. */
   ListBaseT<Base> new_object_bases{};
-  const eLayerCollection_Flag parent_exclude{};
-  const short parent_restrict = 0, parent_layer_restrict = 0;
+  const short parent_exclude = 0, parent_restrict = 0, parent_layer_restrict = 0;
   layer_collection_sync(view_layer,
                         master_layer_resync,
                         layer_resync_mempool,
@@ -1740,8 +1734,7 @@ bool BKE_object_is_visible_in_viewport(const View3D *v3d, const Object *ob)
 /** \name Collection Isolation & Local View
  * \{ */
 
-static void layer_collection_flag_set_recursive(LayerCollection *lc,
-                                                const eLayerCollection_Flag flag)
+static void layer_collection_flag_set_recursive(LayerCollection *lc, const int flag)
 {
   lc->flag |= flag;
   for (LayerCollection &lc_iter : lc->layer_collections) {
@@ -1749,8 +1742,7 @@ static void layer_collection_flag_set_recursive(LayerCollection *lc,
   }
 }
 
-static void layer_collection_flag_unset_recursive(LayerCollection *lc,
-                                                  const eLayerCollection_Flag flag)
+static void layer_collection_flag_unset_recursive(LayerCollection *lc, const int flag)
 {
   lc->flag &= ~flag;
   for (LayerCollection &lc_iter : lc->layer_collections) {
@@ -2022,7 +2014,7 @@ void BKE_layer_collection_set_visible(const Main &bmain,
  * recursively.
  */
 static void layer_collection_flag_recursive_set(LayerCollection *lc,
-                                                const eLayerCollection_Flag flag,
+                                                const int flag,
                                                 const bool value,
                                                 const bool restore_flag)
 {
@@ -2055,9 +2047,7 @@ static void layer_collection_flag_recursive_set(LayerCollection *lc,
   }
 }
 
-void BKE_layer_collection_set_flag(LayerCollection *lc,
-                                   const eLayerCollection_Flag flag,
-                                   const bool value)
+void BKE_layer_collection_set_flag(LayerCollection *lc, const int flag, const bool value)
 {
   layer_collection_flag_recursive_set(lc, flag, value, false);
 }

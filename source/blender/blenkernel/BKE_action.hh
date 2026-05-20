@@ -12,8 +12,6 @@
 #include "BLI_function_ref.hh"
 #include "BLI_span.hh"
 
-#include "BKE_pose.hh"
-
 namespace blender {
 
 struct BlendDataReader;
@@ -82,9 +80,9 @@ void action_group_colors_set(bActionGroup *grp, const BoneColor *color);
  * If `pchan->color` is set to a non-default color, that is used. Otherwise the
  * armature bone color is used.
  *
- * Note that if the posechan's armature bone is nullptr, this function silently does nothing.
+ * Note that if `pchan->bone` is `nullptr`, this function silently does nothing.
  */
-void action_group_colors_set_from_posebone(bActionGroup *grp, bke::PChanBoneConst pchanbone);
+void action_group_colors_set_from_posebone(bActionGroup *grp, const bPoseChannel *pchan);
 
 /* Pose API ----------------- */
 
@@ -221,7 +219,7 @@ bool BKE_pose_channels_is_valid(const bPose *pose) ATTR_WARN_UNUSED_RESULT;
  * Checks for IK constraint, Spline IK, and also for Follow-Path constraint.
  * can do more constraints flags later. pose should be entirely OK.
  */
-void BKE_pose_update_constraint_flags(Object &pose_ob);
+void BKE_pose_update_constraint_flags(bPose *pose) ATTR_NONNULL(1);
 
 /**
  * Tag constraint flags for update.
@@ -303,7 +301,7 @@ bool BKE_pose_copy_result(bPose *to, bPose *from);
 /**
  * Zero the pose transforms for the entire pose or only for selected bones.
  */
-void BKE_pose_rest(Object &pose_ob, bool selected_bones_only);
+void BKE_pose_rest(bPose *pose, bool selected_bones_only);
 
 /**
  * Tag pose for recalculation. Also tag all related data to be recalculated.

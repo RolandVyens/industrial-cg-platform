@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-12-04 22:18+0000\n"
 "Last-Translator: Jackson Zheng <business.jackson.zheng@gmail.com>\n"
 "Language-Team: Hindi <https://translate.blender.org/projects/blender-ui/ui/hi/>\n"
@@ -2582,16 +2582,20 @@ msgid "Dots"
 msgstr "बिन्दु्"
 
 
-msgid "Placement"
-msgstr "नियोजन"
+msgid "Math"
+msgstr "गणित"
+
+
+msgid "Mirror"
+msgstr "दर्पण"
 
 
 msgid "Snap"
 msgstr "स्नैप"
 
 
-msgid "Math"
-msgstr "गणित"
+msgid "Import"
+msgstr "आयात करें"
 
 
 msgid "Light"
@@ -2600,6 +2604,10 @@ msgstr "प्रकाश"
 
 msgid "Rigid Body"
 msgstr "कठोर-पदार्थ"
+
+
+msgid "UV"
+msgstr "यूवी"
 
 
 msgid "Apply"
@@ -2618,20 +2626,12 @@ msgid "Show/Hide"
 msgstr "छुपाएँ / दिखाएँ"
 
 
-msgid "Import"
-msgstr "आयात करें"
-
-
 msgid "Make Single User"
 msgstr "एकल प्रयोक्ता बनाएँ"
 
 
 msgid "Hooks"
 msgstr "खूँटी"
-
-
-msgid "UV"
-msgstr "यूवी"
 
 
 msgid "Names"
@@ -2650,16 +2650,12 @@ msgid "Merge"
 msgstr "विलय करें"
 
 
-msgid "Bone Roll"
-msgstr "हड्डी पंजी"
-
-
 msgid "Keying"
 msgstr "कुंजीयन"
 
 
-msgid "Mirror"
-msgstr "दर्पण"
+msgid "Bone Roll"
+msgstr "हड्डी पंजी"
 
 
 msgid "Basic"
@@ -3386,6 +3382,10 @@ msgstr "चिन्हक जोड़ें"
 msgctxt "Operator"
 msgid "Delete Marker"
 msgstr "चिन्हक मिटाएँ"
+
+
+msgid "Placement"
+msgstr "नियोजन"
 
 
 msgid "Whole Frame"
@@ -4203,6 +4203,10 @@ msgid "Align"
 msgstr "संरेखित करें"
 
 
+msgid "Axis Direction"
+msgstr "अक्ष दिशा"
+
+
 msgctxt "Operator"
 msgid "Cube Projection"
 msgstr "घन प्रक्षेपण"
@@ -4406,12 +4410,12 @@ msgid "Lock Y"
 msgstr "तालाबंदी y"
 
 
-msgid "Transform Orientations"
-msgstr "दिक् विन्यास संरचनांतरण"
-
-
 msgid "Motion Tracking"
 msgstr "गति मार्गन"
+
+
+msgid "Transform Orientations"
+msgstr "दिक् विन्यास संरचनांतरण"
 
 
 msgid "Predefined tracking camera intrinsics"

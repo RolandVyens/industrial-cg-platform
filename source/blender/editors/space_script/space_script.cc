@@ -160,8 +160,7 @@ static void script_space_blend_read_after_liblink(BlendLibReader * /*reader*/,
 {
   SpaceScript *scpt = reinterpret_cast<SpaceScript *>(sl);
 
-  /* 2.45 set to null, better re-run the script. */
-  // scpt->script = nullptr;
+  /*scpt->script = nullptr; - 2.45 set to null, better re-run the script */
   if (scpt->script) {
     SCRIPT_SET_NULL(scpt->script);
   }

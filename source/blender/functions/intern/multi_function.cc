@@ -11,16 +11,6 @@ namespace blender::fn::multi_function {
 
 using ExecutionHints = MultiFunction::ExecutionHints;
 
-void MultiFunction::hash_unique(UniqueHashBytes &hash) const
-{
-  hash.add(this);
-}
-
-bool MultiFunction::equals(const MultiFunction &other) const
-{
-  return this == &other;
-}
-
 ExecutionHints MultiFunction::execution_hints() const
 {
   return this->get_execution_hints();

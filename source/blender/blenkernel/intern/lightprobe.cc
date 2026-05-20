@@ -8,8 +8,6 @@
 
 #include <cstring>
 
-#include "MEM_safe_multiply.h"
-
 #include "DNA_collection_types.h"
 #include "DNA_lightprobe_types.h"
 #include "DNA_object_types.h"
@@ -81,7 +79,7 @@ IDTypeInfo IDType_ID_LP = {
     .lib_override_apply_post = nullptr,
 };
 
-void BKE_lightprobe_type_set(LightProbe *probe, const eLightProbeType lightprobe_type)
+void BKE_lightprobe_type_set(LightProbe *probe, const short lightprobe_type)
 {
   probe->type = lightprobe_type;
 
@@ -145,7 +143,7 @@ static void lightprobe_grid_cache_frame_blend_read(BlendDataReader *reader,
     return;
   }
 
-  BLO_read_array_and_validate_size(reader, &cache->block_infos, &cache->block_len);
+  BLO_read_struct_array(reader, LightProbeGridCacheFrame, cache->block_len, &cache->block_infos);
 
   int64_t sample_count = BKE_lightprobe_grid_cache_frame_sample_count(cache);
 
@@ -159,25 +157,18 @@ static void lightprobe_grid_cache_frame_blend_read(BlendDataReader *reader,
   cache->surfels = nullptr;
   cache->surfels_len = 0;
 
-  bool ok = true;
-  ok &= BLO_read_array(reader, reinterpret_cast<float **>(&cache->irradiance.L0), sample_count, 3);
-  ok &= BLO_read_array(
-      reader, reinterpret_cast<float **>(&cache->irradiance.L1_a), sample_count, 3);
-  ok &= BLO_read_array(
-      reader, reinterpret_cast<float **>(&cache->irradiance.L1_b), sample_count, 3);
-  ok &= BLO_read_array(
-      reader, reinterpret_cast<float **>(&cache->irradiance.L1_c), sample_count, 3);
+  BLO_read_float3_array(reader, sample_count, reinterpret_cast<float **>(&cache->irradiance.L0));
+  BLO_read_float3_array(reader, sample_count, reinterpret_cast<float **>(&cache->irradiance.L1_a));
+  BLO_read_float3_array(reader, sample_count, reinterpret_cast<float **>(&cache->irradiance.L1_b));
+  BLO_read_float3_array(reader, sample_count, reinterpret_cast<float **>(&cache->irradiance.L1_c));
 
-  ok &= BLO_read_array(reader, &cache->visibility.L0, sample_count);
-  ok &= BLO_read_array(reader, &cache->visibility.L1_a, sample_count);
-  ok &= BLO_read_array(reader, &cache->visibility.L1_b, sample_count);
-  ok &= BLO_read_array(reader, &cache->visibility.L1_c, sample_count);
+  BLO_read_float_array(reader, sample_count, &cache->visibility.L0);
+  BLO_read_float_array(reader, sample_count, &cache->visibility.L1_a);
+  BLO_read_float_array(reader, sample_count, &cache->visibility.L1_b);
+  BLO_read_float_array(reader, sample_count, &cache->visibility.L1_c);
 
-  ok &= BLO_read_array(reader, &cache->connectivity.validity, sample_count);
-
-  if (!ok) {
-    cache->block_len = 0;
-  }
+  BLO_read_int8_array(
+      reader, sample_count, reinterpret_cast<int8_t **>(&cache->connectivity.validity));
 }
 
 void BKE_lightprobe_cache_blend_write(BlendWriter *writer, LightProbeObjectCache *cache)
@@ -289,25 +280,11 @@ void BKE_lightprobe_cache_free(Object *object)
 
 int64_t BKE_lightprobe_grid_cache_frame_sample_count(const LightProbeGridCacheFrame *cache)
 {
-  /* Overflow is checked to detect invalid file reads. */
-  int64_t result;
   if (cache->data_layout == LIGHTPROBE_CACHE_ADAPTIVE_RESOLUTION) {
-    const int block_size = cache->block_size;
-    if (!MEM_size_safe_multiply(block_size, block_size, &result) ||
-        !MEM_size_safe_multiply(result, block_size, &result) ||
-        !MEM_size_safe_multiply(result, cache->block_len, &result))
-    {
-      return INT64_MAX;
-    }
-    return result;
+    return cache->block_len * cube_i(cache->block_size);
   }
   /* LIGHTPROBE_CACHE_UNIFORM_GRID */
-  if (!MEM_size_safe_multiply(cache->size[0], cache->size[1], &result) ||
-      !MEM_size_safe_multiply(result, cache->size[2], &result))
-  {
-    return INT64_MAX;
-  }
-  return result;
+  return int64_t(cache->size[0]) * cache->size[1] * cache->size[2];
 }
 
 }  // namespace blender

@@ -4,7 +4,6 @@
 
 #include "usd_mesh_utils.hh"
 #include "usd_attribute_utils.hh"
-#include "usd_colorspace_utils.hh"
 #include "usd_hash_types.hh"
 
 #include "BKE_attribute.hh"
@@ -34,18 +33,6 @@ static void read_face_display_color(Mesh *mesh,
   const bke::AttrDomain color_domain = bke::AttrDomain::Corner;
 
   const StringRef attr_name(pv_name.GetString());
-
-  if (primvar.GetInterpolation() == pxr::UsdGeomTokens->constant) {
-    ColorGeometry4f value = detail::convert_value<USDT, ColorGeometry4f>(usd_colors[0]);
-    colorspace_attr_to_scene_linear(primvar.GetAttr(), value);
-    set_single_value(attributes,
-                     attr_name,
-                     color_domain,
-                     bke::AttrType::ColorFloat,
-                     bke::AttributeInitValue(value));
-    return;
-  }
-
   bke::SpanAttributeWriter<ColorGeometry4f> color_data =
       attributes.lookup_or_add_for_write_only_span<ColorGeometry4f>(attr_name, color_domain);
   if (!color_data) {
@@ -67,7 +54,6 @@ static void read_face_display_color(Mesh *mesh,
     }
   }
 
-  colorspace_attr_to_scene_linear(primvar.GetAttr(), color_data.span);
   color_data.finish();
 }
 
@@ -79,8 +65,8 @@ static std::optional<bke::AttrDomain> convert_usd_varying_to_blender(const pxr::
     map.add_new(pxr::UsdGeomTokens->vertex, bke::AttrDomain::Point);
     map.add_new(pxr::UsdGeomTokens->varying, bke::AttrDomain::Point);
     map.add_new(pxr::UsdGeomTokens->face, bke::AttrDomain::Face);
-    /* Since there's no "domain" concept in USD, promote prim-level "constant" primvars to the
-     * Point domain in Blender. */
+    /* As there's no "constant" type in Blender, for now we're
+     * translating into a point Attribute. */
     map.add_new(pxr::UsdGeomTokens->constant, bke::AttrDomain::Point);
     map.add_new(pxr::UsdGeomTokens->uniform, bke::AttrDomain::Face);
     /* Notice: Edge types are not supported! */
@@ -120,9 +106,7 @@ void read_generic_mesh_primvar(Mesh *mesh,
   /* Blender does not currently support displaying Face colors with the Viewport Shading
    * "Attribute" color type. Make a special case for "displayColor" primvars and put them on
    * the Corner domain instead. */
-  if (pv_name == usdtokens::displayColor &&
-      ELEM(pv_interp, pxr::UsdGeomTokens->uniform, pxr::UsdGeomTokens->constant))
-  {
+  if (pv_name == usdtokens::displayColor && domain == bke::AttrDomain::Face) {
     if (ELEM(pv_type,
              pxr::SdfValueTypeNames->Color3fArray,
              pxr::SdfValueTypeNames->Color3hArray,

@@ -509,7 +509,7 @@ GHOST_TVulkanXRModes GHOST_XrGraphicsBindingVulkan::choseDataTransferMode()
 
   auto has_extension = [=](const char *extension_name) {
     for (const auto &extension : available_device_extensions) {
-      if (STREQ(extension_name, extension.extensionName)) {
+      if (strcmp(extension_name, extension.extensionName) == 0) {
         return true;
       }
     }
@@ -653,9 +653,8 @@ void GHOST_XrGraphicsBindingVulkan::submitToSwapchainImageCpu(
 
   /* Import render result. */
   VkDeviceSize component_size = 4 * sizeof(uint8_t);
-  if (ELEM(draw_info.swapchain_format,
-           GHOST_kXrSwapchainFormatRGBA16F,
-           GHOST_kXrSwapchainFormatRGBA16))
+  if (draw_info.swapchain_format == GHOST_kXrSwapchainFormatRGBA16F ||
+      draw_info.swapchain_format == GHOST_kXrSwapchainFormatRGBA16)
   {
     component_size = 4 * sizeof(uint16_t);
   }

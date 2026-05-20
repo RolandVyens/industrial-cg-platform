@@ -240,7 +240,7 @@ ImBuf *seq_proxy_fetch(const RenderData *context, Strip *strip, int timeline_fra
       /* Sequencer takes care of colorspace conversion of the result. The input is the best to be
        * kept unchanged for the performance reasons. */
       proxy->anim = openanim(
-          filepath, ImBufFlags::Zero, 0, true, strip->data->colorspace_settings.name);
+          filepath, IB_byte_data, 0, true, strip->data->colorspace_settings.name);
     }
     if (proxy->anim == nullptr) {
       return nullptr;
@@ -265,10 +265,8 @@ ImBuf *seq_proxy_fetch(const RenderData *context, Strip *strip, int timeline_fra
      * conversion of float to scene linear that would usually be done. */
     char colorspace[IMA_MAX_SPACE];
     STRNCPY(colorspace, context->scene->sequencer_colorspace_settings.name);
-    return IMB_load_image_from_filepath(filepath,
-                                        ImBufFlags::ByteData | ImBufFlags::Metadata |
-                                            ImBufFlags::NoColorspaceConvert,
-                                        colorspace);
+    return IMB_load_image_from_filepath(
+        filepath, IB_byte_data | IB_metadata | IB_no_colorspace_convert, colorspace);
   }
 
   return nullptr;
@@ -365,8 +363,6 @@ static int seq_proxy_context_count(Strip *strip, Scene *scene)
       }
       break;
     }
-    default:
-      break;
   }
 
   return num_views;
@@ -500,14 +496,13 @@ static void seq_proxy_build_frame(const Scene *scene,
   else {
     /* Byte image: save as JPG. */
     ibuf->ftype = IMB_FTYPE_JPG;
-    if (ibuf->can_contain_alpha()) {
-      ibuf->color_mode = ImColorMode::RGB; /* JPGs do not support alpha. */
+    if (ibuf->planes == 32) {
+      ibuf->planes = 24; /* JPGs do not support alpha. */
     }
   }
   BLI_file_ensure_parent_dir_exists(filepath);
 
-  const bool ok = IMB_save_image(
-      ibuf, filepath, save_float ? ImBufFlags::FloatData : ImBufFlags::ByteData);
+  const bool ok = IMB_save_image(ibuf, filepath, save_float ? IB_float_data : IB_byte_data);
   if (ok == false) {
     perror(filepath);
   }
@@ -526,9 +521,9 @@ static ImBuf *render_image_strip_frame(const ProxyBuildContext &context,
 {
   ImBuf *ibuf = nullptr;
 
-  ImBufFlags flag = ImBufFlags::ByteData | ImBufFlags::Metadata | ImBufFlags::MultiLayer;
+  int flag = IB_byte_data | IB_metadata | IB_multilayer;
   if (strip.alpha_mode == SEQ_ALPHA_PREMUL) {
-    flag |= ImBufFlags::AlphaPremul;
+    flag |= IB_alphamode_premul;
   }
 
   if (prefix[0] == '\0') {

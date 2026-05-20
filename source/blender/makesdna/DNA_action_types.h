@@ -66,15 +66,14 @@ class StripKeyframeData;
 #define DNA_DEFAULT_ACTION_LAST_SLOT_HANDLE 0x37627bf5
 
 /** #bMotionPathVert::flag */
-enum eMotionPathVert_Flag : int {
+enum eMotionPathVert_Flag {
   /* vert is selected */
   MOTIONPATH_VERT_SEL = (1 << 0),
   MOTIONPATH_VERT_KEY = (1 << 1),
 };
-ENUM_OPERATORS(eMotionPathVert_Flag);
 
 /* bMotionPath->flag */
-enum eMotionPath_Flag : int {
+enum eMotionPath_Flag {
   /* (for bones) path represents the head of the bone */
   MOTIONPATH_FLAG_BHEAD = (1 << 0),
   /* motion path is being edited */
@@ -86,17 +85,15 @@ enum eMotionPath_Flag : int {
   /* Bake to scene camera. */
   MOTIONPATH_FLAG_BAKE_CAMERA = (1 << 4),
 };
-ENUM_OPERATORS(eMotionPath_Flag);
 
 /* bAnimVizSettings->recalc */
-enum eAnimViz_RecalcFlags : short {
+enum eAnimViz_RecalcFlags {
   /* Motion-paths need recalculating. */
   ANIMVIZ_RECALC_PATHS = (1 << 0),
 };
-ENUM_OPERATORS(eAnimViz_RecalcFlags);
 
 /* bAnimVizSettings->path_type */
-enum eMotionPaths_Types : short {
+enum eMotionPaths_Types {
   /* show the paths along their entire ranges */
   MOTIONPATH_TYPE_RANGE = 0,
   /* only show the parts of the paths around the current frame */
@@ -104,7 +101,7 @@ enum eMotionPaths_Types : short {
 };
 
 /* bAnimVizSettings->path_range */
-enum eMotionPath_Ranges : short {
+enum eMotionPath_Ranges {
   /* Default is scene */
   MOTIONPATH_RANGE_SCENE = 0,
   MOTIONPATH_RANGE_KEYS_SELECTED = 1,
@@ -113,7 +110,7 @@ enum eMotionPath_Ranges : short {
 };
 
 /* bAnimVizSettings->path_viewflag */
-enum eMotionPaths_ViewFlag : short {
+enum eMotionPaths_ViewFlag {
   /* show frames on path */
   MOTIONPATH_VIEW_FNUMS = (1 << 0),
   /* show keyframes on path */
@@ -125,10 +122,9 @@ enum eMotionPaths_ViewFlag : short {
   /* draw lines on path */
   /* MOTIONPATH_VIEW_LINES = (1 << 4), */ /* UNUSED */
 };
-ENUM_OPERATORS(eMotionPaths_ViewFlag);
 
 /* bAnimVizSettings->path_bakeflag */
-enum eMotionPath_BakeFlag : short {
+enum eMotionPath_BakeFlag {
   /** motion paths directly associated with this block of settings needs updating */
   /* MOTIONPATH_BAKE_NEEDS_RECALC = (1 << 0), */ /* UNUSED */
   /** for bones - calculate head-points for curves instead of tips */
@@ -139,12 +135,11 @@ enum eMotionPath_BakeFlag : short {
   /* Bake the path in camera space. */
   MOTIONPATH_BAKE_CAMERA_SPACE = (1 << 3),
 };
-ENUM_OPERATORS(eMotionPath_BakeFlag);
 
 /**
  * Runtime flags on pose bones. Those are only used internally and are not exposed to the user.
  */
-enum bPoseChannelRuntimeFlag : uint8_t {
+enum bPoseChannelRuntimeFlag {
   /**
    * Used during transform. Not every selected bone is transformed. For example in a chain of
    * bones, only the first selected may be transformed.
@@ -157,12 +152,11 @@ enum bPoseChannelRuntimeFlag : uint8_t {
   /** Set on bones during selection to tell following code that this bone should be operated on. */
   POSE_RUNTIME_IN_SELECTION_AREA = (1 << 3),
 };
-ENUM_OPERATORS(bPoseChannelRuntimeFlag);
 
-/* PoseChannel (transform) flags. */
-enum ePchan_Flag : short {
+/* PoseChannel (transform) flags */
+enum ePchan_Flag {
   /* (1 << 0) to (1 << 3) used to be flags to determine if a type of channel should be modified by
-     pose sliding. This has been moved to the `SlideSubject` struct in Blender 5.2.  */
+     pose sliding. This has been moved to the `tPChanFCurveLink` struct in Blender 5.2.  */
 
   /* old IK/cache stuff
    * - used to be here from (1 << 3) to (1 << 8)
@@ -212,12 +206,11 @@ enum ePchan_Flag : short {
   POSE_HAS_IKS = (1 << 14),
 #endif
   /* spline IK solving */
-  POSE_IKSPLINE = static_cast<short>(1 << 15),
+  POSE_IKSPLINE = (1 << 15),
 };
-ENUM_OPERATORS(ePchan_Flag)
 
 /* PoseChannel constflag (constraint detection) */
-enum ePchan_ConstFlag : char {
+enum ePchan_ConstFlag {
   PCHAN_HAS_IK = (1 << 0),           /* Has IK constraint. */
   PCHAN_HAS_CONST = (1 << 1),        /* Has any constraint. */
   /* PCHAN_HAS_ACTION = (1 << 2), */ /* UNUSED */
@@ -229,7 +222,7 @@ enum ePchan_ConstFlag : char {
 ENUM_OPERATORS(ePchan_ConstFlag);
 
 /* PoseChannel->ikflag */
-enum ePchan_IkFlag : short {
+enum ePchan_IkFlag {
   BONE_IK_NO_XDOF = (1 << 0),
   BONE_IK_NO_YDOF = (1 << 1),
   BONE_IK_NO_ZDOF = (1 << 2),
@@ -245,23 +238,20 @@ enum ePchan_IkFlag : short {
   BONE_IK_NO_YDOF_TEMP = (1 << 11),
   BONE_IK_NO_ZDOF_TEMP = (1 << 12),
 };
-ENUM_OPERATORS(ePchan_IkFlag);
 
 /* PoseChannel->drawflag */
-enum ePchan_DrawFlag : char {
+enum ePchan_DrawFlag {
   PCHAN_DRAW_NO_CUSTOM_BONE_SIZE = (1 << 0),
   PCHAN_DRAW_HIDDEN = (1 << 1),
 };
-ENUM_OPERATORS(ePchan_DrawFlag);
 
 /* NOTE: It doesn't take custom_scale_xyz into account. */
-#define PCHAN_CUSTOM_BONE_LENGTH(pchanbone) \
-  (((pchanbone).pchan->drawflag & PCHAN_DRAW_NO_CUSTOM_BONE_SIZE) ? 1.0f : \
-                                                                    (pchanbone).bone->length)
+#define PCHAN_CUSTOM_BONE_LENGTH(pchan) \
+  (((pchan)->drawflag & PCHAN_DRAW_NO_CUSTOM_BONE_SIZE) ? 1.0f : (pchan)->bone->length)
 
 #ifdef DNA_DEPRECATED_ALLOW
 /* PoseChannel->bboneflag */
-enum ePchan_BBoneFlag : char {
+enum ePchan_BBoneFlag {
   /* Use custom reference bones (for roll and handle alignment), instead of immediate neighbors */
   PCHAN_BBONE_CUSTOM_HANDLES = (1 << 1),
   /* Evaluate start handle as being "relative" */
@@ -272,7 +262,7 @@ enum ePchan_BBoneFlag : char {
 #endif
 
 /* PoseChannel->rotmode and Object->rotmode */
-enum eRotationModes : short {
+enum eRotationModes {
   /* quaternion rotations (default, and for older Blender versions) */
   ROT_MODE_QUAT = 0,
   /* euler rotations - keep in sync with enum in BLI_math_rotation.h */
@@ -295,7 +285,7 @@ enum eRotationModes : short {
 };
 
 /* Pose->flag */
-enum ePose_Flags : short {
+enum ePose_Flags {
   /* results in BKE_pose_rebuild being called */
   POSE_RECALC = (1 << 0),
   /* pose has constraints which depend on time (used when depsgraph updates for a new frame) */
@@ -314,16 +304,15 @@ enum ePose_Flags : short {
   /* Use relative mirroring in mirror mode */
   POSE_MIRROR_RELATIVE = (1 << 10),
 };
-ENUM_OPERATORS(ePose_Flags);
 
 /* bPose->iksolver and bPose->ikparam->iksolver */
-enum ePose_IKSolverType : int {
+enum ePose_IKSolverType {
   IKSOLVER_STANDARD = 0,
   IKSOLVER_ITASC = 1,
 };
 
 /* bItasc->flag */
-enum eItasc_Flags : short {
+enum eItasc_Flags {
   ITASC_AUTO_STEP = (1 << 0),
   ITASC_INITIAL_REITERATION = (1 << 1),
   ITASC_REITERATION = (1 << 2),
@@ -334,16 +323,15 @@ enum eItasc_Flags : short {
    */
   ITASC_TRANSLATE_ROOT_BONES = (1 << 4),
 };
-ENUM_OPERATORS(eItasc_Flags);
 
 /* bItasc->solver */
-enum eItasc_Solver : short {
+enum eItasc_Solver {
   ITASC_SOLVER_SDLS = 0, /* selective damped least square, suitable for CopyPose constraint */
   ITASC_SOLVER_DLS = 1,  /* damped least square with numerical filtering of damping */
 };
 
 /* Action Group flags */
-enum eActionGroup_Flag : uint32_t {
+enum eActionGroup_Flag {
   /* group is selected */
   AGRP_SELECTED = (1 << 0),
   /* group is 'active' / last selected one */
@@ -362,16 +350,12 @@ enum eActionGroup_Flag : uint32_t {
   /* sub channel modifiers off */
   AGRP_MODIFIERS_OFF = (1 << 7),
 
-  /** F-Curves from this Action Group are always visible. */
-  AGRP_CURVES_ALWAYS_VISIBLE = (1 << 17),
-
   AGRP_TEMP = (1 << 30),
   AGRP_MOVED = (1u << 31),
 };
-ENUM_OPERATORS(eActionGroup_Flag)
 
 /** Flags for the action. */
-enum eAction_Flags : int {
+enum eAction_Flags {
   /* flags for displaying in UI */
   ACT_COLLAPSED = (1 << 0),
   ACT_SELECTED = (1 << 1),
@@ -385,10 +369,9 @@ enum eAction_Flags : int {
   /** The action is intended to be a cycle (requires ACT_FRAME_RANGE). */
   ACT_CYCLIC = (1 << 13),
 };
-ENUM_OPERATORS(eAction_Flags);
 
 /** DopeSheet filter-flag. */
-enum eDopeSheet_FilterFlag : int {
+enum eDopeSheet_FilterFlag {
   /* general filtering */
   /** only include channels relating to selected data */
   ADS_FILTER_ONLYSEL = (1 << 0),
@@ -454,7 +437,7 @@ enum eDopeSheet_FilterFlag : int {
 ENUM_OPERATORS(eDopeSheet_FilterFlag);
 
 /* DopeSheet filter-flags - Overflow (filterflag2) */
-enum eDopeSheet_FilterFlag2 : int {
+enum eDopeSheet_FilterFlag2 {
   ADS_FILTER_NOCACHEFILES = (1 << 1),
   ADS_FILTER_NOMOVIECLIPS = (1 << 2),
   ADS_FILTER_NOHAIR = (1 << 3),
@@ -469,7 +452,7 @@ enum eDopeSheet_FilterFlag2 : int {
 ENUM_OPERATORS(eDopeSheet_FilterFlag2);
 
 /* DopeSheet general flags */
-enum eDopeSheet_Flag : int {
+enum eDopeSheet_Flag {
   /** when summary is shown, it is collapsed, so all other channels get hidden */
   ADS_FLAG_SUMMARY_COLLAPSED = (1 << 0),
   /** show filters for datablocks */
@@ -483,16 +466,14 @@ enum eDopeSheet_Flag : int {
   /** Invert the search filter */
   ADS_FLAG_INVERT_FILTER = (1 << 4),
 };
-ENUM_OPERATORS(eDopeSheet_Flag);
 
-enum SpaceActionOverlays_Flag : int {
+enum SpaceActionOverlays_Flag {
   ADS_OVERLAY_SHOW_OVERLAYS = (1 << 0),
   ADS_SHOW_SCENE_STRIP_FRAME_RANGE = (1 << 1)
 };
-ENUM_OPERATORS(SpaceActionOverlays_Flag);
 
 /* SpaceAction flag */
-enum eSAction_Flag : short {
+enum eSAction_Flag {
   /* during transform (only set for TimeSlide) */
   SACTION_MOVING = (1 << 0),
   /* show sliders */
@@ -521,17 +502,15 @@ enum eSAction_Flag : short {
   /* show markers region */
   SACTION_SHOW_MARKERS = (1 << 14),
 };
-ENUM_OPERATORS(eSAction_Flag);
 
 /** #SpaceAction_Runtime.flag */
-enum eSAction_Runtime_Flag : char {
+enum eSAction_Runtime_Flag {
   /** Temporary flag to force channel selections to be synced with main */
   SACTION_RUNTIME_FLAG_NEED_CHAN_SYNC = (1 << 0),
 };
-ENUM_OPERATORS(eSAction_Runtime_Flag);
 
 /** #SpaceAction.mode */
-enum eAnimEdit_Context : char {
+enum eAnimEdit_Context {
   /** Action on the active object. */
   SACTCONT_ACTION = 0,
   /** List of all shape-keys on the active object, linked with their F-Curves. */
@@ -549,7 +528,7 @@ enum eAnimEdit_Context : char {
 };
 
 /* Old snapping enum that is only needed because of the versioning code. */
-enum DNA_DEPRECATED eAnimEdit_AutoSnap : int {
+enum DNA_DEPRECATED eAnimEdit_AutoSnap {
   /* snap to 1.0 frame/second intervals */
   SACTSNAP_STEP = 1,
   /* snap to actual frames/seconds (nla-action time) */
@@ -563,7 +542,7 @@ enum DNA_DEPRECATED eAnimEdit_AutoSnap : int {
 };
 
 /* SAction->cache_display */
-enum eTimeline_Cache_Flag : char {
+enum eTimeline_Cache_Flag {
   TIME_CACHE_DISPLAY = (1 << 0),
   TIME_CACHE_SOFTBODY = (1 << 1),
   TIME_CACHE_PARTICLES = (1 << 2),
@@ -571,9 +550,8 @@ enum eTimeline_Cache_Flag : char {
   TIME_CACHE_SMOKE = (1 << 4),
   TIME_CACHE_DYNAMICPAINT = (1 << 5),
   TIME_CACHE_RIGIDBODY = (1 << 6),
-  TIME_CACHE_SIMULATION_NODES = static_cast<char>(1 << 7),
+  TIME_CACHE_SIMULATION_NODES = (1 << 7),
 };
-ENUM_OPERATORS(eTimeline_Cache_Flag)
 
 /* ************************************************ */
 /* Visualization */
@@ -586,7 +564,7 @@ struct bMotionPathVert {
   /** Coordinates of point in 3D-space. */
   float co[3] = {};
   /** Quick settings. */
-  eMotionPathVert_Flag flag = {};
+  int flag = 0;
 };
 
 /* ........ */
@@ -610,8 +588,8 @@ struct bMotionPath {
   float color_post[3] = {};
   /** Line thickness. */
   int line_thickness = 0;
-  /** Baking settings. */
-  eMotionPath_Flag flag = {};
+  /** Baking settings - eMotionPath_Flag. */
+  int flag = 0;
 
   char _pad2[4] = {};
   /* Used for drawing. */
@@ -627,16 +605,21 @@ struct bMotionPath {
 /* Animation Visualization Settings (avs) */
 struct bAnimVizSettings {
   /* General Settings ------------------------ */
-  eAnimViz_RecalcFlags recalc = {};
+  /** #eAnimViz_RecalcFlags. */
+  short recalc = 0;
 
   /* Motion Path Settings ------------------- */
-  eMotionPaths_Types path_type = {};
+  /** #eMotionPath_Types. */
+  short path_type = 0;
   /** Number of frames between points indicated on the paths. */
   short path_step = 0;
-  eMotionPath_Ranges path_range = {};
+  /** #eMotionPath_Ranges. */
+  short path_range = 0;
 
-  eMotionPaths_ViewFlag path_viewflag = {};
-  eMotionPath_BakeFlag path_bakeflag = {};
+  /** #eMotionPaths_ViewFlag. */
+  short path_viewflag = 0;
+  /** #eMotionPath_BakeFlag. */
+  short path_bakeflag = 0;
   char _pad[4] = {};
 
   /** Start and end frames of path-calculation range. Both are inclusive. */
@@ -676,11 +659,8 @@ struct bPoseChannel_BBoneSegmentBoundary {
   float depth_scale = 0;
 };
 
-static constexpr int64_t BONE_INDEX_UNKNOWN = -1;
 struct bPoseChannel_Runtime {
   SessionUID session_uid;
-
-  int64_t bone_index = BONE_INDEX_UNKNOWN;
 
   /* Cached dual quaternion for deformation. */
   struct DualQuat deform_dual_quat;
@@ -690,7 +670,8 @@ struct bPoseChannel_Runtime {
 
   /* Inverse of the total length of the segment polyline. */
   float bbone_arc_length_reciprocal = 0;
-  bPoseChannelRuntimeFlag flag = {};
+  /* bPoseChannelRuntimeFlag */
+  uint8_t flag = 0;
   char _pad1[3] = {};
 
   /* Rest and posed matrices for segments. */
@@ -741,25 +722,27 @@ struct bPoseChannel {
   ListBaseT<struct bConstraint> constraints = {nullptr, nullptr};
   char name[/*MAXBONENAME*/ 64] = "";
 
-  /** Dynamic, for detecting transform changes. */
-  ePchan_Flag flag = {};
+  /** Dynamic, for detecting transform changes (ePchan_Flag). */
+  short flag = 0;
   /** Settings for IK bones. */
-  ePchan_IkFlag ikflag = {};
+  short ikflag = 0;
   /** Protect channels from being transformed. */
   short protectflag = 0;
   /** Index of action-group this bone belongs to (0 = default/no group). */
   short agrp_index = 0;
   /** For quick detecting which constraints affect this channel. */
-  ePchan_ConstFlag constflag = {};
+  char constflag = 0;
   /**
    * This used to store the selection-flag for serialization but is not longer required
    * since that is now natively stored on the `flag` property.
    */
   DNA_DEPRECATED char selectflag = 0;
-  ePchan_DrawFlag drawflag = {};
+  char drawflag = 0;
   DNA_DEPRECATED char bboneflag = 0;
   char _pad0[4] = {};
 
+  /** Set on read file or rebuild pose. */
+  struct Bone *bone = nullptr;
   /** Set on read file or rebuild pose. */
   struct bPoseChannel *parent = nullptr;
   /** Set on read file or rebuild pose, the 'ik' child, for b-bones. */
@@ -806,8 +789,8 @@ struct bPoseChannel {
   float quat[4] = {1.0f, 0.0f, 0.0f};
   /** Axis-angle rotation. */
   float rotAxis[3] = {}, rotAngle = 0;
-  /** Rotation representation to use. */
-  eRotationModes rotmode = {};
+  /** #eRotationModes - rotation representation to use. */
+  short rotmode = 0;
   char _pad[6] = {};
 
   /**
@@ -848,7 +831,7 @@ struct bPoseChannel {
 
   /**
    * Curved bones settings - these are for animating,
-   * and are applied on top of the copies in pchan->bone_get(*ob)
+   * and are applied on top of the copies in pchan->bone
    */
   float roll1 = 0, roll2 = 0;
   float curve_in_x = 0, curve_in_z = 0;
@@ -861,8 +844,7 @@ struct bPoseChannel {
   float scale_in[3] = {1.0f, 1.0f, 1.0f};
   float scale_out[3] = {1.0f, 1.0f, 1.0f};
 
-  /** B-Bone custom handles; set on read file or rebuild pose based on pchan->bone_get(*ob)
-   * data. */
+  /** B-Bone custom handles; set on read file or rebuild pose based on pchan->bone data. */
   struct bPoseChannel *bbone_prev = nullptr;
   struct bPoseChannel *bbone_next = nullptr;
 
@@ -876,26 +858,10 @@ struct bPoseChannel {
 
   BoneColor color; /* MUST be named the same as in Bone and EditBone structs. */
 
+  void *_pad2 = nullptr;
+
   /** Runtime data (keep last). */
   struct bPoseChannel_Runtime runtime;
-
-#ifdef __cplusplus
-  /**
-   * Get the armature bone that corresponds to this bPoseChannel.
-   *
-   * Prefer this function over bone_get(armature), as it performs more checks at runtime.
-   */
-  const Bone *bone_get(const Object &owner) const;
-  Bone *bone_get(Object &owner);
-
-  /**
-   * Get the armature bone that corresponds to this bPoseChannel.
-   *
-   * Prefer bone_get(object) over this function, as that performs more checks at runtime.
-   */
-  const Bone *bone_get(const bArmature &armature) const;
-  Bone *bone_get(bArmature &armature);
-#endif
 };
 
 /* Pose ------------------------------------ */
@@ -916,7 +882,7 @@ struct bPose {
    */
   bPoseChannel **chan_array = nullptr;
 
-  ePose_Flags flag = {};
+  short flag = 0;
   char _pad[2] = {};
 
   /** Local action time of this pose. */
@@ -931,11 +897,11 @@ struct bPose {
 
   /** Index of active group (starts from 1). */
   int active_group = 0;
-  /** Ik solver to use. */
-  ePose_IKSolverType iksolver = {};
+  /** Ik solver to use, see ePose_IKSolverType. */
+  int iksolver = 0;
   /** Temporary IK data, depends on the IK solver. Not saved in file. */
   void *ikdata = nullptr;
-  /** IK solver parameter for ItaSC. */
+  /** IK solver parameter for ItaSC .*/
   bItasc *ikparam = nullptr;
 
   /** Settings for visualization of bone animation. */
@@ -946,19 +912,19 @@ struct bPose {
 
 /* header for all bPose->ikparam structures */
 struct bIKParam {
-  ePose_IKSolverType iksolver = {};
+  int iksolver = 0;
 };
 
 /* bPose->ikparam when bPose->iksolver=1 */
 struct bItasc {
-  ePose_IKSolverType iksolver = {};
+  int iksolver = 0;
   float precision = 0;
   short numiter = 0;
   short numstep = 0;
   float minstep = 0;
   float maxstep = 0;
-  eItasc_Solver solver = {};
-  eItasc_Flags flag = {};
+  short solver = 0;
+  short flag = 0;
   float feedback = 0;
   /** Max velocity to SDLS solver. */
   float maxvel = 0;
@@ -1024,7 +990,7 @@ struct bActionGroup {
   struct ActionChannelbag *channelbag = nullptr;
 
   /** Settings for this action-group. */
-  eActionGroup_Flag flag = {};
+  int flag = 0;
   /**
    * Index of custom color set to use when used for bones
    * (0=default - used for all old files, -1=custom set).
@@ -1098,8 +1064,8 @@ struct bAction {
   /** Markers local to the Action (used to provide Pose-Libraries). */
   ListBaseT<struct TimeMarker> markers = {nullptr, nullptr};
 
-  /** Settings for this action. */
-  eAction_Flags flag = {};
+  /** Settings for this action. \see eAction_Flags */
+  int flag = 0;
   /** Index of the active marker. */
   int active_marker = 0;
 
@@ -1139,23 +1105,25 @@ struct bDopeSheet {
   /** String to search for in displayed names of F-Curves, or NlaTracks/GP Layers/etc. */
   char searchstr[64] = "";
 
-  /** Flags to use for filtering data. */
-  eDopeSheet_FilterFlag filterflag = {};
-  eDopeSheet_FilterFlag2 filterflag2 = {};
+  /** Flags to use for filtering data #eAnimFilter_Flags. */
+  int filterflag = 0;
+  /** #eDopeSheet_FilterFlag2 */
+  int filterflag2 = 0;
   /** Standard flags. */
-  eDopeSheet_Flag flag = {};
+  int flag = 0;
 
   /** `index + 1` of channel to rename - only gets set by renaming operator. */
   int renameIndex = 0;
 };
 
 struct SpaceAction_Runtime {
-  eSAction_Runtime_Flag flag = {};
+  char flag = 0;
   char _pad0[7] = {};
 };
 
 struct SpaceActionOverlays {
-  SpaceActionOverlays_Flag flag = {};
+  /** #SpaceActionOverlays_Flag */
+  int flag = 0;
   char _pad0[4] = {};
 };
 
@@ -1183,14 +1151,15 @@ struct SpaceAction {
   /** For Time-Slide transform mode drawing - current frame? */
   float timeslide = 0;
 
-  eSAction_Flag flag = {};
+  short flag = 0;
   /* Editing context */
-  eAnimEdit_Context mode = {};
+  char mode = 0;
   /* Storage for sub-space types. */
   char mode_prev = 0;
   /* Snapping now lives on the Scene. */
   DNA_DEPRECATED char autosnap = 0;
-  eTimeline_Cache_Flag cache_display = {};
+  /** (eTimeline_Cache_Flag). */
+  char cache_display = 0;
   char _pad1[6] = {};
 
   SpaceActionOverlays overlays;

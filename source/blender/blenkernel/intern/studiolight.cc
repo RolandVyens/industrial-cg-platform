@@ -362,8 +362,7 @@ static void studiolight_multilayer_addpass(void *base,
 static void studiolight_load_equirect_image(StudioLight *sl)
 {
   if (sl->flag & STUDIOLIGHT_EXTERNAL_FILE) {
-    ImBuf *ibuf = IMB_load_image_from_filepath(sl->filepath,
-                                               ImBufFlags::MultiLayer | ImBufFlags::AlphaIgnore);
+    ImBuf *ibuf = IMB_load_image_from_filepath(sl->filepath, IB_multilayer | IB_alphamode_ignore);
     ImBuf *specular_ibuf = nullptr;
     ImBuf *diffuse_ibuf = nullptr;
     const bool failed = (ibuf == nullptr);
@@ -877,10 +876,14 @@ void BKE_studiolight_init()
                                         STUDIOLIGHT_LIGHTS_FOLDER,
                                         STUDIOLIGHT_TYPE_STUDIO |
                                             STUDIOLIGHT_SPECULAR_HIGHLIGHT_PASS);
+#ifdef WITH_IMAGE_OPENEXR
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_WORLD_FOLDER, STUDIOLIGHT_TYPE_WORLD);
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_MATCAP_FOLDER, STUDIOLIGHT_TYPE_MATCAP);
+#else
+  CLOG_WARN(&LOG, "Unable to load matcap or world presets, Built without 'WITH_IMAGE_OPENEXR'");
+#endif
 
   /* sort studio lights on filename. */
   BLI_listbase_sort(&studiolights, studiolight_cmp);

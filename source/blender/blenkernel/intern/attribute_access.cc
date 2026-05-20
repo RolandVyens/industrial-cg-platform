@@ -153,7 +153,7 @@ const CPPType *custom_data_type_to_cpp_type(const eCustomDataType type)
   }
 }
 
-std::optional<eCustomDataType> cpp_type_to_custom_data_type(const CPPType &type)
+eCustomDataType cpp_type_to_custom_data_type(const CPPType &type)
 {
   if (type.is<float>()) {
     return CD_PROP_FLOAT;
@@ -197,7 +197,8 @@ std::optional<eCustomDataType> cpp_type_to_custom_data_type(const CPPType &type)
   if (type.is<MStringProperty>()) {
     return CD_PROP_STRING;
   }
-  return std::nullopt;
+  BLI_assert_unreachable();
+  return CD_PROP_FLOAT;
 }
 
 const char *no_procedural_access_message = N_(

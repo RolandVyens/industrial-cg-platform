@@ -448,7 +448,7 @@ class BONE_PT_inverse_kinematics(BoneButtonsPanel, Panel):
         bone = context.bone
         pchan = ob.pose.bones[bone.name]
 
-        active = pchan.is_in_ik_chain or ob.pose.use_auto_ik
+        active = pchan.is_in_ik_chain
 
         col = layout.column()
         col.prop(pchan, "ik_stretch", slider=True)

@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 #include "DNA_vec_types.h"
 
 namespace blender {
@@ -19,7 +17,7 @@ struct SmoothView2DStore;
 }
 
 /** View zooming restrictions, per axis (#View2D.keepzoom) */
-enum eView2D_KeepZoom : short {
+enum {
   /* zoom is clamped to lie within limits set by minzoom and maxzoom */
   V2D_LIMITZOOM = (1 << 0),
   /* aspect ratio is maintained on view resize */
@@ -31,10 +29,9 @@ enum eView2D_KeepZoom : short {
   /* zooming on y-axis is not allowed */
   V2D_LOCKZOOM_Y = (1 << 9),
 };
-ENUM_OPERATORS(eView2D_KeepZoom)
 
 /** View panning restrictions, per axis (#View2D.keepofs). */
-enum eView2D_KeepOfs : short {
+enum {
   /* panning on x-axis is not allowed */
   V2D_LOCKOFS_X = (1 << 1),
   /* panning on y-axis is not allowed */
@@ -44,10 +41,9 @@ enum eView2D_KeepOfs : short {
   /* on resize, keep the y offset */
   V2D_KEEPOFS_Y = (1 << 4),
 };
-ENUM_OPERATORS(eView2D_KeepOfs)
 
 /** View extent restrictions (#View2D.keeptot). */
-enum eView2D_KeepTot : short {
+enum {
   /** 'cur' view can be out of extents of 'tot' */
   V2D_KEEPTOT_FREE = 0,
   /** 'cur' rect is adjusted so that it satisfies the extents of 'tot', with some compromises */
@@ -58,7 +54,7 @@ enum eView2D_KeepTot : short {
 };
 
 /** General refresh settings (#View2D.flag). */
-enum eView2D_Flag : short {
+enum {
   /* global view2d horizontal locking (for showing same time interval) */
   V2D_VIEWSYNC_SCREEN_TIME = (1 << 0),
   /* within area (i.e. between regions) view2d vertical locking */
@@ -78,10 +74,9 @@ enum eView2D_Flag : short {
    * Allows for different behavior between zooming and area resize. */
   V2D_ZOOM_IGNORE_KEEPOFS = (1 << 12),
 };
-ENUM_OPERATORS(eView2D_Flag)
 
 /** Scroller flags for View2D (#View2D.scroll). */
-enum eView2D_Scroll : short {
+enum {
   /* Left scroll-bar. */
   V2D_SCROLL_LEFT = (1 << 0),
   V2D_SCROLL_RIGHT = (1 << 1),
@@ -103,19 +98,17 @@ enum eView2D_Scroll : short {
   V2D_SCROLL_VERTICAL_FULLR = (1 << 9),
   V2D_SCROLL_HORIZONTAL_FULLR = (1 << 10),
 };
-ENUM_OPERATORS(eView2D_Scroll)
 
 /** scroll_ui, activate flag for drawing. */
-enum eView2D_ScrollUI : short {
+enum {
   V2D_SCROLL_H_ACTIVE = (1 << 0),
   V2D_SCROLL_V_ACTIVE = (1 << 1),
 };
-ENUM_OPERATORS(eView2D_ScrollUI)
 
 /**
  * Alignment flags for `totrect`, flags use 'shading-out' convention (#View2D.align).
  */
-enum eView2D_Align : short {
+enum {
   /* all quadrants free */
   V2D_ALIGN_FREE = 0,
   /* horizontal restrictions */
@@ -125,7 +118,6 @@ enum eView2D_Align : short {
   V2D_ALIGN_NO_POS_Y = (1 << 2),
   V2D_ALIGN_NO_NEG_Y = (1 << 3),
 };
-ENUM_OPERATORS(eView2D_Align)
 
 /* ---------------------------------- */
 
@@ -153,21 +145,21 @@ struct View2D {
   float minzoom = 0, maxzoom = 0;
 
   /** Scroll-bars to display (bit-flag). */
-  eView2D_Scroll scroll = {};
+  short scroll = 0;
   /** Temporary settings used for UI drawing of scroll-bars. */
-  eView2D_ScrollUI scroll_ui = {};
+  short scroll_ui = 0;
 
   /** Keeptot - `cur` rect cannot move outside the `tot` rect? */
-  eView2D_KeepTot keeptot = {};
+  short keeptot = 0;
   /** Keepzoom - axes that zooming cannot occur on, and also clamp within zoom-limits. */
-  eView2D_KeepZoom keepzoom = {};
+  short keepzoom = 0;
   /** Keepofs - axes that translation is not allowed to occur on. */
-  eView2D_KeepOfs keepofs = {};
+  short keepofs = 0;
 
   /** Settings. */
-  eView2D_Flag flag = {};
+  short flag = 0;
   /** Alignment of content in totrect. */
-  eView2D_Align align = {};
+  short align = 0;
 
   /** Storage of current winx/winy values, set in view2d_size_update. */
   short winx = 0, winy = 0;

@@ -141,8 +141,7 @@ void jump_flooding(Context &context, Result &input, Result &output)
   /* Notice that the output of the last pass is stored in result_to_flood due to the last swap, so
    * steal the data from it and release the other buffer. */
   result_after_flooding->release();
-  output.share_data(*result_to_flood);
-  result_to_flood->release();
+  output.steal_data(*result_to_flood);
 }
 
 }  // namespace blender::compositor

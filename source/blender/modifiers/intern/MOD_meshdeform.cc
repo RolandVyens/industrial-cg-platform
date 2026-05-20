@@ -612,9 +612,8 @@ static void blend_read(BlendDataReader *reader, ModifierData *md)
 
   if (mmd->bindinfluences) {
     mmd->bindinfluences_sharing_info = BLO_read_shared(reader, &mmd->bindinfluences, [&]() {
-      BLO_read_array_and_validate_size(reader, &mmd->bindinfluences, &mmd->influences_num);
-      return mmd->bindinfluences ? implicit_sharing::info_for_mem_free(mmd->bindinfluences) :
-                                   nullptr;
+      BLO_read_struct_array(reader, MDefInfluence, mmd->influences_num, &mmd->bindinfluences);
+      return implicit_sharing::info_for_mem_free(mmd->bindinfluences);
     });
   }
 
@@ -623,45 +622,40 @@ static void blend_read(BlendDataReader *reader, ModifierData *md)
   if (mmd->verts_num > 0) {
     if (mmd->bindoffsets) {
       mmd->bindoffsets_sharing_info = BLO_read_shared(reader, &mmd->bindoffsets, [&]() {
-        (void)BLO_read_array(reader, &mmd->bindoffsets, int64_t(mmd->verts_num) + 1);
-        return mmd->bindoffsets ? implicit_sharing::info_for_mem_free(mmd->bindoffsets) : nullptr;
+        BLO_read_int32_array(reader, mmd->verts_num + 1, &mmd->bindoffsets);
+        return implicit_sharing::info_for_mem_free(mmd->bindoffsets);
       });
     }
   }
 
   if (mmd->bindcagecos) {
     mmd->bindcagecos_sharing_info = BLO_read_shared(reader, &mmd->bindcagecos, [&]() {
-      BLO_read_array_and_validate_size(reader, &mmd->bindcagecos, &mmd->cage_verts_num, 3);
-      return mmd->bindcagecos ? implicit_sharing::info_for_mem_free(mmd->bindcagecos) : nullptr;
+      BLO_read_float3_array(reader, mmd->cage_verts_num, &mmd->bindcagecos);
+      return implicit_sharing::info_for_mem_free(mmd->bindcagecos);
     });
   }
   if (mmd->dyngrid) {
     mmd->dyngrid_sharing_info = BLO_read_shared(reader, &mmd->dyngrid, [&]() {
-      (void)BLO_read_array(reader, &mmd->dyngrid, int64_t(size) * size * size);
-      return mmd->dyngrid ? implicit_sharing::info_for_mem_free(mmd->dyngrid) : nullptr;
+      BLO_read_struct_array(reader, MDefCell, size * size * size, &mmd->dyngrid);
+      return implicit_sharing::info_for_mem_free(mmd->dyngrid);
     });
   }
   if (mmd->dyninfluences) {
     mmd->dyninfluences_sharing_info = BLO_read_shared(reader, &mmd->dyninfluences, [&]() {
-      BLO_read_array_and_validate_size(reader, &mmd->dyninfluences, &mmd->influences_num);
-      return mmd->dyninfluences ? implicit_sharing::info_for_mem_free(mmd->dyninfluences) :
-                                  nullptr;
+      BLO_read_struct_array(reader, MDefInfluence, mmd->influences_num, &mmd->dyninfluences);
+      return implicit_sharing::info_for_mem_free(mmd->dyninfluences);
     });
   }
   if (mmd->dynverts) {
     mmd->dynverts_sharing_info = BLO_read_shared(reader, &mmd->dynverts, [&]() {
-      BLO_read_array_and_validate_size(reader, &mmd->dynverts, &mmd->verts_num);
-      return mmd->dynverts ? implicit_sharing::info_for_mem_free(mmd->dynverts) : nullptr;
+      BLO_read_int32_array(reader, mmd->verts_num, &mmd->dynverts);
+      return implicit_sharing::info_for_mem_free(mmd->dynverts);
     });
   }
 
   /* Deprecated storage. */
-  if (mmd->bindweights) {
-    BLO_read_array_and_validate_size(reader, &mmd->bindweights, &mmd->verts_num);
-  }
-  if (mmd->bindcos) {
-    BLO_read_array_and_validate_size(reader, &mmd->bindcos, &mmd->cage_verts_num, 3);
-  }
+  BLO_read_float_array(reader, mmd->verts_num, &mmd->bindweights);
+  BLO_read_float3_array(reader, mmd->cage_verts_num, &mmd->bindcos);
 }
 
 ModifierTypeInfo modifierType_MeshDeform = {

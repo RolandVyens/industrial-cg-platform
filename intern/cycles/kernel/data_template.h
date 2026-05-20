@@ -77,7 +77,6 @@ KERNEL_STRUCT_MEMBER(film, int, is_rec709)
 KERNEL_STRUCT_MEMBER(film, float, exposure)
 /* Passed used. */
 KERNEL_STRUCT_MEMBER(film, int, pass_flag)
-KERNEL_STRUCT_MEMBER(film, int, denoising_pass_flag)
 KERNEL_STRUCT_MEMBER(film, int, light_pass_flag)
 /* Pass offsets. */
 KERNEL_STRUCT_MEMBER(film, int, pass_stride)
@@ -134,8 +133,6 @@ KERNEL_STRUCT_MEMBER(film, int, pass_denoising_specular_albedo)
 KERNEL_STRUCT_MEMBER(film, int, pass_denoising_normal)
 KERNEL_STRUCT_MEMBER(film, int, pass_denoising_roughness)
 KERNEL_STRUCT_MEMBER(film, int, pass_denoising_depth)
-KERNEL_STRUCT_MEMBER(film, int, pass_denoising_backward_motion)
-KERNEL_STRUCT_MEMBER(film, int, denoising_pass_options_flag)
 /* AOVs. */
 KERNEL_STRUCT_MEMBER(film, int, pass_aov_color)
 KERNEL_STRUCT_MEMBER(film, int, pass_aov_value)
@@ -254,7 +251,9 @@ KERNEL_STRUCT_MEMBER(integrator, int, use_volume_guiding)
 KERNEL_STRUCT_MEMBER(integrator, int, use_guiding_direct_light)
 KERNEL_STRUCT_MEMBER(integrator, int, use_guiding_mis_weights)
 
-KERNEL_STRUCT_MEMBER(integrator, float2, pixel_jitter)
+/* Padding. */
+KERNEL_STRUCT_MEMBER(integrator, int, pad1)
+KERNEL_STRUCT_MEMBER(integrator, int, pad2)
 KERNEL_STRUCT_END(KernelIntegrator)
 
 /* Image. */

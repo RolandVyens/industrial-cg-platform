@@ -38,7 +38,7 @@ class GHOST_Context : public GHOST_IContext {
   /**
    * Returns the thread's currently active drawing context.
    */
-  static GHOST_Context *getActiveDrawingContext()
+  static inline GHOST_Context *getActiveDrawingContext()
   {
     return active_context_;
   }
@@ -92,7 +92,7 @@ class GHOST_Context : public GHOST_IContext {
    * \param interval_out: Variable to store the swap interval if it can be read.
    * \return Whether the swap interval can be read.
    */
-  virtual GHOST_TSuccess getSwapInterval(int & /*interval_out*/)
+  virtual GHOST_TSuccess getSwapInterval(int & /*interval*/)
   {
     return GHOST_kFailure;
   }

@@ -64,6 +64,8 @@ void BlenderSync::sync_light(BObjectInfo &b_ob_info, Light *light)
   /* shadow */
   blender::PointerRNA clight = RNA_pointer_get(&light_rna_ptr, "cycles");
   light->set_cast_shadow(b_light.mode & blender::LA_SHADOW);
+  light->set_shadow_color(make_float3(
+      b_light.shadow_color[0], b_light.shadow_color[1], b_light.shadow_color[2]));
   light->set_use_mis(get_boolean(clight, "use_multiple_importance_sampling"));
 
   /* caustics light */
@@ -134,6 +136,7 @@ void BlenderSync::sync_background_light(blender::bScreen *b_screen, blender::Vie
       }
 
       light->set_use_mis(sample_as_light);
+      light->set_shadow_color(get_float3(cworld, "shadow_color"));
       light->set_max_bounces(get_int(cworld, "max_bounces"));
 
       /* Caustic light. */

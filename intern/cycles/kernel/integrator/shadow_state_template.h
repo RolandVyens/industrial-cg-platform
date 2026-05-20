@@ -9,6 +9,9 @@ KERNEL_STRUCT_BEGIN(shadow_path)
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, render_pixel_index, KERNEL_FEATURE_PATH_TRACING)
 /* Current sample number. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, sample, KERNEL_FEATURE_PATH_TRACING)
+/* Active deep hard-surface sample for primary visibility contribution accumulation. */
+KERNEL_STRUCT_MEMBER(
+    shadow_path, uint32_t, deep_surface_sample_idx, KERNEL_FEATURE_PATH_TRACING)
 /* Random number generator per-pixel info. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, rng_pixel, KERNEL_FEATURE_PATH_TRACING)
 /* Random number dimension offset. */
@@ -37,7 +40,7 @@ KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, throughput, KERNEL_FEATURE_PAT
 KERNEL_STRUCT_MEMBER(shadow_path,
                      PackedSpectrum,
                      unshadowed_throughput,
-                     KERNEL_FEATURE_AO_ADDITIVE)
+                     KERNEL_FEATURE_PATH_TRACING)
 /* Ratio of throughput to distinguish diffuse / glossy / transmission render passes. */
 KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, pass_diffuse_weight, KERNEL_FEATURE_LIGHT_PASSES)
 KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, pass_glossy_weight, KERNEL_FEATURE_LIGHT_PASSES)

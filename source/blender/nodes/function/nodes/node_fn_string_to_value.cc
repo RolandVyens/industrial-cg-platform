@@ -26,12 +26,6 @@ static void node_declare(NodeDeclarationBuilder &b)
   const bNode *node = b.node_or_null();
   if (node != nullptr) {
     const eNodeSocketDatatype data_type = eNodeSocketDatatype(node->custom1);
-    b.add_input<decl::Int>("Base"_ustr)
-        .min(2)
-        .max(36)
-        .default_value(10)
-        .description("Numeric base for the input string (e.g. 2 for binary, 16 for hexadecimal)")
-        .available(data_type == SOCK_INT);
     b.add_output(data_type, "Value"_ustr);
   }
 
@@ -46,14 +40,9 @@ static const mf::MultiFunction *get_multi_function(const bNode &bnode)
         length = BLI_strnlen_utf8(s.data(), result.ptr - s.data());
       });
 
-  static auto str_to_int_fn = mf::build::SI2_SO2<std::string, int, int, int>(
-      "String to Value", [](const std::string &s, int base, int &value, int &length) -> void {
-        if (base < 2 || base > 36) {
-          value = 0;
-          length = 0;
-          return;
-        }
-        const auto result = std::from_chars(s.data(), s.data() + s.size(), value, base);
+  static auto str_to_int_fn = mf::build::SI1_SO2<std::string, int, int>(
+      "String to Value", [](const std::string &s, int &value, int &length) -> void {
+        const auto result = std::from_chars(s.data(), s.data() + s.size(), value);
         length = BLI_strnlen_utf8(s.data(), result.ptr - s.data());
       });
 
@@ -140,7 +129,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_cmp_node_type_base(&ntype, "FunctionNodeStringToValue"_ustr);
+  fn_node_type_base(&ntype, "FunctionNodeStringToValue"_ustr);
   ntype.ui_name = "String to Value";
   ntype.ui_description = "Derive a numeric value from a given string representation";
   ntype.nclass = NODE_CLASS_CONVERTER;

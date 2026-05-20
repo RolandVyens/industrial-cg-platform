@@ -97,8 +97,6 @@
 #include "DEG_depsgraph_debug.hh"
 #include "DEG_depsgraph_query.hh"
 
-#include "NOD_eval_log.hh"
-
 #include "RE_engine.h"
 
 #include "RNA_access.hh"
@@ -117,10 +115,6 @@
 #include "versioning_common.hh"
 
 namespace blender {
-
-/* -------------------------------------------------------------------- */
-/** \name Scene Data-Block
- * \{ */
 
 using bke::CompositorRuntime;
 using bke::SceneRuntime;
@@ -183,7 +177,7 @@ static void scene_init_data(ID *id)
 
   scene->toolsettings = MEM_new<ToolSettings>(__func__);
 
-  scene->toolsettings->autokey_mode = U.autokey_mode;
+  scene->toolsettings->autokey_mode = uchar(U.autokey_mode);
 
   scene->toolsettings->unified_paint_settings.curve_rand_hue = BKE_paint_default_curve();
   scene->toolsettings->unified_paint_settings.curve_rand_saturation = BKE_paint_default_curve();
@@ -1437,7 +1431,7 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
       BKE_curveprofile_blend_read(reader, sce->toolsettings->custom_bevel_profile_preset);
     }
 
-    BLO_read_raw_address(reader, &sce->toolsettings->paint_mode.canvas_image);
+    BLO_read_data_address(reader, &sce->toolsettings->paint_mode.canvas_image);
     BLO_read_struct(reader, SequencerToolSettings, &sce->toolsettings->sequencer_tool_settings);
   }
 
@@ -1445,8 +1439,10 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
     BLO_read_struct(reader, Editing, &sce->ed);
     Editing *ed = sce->ed;
 
-    BLO_read_struct_no_us(reader, Strip, &ed->act_strip);
-    BLO_read_struct_no_us(reader, Strip, &ed->current_meta_strip);
+    ed->act_strip = static_cast<Strip *>(
+        BLO_read_get_new_data_address_no_us(reader, ed->act_strip, sizeof(Strip)));
+    ed->current_meta_strip = static_cast<Strip *>(
+        BLO_read_get_new_data_address_no_us(reader, ed->current_meta_strip, sizeof(Strip)));
     ed->runtime = MEM_new<seq::EditingRuntime>(__func__);
 
     /* recursive link sequences, lb will be correctly initialized */
@@ -1462,7 +1458,8 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
     for (MetaStack &ms : ed->metastack) {
       BLO_read_struct(reader, Strip, &ms.parent_strip);
 
-      BLO_read_struct_no_us(reader, Strip, &ms.old_strip);
+      ms.old_strip = static_cast<Strip *>(
+          BLO_read_get_new_data_address_no_us(reader, ms.old_strip, sizeof(Strip)));
     }
   }
 
@@ -1646,7 +1643,7 @@ IDTypeInfo IDType_ID_SCE = {
 
 /* -------------------------------------------------------------------- */
 /** \name Scene member functions
- * \{ */
+ */
 
 double Scene::frames_per_second() const
 {
@@ -2163,7 +2160,7 @@ void BKE_scene_set_background(Main *bmain, Scene *scene)
 
   /* Deselect objects (for data select). */
   for (Object &ob : bmain->objects) {
-    ob.flag &= ~OB_SELECT;
+    ob.flag &= ~SELECT;
   }
 
   /* copy layers and flags from bases to objects */
@@ -2731,12 +2728,7 @@ static void scene_graph_update_tagged(Depsgraph *depsgraph, Main *bmain, bool on
     BKE_callback_exec_id(bmain, &scene->id, BKE_CB_EVT_DEPSGRAPH_UPDATE_PRE);
   }
 
-  /* Cannot limit this to the currently evaluated scene/view layer, as the depsgraph may have
-   * dependencies on others, see e.g. #158225, which pulls in another scene. */
-  /* TODO: If this becomes a performance issue, we'll likely have to find a way in the depsgraph
-   * itself to gather all 'known' scenes, and ensure that their viewlayers / collections
-   * hierarchies are in sync. */
-  BKE_main_view_layers_synced_ensure(bmain);
+  BKE_scene_view_layers_synced_ensure(*bmain, scene);
 
   for (int pass = 0; pass < 2; pass++) {
     /* (Re-)build dependency graph if needed. */
@@ -2812,13 +2804,6 @@ void BKE_scene_graph_update_for_newframe_ex(Depsgraph *depsgraph, const bool cle
 
   /* Keep this first. */
   BKE_callback_exec_id(bmain, &scene->id, BKE_CB_EVT_FRAME_CHANGE_PRE);
-
-  /* Cannot limit this to the currently evaluated scene/view layer, as the depsgraph may have
-   * dependencies on others, see e.g. #158225, which pulls in another scene. */
-  /* TODO: If this becomes a performance issue, we'll likely have to find a way in the depsgraph
-   * itself to gather all 'known' scenes, and ensure that their viewlayers / collections
-   * hierarchies are in sync. */
-  BKE_main_view_layers_synced_ensure(bmain);
 
   for (int pass = 0; pass < 2; pass++) {
     /* Update animated image textures for particles, modifiers, gpu, etc,

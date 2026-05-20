@@ -22,8 +22,6 @@ struct ParticleSimulationData;
 struct Scene;
 struct ViewLayer;
 
-enum ePFieldType : short;
-
 struct EffectorWeights *BKE_effector_add_weights(struct Collection *collection);
 
 /* Input to effector code */
@@ -98,7 +96,7 @@ struct EffectorRelation {
   struct PartDeflect *pd;
 };
 
-struct PartDeflect *BKE_partdeflect_new(ePFieldType type);
+struct PartDeflect *BKE_partdeflect_new(int type);
 struct PartDeflect *BKE_partdeflect_copy(const struct PartDeflect *pd_src);
 void BKE_partdeflect_free(struct PartDeflect *pd);
 
@@ -227,8 +225,8 @@ struct SimDebugData {
 extern SimDebugData *_sim_debug_data;
 
 void BKE_sim_debug_data_set_enabled(bool enable);
-bool BKE_sim_debug_data_get_enabled();
-void BKE_sim_debug_data_free();
+bool BKE_sim_debug_data_get_enabled(void);
+void BKE_sim_debug_data_free(void);
 
 void BKE_sim_debug_data_add_element(int type,
                                     const float v1[3],
@@ -276,7 +274,7 @@ void BKE_sim_debug_data_remove_element(unsigned int hash);
 #define BKE_sim_debug_data_remove(...) \
   BKE_sim_debug_data_remove_element(SIM_DEBUG_HASH(__VA_ARGS__))
 
-void BKE_sim_debug_data_clear();
+void BKE_sim_debug_data_clear(void);
 void BKE_sim_debug_data_clear_category(const char *category);
 
 }  // namespace blender

@@ -17,11 +17,7 @@
 #include "DNA_color_types.h"
 #include "DNA_defs.h"
 #include "DNA_listBase.h"
-#include "DNA_scene_enums.h"
-#include "DNA_screen_types.h" /* for #TextboxState. */
-#include "DNA_vec_types.h"    /* for #rctf */
-
-#include "BLI_enum_flags.hh"
+#include "DNA_vec_types.h" /* for #rctf */
 
 namespace blender {
 
@@ -37,8 +33,8 @@ struct StripRuntime;
 struct StripModifierDataRuntime;
 }  // namespace seq
 
-enum eStripFlag : uint32_t {
-  SEQ_FLAG_NONE = 0,
+/** #Strip.flag */
+enum eStripFlag {
   SEQ_SELECT = (1 << 0),
   SEQ_LEFTSEL = (1 << 1),
   SEQ_RIGHTSEL = (1 << 2),
@@ -78,57 +74,54 @@ enum eStripFlag : uint32_t {
   /* Access scene strips directly (like a meta-strip). */
   SEQ_SCENE_STRIPS = (1 << 30),
 
-  SEQ_AUDIO_PITCH_CORRECTION = (1u << 31),
-
-  /* Convenience flag for all selection flags. */
-  STRIP_ALLSEL = SEQ_SELECT | SEQ_LEFTSEL | SEQ_RIGHTSEL
+  SEQ_AUDIO_PITCH_CORRECTION = (1u << 31)
 };
-ENUM_OPERATORS(eStripFlag);
 
-enum eStripProxyStorageFlag : uint8_t {
-  SEQ_STORAGE_PROXY_NONE = 0,
+/** #StripProxy.storage */
+enum eStripProxyStorageFlag {
   SEQ_STORAGE_PROXY_CUSTOM_FILE = (1 << 1), /* Store proxy in custom directory. */
   SEQ_STORAGE_PROXY_CUSTOM_DIR = (1 << 2),  /* Store proxy in custom file. */
 };
-ENUM_OPERATORS(eStripProxyStorageFlag);
+
+/* Convenience define for all selection flags. */
+#define STRIP_ALLSEL (SEQ_SELECT + SEQ_LEFTSEL + SEQ_RIGHTSEL)
 
 /**
  * \warning has to be same as `IMB_imbuf.hh`: `IMB_PROXY_*` and `IMB_TC_*`.
  */
-enum eStripProxyBuildSize : uint16_t {
-  SEQ_PROXY_IMAGE_SIZE_NONE = 0,
+enum eStripProxyBuildSize {
   SEQ_PROXY_IMAGE_SIZE_25 = 1 << 0,
   SEQ_PROXY_IMAGE_SIZE_50 = 1 << 1,
   SEQ_PROXY_IMAGE_SIZE_75 = 1 << 2,
   SEQ_PROXY_IMAGE_SIZE_100 = 1 << 3,
 };
-ENUM_OPERATORS(eStripProxyBuildSize);
 
 /**
  * \warning has to be same as `IMB_imbuf.hh`: `IMB_TC_*`.
  */
-enum eStripProxyTimeCode : uint16_t {
+enum eStripProxyTimeCode {
   SEQ_PROXY_TC_NONE = 0,
   SEQ_PROXY_TC_RECORD_RUN = 1 << 0,
   SEQ_PROXY_TC_RECORD_RUN_NO_GAPS = 1 << 1,
 };
-ENUM_OPERATORS(eStripProxyTimeCode);
 
-enum eStripProxyBuildFlag : uint16_t {
-  SEQ_PROXY_BUILD_FLAG_NONE = 0,
+/** StripProxy.build_flags */
+enum eStripProxyBuildFlag {
   SEQ_PROXY_SKIP_EXISTING = 1,
 };
-ENUM_OPERATORS(eStripProxyBuildFlag);
 
-enum eStripAlphaMode : uint8_t {
+/** #Strip.alpha_mode */
+enum eStripAlphaMode {
   SEQ_ALPHA_STRAIGHT = 0,
   SEQ_ALPHA_PREMUL = 1,
 };
 
 /**
+ * #Strip.type
+ *
  * Note: update #Strip::is_effect when adding new effect types.
  */
-enum StripType : uint32_t {
+enum StripType {
   STRIP_TYPE_IMAGE = 0,
   STRIP_TYPE_META = 1,
   STRIP_TYPE_SCENE = 2,
@@ -162,14 +155,12 @@ enum StripType : uint32_t {
   STRIP_TYPE_COLORMIX = 42,
 };
 
-enum eStripMovieClipFlag : uint32_t {
-  SEQ_MOVIECLIP_NONE = 0,
+enum eStripMovieClipFlag {
   SEQ_MOVIECLIP_RENDER_UNDISTORTED = 1 << 0,
   SEQ_MOVIECLIP_RENDER_STABILIZED = 1 << 1,
 };
-ENUM_OPERATORS(eStripMovieClipFlag);
 
-enum StripBlendMode : uint32_t {
+enum StripBlendMode {
   STRIP_BLEND_REPLACE = 0,
 
   STRIP_BLEND_CROSS = 8,
@@ -205,7 +196,8 @@ enum StripBlendMode : uint32_t {
 #define STRIP_HAS_PATH(_strip) \
   (ELEM((_strip)->type, STRIP_TYPE_MOVIE, STRIP_TYPE_IMAGE, STRIP_TYPE_SOUND, STRIP_TYPE_SOUND_HD))
 
-enum StripColorTag : int8_t {
+/** #Strip.color_tag. */
+enum StripColorTag {
   STRIP_COLOR_NONE = -1,
   STRIP_COLOR_01,
   STRIP_COLOR_02,
@@ -220,7 +212,8 @@ enum StripColorTag : int8_t {
   STRIP_COLOR_TOT,
 };
 
-enum eStripTransformFilter : int32_t {
+/* #StripTransform.filter */
+enum eStripTransformFilter {
   SEQ_TRANSFORM_FILTER_AUTO = -1,
   SEQ_TRANSFORM_FILTER_NEAREST = 0,
   SEQ_TRANSFORM_FILTER_BILINEAR = 1,
@@ -229,28 +222,10 @@ enum eStripTransformFilter : int32_t {
   SEQ_TRANSFORM_FILTER_CUBIC_MITCHELL = 4,
 };
 
-enum eSeqChannelFlag : uint32_t {
-  SEQ_CHANNEL_NONE = 0,
+enum eSeqChannelFlag {
   SEQ_CHANNEL_LOCK = (1 << 0),
   SEQ_CHANNEL_MUTE = (1 << 1),
 };
-ENUM_OPERATORS(eSeqChannelFlag);
-
-enum eModColorBalanceMethod : uint32_t {
-  SEQ_COLOR_BALANCE_METHOD_LIFTGAMMAGAIN = 0,
-  SEQ_COLOR_BALANCE_METHOD_SLOPEOFFSETPOWER = 1,
-};
-
-enum eModColorBalanceInverseFlag : uint32_t {
-  SEQ_COLOR_BALANCE_INVERSE_NONE = 0,
-  SEQ_COLOR_BALANCE_INVERSE_GAIN = 1 << 0,
-  SEQ_COLOR_BALANCE_INVERSE_GAMMA = 1 << 1,
-  SEQ_COLOR_BALANCE_INVERSE_LIFT = 1 << 2,
-  SEQ_COLOR_BALANCE_INVERSE_SLOPE = 1 << 3,
-  SEQ_COLOR_BALANCE_INVERSE_OFFSET = 1 << 4,
-  SEQ_COLOR_BALANCE_INVERSE_POWER = 1 << 5,
-};
-ENUM_OPERATORS(eModColorBalanceInverseFlag);
 
 /* -------------------------------------------------------------------- */
 /** \name Strip & Editing Structs
@@ -279,19 +254,21 @@ struct StripTransform {
   float rotation = 0;
   /** 0-1 range, `seq::image_transform_origin_offset_pixelspace_get` to convert to pixel-space. */
   float origin[2] = {};
-  eStripTransformFilter filter = SEQ_TRANSFORM_FILTER_AUTO;
+  int filter = 0; /* eStripTransformFilter */
 };
 
 struct StripColorBalance {
-  eModColorBalanceMethod method = SEQ_COLOR_BALANCE_METHOD_LIFTGAMMAGAIN;
+  int method = 0; /* eModColorBalanceMethod */
   float lift[3] = {};
   float gamma[3] = {};
   float gain[3] = {};
   float slope[3] = {};
   float offset[3] = {};
   float power[3] = {};
-  eModColorBalanceInverseFlag flag = SEQ_COLOR_BALANCE_INVERSE_NONE;
+  int flag = 0; /* eModColorBalanceInverseFlag */
   char _pad[4] = {};
+  // float exposure = {};
+  // float saturation = {};
 };
 
 struct StripProxy {
@@ -303,12 +280,11 @@ struct StripProxy {
 
   short tc = 0; /* Time code in use. */
 
-  short quality = 0; /* Proxy build quality. */
-  eStripProxyBuildSize build_size_flags =
-      SEQ_PROXY_IMAGE_SIZE_NONE;                          /* which proxy sizes to build. */
-  eStripProxyTimeCode build_tc_flags = SEQ_PROXY_TC_NONE; /* which time codes to build. */
-  eStripProxyBuildFlag build_flags = SEQ_PROXY_BUILD_FLAG_NONE;
-  eStripProxyStorageFlag storage = SEQ_STORAGE_PROXY_NONE;
+  short quality = 0;          /* Proxy build quality. */
+  short build_size_flags = 0; /* eStripProxyBuildSize, which proxy sizes to build. */
+  short build_tc_flags = 0;   /* eStripProxyTimeCode, which time codes to build. */
+  short build_flags = 0;      /* eStripProxyBuildFlag */
+  char storage = 0;           /* eStripProxyStorageFlag */
   char _pad[5] = {};
 };
 
@@ -331,19 +307,18 @@ struct StripData {
   ColorManagedColorspaceSettings colorspace_settings;
 };
 
-enum eSeqRetimingKeyFlag : uint32_t {
-  SEQ_RETIMING_FLAG_NONE = 0,
+/** #SeqRetimingKey::flag */
+enum eSeqRetimingKeyFlag {
   SEQ_SPEED_TRANSITION_IN = (1 << 0),
   SEQ_SPEED_TRANSITION_OUT = (1 << 1),
   SEQ_FREEZE_FRAME_IN = (1 << 2),
   SEQ_FREEZE_FRAME_OUT = (1 << 3),
   SEQ_KEY_SELECTED = (1 << 4),
 };
-ENUM_OPERATORS(eSeqRetimingKeyFlag);
 
 struct SeqRetimingKey {
   double strip_frame_index = 0;
-  eSeqRetimingKeyFlag flag = SEQ_RETIMING_FLAG_NONE;
+  int flag = 0;              /* eSeqRetimingKeyFlag */
   float retiming_factor = 0; /* Value between 0-1 mapped to original content range. */
 
   double original_strip_frame_index = 0; /* Used for transition keys only. */
@@ -362,8 +337,8 @@ struct Strip {
   /** Name, set by default and needs to be unique, for RNA paths. */
   char name[/*STRIP_NAME_MAXSTR*/ 64] = "";
 
-  eStripFlag flag = SEQ_FLAG_NONE;
-  StripType type = STRIP_TYPE_IMAGE;
+  int flag = 0; /* eStripFlag; flags bit mask. */
+  int type = 0; /* StripType; strip type. */
   /** The length of the contents of this strip before handles are applied. */
   int len = 0;
   /**
@@ -391,7 +366,7 @@ struct Strip {
   short _pad1 = {};
   /** For multi-camera source selection. */
   int multicam_source = 0;
-  eStripMovieClipFlag clip_flag = SEQ_MOVIECLIP_NONE;
+  int clip_flag = 0; /* eStripMovieClipFlag */
 
   StripData *data = nullptr;
 
@@ -401,9 +376,6 @@ struct Strip {
   struct Scene *scene = nullptr;
   /** Override scene camera. */
   struct Object *scene_camera = nullptr;
-  /** View layer to render for SCENE strips. Initialized to scene's default render view layer.
-   * If `strip->scene` is set, then this should not be `nullptr`! */
-  char *scene_view_layer_name = nullptr;
   /** For MOVIECLIP strips. */
   struct MovieClip *clip = nullptr;
   /** For MASK strips. */
@@ -444,12 +416,12 @@ struct Strip {
   /** Frame offset from start/end of video file content to be ignored and invisible to the VSE. */
   int anim_startofs = 0, anim_endofs = 0;
 
-  StripBlendMode blend_mode = STRIP_BLEND_REPLACE;
+  int blend_mode = 0; /* StripBlendMode */
   float blend_opacity = 0;
 
-  StripColorTag color_tag = STRIP_COLOR_NONE;
+  int8_t color_tag = 0; /* StripColorTag */
 
-  eStripAlphaMode alpha_mode = SEQ_ALPHA_STRAIGHT;
+  char alpha_mode = 0; /* eStripAlphaMode */
   char _pad2[2] = {};
   int _pad9 = {};
 
@@ -458,7 +430,7 @@ struct Strip {
   int sfra = 0;
 
   /* Multiview */
-  eImageFormat_ViewsFormat views_format = {};
+  char views_format = 0;
   char _pad3[3] = {};
   struct Stereo3dFormat *stereo3d_format = nullptr;
 
@@ -534,10 +506,11 @@ struct Strip {
    */
   void handles_set(const Scene *scene, int left_frame, int right_frame);
   /**
-   * Test if this strip intersects with timeline frame.
+   * Test if strip intersects with timeline frame.
    * \note This checks if strip would be rendered at this frame. For rendering it is assumed, that
    * timeline frame has width of 1 frame and therefore ends at timeline_frame + 1
    *
+   * \param strip: Strip to be checked
    * \param timeline_frame: absolute frame position
    * \return true if strip intersects with timeline frame.
    */
@@ -572,7 +545,7 @@ struct SeqTimelineChannel {
   struct SeqTimelineChannel *next = nullptr, *prev = nullptr;
   char name[64] = "";
   int index = 0;
-  eSeqChannelFlag flag = SEQ_CHANNEL_NONE;
+  int flag = 0; /* eSeqChannelFlag */
 };
 
 struct StripConnection {
@@ -580,30 +553,27 @@ struct StripConnection {
   Strip *strip_ref = nullptr;
 };
 
-enum eEditingOverlayFrameFlag : uint32_t {
-  SEQ_EDIT_OVERLAY_FRAME_NONE = 0,
+/** #Editing::overlay_frame_flag */
+enum eEditingOverlayFrameFlag {
   SEQ_EDIT_OVERLAY_FRAME_SHOW = 1,
   SEQ_EDIT_OVERLAY_FRAME_ABS = 2,
 };
-ENUM_OPERATORS(eEditingOverlayFrameFlag);
 
-enum eEditingShowMissingMediaFlag : uint32_t {
-  SEQ_EDIT_SHOW_NONE = 0,
+/** #Editing::show_missing_media_flag */
+enum eEditingShowMissingMediaFlag {
   SEQ_EDIT_SHOW_MISSING_MEDIA = 1 << 0,
 };
-ENUM_OPERATORS(eEditingShowMissingMediaFlag);
 
 #define STRIP_OFSBOTTOM 0.05f
 #define STRIP_OFSTOP 0.95f
 
-enum eEditingProxyStorageMode : uint32_t {
-  SEQ_EDIT_PROXY_NONE = 0,
+/** #Editing::proxy_storage */
+enum eEditingProxyStorageMode {
   /** Store proxies in project directory. */
   SEQ_EDIT_PROXY_DIR_STORAGE = 1,
 };
 
-enum eEditingCacheFlag : uint32_t {
-  SEQ_CACHE_NONE = 0,
+enum eEditingCacheFlag {
   SEQ_CACHE_STORE_RAW = (1 << 0),
   SEQ_CACHE_UNUSED_1 = (1 << 1), /* Was SEQ_CACHE_STORE_PREPROCESSED */
   SEQ_CACHE_UNUSED_2 = (1 << 2), /* Was SEQ_CACHE_STORE_COMPOSITE */
@@ -622,7 +592,6 @@ enum eEditingCacheFlag : uint32_t {
   SEQ_CACHE_PREFETCH_ENABLE = (1 << 10),
   SEQ_CACHE_UNUSED_11 = (1 << 11), /* Was SEQ_CACHE_DISK_CACHE_ENABLE */
 };
-ENUM_OPERATORS(eEditingCacheFlag);
 
 struct Editing {
   /**
@@ -639,14 +608,14 @@ struct Editing {
   Strip *act_strip = nullptr;
   char proxy_dir[/*FILE_MAX*/ 1024] = "";
 
-  eEditingProxyStorageMode proxy_storage = SEQ_EDIT_PROXY_NONE;
+  int proxy_storage = 0; /* eEditingProxyStorageMode */
 
   int overlay_frame_ofs = 0, overlay_frame_abs = 0;
-  eEditingOverlayFrameFlag overlay_frame_flag = SEQ_EDIT_OVERLAY_FRAME_NONE;
+  int overlay_frame_flag = 0; /* eEditingOverlayFrameFlag */
   rctf overlay_frame_rect = {};
 
-  eEditingShowMissingMediaFlag show_missing_media_flag = SEQ_EDIT_SHOW_NONE;
-  eEditingCacheFlag cache_flag = SEQ_CACHE_NONE;
+  int show_missing_media_flag = 0; /* eEditingShowMissingMediaFlag */
+  int cache_flag = 0;              /* eEditingCacheFlag */
 
   seq::EditingRuntime *runtime = nullptr;
 
@@ -671,68 +640,79 @@ struct Editing {
 /** \name Effect Variable Structs
  * \{ */
 
-enum eEffectWipeType : uint16_t {
+enum eEffectWipeType {
   SEQ_WIPE_SINGLE,
   SEQ_WIPE_DOUBLE,
+  /* SEQ_WIPE_BOX, */   /* UNUSED */
+  /* SEQ_WIPE_CROSS, */ /* UNUSED */
   SEQ_WIPE_IRIS,
   SEQ_WIPE_CLOCK,
 };
 
-enum eEffectSpeedControlFlags : uint32_t {
-  SEQ_SPEED_NONE = 0,
+/** #SpeedControlVars::flags */
+enum eEffectSpeedControlFlags {
   SEQ_SPEED_UNUSED_2 = 1 << 0, /* Cleared. */
   SEQ_SPEED_UNUSED_1 = 1 << 1, /* Cleared. */
   SEQ_SPEED_UNUSED_3 = 1 << 2, /* Cleared. */
   SEQ_SPEED_USE_INTERPOLATION = 1 << 3,
 };
-ENUM_OPERATORS(eEffectSpeedControlFlags);
 
-enum eEffectSpeedControlType : uint32_t {
+/** #SpeedControlVars.speed_control_type */
+enum eEffectSpeedControlType {
   SEQ_SPEED_STRETCH = 0,
   SEQ_SPEED_MULTIPLY = 1,
   SEQ_SPEED_LENGTH = 2,
   SEQ_SPEED_FRAME_NUMBER = 3,
 };
 
-enum eEffectTextFlags : uint8_t {
-  SEQ_TEXT_NONE = 0,
+/** #TextVars.flag */
+enum eEffectTextFlags {
   SEQ_TEXT_SHADOW = (1 << 0),
   SEQ_TEXT_BOX = (1 << 1),
   SEQ_TEXT_BOLD = (1 << 2),
   SEQ_TEXT_ITALIC = (1 << 3),
   SEQ_TEXT_OUTLINE = (1 << 4),
 };
-ENUM_OPERATORS(eEffectTextFlags);
 
-enum eEffectTextAlignX : uint8_t {
+/** #TextVars.anchor_x, #TextVars.align */
+enum eEffectTextAlignX {
   SEQ_TEXT_ALIGN_X_LEFT = 0,
   SEQ_TEXT_ALIGN_X_CENTER = 1,
   SEQ_TEXT_ALIGN_X_RIGHT = 2,
 };
 
-enum eEffectTextAnchorX : uint8_t {
-  SEQ_TEXT_ANCHOR_X_LEFT = 0,
-  SEQ_TEXT_ANCHOR_X_CENTER = 1,
-  SEQ_TEXT_ANCHOR_X_RIGHT = 2,
+/** #TextVars.anchor_y, formerly #TextVars.align_y */
+enum eEffectTextAlignY {
+  SEQ_TEXT_ALIGN_Y_TOP = 0,
+  SEQ_TEXT_ALIGN_Y_CENTER = 1,
+  SEQ_TEXT_ALIGN_Y_BOTTOM = 2,
 };
 
-enum eEffectTextAnchorY : uint8_t {
-  SEQ_TEXT_ANCHOR_Y_TOP = 0,
-  SEQ_TEXT_ANCHOR_Y_CENTER = 1,
-  SEQ_TEXT_ANCHOR_Y_BOTTOM = 2,
+enum eModColorBalanceMethod {
+  SEQ_COLOR_BALANCE_METHOD_LIFTGAMMAGAIN = 0,
+  SEQ_COLOR_BALANCE_METHOD_SLOPEOFFSETPOWER = 1,
 };
 
-enum eModTonemapType : uint32_t {
+enum eModColorBalanceInverseFlag {
+  SEQ_COLOR_BALANCE_INVERSE_GAIN = 1 << 0,
+  SEQ_COLOR_BALANCE_INVERSE_GAMMA = 1 << 1,
+  SEQ_COLOR_BALANCE_INVERSE_LIFT = 1 << 2,
+  SEQ_COLOR_BALANCE_INVERSE_SLOPE = 1 << 3,
+  SEQ_COLOR_BALANCE_INVERSE_OFFSET = 1 << 4,
+  SEQ_COLOR_BALANCE_INVERSE_POWER = 1 << 5,
+};
+
+enum eModTonemapType {
   SEQ_TONEMAP_RH_SIMPLE = 0,
   SEQ_TONEMAP_RD_PHOTORECEPTOR = 1,
 };
 
-enum ePitchMode : uint32_t {
+enum ePitchMode {
   PITCH_MODE_SEMITONES = 0,
   PITCH_MODE_RATIO = 1,
 };
 
-enum ePitchQuality : uint32_t {
+enum ePitchQuality {
   PITCH_QUALITY_HIGH = 0,
   PITCH_QUALITY_FAST = 1,
   PITCH_QUALITY_CONSISTENT = 2,
@@ -741,7 +721,7 @@ enum ePitchQuality : uint32_t {
 struct WipeVars {
   float edgeWidth = 0, angle = 0;
   short forward = 0;
-  eEffectWipeType wipetype = SEQ_WIPE_SINGLE;
+  short wipetype = 0; /* eEffectWipeType */
 };
 
 struct GlowVars {
@@ -781,9 +761,9 @@ struct SpeedControlVars {
   float *frameMap = nullptr;
   /** Replaced by `speed_fader_*` fields in 3.0. */
   DNA_DEPRECATED float globalSpeed_legacy = 0;
-  eEffectSpeedControlFlags flags = SEQ_SPEED_NONE;
+  int flags = 0; /* eEffectSpeedControlFlags */
 
-  eEffectSpeedControlType speed_control_type = SEQ_SPEED_STRETCH;
+  int speed_control_type = 0; /* eEffectSpeedControlType */
 
   float speed_fader = 0;
   float speed_fader_length = 0;
@@ -809,7 +789,6 @@ struct TextVars {
   struct VFont *text_font = nullptr;
   int text_blf_id = 0;
   float text_size = 0;
-  float space_line = 1.0f;
   float color[4] = {}, shadow_color[4] = {}, box_color[4] = {}, outline_color[4] = {};
   float loc[2] = {};
   float wrap_width = 0;
@@ -819,8 +798,8 @@ struct TextVars {
   float shadow_offset = 0;
   float shadow_blur = 0;
   float outline_width = 0;
-  eEffectTextFlags flag = SEQ_TEXT_NONE;
-  eEffectTextAlignX align = SEQ_TEXT_ALIGN_X_LEFT;
+  char flag = 0;  /* eEffectTextFlags */
+  char align = 0; /* eEffectTextAlignX */
   char _pad[2] = {};
 
   /** Offsets in characters (unicode code-points) for #TextVars::text_ptr. */
@@ -829,25 +808,22 @@ struct TextVars {
   int selection_end_offset = 0;
 
   /** Replaced by `anchor_y` in 4.4. */
-  DNA_DEPRECATED char align_y_legacy = 0;
+  DNA_DEPRECATED char align_y_legacy = 0; /* eEffectTextAlignY */
 
-  eEffectTextAnchorX anchor_x = SEQ_TEXT_ANCHOR_X_LEFT;
-  eEffectTextAnchorY anchor_y = SEQ_TEXT_ANCHOR_Y_TOP;
-  char _pad1[5] = {};
+  char anchor_x = 0; /* eEffectTextAlignX */
+  char anchor_y = 0; /* eEffectTextAlignY */
+  char _pad1 = {};
   seq::TextVarsRuntime *runtime = nullptr;
 
   /* Fixed size text buffer, only exists for forward/backward compatibility.
    * #TextVars::text_ptr and #TextVars::text_len_bytes are used for full text. */
   char text_legacy[512] = "";
-
-  /** UI textbox state. */
-  TextboxState textbox_state;
 };
 
 #define STRIP_FONT_NOT_LOADED -2
 
 struct ColorMixVars {
-  StripBlendMode blend_effect = STRIP_BLEND_REPLACE;
+  int blend_effect = 0; /* StripBlendMode */
   /** Blend factor [0.0f, 1.0f]. */
   float factor = 0;
 };
@@ -862,7 +838,8 @@ struct CompositorEffectVars {
 /** \name Strip Modifiers
  * \{ */
 
-enum eStripModifierType : uint32_t {
+/** #StripModifierData.type */
+enum eStripModifierType {
   eSeqModifierType_None = 0,
   eSeqModifierType_ColorBalance = 1,
   eSeqModifierType_Curves = 2,
@@ -879,42 +856,35 @@ enum eStripModifierType : uint32_t {
   NUM_STRIP_MODIFIER_TYPES,
 };
 
-enum eStripModifierFlag : uint32_t {
+/** #StripModifierData.flag */
+enum eStripModifierFlag {
   STRIP_MODIFIER_FLAG_NONE = 0,
   STRIP_MODIFIER_FLAG_MUTE = (1 << 0),
   STRIP_MODIFIER_FLAG_EXPANDED = (1 << 1),
   STRIP_MODIFIER_FLAG_ACTIVE = (1 << 2),
-  STRIP_MODIFIER_FLAG_SHOW_PREVIEW = (1 << 3),
 };
-ENUM_OPERATORS(eStripModifierFlag);
 
-enum eModMaskInput : uint32_t {
+enum eModMaskInput {
   STRIP_MASK_INPUT_STRIP = 0,
   STRIP_MASK_INPUT_ID = 1,
 };
 
-enum eModMaskTime : uint32_t {
+enum eModMaskTime {
   /* Mask animation will be remapped relative to the strip start frame. */
   STRIP_MASK_TIME_RELATIVE = 0,
   /* Global (scene) frame number will be used to access the mask. */
   STRIP_MASK_TIME_ABSOLUTE = 1,
 };
 
-enum SequencerCompositorModifierFlag : uint8_t {
-  SEQ_COMP_MOD_NONE = 0,
-  SEQ_COMP_MOD_HIDE_DATABLOCK_SELECTOR = (1 << 0),
-};
-ENUM_OPERATORS(SequencerCompositorModifierFlag);
-
 struct StripModifierData {
   struct StripModifierData *next = nullptr, *prev = nullptr;
-  eStripModifierType type = eSeqModifierType_None;
-  eStripModifierFlag flag = STRIP_MODIFIER_FLAG_NONE;
+  int type = 0; /* eStripModifierType */
+  int flag = 0; /* eStripModifierFlag */
   char name[/*MAX_NAME*/ 64] = "";
 
   /* Mask input, either strip or mask ID. */
-  eModMaskInput mask_input_type = STRIP_MASK_INPUT_STRIP;
-  eModMaskTime mask_time = STRIP_MASK_TIME_RELATIVE;
+  int mask_input_type = 0; /* eModMaskInput */
+  int mask_time = 0;       /* eModMaskTime */
 
   struct Strip *mask_strip = nullptr;
   struct Mask *mask_id = nullptr;
@@ -926,13 +896,7 @@ struct StripModifierData {
   uint16_t layout_panel_open_flag = 0;
   uint16_t ui_expand_flag = 0;
 
-  struct IDProperty *system_properties = nullptr;
-
   blender::seq::StripModifierDataRuntime *runtime = nullptr;
-
-#ifdef __cplusplus
-  bool is_type_sound() const;
-#endif
 };
 
 struct ColorBalanceModifierData {
@@ -977,15 +941,11 @@ struct SequencerTonemapModifierData {
 
   float key = 0, offset = 0, gamma = 0;
   float intensity = 0, contrast = 0, adaptation = 0, correction = 0;
-  eModTonemapType type = SEQ_TONEMAP_RH_SIMPLE;
+  int type = 0; /* eModTonemapType */
 };
 
 struct SequencerCompositorModifierData {
   StripModifierData modifier;
-
-  SequencerCompositorModifierFlag flag = SEQ_COMP_MOD_NONE;
-  char _pad[7] = {};
-
   struct bNodeTree *node_group = nullptr;
 };
 
@@ -1007,13 +967,13 @@ struct SoundEqualizerModifierData {
 
 struct PitchModifierData {
   StripModifierData modifier;
-  ePitchMode mode = PITCH_MODE_SEMITONES;
+  int mode = 0; /*ePitchMode*/
   int semitones = 0;
   int cents = 0;
   float ratio = 0;
   char preserve_formant = 0;
   char _pad[3] = {};
-  ePitchQuality quality = PITCH_QUALITY_HIGH;
+  int quality = 0; /*ePitchQuality*/
 };
 
 struct EchoModifierData {

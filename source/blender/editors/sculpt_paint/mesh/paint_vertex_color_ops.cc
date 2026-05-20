@@ -157,22 +157,17 @@ static IndexMask get_selected_indices(const Mesh &mesh,
 {
   const bke::AttributeAccessor attributes = mesh.attributes();
 
-  /* Hidden should never count as selected. */
-  IndexMask visible = IndexMask::from_bools_inverse(
-      *attributes.lookup_or_default<bool>(".hide_poly", domain, false), memory);
-
   if (mesh.editflag & ME_EDIT_PAINT_FACE_SEL) {
     const VArray<bool> selection = *attributes.lookup_or_default<bool>(
         ".select_poly", domain, false);
-    return IndexMask::from_bools(visible, selection, memory);
+    return IndexMask::from_bools(selection, memory);
   }
   if (mesh.editflag & ME_EDIT_PAINT_VERT_SEL) {
     const VArray<bool> selection = *attributes.lookup_or_default<bool>(
         ".select_vert", domain, false);
-    return IndexMask::from_bools(visible, selection, memory);
+    return IndexMask::from_bools(selection, memory);
   }
-
-  return visible;
+  return IndexMask(attributes.domain_size(domain));
 }
 
 static void face_corner_color_equalize_verts(Mesh &mesh, const IndexMask selection)

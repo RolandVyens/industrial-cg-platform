@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "BKE_deform.hh"
-#include "BKE_gtest_base.hh"
 
 #include "DNA_meshdata_types.h"
 
@@ -11,9 +10,7 @@
 
 namespace blender::bke::tests {
 
-class DeformWeightsNormalizeTest : public BlenderGTestBase {};
-
-TEST_F(DeformWeightsNormalizeTest, EmptyWeights)
+TEST(vertex_weights_normalize, EmptyWeights)
 {
   /* Just making sure we don't crash on a vertex with no weights. */
 
@@ -26,7 +23,7 @@ TEST_F(DeformWeightsNormalizeTest, EmptyWeights)
   BKE_defvert_normalize_ex(vert, {}, {}, {});
 }
 
-TEST_F(DeformWeightsNormalizeTest, SingleWeight)
+TEST(vertex_weights_normalize, SingleWeight)
 {
   MDeformWeight weights[1];
   weights[0].def_nr = 0;
@@ -79,7 +76,7 @@ TEST_F(DeformWeightsNormalizeTest, SingleWeight)
   EXPECT_FLOAT_EQ(0.0, weights[0].weight);
 }
 
-TEST_F(DeformWeightsNormalizeTest, TwoWeights)
+TEST(vertex_weights_normalize, TwoWeights)
 {
   MDeformWeight weights[2];
   weights[0].def_nr = 0;
@@ -168,7 +165,7 @@ TEST_F(DeformWeightsNormalizeTest, TwoWeights)
   EXPECT_FLOAT_EQ(0.5, weights[1].weight);
 }
 
-TEST_F(DeformWeightsNormalizeTest, FourWeights)
+TEST(vertex_weights_normalize, FourWeights)
 {
   /* Note the out-of-order `def_nr`, which is part of this test. Further below,
    * we write the weights ordered to line up with the boolean arrays to make

@@ -21,6 +21,8 @@
 
 namespace blender::eevee {
 
+ShadowTechnique ShadowModule::shadow_technique = ShadowTechnique::ATOMIC_RASTER;
+
 /* -------------------------------------------------------------------- */
 /** \name Tile map
  *
@@ -569,12 +571,25 @@ ShadowModule::ShadowModule(Instance &inst, ShadowSceneData &data) : inst_(inst),
 
 void ShadowModule::init()
 {
+  /* Temp: Disable TILE_COPY path while efficient solution for parameter buffer overflow is
+   * identified. This path can be re-enabled in future. */
+#if 0
+  /* Determine shadow update technique and atlas format.
+   * NOTE(Metal): Metal utilizes a tile-optimized approach for Apple Silicon's architecture. */
+  const bool is_metal_backend = (GPU_backend_get_type() == GPU_BACKEND_METAL);
+  const bool is_tile_based_arch = (GPU_platform_architecture() == GPU_ARCHITECTURE_TBDR);
+  if (is_metal_backend && is_tile_based_arch) {
+    ShadowModule::shadow_technique = ShadowTechnique::TILE_COPY;
+  }
+  else
+#endif
+  {
+    ShadowModule::shadow_technique = ShadowTechnique::ATOMIC_RASTER;
+  }
+
   blender::Scene &scene = *inst_.scene;
 
   global_lod_bias_ = (1.0f - scene.eevee.shadow_resolution_scale) * SHADOW_TILEMAP_LOD;
-
-  do_full_update_ |= assign_if_different(
-      data_.use_debug_cost, bool32_t(inst_.debug_mode == eDebugMode::DEBUG_SHADOW_ATOMIC_COST));
 
   bool update_lights = false;
   bool enable_shadow = (scene.eevee.flag & SCE_EEVEE_SHADOW_ENABLED) != 0;
@@ -591,27 +606,22 @@ void ShadowModule::init()
     }
   }
 
-  if (enabled_) {
-    data_.ray_count = clamp_i(scene.eevee.shadow_ray_count, 1, SHADOW_MAX_RAY);
-    data_.step_count = clamp_i(scene.eevee.shadow_step_count, 1, SHADOW_MAX_STEP);
-  }
-  else {
-    data_.ray_count = 1;
-    data_.step_count = 1;
-  }
+  data_.ray_count = clamp_i(scene.eevee.shadow_ray_count, 1, SHADOW_MAX_RAY);
+  data_.step_count = clamp_i(scene.eevee.shadow_step_count, 1, SHADOW_MAX_STEP);
 
   /* Pool size is in MBytes. */
-  const size_t pool_byte_size = enabled_ ? size_t(scene.eevee.shadow_pool_size) * square_i(1024) :
-                                           1;
+  const size_t pool_byte_size = enabled_ ? scene.eevee.shadow_pool_size * square_i(1024) : 1;
   const size_t page_byte_size = square_i(shadow_page_size_) * sizeof(int);
   shadow_page_len_ = int(divide_ceil_ul(pool_byte_size, page_byte_size));
   shadow_page_len_ = min_ii(shadow_page_len_, SHADOW_MAX_PAGE);
 
-  const int2 atlas_extent = shadow_page_size_ * int2(SHADOW_PAGE_PER_ROW, SHADOW_PAGE_PER_COL);
+  const int2 atlas_extent = shadow_page_size_ * int2(SHADOW_PAGE_PER_ROW);
   const int atlas_layers = divide_ceil_u(shadow_page_len_, SHADOW_PAGE_PER_LAYER);
 
-  eGPUTextureUsage tex_usage = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_SHADER_WRITE |
-                               GPU_TEXTURE_USAGE_ATOMIC;
+  eGPUTextureUsage tex_usage = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_SHADER_WRITE;
+  if (ShadowModule::shadow_technique == ShadowTechnique::ATOMIC_RASTER) {
+    tex_usage |= GPU_TEXTURE_USAGE_ATOMIC;
+  }
   if (atlas_tx_.ensure_2d_array(atlas_type, atlas_extent, atlas_layers, tex_usage)) {
     /* Global update. */
     do_full_update_ = true;
@@ -743,42 +753,41 @@ void ShadowModule::begin_sync()
   }
 }
 
-void ShadowModule::sync_object(const ObjectHandle &ob_handle,
+void ShadowModule::sync_object(const Object *ob,
+                               const ObjectHandle &handle,
+                               const ResourceHandleRange &resource_handle,
                                bool is_alpha_blend,
                                bool has_transparent_shadows)
 {
-  bool is_shadow_caster = !(ob_handle.object->visibility_flag & OB_HIDE_SHADOW);
+  bool is_shadow_caster = !(ob->visibility_flag & OB_HIDE_SHADOW);
   if (!is_shadow_caster && !is_alpha_blend) {
     return;
   }
 
-  for (int i : IndexRange(ob_handle.instances_count())) {
-    ShadowObject &shadow_ob = objects_.lookup_or_add_default(ObjectKey(ob_handle, i));
-    shadow_ob.used = true;
-    const bool is_initialized = shadow_ob.resource_handle.is_valid();
-    const bool has_jittered_transparency = has_transparent_shadows && data_.use_jitter;
-    ResourceHandle instance_handle = ob_handle.res_handle.sub_handle(i);
-    if (is_shadow_caster && (ob_handle.recalc || !is_initialized || has_jittered_transparency)) {
-      if (ob_handle.recalc && is_initialized) {
-        past_casters_updated_.append(shadow_ob.resource_handle.raw());
-      }
-
-      if (has_jittered_transparency) {
-        jittered_transparent_casters_.append(instance_handle.raw());
-      }
-      else {
-        curr_casters_updated_.append(instance_handle.raw());
-      }
+  ShadowObject &shadow_ob = objects_.lookup_or_add_default(handle.object_key);
+  shadow_ob.used = true;
+  const bool is_initialized = shadow_ob.resource_handle.is_valid();
+  const bool has_jittered_transparency = has_transparent_shadows && data_.use_jitter;
+  if (is_shadow_caster && (handle.recalc || !is_initialized || has_jittered_transparency)) {
+    if (handle.recalc && is_initialized) {
+      past_casters_updated_.append(shadow_ob.resource_handle.raw());
     }
-    shadow_ob.resource_handle = instance_handle;
 
-    if (is_shadow_caster) {
-      curr_casters_.append(instance_handle.raw());
+    if (has_jittered_transparency) {
+      jittered_transparent_casters_.append(resource_handle.raw());
     }
+    else {
+      curr_casters_updated_.append(resource_handle.raw());
+    }
+  }
+  shadow_ob.resource_handle = resource_handle;
+
+  if (is_shadow_caster) {
+    curr_casters_.append(resource_handle.raw());
   }
 
   if (is_alpha_blend && !inst_.is_baking()) {
-    tilemap_usage_transparent_ps_->draw(box_batch_, ob_handle.res_handle);
+    tilemap_usage_transparent_ps_->draw(box_batch_, resource_handle);
   }
 }
 
@@ -893,8 +902,6 @@ void ShadowModule::end_sync()
         sub.bind_ssbo("tilemaps_clip_buf", tilemap_pool.tilemaps_clip);
         sub.bind_ssbo("casters_id_buf", curr_casters_);
         sub.bind_ssbo("bounds_buf", &manager.bounds_buf.current());
-        /* Bind again using a writable binding. */
-        sub.bind_ssbo("light_buf_write", inst_.lights.culling_light_buf_);
         sub.push_constant("resource_len", int(curr_casters_.size()));
         sub.bind_resources(inst_.lights);
         sub.dispatch(int3(
@@ -1092,13 +1099,13 @@ void ShadowModule::end_sync()
         sub.bind_image("tilemaps_img", tilemap_pool.tilemap_tx);
         sub.bind_ssbo("tilemaps_buf", tilemap_pool.tilemaps_data);
         sub.bind_resources(inst_.lights);
-        /* Bind again using a writable binding. */
-        sub.bind_ssbo("light_buf_write", inst_.lights.culling_light_buf_);
         sub.dispatch(int3(1));
         sub.barrier(GPU_BARRIER_TEXTURE_FETCH);
       }
 
-      {
+      /* NOTE: We do not need to run the clear pass when using the TBDR update variant, as tiles
+       * will be fully cleared as part of the shadow raster step. */
+      if (ShadowModule::shadow_technique != ShadowTechnique::TILE_COPY) {
         /** Clear pages that need to be rendered. */
         PassSimple::Sub &sub = pass.sub("RenderClear");
         sub.framebuffer_set(&render_fb_);
@@ -1122,8 +1129,7 @@ void ShadowModule::debug_end_sync()
             eDebugMode::DEBUG_SHADOW_TILEMAPS,
             eDebugMode::DEBUG_SHADOW_VALUES,
             eDebugMode::DEBUG_SHADOW_TILE_RANDOM_COLOR,
-            eDebugMode::DEBUG_SHADOW_TILEMAP_RANDOM_COLOR,
-            eDebugMode::DEBUG_SHADOW_ATOMIC_COST))
+            eDebugMode::DEBUG_SHADOW_TILEMAP_RANDOM_COLOR))
   {
     return;
   }
@@ -1131,19 +1137,20 @@ void ShadowModule::debug_end_sync()
   /* Init but not filled if no active object. */
   debug_draw_ps_.init();
 
-  int tilemap_index = 0;
   Object *object_active = inst_.draw_ctx->obact;
-  if (object_active != nullptr) {
-    ObjectKey object_key(ObjectRef(DEG_get_original(object_active)));
-    if (inst_.lights.light_map_.contains(object_key)) {
-      Light &light = inst_.lights.light_map_.lookup(object_key);
-      if (light.tilemap_index < SHADOW_MAX_TILEMAP) {
-        tilemap_index = light.tilemap_index;
-      }
-    }
+  if (object_active == nullptr) {
+    return;
   }
 
-  if (tilemap_index == 0 && inst_.debug_mode != eDebugMode::DEBUG_SHADOW_ATOMIC_COST) {
+  ObjectKey object_key(ObjectRef(DEG_get_original(object_active)));
+
+  if (inst_.lights.light_map_.contains(object_key) == false) {
+    return;
+  }
+
+  Light &light = inst_.lights.light_map_.lookup(object_key);
+
+  if (light.tilemap_index >= SHADOW_MAX_TILEMAP) {
     return;
   }
 
@@ -1153,7 +1160,7 @@ void ShadowModule::debug_end_sync()
   debug_draw_ps_.state_set(state);
   debug_draw_ps_.shader_set(inst_.shaders.static_shader_get(SHADOW_DEBUG));
   debug_draw_ps_.push_constant("debug_mode", int(inst_.debug_mode));
-  debug_draw_ps_.push_constant("debug_tilemap_index", tilemap_index);
+  debug_draw_ps_.push_constant("debug_tilemap_index", light.tilemap_index);
   debug_draw_ps_.bind_ssbo("tilemaps_buf", &tilemap_pool.tilemaps_data);
   debug_draw_ps_.bind_ssbo("tiles_buf", &tilemap_pool.tiles_data);
   debug_draw_ps_.bind_resources(inst_.uniform_data);
@@ -1289,11 +1296,6 @@ void ShadowModule::ShadowView::compute_visibility(ObjectBoundsBuf &bounds,
 
 void ShadowModule::set_view(View &view, int2 extent)
 {
-  data_.film_pixel_radius = screen_pixel_radius(view.wininv(), view.is_persp(), extent);
-}
-
-void ShadowModule::render(View &view, int2 extent)
-{
   if (enabled_ == false) {
     /* All lights have been tagged to have no shadow. */
     return;
@@ -1307,11 +1309,34 @@ void ShadowModule::render(View &view, int2 extent)
                                    1);
   max_view_per_tilemap_ = max_view_per_tilemap();
 
+  data_.film_pixel_radius = screen_pixel_radius(view.wininv(), view.is_persp(), extent);
+  inst_.uniform_data.push_update();
+
   usage_tag_fb_resolution_ = math::divide_ceil(extent, int2(std::exp2(usage_tag_fb_lod_)));
   usage_tag_fb.ensure(usage_tag_fb_resolution_);
 
-  /* Create attachment-less framebuffer. */
-  render_fb_.ensure(int2(SHADOW_TILEMAP_RES * shadow_page_size_));
+  eGPUTextureUsage usage = GPU_TEXTURE_USAGE_ATTACHMENT | GPU_TEXTURE_USAGE_MEMORYLESS;
+  int2 fb_size = int2(SHADOW_TILEMAP_RES * shadow_page_size_);
+  int fb_layers = SHADOW_VIEW_MAX;
+
+  if (shadow_technique == ShadowTechnique::ATOMIC_RASTER) {
+    /* Create attachment-less framebuffer. */
+    shadow_depth_fb_tx_.free();
+    shadow_depth_accum_tx_.free();
+    render_fb_.ensure(fb_size);
+  }
+  else if (shadow_technique == ShadowTechnique::TILE_COPY) {
+    /* Create memoryless depth attachment for on-tile surface depth accumulation. */
+    shadow_depth_fb_tx_.ensure_2d_array(
+        gpu::TextureFormat::SFLOAT_32_DEPTH, fb_size, fb_layers, usage);
+    shadow_depth_accum_tx_.ensure_2d_array(
+        gpu::TextureFormat::SFLOAT_32, fb_size, fb_layers, usage);
+    render_fb_.ensure(GPU_ATTACHMENT_TEXTURE(shadow_depth_fb_tx_),
+                      GPU_ATTACHMENT_TEXTURE(shadow_depth_accum_tx_));
+  }
+  else {
+    BLI_assert_unreachable();
+  }
 
   update_tag_fb_.ensure(int2(SHADOW_TILEMAP_RES));
 
@@ -1341,14 +1366,41 @@ void ShadowModule::render(View &view, int2 extent)
 
       statistics_buf_.current().async_flush_to_host();
 
+      /* Isolate shadow update into its own command buffer.
+       * If parameter buffer exceeds limits, then other work will not be impacted. */
+      bool use_flush = (shadow_technique == ShadowTechnique::TILE_COPY) &&
+                       (GPU_backend_get_type() == GPU_BACKEND_METAL);
       /* Flush every loop as these passes are very heavy. */
-      bool use_flush = loop_count != 0;
+      use_flush |= loop_count != 0;
 
       if (use_flush) {
         GPU_flush();
       }
 
-      GPU_framebuffer_bind(render_fb_);
+      /* TODO(fclem): Move all of this to the draw::PassMain. */
+      if (shadow_depth_fb_tx_.is_valid() && shadow_depth_accum_tx_.is_valid()) {
+        GPU_framebuffer_bind_ex(
+            render_fb_,
+            {
+                /* Depth is cleared to 0 for TBDR optimization. */
+                {GPU_LOADACTION_CLEAR, GPU_STOREACTION_DONT_CARE, {0.0f, 0.0f, 0.0f, 0.0f}},
+                {GPU_LOADACTION_CLEAR,
+                 GPU_STOREACTION_DONT_CARE,
+                 {FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX}},
+            });
+      }
+      else if (shadow_depth_fb_tx_.is_valid()) {
+        GPU_framebuffer_bind_ex(render_fb_,
+                                {
+                                    {GPU_LOADACTION_CLEAR,
+                                     GPU_STOREACTION_DONT_CARE,
+                                     {FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX}},
+                                });
+      }
+      else {
+        GPU_framebuffer_bind(render_fb_);
+      }
+
       GPU_framebuffer_multi_viewports_set(render_fb_,
                                           reinterpret_cast<int (*)[4]>(multi_viewports_.data()));
 
@@ -1373,33 +1425,30 @@ void ShadowModule::render(View &view, int2 extent)
 
 void ShadowModule::debug_draw(View &view, gpu::FrameBuffer *view_fb)
 {
+  if (!ELEM(inst_.debug_mode,
+            eDebugMode::DEBUG_SHADOW_TILEMAPS,
+            eDebugMode::DEBUG_SHADOW_VALUES,
+            eDebugMode::DEBUG_SHADOW_TILE_RANDOM_COLOR,
+            eDebugMode::DEBUG_SHADOW_TILEMAP_RANDOM_COLOR))
+  {
+    return;
+  }
 
   switch (inst_.debug_mode) {
     case DEBUG_SHADOW_TILEMAPS:
-      inst_.info_append(
-          "Debug Mode: Shadow Tilemap (active light)\n"
-          " - Green: Used\n"
-          " - Yellow: Used & Updated\n"
-          " - Purple: Cached\n");
+      inst_.info_append("Debug Mode: Shadow Tilemap");
       break;
     case DEBUG_SHADOW_VALUES:
-      inst_.info_append("Debug Mode: Shadow Values (active light)");
+      inst_.info_append("Debug Mode: Shadow Values");
       break;
     case DEBUG_SHADOW_TILE_RANDOM_COLOR:
-      inst_.info_append("Debug Mode: Shadow Tile Random Color (active light)");
+      inst_.info_append("Debug Mode: Shadow Tile Random Color");
       break;
     case DEBUG_SHADOW_TILEMAP_RANDOM_COLOR:
-      inst_.info_append("Debug Mode: Shadow Tilemap Random Color (active light)");
-      break;
-    case DEBUG_SHADOW_ATOMIC_COST:
-      inst_.info_append(
-          "Debug Mode: Shadow Atomic Cost\n"
-          " - Blue: Low\n"
-          " - Red: Medium\n"
-          " - White: High");
+      inst_.info_append("Debug Mode: Shadow Tilemap Random Color");
       break;
     default:
-      return;
+      break;
   }
 
   inst_.hiz_buffer.update();

@@ -172,13 +172,11 @@ static void node_declare(NodeDeclarationBuilder &b)
       .expanded()
       .optional_label()
       .make_available([](bNode &node) {
-        bNodeSocket &limit_method_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Limit Method"_ustr);
+        bNodeSocket &limit_method_socket = *bke::node_find_socket(node, SOCK_IN, "Limit Method");
         limit_method_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_LIMIT_ALGORITHM_SINGLE;
 
-        bNodeSocket &color_space_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Color Space"_ustr);
+        bNodeSocket &color_space_socket = *bke::node_find_socket(node, SOCK_IN, "Color Space");
         color_space_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_CS_RGB;
       })
@@ -194,13 +192,11 @@ static void node_declare(NodeDeclarationBuilder &b)
       .expanded()
       .optional_label()
       .make_available([](bNode &node) {
-        bNodeSocket &limit_method_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Limit Method"_ustr);
+        bNodeSocket &limit_method_socket = *bke::node_find_socket(node, SOCK_IN, "Limit Method");
         limit_method_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_LIMIT_ALGORITHM_SINGLE;
 
-        bNodeSocket &color_space_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Color Space"_ustr);
+        bNodeSocket &color_space_socket = *bke::node_find_socket(node, SOCK_IN, "Color Space");
         color_space_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_CS_HSV;
       })
@@ -216,13 +212,11 @@ static void node_declare(NodeDeclarationBuilder &b)
       .expanded()
       .optional_label()
       .make_available([](bNode &node) {
-        bNodeSocket &limit_method_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Limit Method"_ustr);
+        bNodeSocket &limit_method_socket = *bke::node_find_socket(node, SOCK_IN, "Limit Method");
         limit_method_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_LIMIT_ALGORITHM_SINGLE;
 
-        bNodeSocket &color_space_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Color Space"_ustr);
+        bNodeSocket &color_space_socket = *bke::node_find_socket(node, SOCK_IN, "Color Space");
         color_space_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_CS_YUV;
       })
@@ -238,13 +232,11 @@ static void node_declare(NodeDeclarationBuilder &b)
       .expanded()
       .optional_label()
       .make_available([](bNode &node) {
-        bNodeSocket &limit_method_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Limit Method"_ustr);
+        bNodeSocket &limit_method_socket = *bke::node_find_socket(node, SOCK_IN, "Limit Method");
         limit_method_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_LIMIT_ALGORITHM_SINGLE;
 
-        bNodeSocket &color_space_socket = *bke::node_find_socket(
-            node, SOCK_IN, "Color Space"_ustr);
+        bNodeSocket &color_space_socket = *bke::node_find_socket(node, SOCK_IN, "Color Space");
         color_space_socket.default_value_typed<bNodeSocketValueMenu>()->value =
             CMP_NODE_CHANNEL_MATTE_CS_YCC;
       })

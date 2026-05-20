@@ -5,14 +5,10 @@
 #include "testing/testing.h"
 
 #include "BKE_ccg.hh"
-#include "BKE_gtest_base.hh"
 #include "BKE_subdiv_ccg.hh"
 
 namespace blender::bke::tests {
-
-class SubdivCcgCoordTest : public BlenderGTestBase {};
-
-TEST_F(SubdivCcgCoordTest, to_index)
+TEST(subdiv_ccg_coord, to_index)
 {
   CCGKey key;
   key.level = 2;
@@ -38,7 +34,7 @@ TEST_F(SubdivCcgCoordTest, to_index)
   EXPECT_EQ(coord.to_index(key), 22);
 }
 
-TEST_F(SubdivCcgCoordTest, constructor)
+TEST(subdiv_ccg_coord, constructor)
 {
   CCGKey key;
   key.level = 2;

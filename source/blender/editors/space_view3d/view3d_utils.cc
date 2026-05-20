@@ -18,7 +18,6 @@
 #include "DNA_curve_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_view3d_types.h"
 #include "DNA_world_types.h"
 
 #include "RNA_path.hh"
@@ -518,7 +517,7 @@ void ED_view3d_lock_clear(View3D *v3d)
 void ED_view3d_persp_switch_from_camera(const Depsgraph *depsgraph,
                                         View3D *v3d,
                                         RegionView3D *rv3d,
-                                        const eRegionView3D_Persp persp)
+                                        const char persp)
 {
   BLI_assert(rv3d->persp == RV3D_CAMOB);
   BLI_assert(persp != RV3D_CAMOB);
@@ -550,8 +549,7 @@ bool ED_view3d_persp_ensure(const Depsgraph *depsgraph, View3D *v3d, ARegion *re
     if (rv3d->persp == RV3D_CAMOB) {
       /* If autopersp and previous view was an axis one,
        * switch back to PERSP mode, else reuse previous mode. */
-      eRegionView3D_Persp persp = (autopersp && RV3D_VIEW_IS_AXIS(rv3d->lview)) ? RV3D_PERSP :
-                                                                                  rv3d->lpersp;
+      char persp = (autopersp && RV3D_VIEW_IS_AXIS(rv3d->lview)) ? char(RV3D_PERSP) : rv3d->lpersp;
       ED_view3d_persp_switch_from_camera(depsgraph, v3d, rv3d, persp);
     }
     else if (autopersp && RV3D_VIEW_IS_AXIS(rv3d->view)) {
@@ -1015,11 +1013,11 @@ void ED_view3d_quadview_update(ScrArea *area, ARegion *region, bool do_clip)
   /* this function copies flags from the first of the 3 other quadview
    * regions to the 2 other, so it assumes this is the region whose
    * properties are always being edited, weak */
-  eRegionView3D_ViewLock viewlock = rv3d->viewlock;
+  short viewlock = rv3d->viewlock;
 
   if ((viewlock & RV3D_LOCK_ROTATION) == 0) {
     do_clip = (viewlock & RV3D_BOXCLIP) != 0;
-    viewlock = eRegionView3D_ViewLock{};
+    viewlock = 0;
   }
   else if ((viewlock & RV3D_BOXVIEW) == 0 && (viewlock & RV3D_BOXCLIP) != 0) {
     do_clip = true;
@@ -1032,7 +1030,7 @@ void ED_view3d_quadview_update(ScrArea *area, ARegion *region, bool do_clip)
       rv3d->viewlock = viewlock;
 
       if (do_clip && (viewlock & RV3D_BOXCLIP) == 0) {
-        rv3d->rflag &= ~RV3D_CLIPPING;
+        rv3d->rflag &= ~RV3D_BOXCLIP;
       }
 
       /* use region_sync so we sync with one of the aligned views below
@@ -1290,7 +1288,7 @@ float ED_view3d_radius_to_dist_ortho(const float lens, const float radius)
 float ED_view3d_radius_to_dist(const View3D *v3d,
                                const ARegion *region,
                                const Depsgraph *depsgraph,
-                               const eRegionView3D_Persp persp,
+                               const char persp,
                                const bool use_aspect,
                                const float radius)
 {
@@ -1483,9 +1481,7 @@ static float view3d_quat_axis[6][4][4] = {
 
 };
 
-bool ED_view3d_quat_from_axis_view(const eRegionView3D_View view,
-                                   const eRegionView3D_ViewAxisRoll view_axis_roll,
-                                   float r_quat[4])
+bool ED_view3d_quat_from_axis_view(const char view, const char view_axis_roll, float r_quat[4])
 {
   BLI_assert(view_axis_roll <= RV3D_VIEW_AXIS_ROLL_270);
   if (RV3D_VIEW_IS_AXIS(view)) {
@@ -1497,8 +1493,8 @@ bool ED_view3d_quat_from_axis_view(const eRegionView3D_View view,
 
 bool ED_view3d_quat_to_axis_view(const float quat[4],
                                  const float epsilon,
-                                 eRegionView3D_View *r_view,
-                                 eRegionView3D_ViewAxisRoll *r_view_axis_roll)
+                                 char *r_view,
+                                 char *r_view_axis_roll)
 {
   *r_view = RV3D_VIEW_USER;
   *r_view_axis_roll = RV3D_VIEW_AXIS_ROLL_0;
@@ -1514,8 +1510,8 @@ bool ED_view3d_quat_to_axis_view(const float quat[4],
         if (fabsf(angle_signed_qtqt(
                 quat, view3d_quat_axis[view - RV3D_VIEW_FRONT][view_axis_roll])) < epsilon)
         {
-          *r_view = eRegionView3D_View(view);
-          *r_view_axis_roll = eRegionView3D_ViewAxisRoll(view_axis_roll);
+          *r_view = view;
+          *r_view_axis_roll = view_axis_roll;
           return true;
         }
       }
@@ -1532,8 +1528,8 @@ bool ED_view3d_quat_to_axis_view(const float quat[4],
             angle_signed_qtqt(quat, view3d_quat_axis[view - RV3D_VIEW_FRONT][view_axis_roll]));
         if (delta_best > delta_test) {
           delta_best = delta_test;
-          *r_view = eRegionView3D_View(view);
-          *r_view_axis_roll = eRegionView3D_ViewAxisRoll(view_axis_roll);
+          *r_view = view;
+          *r_view_axis_roll = view_axis_roll;
         }
       }
     }
@@ -1547,8 +1543,8 @@ bool ED_view3d_quat_to_axis_view(const float quat[4],
 
 bool ED_view3d_quat_to_axis_view_and_reset_quat(float quat[4],
                                                 const float epsilon,
-                                                eRegionView3D_View *r_view,
-                                                eRegionView3D_ViewAxisRoll *r_view_axis_roll)
+                                                char *r_view,
+                                                char *r_view_axis_roll)
 {
   const bool is_axis_view = ED_view3d_quat_to_axis_view(quat, epsilon, r_view, r_view_axis_roll);
   if (is_axis_view) {
@@ -1559,7 +1555,7 @@ bool ED_view3d_quat_to_axis_view_and_reset_quat(float quat[4],
   return is_axis_view;
 }
 
-eRegionView3D_View ED_view3d_lock_view_from_index(int index)
+char ED_view3d_lock_view_from_index(int index)
 {
   switch (index) {
     case 0:
@@ -1573,7 +1569,7 @@ eRegionView3D_View ED_view3d_lock_view_from_index(int index)
   }
 }
 
-eRegionView3D_View ED_view3d_axis_view_opposite(const eRegionView3D_View view)
+char ED_view3d_axis_view_opposite(char view)
 {
   switch (view) {
     case RV3D_VIEW_FRONT:
@@ -1588,9 +1584,6 @@ eRegionView3D_View ED_view3d_axis_view_opposite(const eRegionView3D_View view)
       return RV3D_VIEW_BOTTOM;
     case RV3D_VIEW_BOTTOM:
       return RV3D_VIEW_TOP;
-    case RV3D_VIEW_USER:
-    case RV3D_VIEW_CAMERA:
-      break;
   }
 
   return RV3D_VIEW_USER;

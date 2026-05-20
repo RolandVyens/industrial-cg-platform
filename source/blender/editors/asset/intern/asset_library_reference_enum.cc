@@ -68,13 +68,9 @@ AssetLibraryReference library_reference_from_enum_value(int value)
 
   /* Simple case: Predefined repository, just set the value. */
   if (value < ASSET_LIBRARY_CUSTOM) {
-    library.type = eAssetLibraryType(value);
+    library.type = value;
     library.custom_library_index = -1;
-    BLI_assert(ELEM(value,
-                    ASSET_LIBRARY_ALL,
-                    ASSET_LIBRARY_LOCAL,
-                    ASSET_LIBRARY_ESSENTIALS,
-                    ASSET_LIBRARY_ONLINE_ESSENTIALS));
+    BLI_assert(ELEM(value, ASSET_LIBRARY_ALL, ASSET_LIBRARY_LOCAL, ASSET_LIBRARY_ESSENTIALS));
     return library;
   }
 
@@ -121,11 +117,9 @@ static void rna_enum_add_custom_libraries(EnumPropertyItem **item,
   }
 }
 
-const EnumPropertyItem *library_reference_to_rna_enum_itemf(
-    const bool include_readonly,
-    const bool include_current_file,
-    const bool include_remote_libraries,
-    const bool include_separate_online_essentials)
+const EnumPropertyItem *library_reference_to_rna_enum_itemf(const bool include_readonly,
+                                                            const bool include_current_file,
+                                                            const bool include_remote_libraries)
 {
   EnumPropertyItem *item = nullptr;
   int totitem = 0;
@@ -142,10 +136,6 @@ const EnumPropertyItem *library_reference_to_rna_enum_itemf(
   if (include_readonly) {
     BLI_assert(rna_enum_asset_library_type_items[2].value == ASSET_LIBRARY_ESSENTIALS);
     RNA_enum_item_add(&item, &totitem, &rna_enum_asset_library_type_items[2]);
-  }
-  if (include_separate_online_essentials) {
-    BLI_assert(rna_enum_asset_library_type_items[3].value == ASSET_LIBRARY_ONLINE_ESSENTIALS);
-    RNA_enum_item_add(&item, &totitem, &rna_enum_asset_library_type_items[3]);
   }
 
   {

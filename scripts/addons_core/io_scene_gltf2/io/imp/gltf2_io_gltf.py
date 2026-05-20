@@ -56,9 +56,7 @@ class glTFImporter():
             'KHR_animation_pointer',
             'KHR_materials_volume',
             'EXT_texture_webp',
-            'KHR_materials_anisotropy',
-            'KHR_materials_dispersion',
-            'KHR_materials_iridescence',
+            'KHR_materials_anisotropy'
         ]
 
         # Add extensions required supported by custom import extensions

@@ -65,11 +65,6 @@ static void parse_template_definition_args(const Scope arg,
         found = true;
       }
     });
-    fn_args.foreach_match("A&A", [&](const vector<Token> &tokens) {
-      if (tokens[0].str() == name_str) {
-        found = true;
-      }
-    });
     all_template_args_in_function_signature &= found;
   }
   else if (type_str == "enum" || type_str == "bool") {
@@ -467,7 +462,7 @@ void SourceProcessor::lower_templates(Parser &parser)
    * This holds true for instanciated struct templates. */
   parser().foreach_struct([&](Token, Scope, Token, Scope body) {
     body.foreach_match("t<..>", [&](const vector<Token> &toks) {
-      /* Since this can be an instanciated struct, we need to make sure to instanciate its own
+      /* Sincte this can be an instanciated struct, we need to make sure to instanciate its own
        * methods. Hence the need to parse the definition. */
       TemplateDefinition template_def = parse_template_definition(
           parser, toks[0], true, toks[0].scope(), filepath_);

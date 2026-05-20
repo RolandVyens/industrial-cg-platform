@@ -34,11 +34,8 @@ float bxdf_ggx_smith_G1(float NX, float a2)
   return 2.0f / (1.0f + sqrt(1.0f + a2 * (1.0f / square(NX) - 1.0f)));
 }
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
-/** \name Bounded VNDF Sampling for Smith-GGX Reflections
- *
+/** "Bounded VNDF Sampling for Smith-GGX Reflections."
  * Eto, Kenta, and Yusuke Tokuyoshi. SIGGRAPH Asia 2023 Technical Communications. 2023. 1-4.
  * https://gpuopen.com/download/publications/Bounded_VNDF_Sampling_for_Smith-GGX_Reflections.pdf
  * \{ */
@@ -168,8 +165,7 @@ BsdfEval bxdf_ggx_eval_reflection(float3 N, float3 L, float3 V, float alpha, boo
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name Sampling Visible GGX Normals with Spherical Caps
- *
+/** "Sampling Visible GGX Normals with Spherical Caps."
  * Jonathan Dupuy and Anis Benyoub, HPG Vol. 42, No. 8, 2023.
  * https://diglib.eg.org/bitstream/handle/10.1111f/cgf14867/v42i8_03_14867.pdf
  * \{ */
@@ -306,10 +302,6 @@ BsdfEval bxdf_ggx_eval_refraction(
 }
 
 /** \} */
-
-/* -------------------------------------------------------------------- */
-/** \name Roughness Mappings & Light Evaluation
- * \{ */
 
 /**
  * `roughness` is expected to be the linear (from UI) roughness.

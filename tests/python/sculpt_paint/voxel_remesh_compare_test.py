@@ -1,9 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Blender Authors
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-blender -b --factory-startup tests/files/sculpting/voxel_remesh_compare --python tests/python/sculpt_paint/voxel_remesh_compare_test.py
-"""
 
 __all__ = (
     "main",
@@ -13,6 +10,10 @@ import os
 import sys
 
 import bpy
+
+"""
+blender -b --factory-startup tests/files/sculpting/voxel_remesh_compare --python tests/python/sculpt_paint/voxel_remesh_compare_test.py
+"""
 
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(BASE_DIR, ".."))

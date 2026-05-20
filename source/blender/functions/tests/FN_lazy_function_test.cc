@@ -10,11 +10,7 @@
 
 #include "BLI_task.h"
 
-#include "BKE_gtest_base.hh"
-
 namespace blender::fn::lazy_function::tests {
-
-class LazyFunctionTest : public bke::BlenderGTestBase {};
 
 class AddLazyFunction : public LazyFunction {
  public:
@@ -73,7 +69,7 @@ class SimpleSideEffectProvider : public GraphExecutor::SideEffectProvider {
   }
 };
 
-TEST_F(LazyFunctionTest, SimpleAdd)
+TEST(lazy_function, SimpleAdd)
 {
   const AddLazyFunction add_fn;
   int result = 0;
@@ -82,7 +78,7 @@ TEST_F(LazyFunctionTest, SimpleAdd)
   EXPECT_EQ(result, 35);
 }
 
-TEST_F(LazyFunctionTest, SideEffects)
+TEST(lazy_function, SideEffects)
 {
   BLI_task_scheduler_init();
   int dst1 = 0;
@@ -156,7 +152,7 @@ class PartialEvaluationTestFunction : public LazyFunction {
   }
 };
 
-TEST_F(LazyFunctionTest, GraphWithCycle)
+TEST(lazy_function, GraphWithCycle)
 {
   const PartialEvaluationTestFunction fn;
 

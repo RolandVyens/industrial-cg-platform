@@ -240,9 +240,9 @@ static void tonemap_calc_chunk_luminance(const int width,
   }
 }
 
-static AreaLuminance tonemap_calc_input_luminance(ImBuf *ibuf)
+static AreaLuminance tonemap_calc_input_luminance(const ImBuf *ibuf)
 {
-  float *float_data = ibuf->float_data_for_write();
+  float *float_data = ibuf->float_buffer.data;
   AreaLuminance lum;
   lum = threading::parallel_reduce(
       IndexRange(ibuf->y),
@@ -283,16 +283,18 @@ static AreaLuminance tonemap_calc_input_luminance(ImBuf *ibuf)
   return lum;
 }
 
-static void tonemapmodifier_apply(ModifierApplyContext &context, StripModifierData *smd)
+static void tonemapmodifier_apply(ModifierApplyContext &context,
+                                  StripModifierData *smd,
+                                  int timeline_frame)
 {
   ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
-  ImBuf *mask = modifier_render_mask_input(context, *smd);
+  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
 
   const SequencerTonemapModifierData *tmmd =
       reinterpret_cast<const SequencerTonemapModifierData *>(smd);
 
   TonemapApplyOp op;
-  op.type = tmmd->type;
+  op.type = eModTonemapType(tmmd->type);
   op.ibuf = context.image;
   op.lum = tonemap_calc_input_luminance(context.image);
   if (op.lum.pixel_count == 0) {

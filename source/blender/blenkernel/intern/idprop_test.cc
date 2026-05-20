@@ -2,22 +2,18 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
-#include "BKE_gtest_base.hh"
 #include "BKE_idprop.hh"
-
 #include "testing/testing.h"
 
 namespace blender::bke::tests {
 
-class IDPropertyTest : public BlenderGTestBase {};
-
-TEST_F(IDPropertyTest, CreateGroup)
+TEST(idproperties, CreateGroup)
 {
   IDProperty *prop = idprop::create_group("test").release();
   IDP_FreeProperty(prop);
 }
 
-TEST_F(IDPropertyTest, AddToGroup)
+TEST(idproperties, AddToGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_EQ(IDP_GetPropertyFromGroup(group, "a"), nullptr);
@@ -33,7 +29,7 @@ TEST_F(IDPropertyTest, AddToGroup)
   IDP_FreeProperty(group);
 }
 
-TEST_F(IDPropertyTest, ReplaceInGroup)
+TEST(idproperties, ReplaceInGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_TRUE(IDP_AddToGroup(group, idprop::create("a", 3.0f).release()));
@@ -45,7 +41,7 @@ TEST_F(IDPropertyTest, ReplaceInGroup)
   IDP_FreeProperty(group);
 }
 
-TEST_F(IDPropertyTest, RemoveFromGroup)
+TEST(idproperties, RemoveFromGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_EQ(IDP_GetPropertyFromGroup(group, "a"), nullptr);
@@ -58,7 +54,7 @@ TEST_F(IDPropertyTest, RemoveFromGroup)
   IDP_FreeProperty(group);
 }
 
-TEST_F(IDPropertyTest, ReplaceGroupInGroup)
+TEST(idproperties, ReplaceGroupInGroup)
 {
   IDProperty *group1 = idprop::create_group("test").release();
   IDP_AddToGroup(group1, idprop::create("a", 1).release());
@@ -76,7 +72,7 @@ TEST_F(IDPropertyTest, ReplaceGroupInGroup)
   IDP_FreeProperty(group2);
 }
 
-TEST_F(IDPropertyTest, SyncGroupValues)
+TEST(idproperties, SyncGroupValues)
 {
   IDProperty *group1 = idprop::create_group("test").release();
   IDProperty *group2 = idprop::create_group("test").release();
@@ -97,7 +93,7 @@ TEST_F(IDPropertyTest, SyncGroupValues)
   IDP_FreeProperty(group2);
 }
 
-TEST_F(IDPropertyTest, ReprGroup)
+TEST(idproperties, ReprGroup)
 {
   auto repr_fn = [](IDProperty *prop) -> std::string {
     uint result_len;

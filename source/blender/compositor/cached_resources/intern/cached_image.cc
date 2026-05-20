@@ -195,18 +195,20 @@ static ImBuf *compute_linear_buffer(ImBuf *image_buffer)
 {
   /* Do not pass the flags to the allocation function to avoid buffer allocation, but assign them
    * after to retain important information like precision and alpha mode. */
-  ImBuf *linear_image_buffer = IMB_allocImBuf(image_buffer->x, image_buffer->y, ImBufFlags::Zero);
-  linear_image_buffer->color_mode = image_buffer->color_mode;
+  ImBuf *linear_image_buffer = IMB_allocImBuf(
+      image_buffer->x, image_buffer->y, image_buffer->planes, 0);
   linear_image_buffer->flags = image_buffer->flags;
 
   /* Assign the float buffer if it exists, as well as its number of channels. */
-  linear_image_buffer->float_buffer = image_buffer->float_buffer;
+  IMB_assign_float_buffer(
+      linear_image_buffer, image_buffer->float_buffer, IB_DO_NOT_TAKE_OWNERSHIP);
   linear_image_buffer->channels = image_buffer->channels;
 
   /* If no float buffer exists, assign it then compute a float buffer from it. This is the main
    * call of this function. */
   if (!linear_image_buffer->float_data()) {
-    linear_image_buffer->byte_buffer = image_buffer->byte_buffer;
+    IMB_assign_byte_buffer(
+        linear_image_buffer, image_buffer->byte_buffer, IB_DO_NOT_TAKE_OWNERSHIP);
     IMB_float_from_byte(linear_image_buffer);
   }
 
@@ -219,7 +221,7 @@ static ImBuf *compute_linear_buffer(ImBuf *image_buffer)
       IMB_colormanagement_space_is_scene_linear(image_buffer->byte_buffer.colorspace);
   if (image_buffer->ftype == IMB_FTYPE_DDS && is_suitable_compressed_color_space) {
     linear_image_buffer->ftype = IMB_FTYPE_DDS;
-    linear_image_buffer->filepath = image_buffer->filepath;
+    IMB_assign_dds_data(linear_image_buffer, image_buffer->dds_data, IB_DO_NOT_TAKE_OWNERSHIP);
   }
 
   return linear_image_buffer;
@@ -333,14 +335,12 @@ CachedImage::CachedImage(Context &context,
   if (context.use_gpu()) {
     texture_ = IMB_create_gpu_texture("Image Texture", linear_image_buffer, true, true, false);
     GPU_texture_update_mipmap_chain(texture_);
-    this->result.share_data(texture_);
+    this->result.wrap_external(texture_);
   }
   else {
     const int2 size = int2(image_buffer->x, image_buffer->y);
     Result buffer_result(context, float_type(image_buffer->channels), ResultPrecision::Full);
-    buffer_result.share_data(linear_image_buffer->float_buffer.data,
-                             size,
-                             linear_image_buffer->float_buffer.sharing_info);
+    buffer_result.wrap_external(linear_image_buffer->float_data_for_write(), size);
     this->result.allocate_texture(size, false);
 
     if (buffer_result.type() == ResultType::Color && result.type() == ResultType::Float4) {
@@ -366,7 +366,7 @@ CachedImage::CachedImage(Context &context,
     buffer_result.release();
   }
 
-  if (flag_is_set(image_buffer->flags, ImBufFlags::HasDisplayWindow)) {
+  if (image_buffer->flags & IB_has_display_window) {
     this->result.domain().display_size = int2(image_buffer->display_size);
     this->result.domain().data_offset = int2(image_buffer->data_offset);
     this->result.transform(

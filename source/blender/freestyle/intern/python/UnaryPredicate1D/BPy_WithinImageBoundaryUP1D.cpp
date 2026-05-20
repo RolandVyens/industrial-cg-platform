@@ -24,22 +24,18 @@ PyDoc_STRVAR(
     "\n"
     "   Builds an WithinImageBoundaryUP1D object.\n"
     "\n"
-    "   :param xmin: X lower bound of the image boundary.\n"
+    "   :arg xmin: X lower bound of the image boundary.\n"
     "   :type xmin: float\n"
-    "   :param ymin: Y lower bound of the image boundary.\n"
+    "   :arg ymin: Y lower bound of the image boundary.\n"
     "   :type ymin: float\n"
-    "   :param xmax: X upper bound of the image boundary.\n"
+    "   :arg xmax: X upper bound of the image boundary.\n"
     "   :type xmax: float\n"
-    "   :param ymax: Y upper bound of the image boundary.\n"
+    "   :arg ymax: Y upper bound of the image boundary.\n"
     "   :type ymax: float\n"
     "\n"
     ".. method:: __call__(inter)\n"
     "\n"
-    "   Returns true if the Interface1D intersects with image boundary.\n"
-    "\n"
-    "   :param inter: The Interface1D to test.\n"
-    "   :type inter: :class:`freestyle.types.Interface1D`\n"
-    "   :rtype: bool\n");
+    "   Returns true if the Interface1D intersects with image boundary.\n");
 static int WithinImageBoundaryUP1D___init__(BPy_WithinImageBoundaryUP1D *self,
                                             PyObject *args,
                                             PyObject *kwds)

@@ -72,11 +72,11 @@ struct rcti {
   int ymin, ymax;
 
 #ifdef __cplusplus
-  bool operator==(const rcti &other) const
+  inline bool operator==(const rcti &other) const
   {
     return xmin == other.xmin && xmax == other.xmax && ymin == other.ymin && ymax == other.ymax;
   }
-  bool operator!=(const rcti &other) const
+  inline bool operator!=(const rcti &other) const
   {
     return !(*this == other);
   }

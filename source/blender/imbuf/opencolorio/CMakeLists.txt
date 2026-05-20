@@ -59,8 +59,6 @@ set(SRC
   intern/libocio/libocio_look.hh
   intern/libocio/libocio_processor.cc
   intern/libocio/libocio_processor.hh
-  intern/libocio/libocio_scope.cc
-  intern/libocio/libocio_view.cc
   intern/libocio/libocio_view.hh
 
   OCIO_api.hh
@@ -73,7 +71,6 @@ set(SRC
   OCIO_matrix.hh
   OCIO_packed_image.hh
   OCIO_role_names.hh
-  OCIO_scope.hh
   OCIO_version.hh
   OCIO_view.hh
 )
@@ -85,7 +82,7 @@ set(LIB
   PRIVATE bf::gpu
   PRIVATE bf::intern::guardedalloc
   PRIVATE bf::intern::clog
-  PUBLIC bf::dependencies::opencolorio
+  PUBLIC bf::dependencies::optional::opencolorio
 )
 
 blender_add_lib(bf_imbuf_opencolorio "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
@@ -126,7 +123,6 @@ set(GLSL_INFOS_CONTENT "")
 foreach(GLSL_FILE ${GLSL_SRC})
   get_filename_component(GLSL_FILE_NAME ${GLSL_FILE} NAME)
   string(REPLACE "." "_" GLSL_FILE_NAME_UNDERSCORES ${GLSL_FILE_NAME})
-  string(APPEND GLSL_FILE_NAME_UNDERSCORES "_tmp")
   string(APPEND GLSL_SOURCE_CONTENT "SHADER_SOURCE\(${GLSL_FILE_NAME_UNDERSCORES}, \"${GLSL_FILE_NAME}\", \"${GLSL_FILE}\"\)\n")
   string(APPEND GLSL_METADATA_CONTENT "#include \"${GLSL_FILE}.hh\"\n")
   string(APPEND GLSL_INFOS_CONTENT "#include \"${GLSL_FILE}.info\"\n")

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstdio>
+
 namespace blender {
 
 struct ImFileColorSpace;
@@ -23,19 +25,18 @@ void imb_exitopenexr();
  */
 bool imb_is_a_openexr(const unsigned char *mem, size_t size);
 
-bool imb_save_openexr(ImBuf *ibuf, const char *filepath, ImBufFlags flags);
-Vector<uint8_t> imb_save_buffer_openexr(ImBuf *ibuf, ImBufFlags flags);
+bool imb_save_openexr(struct ImBuf *ibuf, const char *filepath, int flags);
 
-ImBuf *imb_load_openexr(const unsigned char *mem,
-                        size_t size,
-                        ImBufFlags flags,
-                        ImFileColorSpace &r_colorspace);
+struct ImBuf *imb_load_openexr(const unsigned char *mem,
+                               size_t size,
+                               int flags,
+                               ImFileColorSpace &r_colorspace);
 
-ImBuf *imb_load_filepath_thumbnail_openexr(const char *filepath,
-                                           ImBufFlags flags,
-                                           size_t max_thumb_size,
-                                           ImFileColorSpace &r_colorspace,
-                                           size_t *r_width,
-                                           size_t *r_height);
+struct ImBuf *imb_load_filepath_thumbnail_openexr(const char *filepath,
+                                                  int flags,
+                                                  size_t max_thumb_size,
+                                                  ImFileColorSpace &r_colorspace,
+                                                  size_t *r_width,
+                                                  size_t *r_height);
 
 }  // namespace blender

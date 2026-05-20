@@ -384,12 +384,13 @@ bScreen *ED_screen_state_maximized_create(bContext *C);
  *
  * \warning \a area may be freed.
  */
-ScrArea *ED_screen_state_toggle(bContext *C, wmWindow *win, ScrArea *area, eScreen_State state);
+ScrArea *ED_screen_state_toggle(bContext *C, wmWindow *win, ScrArea *area, short state);
 /**
  * Wrapper to open a temporary space either as full-screen space, or as separate window,
  * as defined by \a display_type.
  *
  * \param title: Title to set for the window, if a window is spawned.
+ * \param rect_unscaled: Position & size of the window, if a window is spawned.
  */
 ScrArea *ED_screen_temp_space_open(bContext *C,
                                    const char *title,

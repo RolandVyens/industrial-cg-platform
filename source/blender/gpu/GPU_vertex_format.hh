@@ -146,7 +146,7 @@ GPU_VERTEX_FORMAT_EXPAND_TYPED(ATTR_TYPE_MAPPING)
 
 #undef ATTR_TYPE_MAPPING
 
-constexpr DataFormat to_data_format(VertAttrType format)
+inline constexpr DataFormat to_data_format(VertAttrType format)
 {
   return DataFormat(int(format));
 }

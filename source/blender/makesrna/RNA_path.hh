@@ -212,6 +212,7 @@ bool RNA_path_resolve_property_and_item_pointer_full(const PointerRNA *ptr,
                                                      PointerRNA *r_item_ptr);
 
 struct PropertyElemRNA {
+  PropertyElemRNA *next, *prev;
   PointerRNA ptr;
   PropertyRNA *prop;
   int index;
@@ -227,7 +228,7 @@ struct PropertyElemRNA {
  */
 bool RNA_path_resolve_elements(PointerRNA *ptr,
                                const char *path,
-                               Vector<PropertyElemRNA> *r_elements);
+                               ListBaseT<PropertyElemRNA> *r_elements);
 
 /**
  * Find the path from the structure referenced by the pointer to the runtime RNA-defined

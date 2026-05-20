@@ -4,13 +4,15 @@
 
 #pragma once
 
-#include "MEM_guardedalloc.h"
+#if defined(WITH_OPENCOLORIO)
 
-#include <string>
+#  include "MEM_guardedalloc.h"
 
-#include "OCIO_look.hh"
+#  include <string>
 
-#include "../opencolorio.hh"
+#  include "OCIO_look.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -66,3 +68,5 @@ class LibOCIOLook : public Look {
 };
 
 }  // namespace blender::ocio
+
+#endif

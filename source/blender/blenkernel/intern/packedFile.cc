@@ -7,7 +7,6 @@
  */
 
 #include <algorithm>
-#include <cstddef>
 #include <cstdio>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -986,8 +985,7 @@ void BKE_packedfile_blend_read(BlendDataReader *reader, PackedFile **pf_p, Strin
   /* NOTE: this is endianness-sensitive. */
   /* NOTE: there is no way to handle endianness switch here. */
   pf->sharing_info = BLO_read_shared(reader, &pf->data, [&]() {
-    BLO_read_array_and_validate_size(
-        reader, reinterpret_cast<std::byte **>(const_cast<void **>(&pf->data)), &pf->size);
+    BLO_read_data_address(reader, &pf->data);
     /* Do not create an implicit sharing if read data pointer is `nullptr`. */
     return pf->data ? implicit_sharing::info_for_mem_free(const_cast<void *>(pf->data)) : nullptr;
   });

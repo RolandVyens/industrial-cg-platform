@@ -22,7 +22,7 @@ namespace blender {
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_bm_geometry_intersect_face_point_doc,
-    ".. function:: intersect_face_point(face, point)\n"
+    ".. method:: intersect_face_point(face, point)\n"
     "\n"
     "   Tests if the projection of a point is inside a face (using the face's normal).\n"
     "\n"

@@ -3,11 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "BLF_api.hh"
-
 #include "BLI_path_utils.hh"
-
-#include "BKE_gtest_base.hh"
-
 #include "testing/testing.h"
 
 namespace blender::tests {
@@ -32,16 +28,14 @@ static void close_font(int id)
   BLF_exit();
 }
 
-class BlfLoadTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfLoadTest, load)
+TEST(blf_load, load)
 {
   const int id = open_font("Ahem.ttf");
   EXPECT_TRUE(id != -1);
   close_font(id);
 }
 
-TEST_F(BlfLoadTest, font_is_loaded_path)
+TEST(blf_load, font_is_loaded_path)
 {
   BLF_init();
   std::string path = font_path("Ahem.ttf");
@@ -50,14 +44,14 @@ TEST_F(BlfLoadTest, font_is_loaded_path)
   close_font(id);
 }
 
-TEST_F(BlfLoadTest, font_is_loaded_id)
+TEST(blf_load, font_is_loaded_id)
 {
   const int id = open_font("Ahem.ttf");
   EXPECT_TRUE(BLF_is_loaded_id(id));
   close_font(id);
 }
 
-TEST_F(BlfLoadTest, display_name_from_file)
+TEST(blf_load, display_name_from_file)
 {
   std::string path = font_path("Ahem.ttf");
   const char *name = BLF_display_name_from_file(path.c_str());
@@ -66,7 +60,7 @@ TEST_F(BlfLoadTest, display_name_from_file)
   MEM_delete(name);
 }
 
-TEST_F(BlfLoadTest, display_name_from_id)
+TEST(blf_load, display_name_from_id)
 {
   const int id = open_font("Ahem.ttf");
   const char *name = BLF_display_name_from_id(id);
@@ -76,7 +70,7 @@ TEST_F(BlfLoadTest, display_name_from_id)
   close_font(id);
 }
 
-TEST_F(BlfLoadTest, has_glyph)
+TEST(blf_load, has_glyph)
 {
   const int id = open_font("Ahem.ttf");
   const bool has_glyph = BLF_has_glyph(id, 0x0058); /* 'X' */
@@ -84,9 +78,7 @@ TEST_F(BlfLoadTest, has_glyph)
   close_font(id);
 }
 
-class BlfMetricsTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfMetricsTest, get_vfont_metrics)
+TEST(blf_metrics, get_vfont_metrics)
 {
   const int id = open_font("Ahem.ttf");
   float ascend_ratio = 0.0f;
@@ -100,7 +92,7 @@ TEST_F(BlfMetricsTest, get_vfont_metrics)
   close_font(id);
 }
 
-TEST_F(BlfMetricsTest, default_weight)
+TEST(blf_metrics, default_weight)
 {
   const int id = open_font("Ahem.ttf");
   const int weight = BLF_default_weight(id);
@@ -108,7 +100,7 @@ TEST_F(BlfMetricsTest, default_weight)
   close_font(id);
 }
 
-TEST_F(BlfMetricsTest, has_variable_weight)
+TEST(blf_metrics, has_variable_weight)
 {
   const int id = open_font("Roboto.ttf");
   const bool has_variable_weight = BLF_has_variable_weight(id);
@@ -116,7 +108,7 @@ TEST_F(BlfMetricsTest, has_variable_weight)
   close_font(id);
 }
 
-TEST_F(BlfMetricsTest, variable_weight)
+TEST(blf_metrics, variable_weight)
 {
   const int id = open_font("Roboto.ttf");
   const char sample[] = "MM";
@@ -129,9 +121,7 @@ TEST_F(BlfMetricsTest, variable_weight)
   close_font(id);
 }
 
-class BlfDimensionsTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfDimensionsTest, width_max)
+TEST(blf_dimensions, width_max)
 {
   const int id = open_font("Ahem.ttf");
   BLF_size(id, 100.0f);
@@ -140,7 +130,7 @@ TEST_F(BlfDimensionsTest, width_max)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, height_max)
+TEST(blf_dimensions, height_max)
 {
   const int id = open_font("Ahem.ttf");
   BLF_size(id, 100.0f);
@@ -149,7 +139,7 @@ TEST_F(BlfDimensionsTest, height_max)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, descender)
+TEST(blf_dimensions, descender)
 {
   const int id = open_font("Ahem.ttf");
   BLF_size(id, 100.0f);
@@ -158,7 +148,7 @@ TEST_F(BlfDimensionsTest, descender)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, ascender)
+TEST(blf_dimensions, ascender)
 {
   const int id = open_font("Ahem.ttf");
   BLF_size(id, 100.0f);
@@ -167,7 +157,7 @@ TEST_F(BlfDimensionsTest, ascender)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, fixed_width)
+TEST(blf_dimensions, fixed_width)
 {
   /* Ahem does not have all the characters needed for calculation. */
   const int id = open_font("Roboto.ttf");
@@ -177,7 +167,7 @@ TEST_F(BlfDimensionsTest, fixed_width)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, width_em)
+TEST(blf_dimensions, width_em)
 {
   /* In this test font, 'X' is exactly one em wide. */
   const char sample[] = "XX";
@@ -188,7 +178,7 @@ TEST_F(BlfDimensionsTest, width_em)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, height_em)
+TEST(blf_dimensions, height_em)
 {
   /* In this test font, 'X' is exactly one em high. */
   const char sample[] = "X";
@@ -199,7 +189,7 @@ TEST_F(BlfDimensionsTest, height_em)
   close_font(id);
 }
 
-TEST_F(BlfDimensionsTest, advance)
+TEST(blf_dimensions, advance)
 {
   /* In this test font, 'X' has advance of exactly one em. */
   const char sample[] = "X";
@@ -210,9 +200,7 @@ TEST_F(BlfDimensionsTest, advance)
   close_font(id);
 }
 
-class BlfWrappingMinimalTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfWrappingMinimalTest, wrap_overflow_ascii)
+TEST(blf_wrapping_minimal, wrap_overflow_ascii)
 {
   /* Do not break, even though over the wrap limit. */
   const char sample[] =
@@ -227,7 +215,7 @@ TEST_F(BlfWrappingMinimalTest, wrap_overflow_ascii)
   close_font(id);
 }
 
-TEST_F(BlfWrappingMinimalTest, wrap_space)
+TEST(blf_wrapping_minimal, wrap_space)
 {
   /* Must break at the center spaces into two, one space trailing, one leading. */
   const char sample[] = "x xxxxxxxxxxxxxxxx  xxxxxxxxxxxxxxxxxxx ";
@@ -239,7 +227,7 @@ TEST_F(BlfWrappingMinimalTest, wrap_space)
   close_font(id);
 }
 
-TEST_F(BlfWrappingMinimalTest, wrap_linefeed)
+TEST(blf_wrapping_minimal, wrap_linefeed)
 {
   /* Must break on every line feed except at end of string. */
   const char sample[] = "x\nxxxxxxxxxxxxxxxx\n\nxxxxxxxxxxxxxxxxxxx\n";
@@ -251,7 +239,7 @@ TEST_F(BlfWrappingMinimalTest, wrap_linefeed)
   close_font(id);
 }
 
-TEST_F(BlfWrappingMinimalTest, wrap_hardlimit)
+TEST(blf_wrapping_minimal, wrap_hardlimit)
 {
   /* Must break at limit. */
   const char sample[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -264,9 +252,7 @@ TEST_F(BlfWrappingMinimalTest, wrap_hardlimit)
   close_font(id);
 }
 
-class BlfWrappingPathTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfWrappingPathTest, wrap_path_overflow_ascii)
+TEST(blf_wrapping_path, wrap_path_overflow_ascii)
 {
   /* Do not break, even though over the wrap limit. */
   const char sample[] =
@@ -282,7 +268,7 @@ TEST_F(BlfWrappingPathTest, wrap_path_overflow_ascii)
   close_font(id);
 }
 
-TEST_F(BlfWrappingPathTest, wrap_path_space)
+TEST(blf_wrapping_path, wrap_path_space)
 {
   /* Must break at the center space. */
   const char sample[] = "x xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxx ";
@@ -295,7 +281,7 @@ TEST_F(BlfWrappingPathTest, wrap_path_space)
   close_font(id);
 }
 
-TEST_F(BlfWrappingPathTest, wrap_path_separators_underscore)
+TEST(blf_wrapping_path, wrap_path_separators_underscore)
 {
   /* Must break at middle underscore. */
   int id = open_font("Roboto.ttf");
@@ -309,7 +295,7 @@ TEST_F(BlfWrappingPathTest, wrap_path_separators_underscore)
   close_font(id);
 }
 
-TEST_F(BlfWrappingPathTest, wrap_path_separators_slash)
+TEST(blf_wrapping_path, wrap_path_separators_slash)
 {
   /* Wrap at backslash path separators. */
   int id = open_font("Roboto.ttf");
@@ -323,7 +309,7 @@ TEST_F(BlfWrappingPathTest, wrap_path_separators_slash)
   close_font(id);
 }
 
-TEST_F(BlfWrappingPathTest, wrap_path_hardlimit)
+TEST(blf_wrapping_path, wrap_path_hardlimit)
 {
   /* Must break at limit. */
   const char sample[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -331,14 +317,15 @@ TEST_F(BlfWrappingPathTest, wrap_path_hardlimit)
   BLF_size(id, 10.0f);
   const float width = BLF_width(id, sample, sizeof(sample));
   Vector<StringRef> wrapped = BLF_string_wrap(
-      id, sample, int(float(width) * 0.7f), BLFWrapMode::Path | BLFWrapMode::HardLimit);
+      id,
+      sample,
+      int(float(width) * 0.7f),
+      BLFWrapMode(int(BLFWrapMode::Path) | int(BLFWrapMode::HardLimit)));
   EXPECT_TRUE(wrapped.size() == 2);
   close_font(id);
 }
 
-class BlfWrappingTypographicalTest : public bke::BlenderGTestBase {};
-
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_thinspace)
+TEST(blf_wrapping_typographical, wrap_typographical_thinspace)
 {
   /* Must break at thinspace. */
   const char sample[] = "xxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -351,7 +338,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_thinspace)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_backslash)
+TEST(blf_wrapping_typographical, wrap_typographical_backslash)
 {
   /* Optional break at any backslash. */
   const char sample[] = "xxxxxxxxxxx\\xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -364,7 +351,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_backslash)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_underscore)
+TEST(blf_wrapping_typographical, wrap_typographical_underscore)
 {
   /* Optional break at any underscore. */
   const char sample[] = "xxxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -377,7 +364,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_underscore)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_forward_slash)
+TEST(blf_wrapping_typographical, wrap_typographical_forward_slash)
 {
   /* Do not break on solidus if previous is a number. */
   const char sample[] = "xxxxxxxxxxxxxx/xx3/xxxxxxxxxxxxxxxxxxxxx";
@@ -390,7 +377,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_forward_slash)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_dash)
+TEST(blf_wrapping_typographical, wrap_typographical_dash)
 {
   /* Do not break on dash, hyphen, em dash if previous is space. */
   const char sample[] = "xxxxxxxxxxxxxx-xx /xxxxxxxxxxxxxxxxxxxxx";
@@ -403,7 +390,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_dash)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_CJK)
+TEST(blf_wrapping_typographical, wrap_typographical_CJK)
 {
   /* Do not break on dash, hyphen, em dash if previous is space. */
   const char sample[] =
@@ -419,7 +406,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_CJK)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_Tibetan)
+TEST(blf_wrapping_typographical, wrap_typographical_Tibetan)
 {
   /* Do not break on dash, hyphen, em dash if previous is space. */
   const char sample[] =
@@ -435,7 +422,7 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_Tibetan)
   close_font(id);
 }
 
-TEST_F(BlfWrappingTypographicalTest, wrap_typographical_hardlimit)
+TEST(blf_wrapping_typographical, wrap_typographical_hardlimit)
 {
   /* Must break at limit. */
   const char sample[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
@@ -443,12 +430,15 @@ TEST_F(BlfWrappingTypographicalTest, wrap_typographical_hardlimit)
   BLF_size(id, 10.0f);
   const float width = BLF_width(id, sample, sizeof(sample));
   Vector<StringRef> wrapped = BLF_string_wrap(
-      id, sample, int(float(width) * 0.7f), BLFWrapMode::Typographical | BLFWrapMode::HardLimit);
+      id,
+      sample,
+      int(float(width) * 0.7f),
+      BLFWrapMode(int(BLFWrapMode::Typographical) | int(BLFWrapMode::HardLimit)));
   EXPECT_TRUE(wrapped.size() == 2);
   close_font(id);
 }
 
-TEST_F(BlfWrappingMinimalTest, wrap_hardlimit_too_narrow_width)
+TEST(blf_wrapping_minimal, wrap_hardlimit_too_narrow_width)
 {
   /* Must break for each character. */
   const char sample[] = "aeiouáéíóú ;'/./\n\n1234567890-=";

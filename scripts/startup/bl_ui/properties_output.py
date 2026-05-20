@@ -334,7 +334,7 @@ class RENDER_PT_output_deep_exr(RenderOutputButtonsPanel, Panel):
     @classmethod
     def poll(cls, context):
         rd = context.scene.render
-        return (context.engine in cls.COMPAT_ENGINES and
+        return (context.engine in cls.COMPAT_ENGINES and 
                 rd.image_settings.file_format == 'DEEP_EXR')
 
     def draw(self, context):
@@ -343,7 +343,7 @@ class RENDER_PT_output_deep_exr(RenderOutputButtonsPanel, Panel):
         layout.use_property_decorate = False
 
         imf = context.scene.render.image_settings
-
+        
         layout.prop(imf, "exr_codec", text="Compression")
         layout.prop(imf, "deep_merge_tolerance")
         layout.prop(imf, "deep_alpha_merge_tolerance")
@@ -406,11 +406,7 @@ class RENDER_PT_output_color_management(RenderOutputButtonsPanel, Panel):
 
         if image_settings.has_linear_colorspace:
             if hasattr(owner, "linear_colorspace_settings"):
-                col.prop_with_menu(
-                    owner.linear_colorspace_settings,
-                    "name",
-                    text="Color Space",
-                    menu="UI_MT_color_space_select")
+                col.prop(owner.linear_colorspace_settings, "name", text="Color Space")
         else:
             col.prop(owner.display_settings, "display_device")
             col.separator()

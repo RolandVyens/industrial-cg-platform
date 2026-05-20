@@ -61,7 +61,8 @@ static void applyTimeScaleValue(TransInfo *t, float value)
 
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData *td = tc->data;
-    for (int i = 0; i < tc->data_len; i++, td++) {
+    TransData2D *td2d = tc->data_2d;
+    for (int i = 0; i < tc->data_len; i++, td++, td2d++) {
       /* It is assumed that td->extra is a pointer to the AnimData,
        * whose active action is where this keyframe comes from
        * (this is only valid when not in NLA). */

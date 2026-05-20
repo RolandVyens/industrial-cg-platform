@@ -62,8 +62,7 @@ static const EnumPropertyItem *rna_asset_library_reference_itemf(bContext * /*C*
   const EnumPropertyItem *items = ed::asset::library_reference_to_rna_enum_itemf(
       /*include_readonly=*/false,
       /*include_current_file=*/true,
-      /*include_remote_libraries=*/false,
-      /*include_separate_online_essentials=*/false);
+      /*include_remote_libraries=*/false);
   *r_free = true;
   BLI_assert(items != nullptr);
   return items;
@@ -305,12 +304,9 @@ static wmOperatorStatus create_pose_asset_user_library(bContext *C,
   const bUserAssetLibrary *user_library = BKE_preferences_asset_library_find_index(
       &U, lib_ref.custom_library_index);
   BLI_assert_msg(user_library, "The passed lib_ref is expected to be a user library");
-  if (!user_library) {
-    return OPERATOR_CANCELLED;
-  }
   BLI_assert_msg(!(user_library->flag & ASSET_LIBRARY_USE_REMOTE_URL),
                  "The passed lib_ref is expected to be an on disk library");
-  if (user_library->flag & ASSET_LIBRARY_USE_REMOTE_URL) {
+  if (!user_library || (user_library->flag & ASSET_LIBRARY_USE_REMOTE_URL)) {
     return OPERATOR_CANCELLED;
   }
 

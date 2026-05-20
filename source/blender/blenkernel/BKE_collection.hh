@@ -170,7 +170,7 @@ bool BKE_collection_delete(Main *bmain, Collection *collection, bool hierarchy);
 /**
  * Make a deep copy (aka duplicate) of the given collection and all of its children, recursively.
  *
- * \param duplicate_flags: Controls which sub-data are also duplicated
+ * \param dupflag: Controls which sub-data are also duplicated
  * (see #eDupli_ID_Flags in DNA_userdef_types.h).
  * \param duplicate_options: Additional context information about current duplicate call (e.g. if
  * it's part of a higher-level duplication or not, etc.). (see #eLibIDDuplicateFlags in
@@ -440,7 +440,7 @@ using BKE_scene_collections_Cb = void (*)(Collection *ob, void *data);
     int _base_flag = (_mode == DAG_EVAL_VIEWPORT) ? BASE_ENABLED_VIEWPORT : BASE_ENABLED_RENDER; \
     int _object_visibility_flag = (_mode == DAG_EVAL_VIEWPORT) ? OB_HIDE_VIEWPORT : \
                                                                  OB_HIDE_RENDER; \
-    [[maybe_unused]] int _base_id = 0; \
+    int _base_id = 0; \
     for (Base *_base = static_cast<Base *>(BKE_collection_object_cache_get(_collection).first); \
          _base; \
          _base = _base->next, _base_id++) \

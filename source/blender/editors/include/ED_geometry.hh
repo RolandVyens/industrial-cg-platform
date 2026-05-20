@@ -26,8 +26,8 @@ enum class AttrDomain : int8_t;
 enum class AttrType : int16_t;
 class MutableAttributeAccessor;
 }  // namespace bke
-namespace nodes::eval_log {
-class NodesEvalLog;
+namespace nodes::geo_eval_log {
+class GeoNodesLog;
 }
 
 namespace ed::geometry {
@@ -74,7 +74,7 @@ bool convert_attribute(AttributeOwner &owner,
 
 struct GeoOperatorLog {
   std::string node_group_name;
-  std::unique_ptr<nodes::eval_log::NodesEvalLog> log;
+  std::unique_ptr<nodes::geo_eval_log::GeoNodesLog> log;
 
   GeoOperatorLog() = default;
   ~GeoOperatorLog();

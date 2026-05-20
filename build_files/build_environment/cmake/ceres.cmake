@@ -34,15 +34,9 @@ add_dependencies(
   external_eigen
 )
 
-if(WIN32)
-  ExternalProject_Add_Step(external_ceres after_install
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${LIBDIR}/ceres
-    ${HARVEST_TARGET}/ceres
-    DEPENDEES install
-  )
-else()
-  harvest(external_ceres ceres/include ceres/include "*.h")
-  harvest(external_ceres ceres/lib/cmake/Ceres ceres/lib/cmake/Ceres "*.cmake")
-  harvest_rpath_lib(external_ceres ceres/lib ceres/lib "*${SHAREDLIBEXT}*")
-endif()
+ExternalProject_Add_Step(external_ceres after_install
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+  ${LIBDIR}/ceres
+  ${HARVEST_TARGET}/ceres
+  DEPENDEES install
+)

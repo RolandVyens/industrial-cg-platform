@@ -283,11 +283,15 @@ GVArray CurveLengthFieldInput::get_varray_for_context(const CurvesGeometry &curv
   return construct_curve_length_gvarray(curves, domain);
 }
 
-void CurveLengthFieldInput::hash_unique(UniqueHashBytes &hash,
-                                        fn::FieldHashDeep & /*deep_hash_cache*/) const
+uint64_t CurveLengthFieldInput::hash() const
 {
-  static constexpr int8_t id = 0;
-  hash.add(&id);
+  /* Some random constant hash. */
+  return 3549623580;
+}
+
+bool CurveLengthFieldInput::is_equal_to(const fn::FieldInput &other) const
+{
+  return dynamic_cast<const CurveLengthFieldInput *>(&other) != nullptr;
 }
 
 std::optional<AttrDomain> CurveLengthFieldInput::preferred_domain(
@@ -314,7 +318,5 @@ std::optional<MutableAttributeAccessor> CurveComponent::attributes_for_write()
   return MutableAttributeAccessor(curves ? &curves->geometry : nullptr,
                                   curves::get_attribute_accessor_functions());
 }
-
-/** \} */
 
 }  // namespace blender::bke

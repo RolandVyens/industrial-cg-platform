@@ -62,7 +62,6 @@ set(SRC
   intern/usd_blend_shape_utils.cc
   intern/usd_capi_export.cc
   intern/usd_capi_import.cc
-  intern/usd_colorspace_utils.cc
   intern/usd_hierarchy_iterator.cc
   intern/usd_hook.cc
   intern/usd_instancing_utils.cc
@@ -115,7 +114,6 @@ set(SRC
   intern/usd_asset_utils.hh
   intern/usd_attribute_utils.hh
   intern/usd_blend_shape_utils.hh
-  intern/usd_colorspace_utils.hh
   intern/usd_exporter_context.hh
   intern/usd_hash_types.hh
   intern/usd_hierarchy_iterator.hh
@@ -123,7 +121,6 @@ set(SRC
   intern/usd_instancing_utils.hh
   intern/usd_light_convert.hh
   intern/usd_mesh_utils.hh
-  intern/usd_precomp.hh
   intern/usd_utils.hh
 
   intern/usd_writer_abstract.hh

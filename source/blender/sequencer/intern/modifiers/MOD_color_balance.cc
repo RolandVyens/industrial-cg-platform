@@ -243,7 +243,7 @@ static void colorBalance_init_data(StripModifierData *smd)
   ColorBalanceModifierData *cbmd = reinterpret_cast<ColorBalanceModifierData *>(smd);
 
   cbmd->color_multiply = 1.0f;
-  cbmd->color_balance.method = SEQ_COLOR_BALANCE_METHOD_LIFTGAMMAGAIN;
+  cbmd->color_balance.method = 0;
 
   for (int c = 0; c < 3; c++) {
     cbmd->color_balance.lift[c] = 1.0f;
@@ -255,10 +255,12 @@ static void colorBalance_init_data(StripModifierData *smd)
   }
 }
 
-static void colorBalance_apply(ModifierApplyContext &context, StripModifierData *smd)
+static void colorBalance_apply(ModifierApplyContext &context,
+                               StripModifierData *smd,
+                               int timeline_frame)
 {
   ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
-  ImBuf *mask = modifier_render_mask_input(context, *smd);
+  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
 
   const ColorBalanceModifierData *cbmd = reinterpret_cast<const ColorBalanceModifierData *>(smd);
 

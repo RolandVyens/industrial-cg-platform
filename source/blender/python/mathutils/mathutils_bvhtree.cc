@@ -727,14 +727,13 @@ static PyObject *C_BVHTree_FromPolygons(PyObject * /*cls*/, PyObject *args, PyOb
         break;
       }
 
-      const Py_ssize_t py_tricoords_num = PySequence_Fast_GET_SIZE(py_tricoords_fast);
-      if (py_tricoords_num != 3) {
+      if (PySequence_Fast_GET_SIZE(py_tricoords_fast) != 3) {
         Py_DECREF(py_tricoords_fast);
         PyErr_Format(PyExc_ValueError,
                      "%s: non triangle found at index %d with length of %d",
                      error_prefix,
                      i,
-                     py_tricoords_num);
+                     PySequence_Fast_GET_SIZE(py_tricoords_fast));
         valid = false;
         break;
       }

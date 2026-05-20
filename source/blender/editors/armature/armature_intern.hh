@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "DNA_armature_types.h"
 #include "DNA_listBase.h"
 
 #include "BLI_span.hh"
@@ -57,7 +56,6 @@ void ARMATURE_OT_shortest_path_pick(wmOperatorType *ot);
 void ARMATURE_OT_delete(wmOperatorType *ot);
 void ARMATURE_OT_dissolve(wmOperatorType *ot);
 void ARMATURE_OT_duplicate(wmOperatorType *ot);
-void ARMATURE_OT_duplicate_rename(wmOperatorType *ot);
 void ARMATURE_OT_symmetrize(wmOperatorType *ot);
 void ARMATURE_OT_extrude(wmOperatorType *ot);
 void ARMATURE_OT_hide(wmOperatorType *ot);
@@ -149,9 +147,9 @@ enum eAction_TransformFlags {
   ACT_TRANS_ALL = (ACT_TRANS_ONLY | ACT_TRANS_PROP),
 };
 
-/* Temporary struct wrapping data used for pose sliding. */
-struct SlideSubject {
-  SlideSubject *next, *prev;
+/* Temporary data linking PoseChannels with the F-Curves they affect */
+struct tPChanFCurveLink {
+  tPChanFCurveLink *next, *prev;
 
   /** Object this Pose Channel belongs to. */
   Object *ob;
@@ -194,26 +192,26 @@ struct SlideSubject {
 /** Returns a valid pose armature for this object, else returns NULL. */
 Object *poseAnim_object_get(Object *ob_);
 /**
- * Build up a list of SlideSubject. First only selected, and if that yields no result, all
+ * Build up a list of tPChanFCurveLink. First only selected, and if that yields no result, all
  * visible.
  */
-void slide_subjects_get(bContext *C, ListBaseT<SlideSubject> *slide_subjects);
-/** Free all slide targets. */
-void slide_subjects_free(ListBaseT<SlideSubject> *slide_subjects);
+void poseAnim_mapping_get(bContext *C, ListBaseT<tPChanFCurveLink> *pfLinks);
+/** Free F-Curve <-> PoseChannel links. */
+void poseAnim_mapping_free(ListBaseT<tPChanFCurveLink> *pfLinks);
 
 /**
  * Helper for apply() / reset() - refresh the data.
  */
-void slide_subjects_refresh(bContext *C, Scene *scene, Object *ob);
+void poseAnim_mapping_refresh(bContext *C, Scene *scene, Object *ob);
 /**
- * Reset changes made to current slide targets back to their stored values.
+ * Reset changes made to current pose.
  */
-void slide_subjects_reset(ListBaseT<SlideSubject> *slide_subjects);
+void poseAnim_mapping_reset(ListBaseT<tPChanFCurveLink> *pfLinks);
 /** Perform auto-key-framing after changes were made + confirmed. */
-void slide_subjects_autokey(bContext *C,
-                            Scene *scene,
-                            ListBaseT<SlideSubject> *slide_subjects,
-                            float cframe);
+void poseAnim_mapping_autoKeyframe(bContext *C,
+                                   Scene *scene,
+                                   ListBaseT<tPChanFCurveLink> *pfLinks,
+                                   float cframe);
 
 /** \} */
 
@@ -282,7 +280,7 @@ void armature_tag_select_mirrored(bArmature *arm);
  * Helper function for tools to work on mirrored parts.
  * it leaves mirrored bones selected then too, which is a good indication of what happened.
  */
-void armature_select_mirrored_ex(bArmature *arm, eBone_Flag flag);
+void armature_select_mirrored_ex(bArmature *arm, int flag);
 void armature_select_mirrored(bArmature *arm);
 /** Only works when tagged. */
 void armature_tag_unselect(bArmature *arm);

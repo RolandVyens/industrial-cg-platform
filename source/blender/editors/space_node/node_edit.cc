@@ -379,8 +379,7 @@ namespace ed::space_node {
 /** \name Node Generic
  * \{ */
 
-static bool socket_is_occluded(const float2 &cursor,
-                               const bNodeSocket &socket,
+static bool socket_is_occluded(const float2 &location,
                                const bNode &node_the_socket_belongs_to,
                                const Span<bNode *> sorted_nodes)
 {
@@ -390,26 +389,10 @@ static bool socket_is_occluded(const float2 &cursor,
       return false;
     }
 
-    if (BLI_rctf_isect_pt_v(&node->runtime->draw_bounds, cursor)) {
-      /* The cursor actually hovers over a node in front of the socket. */
-      return true;
-    }
-
-    /* The hitbox of the socket is larger than the socket symbol to make dragging links easier. So
-     * we check if the socket is fully occluded to prevent dragging links from behind nodes.
-     * Subtract some tolerance to avoid picking the socket when it's only barely visible.
-     */
-    const float2 &location = socket.runtime->location;
-    const float tolerance = 0.1f * U.widget_unit;
-    const float half_width = NODE_SOCKSIZE - tolerance;
-    const float half_height = node_socket_calculate_height(socket) - tolerance;
-
-    const rctf socket_bounds = {location.x - half_width,
-                                location.x + half_width,
-                                location.y - half_height,
-                                location.y + half_height};
-
-    if (BLI_rctf_inside_rctf(&node->runtime->draw_bounds, &socket_bounds)) {
+    rctf socket_hitbox;
+    const float socket_hitbox_radius = NODE_SOCKSIZE - 0.1f * U.widget_unit;
+    BLI_rctf_init_pt_radius(&socket_hitbox, location, socket_hitbox_radius);
+    if (BLI_rctf_inside_rctf(&node->runtime->draw_bounds, &socket_hitbox)) {
       return true;
     }
   }
@@ -422,38 +405,30 @@ static bool socket_is_occluded(const float2 &cursor,
 /** \name Node Size Widget Operator
  * \{ */
 
-struct NodeResizeData {
-  bNode *node;
-  float oldlocx, oldlocy;
-  float oldwidth, oldheight;
-};
-
 struct NodeSizeWidget {
   float mxstart, mystart;
-  Vector<NodeResizeData> nodes_data;
+  float oldlocx, oldlocy;
+  float oldwidth, oldheight;
   int directions;
   bool precision, snap_to_grid;
 };
 
-static void node_resize_init(bContext *C,
-                             wmOperator *op,
-                             const float2 &cursor,
-                             const VectorSet<bNode *> &nodes,
-                             NodeResizeDirection dir)
+static void node_resize_init(
+    bContext *C, wmOperator *op, const float2 &cursor, const bNode *node, NodeResizeDirection dir)
 {
   Scene *scene = CTX_data_scene(C);
-  NodeSizeWidget *nsw = MEM_new<NodeSizeWidget>(__func__);
+  NodeSizeWidget *nsw = MEM_new_zeroed<NodeSizeWidget>(__func__);
 
   op->customdata = nsw;
 
   nsw->mxstart = cursor.x;
   nsw->mystart = cursor.y;
 
-  for (bNode *node : nodes) {
-    nsw->nodes_data.append(
-        {node, node->location[0], node->location[1], node->width, node->height});
-  }
-
+  /* store old */
+  nsw->oldlocx = node->location[0];
+  nsw->oldlocy = node->location[1];
+  nsw->oldwidth = node->width;
+  nsw->oldheight = node->height;
   nsw->directions = dir;
   nsw->snap_to_grid = scene->toolsettings->snap_flag_node;
 
@@ -470,12 +445,13 @@ static void node_resize_exit(bContext *C, wmOperator *op, bool cancel)
 
   /* Restore old data on cancel. */
   if (cancel) {
-    for (const NodeResizeData &rd : nsw->nodes_data) {
-      rd.node->location[0] = rd.oldlocx;
-      rd.node->location[1] = rd.oldlocy;
-      rd.node->width = rd.oldwidth;
-      rd.node->height = rd.oldheight;
-    }
+    SpaceNode *snode = CTX_wm_space_node(C);
+    bNode *node = bke::node_get_active(*snode->edittree);
+
+    node->location[0] = nsw->oldlocx;
+    node->location[1] = nsw->oldlocy;
+    node->width = nsw->oldwidth;
+    node->height = nsw->oldheight;
   }
 
   MEM_delete(nsw);
@@ -527,6 +503,7 @@ static wmOperatorStatus node_resize_modal(bContext *C, wmOperator *op, const wmE
 {
   SpaceNode *snode = CTX_wm_space_node(C);
   ARegion *region = CTX_wm_region(C);
+  bNode *node = bke::node_get_active(*snode->edittree);
   NodeSizeWidget *nsw = static_cast<NodeSizeWidget *>(op->customdata);
 
   if (event->type == EVT_MODAL_MAP) {
@@ -556,11 +533,10 @@ static wmOperatorStatus node_resize_modal(bContext *C, wmOperator *op, const wmE
       const float dx = (mx - nsw->mxstart) / UI_SCALE_FAC;
       const float dy = (my - nsw->mystart) / UI_SCALE_FAC;
 
-      for (NodeResizeData &rd : nsw->nodes_data) {
-        bNode *node = rd.node;
+      if (node) {
         float *pwidth = &node->width;
         float *pheight = &node->height;
-        float oldwidth = rd.oldwidth;
+        float oldwidth = nsw->oldwidth;
         float widthmin = node->typeinfo->minwidth;
         float widthmax = node->typeinfo->maxwidth;
 
@@ -574,7 +550,7 @@ static wmOperatorStatus node_resize_modal(bContext *C, wmOperator *op, const wmE
             CLAMP(*pwidth, widthmin, widthmax);
           }
           if (nsw->directions & NODE_RESIZE_LEFT) {
-            float locmax = rd.oldlocx + oldwidth;
+            float locmax = nsw->oldlocx + oldwidth;
             *pwidth = oldwidth - dx;
 
             if (nsw->snap_to_grid) {
@@ -586,12 +562,12 @@ static wmOperatorStatus node_resize_modal(bContext *C, wmOperator *op, const wmE
         }
 
         /* Height works the other way round. */
-        if (node->is_frame()) {
+        {
           float heightmin = UI_SCALE_FAC * node->typeinfo->minheight;
           float heightmax = UI_SCALE_FAC * node->typeinfo->maxheight;
           if (nsw->directions & NODE_RESIZE_TOP) {
-            float locmin = rd.oldlocy - rd.oldheight;
-            *pheight = rd.oldheight + dy;
+            float locmin = nsw->oldlocy - nsw->oldheight;
+            *pheight = nsw->oldheight + dy;
 
             if (nsw->snap_to_grid) {
               *pheight = nearest_node_grid_coord(*pheight);
@@ -600,7 +576,7 @@ static wmOperatorStatus node_resize_modal(bContext *C, wmOperator *op, const wmE
             node->location[1] = locmin + *pheight;
           }
           if (nsw->directions & NODE_RESIZE_BOTTOM) {
-            *pheight = rd.oldheight - dy;
+            *pheight = nsw->oldheight - dy;
 
             if (nsw->snap_to_grid) {
               *pheight = nearest_node_grid_coord(*pheight);
@@ -637,26 +613,23 @@ static wmOperatorStatus node_resize_invoke(bContext *C, wmOperator *op, const wm
 {
   SpaceNode *snode = CTX_wm_space_node(C);
   ARegion *region = CTX_wm_region(C);
+  const bNode *node = bke::node_get_active(*snode->edittree);
+
+  if (node == nullptr) {
+    return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
+  }
 
   /* Convert mouse coordinates to `v2d` space. */
   float2 cursor;
   int2 mval;
   WM_event_drag_start_mval(event, region, mval);
   ui::view2d_region_to_view(&region->v2d, mval.x, mval.y, &cursor.x, &cursor.y);
-
-  /* Use the hovered node to determine the resize direction.
-   * This node may not be the active one if multiple nodes are selected. */
-  const bNode *node = node_under_mouse_get(*snode, cursor);
-  if (node == nullptr) {
-    return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
-  }
-
   const NodeResizeDirection dir = node_get_resize_direction(*snode, node, cursor.x, cursor.y);
   if (dir == NODE_RESIZE_NONE) {
     return OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH;
   }
 
-  node_resize_init(C, op, cursor, get_selected_nodes(*snode->edittree), dir);
+  node_resize_init(C, op, cursor, node, dir);
   return OPERATOR_RUNNING_MODAL;
 }
 
@@ -675,7 +648,7 @@ void NODE_OT_resize(wmOperatorType *ot)
   /* API callbacks. */
   ot->invoke = node_resize_invoke;
   ot->modal = node_resize_modal;
-  ot->poll = ED_operator_node_editable;
+  ot->poll = ED_operator_node_active;
   ot->cancel = node_resize_cancel;
 
   /* flags */
@@ -808,7 +781,7 @@ bNodeSocket *node_find_indicated_socket(SpaceNode &snode,
   bNodeSocket *best_socket = nullptr;
 
   auto update_best_socket = [&](bNodeSocket *socket, const float distance) {
-    if (socket_is_occluded(cursor, *socket, socket->owner_node(), sorted_nodes)) {
+    if (socket_is_occluded(socket->runtime->location, socket->owner_node(), sorted_nodes)) {
       return;
     }
     if (distance < best_distance) {
@@ -1226,9 +1199,7 @@ void NODE_OT_render_changed(wmOperatorType *ot)
  * If the flag is not set on all nodes, it is set. If tag_update is true, the nodes will be tagged
  * for a property change update.
  */
-static void node_flag_toggle_exec(SpaceNode *snode,
-                                  eNode_Flag toggle_flag,
-                                  const bool tag_update = false)
+static void node_flag_toggle_exec(SpaceNode *snode, int toggle_flag, const bool tag_update = false)
 {
   int tot_eq = 0, tot_neq = 0;
 
@@ -1671,22 +1642,6 @@ static wmOperatorStatus node_delete_exec(bContext *C, wmOperator * /*op*/)
 
   /* Delete paired nodes as well. */
   node_select_paired(*snode->edittree);
-
-  /* Ensure child nodes propagate upwards through nested frames, when their parent is deleted. */
-  for (bNode *node : snode->edittree->all_nodes()) {
-    if (node->flag & SELECT) {
-      /* This node can be skipped, because it will be deleted anyway. */
-      continue;
-    }
-
-    /* Set the parent of the node to the lowest frame that is not going to be deleted. */
-    for (bNode *parent = node->parent; parent; parent = parent->parent) {
-      if ((parent->flag & SELECT) == 0) {
-        node->parent = parent;
-        break;
-      }
-    }
-  }
 
   for (bNode &node : snode->edittree->nodes.items_mutable()) {
     if (node.flag & SELECT) {

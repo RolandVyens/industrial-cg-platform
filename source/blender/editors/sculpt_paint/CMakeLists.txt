@@ -21,6 +21,7 @@ set(INC_SYS
 
 set(SRC
   brush_asset_ops.cc
+  palette.cc
   paint_cursor.cc
   paint_curve.cc
   paint_curve_undo.cc
@@ -28,7 +29,6 @@ set(SRC
   paint_sample_color.cc
   paint_stroke.cc
   paint_utils.cc
-  palette.cc
   sculpt_uv.cc
 
   curves/sculpt_add.cc
@@ -145,7 +145,6 @@ set(SRC
   mesh/sculpt_pose.hh
   mesh/sculpt_smooth.hh
   mesh/sculpt_undo.hh
-  mesh/vw_paint_intern.hh
 
   mesh/brushes/bmesh_topology_rake.cc
   mesh/brushes/clay.cc

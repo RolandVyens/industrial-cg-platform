@@ -498,8 +498,6 @@ static bool set_socket_value(bContext &C,
       const float3 euler = float3(math::to_euler(rotation));
       return set_rna_property_float3(C, tree.id, default_value_rna_path, euler);
     }
-    default:
-      break;
   }
   return false;
 }
@@ -581,7 +579,7 @@ static bool set_modifier_value(bContext &C,
   }
 }
 
-std::optional<SocketValueVariant> get_logged_socket_value(eval_log::NodeTreeLog &tree_log,
+std::optional<SocketValueVariant> get_logged_socket_value(geo_eval_log::GeoTreeLog &tree_log,
                                                           const bNodeSocket &socket)
 {
   switch (socket.type) {
@@ -626,15 +624,13 @@ std::optional<SocketValueVariant> get_logged_socket_value(eval_log::NodeTreeLog 
       }
       break;
     }
-    default:
-      break;
   }
   return std::nullopt;
 }
 
 static void backpropagate_socket_values_through_node(
     const NodeInContext &ctx_node,
-    eval_log::NodesEvalLog &eval_log,
+    geo_eval_log::GeoNodesLog &eval_log,
     Map<SocketInContext, SocketValueVariant> &value_by_socket,
     Vector<const bNodeSocket *> &r_modified_inputs)
 {
@@ -649,7 +645,7 @@ static void backpropagate_socket_values_through_node(
     /* We need a context here to access the tree log. */
     return;
   }
-  eval_log::NodeTreeLog &tree_log = eval_log.get_tree_log(context->hash());
+  geo_eval_log::GeoTreeLog &tree_log = eval_log.get_tree_log(context->hash());
   tree_log.ensure_socket_values();
 
   /* Build a temporary map of old socket values for the node evaluation. */
@@ -694,7 +690,7 @@ static void backpropagate_socket_values_through_node(
 bool backpropagate_socket_values(bContext &C,
                                  Object &object,
                                  NodesModifierData &nmd,
-                                 eval_log::NodesEvalLog &eval_log,
+                                 geo_eval_log::GeoNodesLog &eval_log,
                                  const Span<SocketToUpdate> sockets_to_update)
 {
   nmd.node_group->ensure_topology_cache();

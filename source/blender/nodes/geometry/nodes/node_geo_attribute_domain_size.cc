@@ -78,7 +78,7 @@ static void node_declare(NodeDeclarationBuilder &b)
         total_layers.available(true);
         break;
       default:
-        break;
+        BLI_assert_unreachable();
     }
   }
 }
@@ -157,33 +157,19 @@ static void node_geo_exec(GeoNodeExecParams params)
       break;
     }
     default:
-      params.set_default_remaining_outputs();
-      break;
+      BLI_assert_unreachable();
   }
 }
 
 static void node_rna(StructRNA *srna)
 {
-  RNA_def_node_enum(
-      srna,
-      "component",
-      "Component",
-      "",
-      rna_enum_geometry_component_type_items,
-      NOD_inline_enum_accessors(custom1),
-      int(bke::GeometryComponent::Type::Mesh),
-      [](bContext * /*C*/, PointerRNA * /*ptr*/, PropertyRNA * /*prop*/, bool *r_free) {
-        *r_free = true;
-        return enum_items_filter(rna_enum_geometry_component_type_items,
-                                 [](const EnumPropertyItem &item) -> bool {
-                                   return ELEM(item.value,
-                                               int(GeometryComponent::Type::Mesh),
-                                               int(GeometryComponent::Type::Curve),
-                                               int(GeometryComponent::Type::PointCloud),
-                                               int(GeometryComponent::Type::Instance),
-                                               int(GeometryComponent::Type::GreasePencil));
-                                 });
-      });
+  RNA_def_node_enum(srna,
+                    "component",
+                    "Component",
+                    "",
+                    rna_enum_geometry_component_type_items,
+                    NOD_inline_enum_accessors(custom1),
+                    int(bke::GeometryComponent::Type::Mesh));
 }
 
 static void node_register()

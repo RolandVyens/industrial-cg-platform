@@ -29,6 +29,8 @@
 
 namespace blender::ui {
 
+using blender::Vector;
+
 struct CurveRuntimeProperties {
   CurveProfilePoint *last_pt = nullptr;
   float2 last_pos;
@@ -460,7 +462,7 @@ static void CurveProfile_buttons_layout(Layout &layout, PointerRNA *ptr, const R
     const float axis_min[2] = {slider_bounds.xmin, slider_bounds.ymin};
     const float axis_max[2] = {slider_bounds.xmax, slider_bounds.ymax};
     for (int axis = 0; axis < 2; axis++) {
-      bt = uiDefButV(block,
+      bt = uiDefButF(block,
                      ButtonType::Num,
                      axis_labels[axis],
                      0,

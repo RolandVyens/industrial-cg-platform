@@ -53,10 +53,12 @@ struct BrightContrastApplyOp {
   }
 };
 
-static void brightcontrast_apply(ModifierApplyContext &context, StripModifierData *smd)
+static void brightcontrast_apply(ModifierApplyContext &context,
+                                 StripModifierData *smd,
+                                 int timeline_frame)
 {
   ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
-  ImBuf *mask = modifier_render_mask_input(context, *smd);
+  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
 
   const BrightContrastModifierData *bcmd = reinterpret_cast<BrightContrastModifierData *>(smd);
 

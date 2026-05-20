@@ -29,7 +29,7 @@ class Context(_StructRNA):
         :param coerce: optional argument, when True, the property will be converted into its Python representation.
         :type coerce: bool
         :return: Property value or property object.
-        :rtype: Any | :class:`bpy_prop`
+        :rtype: Any | :class:`bpy.types.bpy_prop`
         """
         # This is a convenience wrapper around `_StructRNA.path_resolve` which doesn't support accessing
         # context members. Without this wrapper many users were writing `exec("context.{:s}".format(data_path))`
@@ -124,7 +124,7 @@ class Library(_types.ID):
         """
         ID data-blocks that use this library
 
-        :type: tuple[:class:`ID`, ...]
+        :type: tuple[:class:`bpy.types.ID`, ...]
 
         .. note::
 
@@ -317,7 +317,7 @@ class Object(_types.ID):
         objects that contain geometry data like meshes and curves but not e.g. cameras.
 
         :return: The evaluated geometry.
-        :rtype: :class:`GeometrySet`
+        :rtype: :class:`bpy.types.GeometrySet`
         """
         from bpy.types import GeometrySet
         return GeometrySet.from_evaluated_object(self)
@@ -331,16 +331,6 @@ class WindowManager(_types.ID):
             title="",
             icon='NONE',
     ):
-        """
-        Display a popup menu populated by *draw_func*.
-
-        :param draw_func: Function to populate the menu layout.
-        :type draw_func: Callable[[:class:`UIPopupMenu`, :class:`Context`], None]
-        :param title: Title shown above the menu.
-        :type title: str
-        :param icon: Icon shown next to the title.
-        :type icon: str
-        """
         import bpy
         popup = self.popmenu_begin__internal(title, icon=icon)
 
@@ -355,18 +345,6 @@ class WindowManager(_types.ID):
             keymap=None,
             from_active_button=False,
     ):
-        """
-        Display a popover populated by *draw_func*.
-
-        :param draw_func: Function to populate the popover layout.
-        :type draw_func: Callable[[:class:`UIPopover`, :class:`Context`], None]
-        :param ui_units_x: Width of the popover in UI units (0 for the default).
-        :type ui_units_x: int
-        :param keymap: Optional keymap to attach to the popover.
-        :type keymap: :class:`KeyMap` | None
-        :param from_active_button: Anchor the popover to the active button.
-        :type from_active_button: bool
-        """
         import bpy
         popup = self.popover_begin__internal(
             ui_units_x=ui_units_x,
@@ -383,18 +361,6 @@ class WindowManager(_types.ID):
             title="",
             icon='NONE',
     ):
-        """
-        Display a pie menu populated by *draw_func* at the location of *event*.
-
-        :param event: Event used to position the pie menu.
-        :type event: :class:`Event`
-        :param draw_func: Function to populate the pie menu layout.
-        :type draw_func: Callable[[:class:`UIPieMenu`, :class:`Context`], None]
-        :param title: Title shown at the center of the pie.
-        :type title: str
-        :param icon: Icon shown next to the title.
-        :type icon: str
-        """
         import bpy
         pie = self.piemenu_begin__internal(title, icon=icon, event=event)
 
@@ -412,10 +378,6 @@ class WorkSpace(_types.ID):
         """
         Set the status text or None to clear,
         When text is a function, this will be called with the (header, context) arguments.
-
-        :param text: Status text to display, ``None`` to clear, or a callable
-           to install as the status bar's draw function.
-        :type text: str | None | Callable[[:class:`Header`, :class:`Context`], None]
         """
         from bl_ui.space_statusbar import STATUSBAR_HT_header
         draw_fn = getattr(STATUSBAR_HT_header, "_draw_orig", None)
@@ -440,9 +402,6 @@ class _GenericBone:
     def translate(self, vec):
         """
         Utility function to add *vec* to the head and tail of this bone.
-
-        :param vec: Translation vector.
-        :type vec: :class:`mathutils.Vector`
         """
         self.head += vec
         self.tail += vec
@@ -451,11 +410,6 @@ class _GenericBone:
         """
         The same as 'bone in other_bone.parent_recursive'
         but saved generating a list.
-
-        :param parent_test: Bone to search for among this bone's ancestors.
-        :type parent_test: Self
-        :return: 1-based depth of *parent_test* in the parent chain, or 0 if not found.
-        :rtype: int
         """
         # use the name so different types can be tested.
         name = parent_test.name
@@ -635,9 +589,6 @@ class EditBone(_StructRNA, _GenericBone, metaclass=_StructMetaPropGroup):
         """
         Align this bone to another by moving its tail and settings its roll
         the length of the other bone is not used.
-
-        :param other: Bone to copy orientation from.
-        :type other: Self
         """
         vec = other.vector.normalized() * self.length
         self.tail = self.head + vec
@@ -755,8 +706,6 @@ class Mesh(_types.ID):
            the *vertices* argument. eg: [(5, 6, 8, 9), (1, 2, 3), ...]
 
         :type faces: Iterable[Sequence[int]]
-        :param shade_flat: When true, mark new faces as flat-shaded.
-        :type shade_flat: bool
 
         .. warning::
 
@@ -814,12 +763,6 @@ class Mesh(_types.ID):
         return _name_convention_attribute_get(self.attributes, "crease_vert", 'POINT', 'FLOAT')
 
     def vertex_creases_ensure(self):
-        """
-        Ensure the "crease_vert" attribute exists, creating it if needed.
-
-        :return: The vertex crease attribute.
-        :rtype: :class:`FloatAttribute`
-        """
         return _name_convention_attribute_ensure(self.attributes, "crease_vert", 'POINT', 'FLOAT')
 
     def vertex_creases_remove(self):
@@ -833,12 +776,6 @@ class Mesh(_types.ID):
         return _name_convention_attribute_get(self.attributes, "crease_edge", 'EDGE', 'FLOAT')
 
     def edge_creases_ensure(self):
-        """
-        Ensure the "crease_edge" attribute exists, creating it if needed.
-
-        :return: The edge crease attribute.
-        :rtype: :class:`FloatAttribute`
-        """
         return _name_convention_attribute_ensure(self.attributes, "crease_edge", 'EDGE', 'FLOAT')
 
     def edge_creases_remove(self):
@@ -852,12 +789,6 @@ class Mesh(_types.ID):
         return _name_convention_attribute_get(self.attributes, ".sculpt_mask", 'POINT', 'FLOAT')
 
     def vertex_paint_mask_ensure(self):
-        """
-        Ensure the ".sculpt_mask" attribute exists, creating it if needed.
-
-        :return: The vertex paint mask attribute.
-        :rtype: :class:`FloatAttribute`
-        """
         return _name_convention_attribute_ensure(self.attributes, ".sculpt_mask", 'POINT', 'FLOAT')
 
     def vertex_paint_mask_remove(self):
@@ -934,12 +865,6 @@ class Text(_types.ID):
     __slots__ = ()
 
     def as_module(self):
-        """
-        Compile and execute this text block as a Python module.
-
-        :return: A new module containing the text block's executed contents.
-        :rtype: ModuleType
-        """
         import bpy
         from os.path import splitext, join
         from types import ModuleType
@@ -1118,8 +1043,6 @@ class Operator(_StructRNA, metaclass=_RNAMeta):
 
     def as_keywords(self, *, ignore=()):
         """
-        :param ignore: Property names to omit from the result.
-        :type ignore: Iterable[str]
         :return: A copy of the properties as a dictionary.
         :rtype: dict[str, Any]
         """
@@ -1225,12 +1148,6 @@ class _GenericUI:
 
     @classmethod
     def is_extended(cls):
-        """
-        Test if any draw function has been added via :meth:`append` or :meth:`prepend`.
-
-        :return: True when at least one draw function has been added.
-        :rtype: bool
-        """
         draw_funcs = getattr(cls.draw, "_draw_funcs", None)
         if draw_funcs is None:
             return False
@@ -1243,9 +1160,6 @@ class _GenericUI:
         """
         Append a draw function to this menu,
         takes the same arguments as the menus draw function
-
-        :param draw_func: Draw function to append.
-        :type draw_func: Callable[[Self, :class:`Context`], None]
         """
         draw_funcs = cls._dyn_ui_initialize()
         cls._dyn_owner_apply(draw_func)
@@ -1256,9 +1170,6 @@ class _GenericUI:
         """
         Prepend a draw function to this menu, takes the same arguments as
         the menus draw function
-
-        :param draw_func: Draw function to prepend.
-        :type draw_func: Callable[[Self, :class:`Context`], None]
         """
         draw_funcs = cls._dyn_ui_initialize()
         cls._dyn_owner_apply(draw_func)
@@ -1268,9 +1179,6 @@ class _GenericUI:
     def remove(cls, draw_func):
         """
         Remove a draw function that has been added to this menu.
-
-        :param draw_func: Draw function previously registered via :meth:`append` or :meth:`prepend`.
-        :type draw_func: Callable[[Self, :class:`Context`], None]
         """
         draw_funcs = cls._dyn_ui_initialize()
         try:
@@ -1323,18 +1231,8 @@ class Menu(_StructRNA, _GenericUI, metaclass=_RNAMeta):
            Returning false excludes the file from the list.
 
         :type filter_ext: Callable[[str], bool] | None
-        :param filter_path: Optional callback that takes the file name, returns false to exclude it.
-        :type filter_path: Callable[[str], bool] | None
         :param display_name: Optional callback that takes the full path, returns the name to display.
         :type display_name: Callable[[str], str] | None
-        :param add_operator: Optional operator id used to add or remove entries.
-        :type add_operator: str | None
-        :param add_operator_props: Properties to assign to the add/remove operator.
-        :type add_operator_props: dict[str, Any] | None
-        :param translate: Translate the displayed names.
-        :type translate: bool
-        :param recursive_paths: Add submenus for sub-directories instead of listing their contents.
-        :type recursive_paths: bool
         """
 
         import os
@@ -1431,7 +1329,7 @@ class Menu(_StructRNA, _GenericUI, metaclass=_RNAMeta):
                 for attr, value in add_operator_props.items():
                     setattr(props, attr, value)
 
-    def draw_preset(self, context):
+    def draw_preset(self, _context):
         """
         Define these on the subclass:
         - preset_operator (string)
@@ -1441,11 +1339,7 @@ class Menu(_StructRNA, _GenericUI, metaclass=_RNAMeta):
         - preset_add_operator (string)
         - preset_extensions (set of strings)
         - preset_operator_defaults (dict of keyword args)
-
-        :param context: The context.
-        :type context: :class:`Context`
         """
-        del context
         import bpy
         ext_valid = getattr(self, "preset_extensions", {".py", ".xml"})
         props_default = getattr(self, "preset_operator_defaults", None)
@@ -1463,15 +1357,6 @@ class Menu(_StructRNA, _GenericUI, metaclass=_RNAMeta):
 
     @classmethod
     def draw_collapsible(cls, context, layout):
-        """
-        Draw the menu inline when the header shows menus, otherwise draw it
-        as a collapsed icon. Intended for use within header draw functions.
-
-        :param context: The context.
-        :type context: :class:`Context`
-        :param layout: The layout to draw into.
-        :type layout: :class:`UILayout`
-        """
         # helper function for (optionally) collapsed header menus
         # only usable within headers
         if context.area.show_menus:
@@ -1497,17 +1382,7 @@ class Node(_StructRNA, metaclass=_RNAMetaPropGroup):
     __slots__ = ()
 
     @classmethod
-    def poll(cls, ntree):
-        """
-        Test if this node type can be added to *ntree*. Override on subclasses
-        to restrict the node to compatible node trees.
-
-        :param ntree: Candidate node tree.
-        :type ntree: :class:`NodeTree`
-        :return: True when the node can be added to *ntree*.
-        :rtype: bool
-        """
-        del ntree
+    def poll(cls, _ntree):
         return True
 
 
@@ -1554,12 +1429,6 @@ class CompositorNode(NodeInternal):
 
     @classmethod
     def poll(cls, ntree):
-        """
-        :param ntree: Candidate node tree.
-        :type ntree: :class:`NodeTree`
-        :return: True when *ntree* is a compositor node tree.
-        :rtype: bool
-        """
         return ntree.bl_idname == 'CompositorNodeTree'
 
 
@@ -1568,12 +1437,6 @@ class ShaderNode(NodeInternal):
 
     @classmethod
     def poll(cls, ntree):
-        """
-        :param ntree: Candidate node tree.
-        :type ntree: :class:`NodeTree`
-        :return: True when *ntree* is a shader node tree.
-        :rtype: bool
-        """
         return ntree.bl_idname == 'ShaderNodeTree'
 
 
@@ -1582,12 +1445,6 @@ class TextureNode(NodeInternal):
 
     @classmethod
     def poll(cls, ntree):
-        """
-        :param ntree: Candidate node tree.
-        :type ntree: :class:`NodeTree`
-        :return: True when *ntree* is a texture node tree.
-        :rtype: bool
-        """
         return ntree.bl_idname == 'TextureNodeTree'
 
 
@@ -1596,12 +1453,6 @@ class GeometryNode(NodeInternal):
 
     @classmethod
     def poll(cls, ntree):
-        """
-        :param ntree: Candidate node tree.
-        :type ntree: :class:`NodeTree`
-        :return: True when *ntree* is a geometry node tree.
-        :rtype: bool
-        """
         return ntree.bl_idname == 'GeometryNodeTree'
 
 
@@ -1625,25 +1476,14 @@ class HydraRenderEngine(RenderEngine):
                 import _bpy_hydra
                 _bpy_hydra.engine_free(self.engine_ptr)
 
-    def get_render_settings(self, engine_type):
+    def get_render_settings(self, engine_type: str):
         """
         Provide render settings for ``HdRenderDelegate``.
-
-        :param engine_type: Render mode.
-        :type engine_type: Literal['PREVIEW', 'FINAL', 'VIEWPORT']
-        :return: Mapping of render-delegate setting name to value.
-        :rtype: dict[str, Any]
         """
         return {}
 
     # Final render.
     def update(self, data, depsgraph):
-        """
-        :param data: Blend file data.
-        :type data: :class:`BlendData`
-        :param depsgraph: Evaluated dependency graph.
-        :type depsgraph: :class:`Depsgraph`
-        """
         import _bpy_hydra
 
         engine_type = 'PREVIEW' if self.is_preview else 'FINAL'
@@ -1658,10 +1498,6 @@ class HydraRenderEngine(RenderEngine):
             _bpy_hydra.engine_set_render_setting(self.engine_ptr, key, val)
 
     def render(self, depsgraph):
-        """
-        :param depsgraph: Evaluated dependency graph.
-        :type depsgraph: :class:`Depsgraph`
-        """
         if not self.engine_ptr:
             return
 
@@ -1670,12 +1506,6 @@ class HydraRenderEngine(RenderEngine):
 
     # Viewport render.
     def view_update(self, context, depsgraph):
-        """
-        :param context: The context.
-        :type context: :class:`Context`
-        :param depsgraph: Evaluated dependency graph.
-        :type depsgraph: :class:`Depsgraph`
-        """
         import _bpy_hydra
         if not self.engine_ptr:
             self.engine_ptr = _bpy_hydra.engine_create(self, 'VIEWPORT', self.bl_delegate_id)
@@ -1688,12 +1518,6 @@ class HydraRenderEngine(RenderEngine):
             _bpy_hydra.engine_set_render_setting(self.engine_ptr, key, val)
 
     def view_draw(self, context, depsgraph):
-        """
-        :param context: The context.
-        :type context: :class:`Context`
-        :param depsgraph: Evaluated dependency graph.
-        :type depsgraph: :class:`Depsgraph`
-        """
         if not self.engine_ptr:
             return
 
@@ -1734,7 +1558,7 @@ class Material(_types.ID):
         to remove nested groups, repeat zones and more.
 
         :return: The inlined shader nodes.
-        :rtype: :class:`InlineShaderNodes`
+        :rtype: :class:`bpy.types.InlineShaderNodes`
         """
         from bpy.types import InlineShaderNodes
         return InlineShaderNodes.from_material(self)
@@ -1749,7 +1573,7 @@ class Light(_types.ID):
         to remove nested groups, repeat zones and more.
 
         :return: The inlined shader nodes.
-        :rtype: :class:`InlineShaderNodes`
+        :rtype: :class:`bpy.types.InlineShaderNodes`
         """
         from bpy.types import InlineShaderNodes
         return InlineShaderNodes.from_light(self)
@@ -1764,7 +1588,7 @@ class World(_types.ID):
         to remove nested groups, repeat zones and more.
 
         :return: The inlined shader nodes.
-        :rtype: :class:`InlineShaderNodes`
+        :rtype: :class:`bpy.types.InlineShaderNodes`
         """
         from bpy.types import InlineShaderNodes
         return InlineShaderNodes.from_world(self)

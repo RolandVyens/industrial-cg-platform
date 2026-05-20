@@ -93,6 +93,8 @@
 
 namespace blender {
 
+namespace geo_log = nodes::geo_eval_log;
+
 namespace ed::geometry {
 
 using asset_system::AssetRepresentation;
@@ -100,9 +102,8 @@ using asset_system::AssetRepresentation;
 struct ErrorsForType {
   int duplicate_count = 0;
   bool is_builtin_operator = false;
-  bool invalid_metadata = false;
   Vector<std::string> idname_validation_errors;
-  Vector<std::string> invalid_input_metadata_errors;
+  Vector<std::string> invalid_metadata_errors;
 
   friend bool operator==(const ErrorsForType &a, const ErrorsForType &b) = default;
 };
@@ -127,7 +128,6 @@ struct OperatorTypeData : public wmOperatorType::TypeData {
 
   std::unique_ptr<IDProperty, bke::idprop::IDPropertyDeleter> asset_meta_data_properties;
   Vector<StructRNA *> generated_structs;
-  Vector<Array<EnumPropertyItem, 0>> enum_item_storage;
 
   struct LocalRef {
     uint32_t session_uid;
@@ -243,8 +243,6 @@ std::optional<OperatorTypeData> OperatorTypeData::from_asset(
   const IDProperty *traits_flag = BKE_asset_metadata_idprop_find(
       &metadata, "geometry_node_asset_traits_flag");
   if (!traits_flag || traits_flag->type != IDP_INT) {
-    ErrorsForType &errors_for_type = errors.lookup_or_add_default_as(*custom_idname);
-    errors_for_type.invalid_metadata = true;
     return std::nullopt;
   }
   type_data.flag = GeometryNodeAssetTraitFlag(IDP_int_get(traits_flag));
@@ -252,14 +250,10 @@ std::optional<OperatorTypeData> OperatorTypeData::from_asset(
 
   const IDProperty *properties = BKE_asset_metadata_idprop_find(&metadata, "properties");
   if (!properties || properties->type != IDP_GROUP) {
-    ErrorsForType &errors_for_type = errors.lookup_or_add_default_as(*custom_idname);
-    errors_for_type.invalid_metadata = true;
     return std::nullopt;
   }
   const IDProperty *inputs = IDP_GetPropertyFromGroup(properties, "inputs");
   if (!inputs || inputs->type != IDP_GROUP) {
-    ErrorsForType &errors_for_type = errors.lookup_or_add_default_as(*custom_idname);
-    errors_for_type.invalid_metadata = true;
     return std::nullopt;
   }
   for (const IDProperty &input_prop : inputs->data.group) {
@@ -267,7 +261,7 @@ std::optional<OperatorTypeData> OperatorTypeData::from_asset(
         !IDP_GetPropertyTypeFromGroup(&input_prop, "type", IDP_INT))
     {
       ErrorsForType &errors_for_type = errors.lookup_or_add_default_as(*custom_idname);
-      errors_for_type.invalid_input_metadata_errors.append(input_prop.name);
+      errors_for_type.invalid_metadata_errors.append(input_prop.name);
       return std::nullopt;
     }
   }
@@ -412,8 +406,8 @@ static void find_verbose_log_contexts(const Main &bmain,
         }
         bke::ComputeContextCache compute_context_cache;
         const Map<const bke::bNodeTreeZone *, ComputeContextHash> hash_by_zone =
-            nodes::eval_log::NodesEvalLog::get_context_hash_by_zone_for_node_editor(
-                snode, compute_context_cache);
+            geo_log::GeoNodesLog::get_context_hash_by_zone_for_node_editor(snode,
+                                                                           compute_context_cache);
         for (const ComputeContextHash &hash : hash_by_zone.values()) {
           r_verbose_log_contexts.add(hash);
         }
@@ -728,10 +722,7 @@ static void store_result_geometry(const bContext &C,
       if (inserted_new_keyframe) {
         WM_event_add_notifier(&C, NC_GPENCIL | NA_EDITED, nullptr);
       }
-      break;
     }
-    default:
-      break;
   }
 }
 
@@ -951,7 +942,7 @@ static wmOperatorStatus run_node_group_exec(bContext *C, wmOperator *op)
   bke::OperatorComputeContext compute_context;
   Set<ComputeContextHash> verbose_log_contexts;
   GeoOperatorLog &eval_log = get_static_eval_log();
-  eval_log.log = std::make_unique<nodes::eval_log::NodesEvalLog>();
+  eval_log.log = std::make_unique<geo_log::GeoNodesLog>();
   eval_log.node_group_name = node_tree->id.name + 2;
   find_verbose_log_contexts(*bmain, verbose_log_contexts);
 
@@ -996,9 +987,9 @@ static wmOperatorStatus run_node_group_exec(bContext *C, wmOperator *op)
     WM_event_add_notifier(C, NC_GEOM | ND_DATA, object->data);
   }
 
-  nodes::eval_log::NodeTreeLog &tree_log = eval_log.log->get_tree_log(compute_context.hash());
+  geo_log::GeoTreeLog &tree_log = eval_log.log->get_tree_log(compute_context.hash());
   tree_log.ensure_node_warnings(*bmain);
-  for (const nodes::eval_log::NodeWarning &warning : tree_log.all_warnings) {
+  for (const geo_log::NodeWarning &warning : tree_log.all_warnings) {
     if (warning.type == nodes::NodeWarningType::Info) {
       BKE_report(op->reports, RPT_INFO, warning.message.c_str());
     }
@@ -1081,9 +1072,9 @@ static void run_node_group_ui(bContext *C, wmOperator *op)
   bke::OperatorComputeContext compute_context;
   GeoOperatorLog &eval_log = get_static_eval_log();
 
-  nodes::eval_log::NodeTreeLog *tree_log = eval_log.log ? &eval_log.log->get_tree_log(
-                                                              compute_context.hash()) :
-                                                          nullptr;
+  geo_log::GeoTreeLog *tree_log = eval_log.log ?
+                                      &eval_log.log->get_tree_log(compute_context.hash()) :
+                                      nullptr;
   nodes::draw_geometry_nodes_operator_redo_ui(
       *C, *op, const_cast<bNodeTree &>(*node_tree), tree_log);
 }
@@ -1116,31 +1107,35 @@ static bool run_node_group_poll(bContext *C, wmOperatorType *ot)
   return true;
 }
 
-static Array<EnumPropertyItem, 0> get_input_enum_items(const IDProperty &input_idprop)
+static const EnumPropertyItem *enum_input_items_fn(bContext * /*C*/,
+                                                   PointerRNA *ptr,
+                                                   PropertyRNA *prop,
+                                                   bool *r_free)
 {
+  const wmOperator *op = ptr->data_as<wmOperator>();
+  const OperatorTypeData &type_data = *static_cast<const OperatorTypeData *>(op->customdata);
+  const IDProperty &inputs_props = *IDP_GetPropertyFromGroup(
+      type_data.asset_meta_data_properties.get(), "inputs");
+  const IDProperty &input_idprop = *IDP_GetPropertyFromGroup(&inputs_props,
+                                                             RNA_property_identifier(prop));
+
   const IDProperty *items_idprop = IDP_GetPropertyFromGroup(&input_idprop, "items");
   if (!items_idprop || items_idprop->type != IDP_GROUP) {
-    return {rna_enum_dummy_NULL_items[0]};
+    return rna_enum_dummy_NULL_items;
   }
 
-  if (!items_idprop->data.children_map || items_idprop->data.children_map->children.is_empty()) {
-    return {rna_enum_dummy_NULL_items[0]};
+  int totitem = 0;
+  EnumPropertyItem *items = nullptr;
+  for (IDProperty &item_idprop : items_idprop->data.group) {
+    EnumPropertyItem item;
+    item.identifier = item_idprop.name;
+    item.name = IDP_group_lookup_string(item_idprop, "name").value_or("").c_str();
+    item.description = IDP_group_lookup_string(item_idprop, "description").value_or("").c_str();
+    item.value = std::stoi(item_idprop.name);
+    RNA_enum_item_add(&items, &totitem, &item);
   }
 
-  const int items_num = items_idprop->data.children_map->children.size();
-  Array<EnumPropertyItem, 0> items(items_num + 1);
-  for (const auto [i, item_idprop] : items_idprop->data.group.enumerate()) {
-    items[i] = EnumPropertyItem{
-        .value = IDP_group_lookup_int(item_idprop, "value").value_or(0),
-        .identifier = item_idprop.name,
-        .icon = ICON_NONE,
-        .name = item_idprop.name,
-        .description = IDP_group_lookup_string(item_idprop, "description").value_or("").c_str(),
-    };
-  }
-
-  items.last() = {0, nullptr, 0, nullptr, nullptr};
-
+  *r_free = true;
   return items;
 }
 
@@ -1185,8 +1180,9 @@ static void make_common_value_props(StructRNA &srna)
 }
 
 static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
-                                              OperatorTypeData &type_data)
+                                              Vector<StructRNA *> &r_generated)
 {
+
   const StringRefNull identifier = input_idprop.name;
   const std::optional<int> type = IDP_group_lookup_int(input_idprop, "type");
   if (!type) {
@@ -1195,7 +1191,7 @@ static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
   StructRNA *srna = RNA_def_struct_ptr(
       &RNA_blender_rna_get(), identifier.c_str(), RNA_PropertyGroup);
   BLI_assert(!RNA_struct_in_public_namespace(srna));
-  type_data.generated_structs.append(srna);
+  r_generated.append(srna);
   // RNA_def_struct_path_func_runtime(srna, rna_NodesModifierPropertyInput_path);
   const StringRefNull name = IDP_group_lookup_string(input_idprop, "name").value_or(identifier);
   const StringRefNull description =
@@ -1288,15 +1284,13 @@ static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
       break;
     }
     case SOCK_STRING: {
-      const StringRefNull default_value =
-          IDP_group_lookup_string(input_idprop, "default_value").value_or("");
-      PropertyRNA *prop = RNA_def_string(srna,
-                                         "value",
-                                         default_value.is_empty() ? nullptr :
-                                                                    default_value.c_str(),
-                                         0,
-                                         name.c_str(),
-                                         description.c_str());
+      PropertyRNA *prop = RNA_def_string(
+          srna,
+          "value",
+          IDP_group_lookup_string(input_idprop, "default_value").value_or("").c_str(),
+          0,
+          name.c_str(),
+          description.c_str());
       RNA_def_property_subtype(
           prop,
           PropertySubType(IDP_group_lookup_int(input_idprop, "subtype").value_or(PROP_NONE)));
@@ -1306,7 +1300,6 @@ static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
     case SOCK_IMAGE:
     case SOCK_COLLECTION:
     case SOCK_MATERIAL:
-    case SOCK_FONT:
     case SOCK_OBJECT: {
       RNA_def_string(srna, "value", nullptr, 0, name.c_str(), description.c_str());
       make_common_value_props(*srna);
@@ -1329,21 +1322,9 @@ static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
       break;
     }
     case SOCK_MENU: {
-      type_data.enum_item_storage.append_as(get_input_enum_items(input_idprop));
-      int default_value = IDP_group_lookup_int(input_idprop, "default_value").value_or(0);
-      if (std::ranges::none_of(
-              type_data.enum_item_storage.last(),
-              [&](const EnumPropertyItem &item) { return item.value == default_value; }))
-      {
-        /* Default value must be used by one of the enum items. */
-        default_value = 0;
-      }
-      RNA_def_enum(srna,
-                   "value",
-                   type_data.enum_item_storage.last().data(),
-                   IDP_group_lookup_int(input_idprop, "default_value").value_or(0),
-                   name.c_str(),
-                   description.c_str());
+      PropertyRNA *prop = RNA_def_enum(
+          srna, "value", rna_enum_dummy_NULL_items, 0, name.c_str(), description.c_str());
+      RNA_def_enum_funcs(prop, enum_input_items_fn);
       make_common_value_props(*srna);
       break;
     }
@@ -1354,12 +1335,13 @@ static StructRNA *get_input_socket_struct_rna(IDProperty &input_idprop,
   return srna;
 }
 
-static StructRNA *create_inputs_srna(const IDProperty &properties, OperatorTypeData &type_data)
+static StructRNA *create_inputs_srna(const IDProperty &properties,
+                                     Vector<StructRNA *> &r_generated)
 {
   StructRNA *srna = RNA_def_struct_ptr(
       &RNA_blender_rna_get(), "GeometryNodesInterfaceInputs", RNA_PropertyGroup);
   BLI_assert(!RNA_struct_in_public_namespace(srna));
-  type_data.generated_structs.append(srna);
+  r_generated.append(srna);
 
   const IDProperty &inputs_props = *IDP_GetPropertyFromGroup(&properties, "inputs");
 
@@ -1367,7 +1349,7 @@ static StructRNA *create_inputs_srna(const IDProperty &properties, OperatorTypeD
     if (input_idprop.type != IDP_GROUP) {
       continue;
     }
-    StructRNA *input_srna = get_input_socket_struct_rna(input_idprop, type_data);
+    StructRNA *input_srna = get_input_socket_struct_rna(input_idprop, r_generated);
     if (!input_srna) {
       continue;
     }
@@ -1420,7 +1402,8 @@ static void register_node_tool(wmOperatorType *ot,
     ot->flag |= OPTYPE_DEPENDS_ON_CURSOR;
   }
 
-  StructRNA *inputs_srna = create_inputs_srna(*type_data.asset_meta_data_properties, type_data);
+  StructRNA *inputs_srna = create_inputs_srna(*type_data.asset_meta_data_properties,
+                                              type_data.generated_structs);
   RNA_def_pointer_runtime(ot->srna, "inputs", inputs_srna, "Inputs", "Settings for input sockets");
   if (StructRNA *panels_srna = create_panels_srna(*type_data.asset_meta_data_properties,
                                                   type_data.generated_structs))
@@ -1659,13 +1642,6 @@ void register_node_group_operators(const bContext &C)
                     item.key.c_str(),
                     item.value.duplicate_count);
       }
-      if (item.value.invalid_metadata) {
-        BKE_reportf(
-            reports,
-            RPT_ERROR,
-            "Node tool \"%s\" asset has invalid metadata. Asset meta-data may be out of date",
-            item.key.c_str());
-      }
       for (const std::string &error : item.value.idname_validation_errors) {
         BKE_reportf(reports,
                     RPT_ERROR,
@@ -1673,7 +1649,7 @@ void register_node_group_operators(const bContext &C)
                     item.key.c_str(),
                     error.c_str());
       }
-      for (const std::string &error : item.value.invalid_input_metadata_errors) {
+      for (const std::string &error : item.value.invalid_metadata_errors) {
         BKE_reportf(reports,
                     RPT_ERROR,
                     "Error registering node tool \"%s\". Invalid metadata for input \"%s\". "

@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-12-02 20:06+0000\n"
 "Last-Translator: Bastitron <bastitronhd@gmail.com>\n"
 "Language-Team: German <https://translate.blender.org/projects/blender-ui/ui/de/>\n"
@@ -4162,6 +4162,10 @@ msgstr "Anzeigen von Hilfelinien für die Strichverlängerung"
 
 msgid "Show Lasso"
 msgstr "Lasso anzeigen"
+
+
+msgid "Do not display fill color while drawing the stroke"
+msgstr "Füllfarbe beim Zeichnen des Strichs nicht anzeigen"
 
 
 msgid "Factor of Simplify using adaptive algorithm"
@@ -11475,6 +11479,10 @@ msgid "Auto-Smooth"
 msgstr "Automatisches Weichzeichnen"
 
 
+msgid "Propagation Steps"
+msgstr "Propagationsschritte"
+
+
 msgid "Brush blending mode"
 msgstr "Pinsel-Überblendungsmodus"
 
@@ -18687,6 +18695,14 @@ msgid "Material slot name"
 msgstr "Materialsteckplatzname"
 
 
+msgid "Math"
+msgstr "Mathematisch"
+
+
+msgid "Mirror"
+msgstr "Spiegeln"
+
+
 msgid "Snap"
 msgstr "Einrasten"
 
@@ -18723,32 +18739,12 @@ msgid "Select Similar"
 msgstr "Ähnliche auswählen"
 
 
-msgid "Select All by Trait"
-msgstr "Alles nach Merkmal auswählen"
-
-
-msgid "Select Linked"
-msgstr "Verknüpfte auswählen"
-
-
-msgid "Select Loops"
-msgstr "Schleifen auswählen"
-
-
-msgid "Math"
-msgstr "Mathematisch"
-
-
-msgid "Assign Material"
-msgstr "Material zuweisen"
-
-
-msgid "Metaball"
-msgstr "Metaball"
-
-
 msgid "Read"
 msgstr "Lesen"
+
+
+msgid "Select All by Trait"
+msgstr "Alles nach Merkmal auswählen"
 
 
 msgid "Sample"
@@ -18759,16 +18755,40 @@ msgid "Write"
 msgstr "Schreiben"
 
 
+msgid "Select Linked"
+msgstr "Verknüpfte auswählen"
+
+
+msgid "Select Loops"
+msgstr "Schleifen auswählen"
+
+
+msgid "Primitives"
+msgstr "Grundkörper"
+
+
+msgid "Assign Material"
+msgstr "Material zuweisen"
+
+
+msgid "Instances"
+msgstr "Instanzen"
+
+
+msgid "Metaball"
+msgstr "Metaball"
+
+
+msgid "Import"
+msgstr "Importieren"
+
+
 msgid "Light"
 msgstr "Licht"
 
 
 msgid "Light Probe"
 msgstr "Lichtsonde"
-
-
-msgid "Primitives"
-msgstr "Grundkörper"
 
 
 msgid "Add Image"
@@ -18783,12 +18803,12 @@ msgid "Rigid Body"
 msgstr "Rigid Body"
 
 
+msgid "UV"
+msgstr "UV"
+
+
 msgid "Apply"
 msgstr "Anwenden"
-
-
-msgid "Instances"
-msgstr "Instanzen"
 
 
 msgid "Track"
@@ -18805,10 +18825,6 @@ msgstr "Zeigen/Verbergen"
 
 msgid "Clean Up"
 msgstr "Aufräumen"
-
-
-msgid "Import"
-msgstr "Importieren"
 
 
 msgid "Asset"
@@ -18829,10 +18845,6 @@ msgstr "Haken"
 
 msgid "Vertex Group Locks"
 msgstr "Punktgruppen sperren"
-
-
-msgid "UV"
-msgstr "UV"
 
 
 msgid "Random Mask"
@@ -18875,16 +18887,16 @@ msgid "Merge"
 msgstr "Zusammenführen"
 
 
+msgid "Layout"
+msgstr "Layout"
+
+
 msgid "Special Characters"
 msgstr "Sonderzeichen"
 
 
 msgid "Kerning"
 msgstr "Kerning"
-
-
-msgid "Layout"
-msgstr "Layout"
 
 
 msgid "Keying"
@@ -18905,10 +18917,6 @@ msgstr "Proportionaler Bearbeitungsabfall"
 
 msgid "Mask Edit"
 msgstr "Maskenbearbeitung"
-
-
-msgid "Mirror"
-msgstr "Spiegeln"
 
 
 msgid "Assets"
@@ -19194,10 +19202,6 @@ msgstr "Über"
 
 msgid "Quick Setup"
 msgstr "Schnelleinrichtung"
-
-
-msgid "Propagation Steps"
-msgstr "Propagationsschritte"
 
 
 msgid "Mesh Edge"
@@ -24832,6 +24836,11 @@ msgid "Load a SVG file"
 msgstr "Laden einer SVG-Datei"
 
 
+msgctxt "Operator"
+msgid "Import SVG"
+msgstr "SVG importieren"
+
+
 msgid "Load a FBX file"
 msgstr "Lade eine FBX Datei"
 
@@ -25586,16 +25595,16 @@ msgid "Flip times of selected keyframes using the current frame as the mirror li
 msgstr "Basierend auf der aktuellen Einzelbildseite auswählen, auf der sich der Cursor befindet"
 
 
-msgid "By Times Over First Selected Marker"
-msgstr "Durch Zeiten über den zuerst ausgewählten Marker"
-
-
 msgid "By Values Over Zero Value"
 msgstr "Durch Werte über dem Nullwert"
 
 
 msgid "Flip values of selected keyframes (i.e. negative values become positive, and vice versa)"
 msgstr "Basierend auf der aktuellen Einzelbildseite auswählen, auf der sich der Cursor befindet"
+
+
+msgid "By Times Over First Selected Marker"
+msgstr "Durch Zeiten über den zuerst ausgewählten Marker"
 
 
 msgctxt "Operator"
@@ -35252,6 +35261,11 @@ msgstr "Einrasten"
 
 
 msgctxt "Operator"
+msgid "Area Options"
+msgstr "Bereichoptionen"
+
+
+msgctxt "Operator"
 msgid "Split Area"
 msgstr "Bereich aufteilen"
 
@@ -37013,6 +37027,10 @@ msgid "Copy Mirrored UV Coords"
 msgstr "Kopieren gespiegelter UV-Coords"
 
 
+msgid "Axis Direction"
+msgstr "Achsenrichtung"
+
+
 msgctxt "Operator"
 msgid "Cube Projection"
 msgstr "Würfel Projektion"
@@ -38749,6 +38767,38 @@ msgid "Active Palette Color"
 msgstr "Aktive Farbpalette"
 
 
+msgid "Shadow Settings"
+msgstr "Schatteneinstellungen"
+
+
+msgid "SSAO Settings"
+msgstr "SSAO Einstellungen"
+
+
+msgid "Cavity"
+msgstr "Hohlraum"
+
+
+msgid "Render Pass"
+msgstr "Renderdurchgänge"
+
+
+msgid "Compositor"
+msgstr "Setzer"
+
+
+msgid "Overlays"
+msgstr "Überlagerungen"
+
+
+msgid "Guides"
+msgstr "Hilfslinien"
+
+
+msgid "Motion Tracking"
+msgstr "Bewegungsverfolgung"
+
+
 msgid "Mesh Edit Mode"
 msgstr "Maschenbearbeitungsmodus"
 
@@ -38767,10 +38817,6 @@ msgstr "Transformationsausrichtung"
 
 msgid "Drawing Plane"
 msgstr "Malfläche"
-
-
-msgid "Guides"
-msgstr "Hilfslinien"
 
 
 msgid "Quad View"
@@ -38799,34 +38845,6 @@ msgstr "Aktives Werkzeug"
 
 msgid "View Lock"
 msgstr "Ansicht sperren"
-
-
-msgid "Shadow Settings"
-msgstr "Schatteneinstellungen"
-
-
-msgid "SSAO Settings"
-msgstr "SSAO Einstellungen"
-
-
-msgid "Cavity"
-msgstr "Hohlraum"
-
-
-msgid "Render Pass"
-msgstr "Renderdurchgänge"
-
-
-msgid "Compositor"
-msgstr "Setzer"
-
-
-msgid "Overlays"
-msgstr "Überlagerungen"
-
-
-msgid "Motion Tracking"
-msgstr "Bewegungsverfolgung"
 
 
 msgid "Chain Scaling"
@@ -41343,6 +41361,22 @@ msgstr "Metall"
 
 msgid "Device"
 msgstr "Gerät"
+
+
+msgid "Image Display Method"
+msgstr "Bild Anzeigemethode"
+
+
+msgid "Method used for displaying images on the screen"
+msgstr "Methode, die für die Anzeige auf dem Bildschirm verwendet wird"
+
+
+msgid "Automatically choose method based on GPU and image"
+msgstr "Automatische Auswahl der Methode basierend auf GPU und Bild"
+
+
+msgid "2D Texture"
+msgstr "2D-Textur"
 
 
 msgid "Legacy Compute Device Type"
@@ -48387,6 +48421,10 @@ msgid "Start Sample"
 msgstr "Startbeispiel"
 
 
+msgid "Multiplier"
+msgstr "Multiplizierer"
+
+
 msgid "Direct Light"
 msgstr "Direkte Beleuchtung"
 
@@ -48461,10 +48499,6 @@ msgstr "Kamera herausnehmen"
 
 msgid "Min Samples"
 msgstr "Minimale Beispiele"
-
-
-msgid "Multiplier"
-msgstr "Multiplizierer"
 
 
 msgid "Curve Subdivisions"
@@ -53994,6 +54028,10 @@ msgid "Non-Keyboard Shortcut"
 msgstr "Kein Tastaturkürzel"
 
 
+msgid "Pin"
+msgstr "Anheften"
+
+
 msgid "Shift Left Mouse"
 msgstr "Umschalt Linke Maustaste"
 
@@ -54424,6 +54462,10 @@ msgstr "Durchsuche Pufferdateien zum Verknüpfen"
 
 msgid "Browse Workspace to be linked"
 msgstr "Durchsuche Arbeitsbereich zum Verknüpfen"
+
+
+msgid "Browse LightProbe to be linked"
+msgstr "Durchsuche Lichtsonden zum Verknüpfen"
 
 
 msgid "Browse Point Cloud Data to be linked"

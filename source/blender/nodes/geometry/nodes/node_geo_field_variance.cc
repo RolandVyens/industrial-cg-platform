@@ -247,14 +247,19 @@ class FieldVarianceInput final : public bke::GeometryFieldInput {
     fn(group_index_);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(deep_hash_cache.ensure(input_));
-    hash.add(deep_hash_cache.ensure(group_index_));
-    hash.add(source_domain_);
-    hash.add(operation_);
+    return get_default_hash(input_, group_index_, source_domain_, operation_);
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    if (const FieldVarianceInput *other_field = dynamic_cast<const FieldVarianceInput *>(&other)) {
+      return input_ == other_field->input_ && group_index_ == other_field->group_index_ &&
+             source_domain_ == other_field->source_domain_ &&
+             operation_ == other_field->operation_;
+    }
+    return false;
   }
 
   std::optional<AttrDomain> preferred_domain(

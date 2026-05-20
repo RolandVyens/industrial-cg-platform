@@ -201,12 +201,18 @@ class TangentFieldInput final : public bke::MeshFieldInput {
     fn(uv_field_);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
+  bool is_equal_to(const FieldInput &other) const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
-    hash.add(method_);
-    hash.add(deep_hash_cache.ensure(uv_field_));
+    if (const TangentFieldInput *other_endpoint = dynamic_cast<const TangentFieldInput *>(&other))
+    {
+      return method_ == other_endpoint->method_ && uv_field_ == other_endpoint->uv_field_;
+    }
+    return false;
+  }
+
+  uint64_t hash() const override
+  {
+    return get_default_hash(method_, uv_field_);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

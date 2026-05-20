@@ -36,11 +36,6 @@ struct TimeMarker;
 struct bAction;
 struct bActionGroup;
 
-enum eInsertKeyFlags : short;
-enum eKSP_Grouping : short;
-enum eKSP_Settings : short;
-enum eKS_Settings : short;
-
 /** Container for data required to do FCurve and Driver evaluation. */
 struct AnimationEvalContext {
   /* For drivers, so that they have access to the dependency graph and the current view layer. See
@@ -68,8 +63,8 @@ AnimationEvalContext BKE_animsys_eval_context_construct_at(
 struct KeyingSet *BKE_keyingset_add(ListBaseT<KeyingSet> *list,
                                     const char idname[],
                                     const char name[],
-                                    eKS_Settings flag,
-                                    eInsertKeyFlags keyingflag);
+                                    short flag,
+                                    short keyingflag);
 
 /**
  * Add a path to a KeyingSet. Nothing is returned for now.
@@ -80,8 +75,8 @@ struct KS_Path *BKE_keyingset_add_path(struct KeyingSet *ks,
                                        const char group_name[],
                                        const char rna_path[],
                                        int array_index,
-                                       eKSP_Settings flag,
-                                       eKSP_Grouping groupmode);
+                                       short flag,
+                                       short groupmode);
 
 /**
  * Find the destination matching the criteria given.
@@ -159,10 +154,10 @@ void BKE_action_fix_paths_rename(struct ID *owner_id,
 /**
  * Fix all the paths for the given ID+AnimData
  *
- * \param old_infix, new_infix: The path section immediately following the `prefix`. If
+ * \param old_infix,new_infix The path secion immediately following the `prefix`. If
  * `infix_is_name` is true, this is processed as a name..
  *
- * \param infix_is_name: If true, old_infix and new_infix are treated as names and padded with
+ * \param infix_is_name If true, old_infix and new_infix are treated as names and padded with
  * [""] so that only exact matches are made. For example, the structure we're replacing is
  * `<prefix><["><name><"]>` i.e. `pose.bones["Bone"]`.
  */
@@ -180,10 +175,10 @@ void BKE_animdata_fix_paths_rename(struct ID *owner_id,
 /**
  * Fix all RNA-Paths throughout the database (directly access the #Global.main version).
  *
- * \param old_infix, new_infix: The path section immediately following the `prefix`. If
+ * \param old_infix,new_infix The path secion immediately following the `prefix`. If
  * `infix_is_name` is true, this is processed as a name.
  *
- * \param infix_is_name: If true, old_infix and new_infix are treated as names and padded with
+ * \param infix_is_name If true, old_infix and new_infix are treated as names and padded with
  * [""] so that only exact matches are made. For example, the structure we're replacing is
  * `<prefix><["><name><"]>` i.e. `pose.bones["Bone"]`
  */

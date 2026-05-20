@@ -4,9 +4,11 @@
 
 #pragma once
 
-#include "BLI_string_ref.hh"
+#if defined(WITH_OPENCOLORIO)
 
-#include "../opencolorio.hh"
+#  include "BLI_string_ref.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -28,3 +30,5 @@ OCIO_NAMESPACE::ConstProcessorRcPtr create_ocio_processor_silent(
     StringRefNull to_colorspace);
 
 }  // namespace blender::ocio
+
+#endif

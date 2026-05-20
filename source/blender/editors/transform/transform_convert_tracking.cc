@@ -418,9 +418,9 @@ static void cancelTransTracking(TransInfo *t)
 
       BLI_assert(marker != nullptr);
 
-      marker->flag = TrackingMarkerFlag(tdt->flag);
+      marker->flag = tdt->flag;
 
-      if (track->flag & TRACK_SELECT) {
+      if (track->flag & SELECT) {
         i++;
       }
 
@@ -439,7 +439,7 @@ static void cancelTransTracking(TransInfo *t)
 
       BLI_assert(plane_marker != nullptr);
 
-      plane_marker->flag = TrackingPlaneMarkerFlag(tdt->flag);
+      plane_marker->flag = tdt->flag;
       i += 3;
     }
 
@@ -449,6 +449,7 @@ static void cancelTransTracking(TransInfo *t)
 
 static void flushTransTracking(TransInfo *t)
 {
+  TransData *td;
   TransData2D *td2d;
   TransDataTracking *tdt;
   int td_index;
@@ -461,10 +462,11 @@ static void flushTransTracking(TransInfo *t)
 
   /* Flush to 2d vector from internally used 3d vector. */
   for (td_index = 0,
+      td = tc->data,
       td2d = tc->data_2d,
       tdt = static_cast<TransDataTracking *>(tc->custom.type.data);
        td_index < tc->data_len;
-       td_index++, td2d++, tdt++)
+       td_index++, td2d++, td++, tdt++)
   {
     if (tdt->mode == transDataTracking_ModeTracks) {
       float loc2d[2];

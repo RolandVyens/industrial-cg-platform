@@ -344,13 +344,8 @@ SVMStackOffset SVMCompiler::input_link(const char *name)
 
 SVMStackOffset SVMCompiler::output(const char *name)
 {
-  ShaderOutput *shader_output = current_node->output(name);
-  return output(shader_output);
-}
-
-SVMStackOffset SVMCompiler::output(ShaderOutput *shader_output)
-{
-  return (!shader_output->links.empty()) ? stack_assign(shader_output) : SVM_STACK_INVALID;
+  ShaderOutput *output = current_node->output(name);
+  return (!output->links.empty()) ? stack_assign(output) : SVM_STACK_INVALID;
 }
 
 void SVMCompiler::stack_link(ShaderInput *input, ShaderOutput *output)

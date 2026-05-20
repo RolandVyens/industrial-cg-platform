@@ -26,7 +26,7 @@ namespace draw {
 struct CurvesBatchCache;
 }
 
-enum CurveType : int8_t {
+enum CurveType {
   /**
    * Catmull Rom curves provide automatic smoothness, like Bezier curves with automatic handle
    * positions. This is the default type for the hair system because of the simplicity of
@@ -59,7 +59,7 @@ enum CurveType : int8_t {
 /* The number of supported curve types. */
 #define CURVE_TYPES_NUM 4
 
-enum HandleType : int8_t {
+enum HandleType {
   /** The handle can be moved anywhere, and doesn't influence the point's other handle. */
   BEZIER_HANDLE_FREE = 0,
   /** The location is automatically calculated to be smooth. */
@@ -72,7 +72,7 @@ enum HandleType : int8_t {
 #define BEZIER_HANDLES_NUM 4
 
 /** Method used to calculate a NURBS curve's knot vector. */
-enum KnotsMode : int8_t {
+enum KnotsMode {
   NURBS_KNOT_MODE_NORMAL = 0,
   NURBS_KNOT_MODE_ENDPOINT = 1,
   NURBS_KNOT_MODE_BEZIER = 2,
@@ -81,7 +81,7 @@ enum KnotsMode : int8_t {
 };
 
 /** Method used to calculate the normals of a curve's evaluated points. */
-enum NormalMode : int8_t {
+enum NormalMode {
   /** Calculate normals with the smallest twist around the curve tangent across the whole curve. */
   NORMAL_MODE_MINIMUM_TWIST = 0,
   /**
@@ -94,14 +94,13 @@ enum NormalMode : int8_t {
 };
 
 /** #Curves.flag */
-enum eCurves_Flag : int {
+enum {
   HA_DS_EXPAND = (1 << 0),
   CV_SCULPT_COLLISION_ENABLED = (1 << 1),
 };
-ENUM_OPERATORS(eCurves_Flag)
 
 /** #Curves.symmetry */
-enum eCurvesSymmetryType : char {
+enum eCurvesSymmetryType {
   CURVES_SYMMETRY_X = 1 << 0,
   CURVES_SYMMETRY_Y = 1 << 1,
   CURVES_SYMMETRY_Z = 1 << 2,
@@ -205,7 +204,7 @@ struct Curves {
   /** Geometry data. */
   CurvesGeometry geometry;
 
-  eCurves_Flag flag = {};
+  int flag = 0;
   int attributes_active_index_legacy = 0;
 
   /* Materials. */
@@ -213,10 +212,10 @@ struct Curves {
   short totcol = 0;
 
   /**
-   * User-defined symmetry flag that causes editing operations to maintain
+   * User-defined symmetry flag (#eCurvesSymmetryType) that causes editing operations to maintain
    * symmetrical geometry.
    */
-  eCurvesSymmetryType symmetry = {};
+  char symmetry = 0;
   /**
    * #AttrDomain. The active domain for edit/sculpt mode selection. Only one selection mode can
    * be active at a time.

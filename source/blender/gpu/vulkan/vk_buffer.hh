@@ -157,7 +157,7 @@ inline bool VKBuffer::is_allocated() const
  * Used for de-interleaved vertex input buffers and immediate mode buffers.
  */
 struct VKBufferWithOffset {
-  VkBuffer buffer;
+  const VkBuffer buffer;
   VkDeviceSize offset;
 };
 

@@ -41,15 +41,11 @@ using CommandHandlerPtr = std::unique_ptr<CommandHandler>;
  * All registered command handlers.
  * \note the order doesn't matter as duplicates are detected and prevented from running.
  */
-static Vector<CommandHandlerPtr> &cli_command_handlers()
-{
-  static Vector<CommandHandlerPtr> command_handlers;
-  return command_handlers;
-}
+Vector<CommandHandlerPtr> g_command_handlers;
 
 static CommandHandler *blender_cli_command_lookup(const std::string &id)
 {
-  for (CommandHandlerPtr &cmd_iter : cli_command_handlers()) {
+  for (CommandHandlerPtr &cmd_iter : g_command_handlers) {
     if (id == cmd_iter->id) {
       return cmd_iter.get();
     }
@@ -60,7 +56,7 @@ static CommandHandler *blender_cli_command_lookup(const std::string &id)
 static int blender_cli_command_index(const CommandHandler *cmd)
 {
   int index = 0;
-  for (CommandHandlerPtr &cmd_iter : cli_command_handlers()) {
+  for (CommandHandlerPtr &cmd_iter : g_command_handlers) {
     if (cmd_iter.get() == cmd) {
       return index;
     }
@@ -85,7 +81,7 @@ void BKE_blender_cli_command_register(std::unique_ptr<CommandHandler> cmd)
     is_duplicate = true;
   }
   cmd->is_duplicate = is_duplicate;
-  cli_command_handlers().append(std::move(cmd));
+  g_command_handlers.append(std::move(cmd));
 }
 
 bool BKE_blender_cli_command_unregister(CommandHandler *cmd)
@@ -99,7 +95,7 @@ bool BKE_blender_cli_command_unregister(CommandHandler *cmd)
   /* Update duplicates after removal. */
   if (cmd->is_duplicate) {
     CommandHandler *cmd_other = nullptr;
-    for (CommandHandlerPtr &cmd_iter : cli_command_handlers()) {
+    for (CommandHandlerPtr &cmd_iter : g_command_handlers) {
       /* Skip self. */
       if (cmd == cmd_iter.get()) {
         continue;
@@ -118,7 +114,7 @@ bool BKE_blender_cli_command_unregister(CommandHandler *cmd)
     }
   }
 
-  cli_command_handlers().remove_and_reorder(cmd_index);
+  g_command_handlers.remove_and_reorder(cmd_index);
 
   return true;
 }
@@ -141,9 +137,9 @@ int BKE_blender_cli_command_exec(bContext *C, const char *id, const int argc, co
 
 void BKE_blender_cli_command_print_help()
 {
-  /* As `cli_command_handlers` isn't ordered, sorting in-place is acceptable. */
+  /* As `g_command_handlers` isn't ordered, sorting in-place is acceptable. */
   std::ranges::sort(
-      cli_command_handlers(),
+      g_command_handlers,
       [](const CommandHandlerPtr &a, const CommandHandlerPtr &b) { return a->id < b->id; });
 
   for (int pass = 0; pass < 2; pass++) {
@@ -154,7 +150,7 @@ void BKE_blender_cli_command_print_help()
     const bool show_duplicates = pass > 0;
     bool found = false;
     bool has_duplicate = false;
-    for (CommandHandlerPtr &cmd_iter : cli_command_handlers()) {
+    for (CommandHandlerPtr &cmd_iter : g_command_handlers) {
       if (cmd_iter->is_duplicate) {
         has_duplicate = true;
       }
@@ -178,7 +174,7 @@ void BKE_blender_cli_command_print_help()
 
 void BKE_blender_cli_command_free_all()
 {
-  cli_command_handlers().clear();
+  g_command_handlers.clear();
 }
 
 /** \} */

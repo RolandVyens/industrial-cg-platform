@@ -13,14 +13,12 @@
 
 #ifdef WITH_GHOST_CSD
 
-#  include "GHOST_SystemWayland.hh"
-
 struct GHOST_CSD_Layout;
 bool GHOST_WindowCSD_LayoutFromSystem(GHOST_CSD_Layout &layout);
 void GHOST_WindowCSD_LayoutDefault(GHOST_CSD_Layout &layout);
 
 /** Return true if CSD should be used. */
-bool GHOST_WindowCSD_Check(GWL_CurrentDesktopType desktop_type);
+bool GHOST_WindowCSD_Check();
 
 #else
 #  error "WITH_GHOST_CSD must be defined"

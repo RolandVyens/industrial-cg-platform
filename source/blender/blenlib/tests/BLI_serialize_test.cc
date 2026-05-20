@@ -96,11 +96,9 @@ TEST(serialize, object_to_json)
   std::stringstream out;
   DictionaryValue value_object;
   value_object.append_int("best_number", 42);
-  value_object.append_bool("false_val", false);
-  value_object.append_bool("true_val", true);
 
   json.serialize(out, value_object);
-  EXPECT_EQ(out.str(), "{\"best_number\":42,\"false_val\":false,\"true_val\":true}");
+  EXPECT_EQ(out.str(), "{\"best_number\":42}");
 }
 
 TEST(serialize, json_roundtrip_ordering)

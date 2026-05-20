@@ -679,8 +679,8 @@ static eSnapMode raycast_obj_fn(SnapObjectContext *sctx,
  * Read/Write Args
  * ---------------
  *
- * - `ray_depth`: maximum depth allowed for r_co,
- *   elements deeper than this value will be ignored.
+ * \param ray_depth: maximum depth allowed for r_co,
+ * elements deeper than this value will be ignored.
  */
 static bool raycastObjects(SnapObjectContext *sctx)
 {
@@ -807,10 +807,10 @@ static eSnapMode nearest_world_object_fn(SnapObjectContext *sctx,
  *
  * Walks through all objects in the scene to find the nearest location on target surface.
  *
- * - `sctx`: Snap context to store data.
- * - `params`: Settings for snapping.
- * - `init_co`: Initial location of source point.
- * - `prev_co`: Current location of source point after transformation but before snapping.
+ * \param sctx: Snap context to store data.
+ * \param params: Settings for snapping.
+ * \param init_co: Initial location of source point.
+ * \param prev_co: Current location of source point after transformation but before snapping.
  */
 static bool nearestWorldObjects(SnapObjectContext *sctx)
 {
@@ -983,9 +983,6 @@ static eSnapMode snap_obj_fn(SnapObjectContext *sctx,
     case OB_ARMATURE:
       retval = snapArmature(sctx, ob_eval, obmat, is_object_active);
       break;
-    case OB_LATTICE:
-      retval = snapLattice(sctx, ob_eval, obmat);
-      break;
     case OB_CURVES_LEGACY:
     case OB_SURF:
       if (ob_eval->type == OB_CURVES_LEGACY || BKE_object_is_in_editmode(ob_eval)) {
@@ -1001,8 +998,6 @@ static eSnapMode snap_obj_fn(SnapObjectContext *sctx,
       break;
     case OB_CAMERA:
       retval = snapCamera(sctx, ob_eval, obmat, sctx->runtime.snap_to_flag);
-      break;
-    default:
       break;
   }
 
@@ -1020,7 +1015,7 @@ static eSnapMode snap_obj_fn(SnapObjectContext *sctx,
  * Read/Write Args
  * ---------------
  *
- * - `dist_px`: Maximum threshold distance (in pixels).
+ * \param dist_px: Maximum threshold distance (in pixels).
  */
 static eSnapMode snapObjectsRay(SnapObjectContext *sctx)
 {

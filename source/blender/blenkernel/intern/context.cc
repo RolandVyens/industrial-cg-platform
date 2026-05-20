@@ -45,7 +45,6 @@
 
 #include "RNA_access.hh"
 #include "RNA_prototypes.hh"
-#include "RNA_types.hh"
 
 #include "CLG_log.h"
 
@@ -1423,8 +1422,6 @@ enum eContextObjectMode CTX_data_mode_enum_ex(const Object *obedit,
         return CTX_MODE_EDIT_GREASE_PENCIL;
       case OB_POINTCLOUD:
         return CTX_MODE_EDIT_POINTCLOUD;
-      default:
-        break;
     }
   }
   else {
@@ -1694,11 +1691,6 @@ bool CTX_data_editable_bones(const bContext *C, Vector<PointerRNA> *list)
 bPoseChannel *CTX_data_active_pose_bone(const bContext *C)
 {
   return static_cast<bPoseChannel *>(ctx_data_pointer_get(C, "active_pose_bone"));
-}
-
-PointerRNA CTX_data_active_pose_bone_ptr(const bContext *C)
-{
-  return CTX_data_pointer_get(C, "active_pose_bone");
 }
 
 bool CTX_data_selected_pose_bones(const bContext *C, Vector<PointerRNA> *list)

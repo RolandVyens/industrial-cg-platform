@@ -44,7 +44,7 @@ static void init_data(ModifierData *md)
   fmd->domain = nullptr;
   fmd->flow = nullptr;
   fmd->effector = nullptr;
-  fmd->type = FluidModifierType{};
+  fmd->type = 0;
   fmd->time = -1;
 }
 

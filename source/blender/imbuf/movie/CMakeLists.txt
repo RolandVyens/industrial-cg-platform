@@ -58,7 +58,6 @@ if(WITH_GTESTS AND WITH_CODEC_FFMPEG)
   set(TEST_INC_SYS
   )
   set(TEST_LIB
-    ${LIB}
     PRIVATE bf::dependencies::optional::ffmpeg
     PRIVATE bf::dependencies::zlib
   )

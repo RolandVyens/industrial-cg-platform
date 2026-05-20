@@ -33,16 +33,6 @@ class BrushAssetShelf:
 
     @classmethod
     def has_tool_with_brush_type(cls, context, brush_type):
-        """
-        Test if any tool active in the current space matches *brush_type*.
-
-        :param context: The context.
-        :type context: :class:`bpy.types.Context`
-        :param brush_type: Brush type identifier to match against tool brush types.
-        :type brush_type: int
-        :return: True when a registered tool uses this brush type.
-        :rtype: bool
-        """
         from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
         space_type = context.space_data.type
 
@@ -73,16 +63,6 @@ class BrushAssetShelf:
 
     @classmethod
     def brush_type_poll(cls, context, asset):
-        """
-        Test if *asset* is compatible with the active tool's brush type.
-
-        :param context: The context.
-        :type context: :class:`bpy.types.Context`
-        :param asset: Brush asset to test.
-        :type asset: :class:`bpy.types.AssetRepresentation`
-        :return: True when the asset's brush type matches the active tool.
-        :rtype: bool
-        """
         from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
         tool = ToolSelectPanelHelper.tool_active_from_context(context)
 
@@ -144,14 +124,6 @@ class BrushAssetShelf:
 
     @staticmethod
     def get_shelf_name_from_context(context):
-        """
-        Look up the brush asset-shelf identifier for the current paint mode.
-
-        :param context: The context.
-        :type context: :class:`bpy.types.Context`
-        :return: The asset-shelf ``bl_idname``, or ``None`` when no paint mode is active.
-        :rtype: str | None
-        """
         mode_map = {
             'SCULPT': "VIEW3D_AST_brush_sculpt",
             'PAINT_VERTEX': "VIEW3D_AST_brush_vertex_paint",
@@ -172,18 +144,6 @@ class BrushAssetShelf:
 
     @staticmethod
     def draw_popup_selector(layout, context, brush, show_name=True):
-        """
-        Draw a brush asset-shelf popover into *layout* for the active paint mode.
-
-        :param layout: Layout to draw into.
-        :type layout: :class:`bpy.types.UILayout`
-        :param context: The context.
-        :type context: :class:`bpy.types.Context`
-        :param brush: Brush whose preview/name is shown on the button.
-        :type brush: :class:`bpy.types.Brush` | None
-        :param show_name: Display the brush name next to the preview.
-        :type show_name: bool
-        """
         preview_icon_id = brush.preview.icon_id if brush and brush.preview else 0
 
         shelf_name = BrushAssetShelf.get_shelf_name_from_context(context)
@@ -1355,81 +1315,80 @@ def brush_settings_advanced(layout, context, settings, brush, popover=False):
         use_frontface = True
 
         col = layout.column(heading="Auto-Masking", align=True)
-        automasking = brush.mesh_automasking_settings
 
-        col.prop(automasking, "use_automasking_topology", text="Topology")
-        col.prop(automasking, "use_automasking_face_sets", text="Face Sets")
+        col.prop(brush, "use_automasking_topology", text="Topology")
+        col.prop(brush, "use_automasking_face_sets", text="Face Sets")
 
         layout.separator()
 
         col = layout.column(align=True)
         row = col.row()
-        row.prop(automasking, "use_automasking_boundary_edges", text="Mesh Boundary")
+        row.prop(brush, "use_automasking_boundary_edges", text="Mesh Boundary")
 
-        if automasking.use_automasking_boundary_edges:
+        if brush.use_automasking_boundary_edges:
             props = row.operator("sculpt.mask_from_boundary", text="Create Mask")
             props.settings_source = 'BRUSH'
             props.boundary_mode = 'MESH'
 
         row = col.row()
-        row.prop(automasking, "use_automasking_boundary_face_sets", text="Face Sets Boundary")
+        row.prop(brush, "use_automasking_boundary_face_sets", text="Face Sets Boundary")
 
-        if automasking.use_automasking_boundary_face_sets:
+        if brush.use_automasking_boundary_face_sets:
             props = row.operator("sculpt.mask_from_boundary", text="Create Mask")
             props.settings_source = 'BRUSH'
             props.boundary_mode = 'FACE_SETS'
 
-        if automasking.use_automasking_boundary_edges or automasking.use_automasking_boundary_face_sets:
+        if brush.use_automasking_boundary_edges or brush.use_automasking_boundary_face_sets:
             col = layout.column()
             col.use_property_split = False
             split = col.split(factor=0.4)
             col = split.column()
-            split.prop(automasking, "boundary_edges_propagation_steps")
+            split.prop(brush, "automasking_boundary_edges_propagation_steps")
 
         layout.separator()
 
         col = layout.column(align=True)
         row = col.row()
-        row.prop(automasking, "use_automasking_cavity", text="Cavity")
+        row.prop(brush, "use_automasking_cavity", text="Cavity")
 
-        is_cavity_active = automasking.use_automasking_cavity or automasking.use_automasking_cavity_inverted
+        is_cavity_active = brush.use_automasking_cavity or brush.use_automasking_cavity_inverted
 
         if is_cavity_active:
             props = row.operator("sculpt.mask_from_cavity", text="Create Mask")
             props.settings_source = 'BRUSH'
 
-        col.prop(automasking, "use_automasking_cavity_inverted", text="Cavity (inverted)")
+        col.prop(brush, "use_automasking_cavity_inverted", text="Cavity (inverted)")
 
         if is_cavity_active:
             col = layout.column(align=True)
-            col.prop(automasking, "cavity_factor", text="Factor")
-            col.prop(automasking, "cavity_blur_steps", text="Blur")
+            col.prop(brush, "automasking_cavity_factor", text="Factor")
+            col.prop(brush, "automasking_cavity_blur_steps", text="Blur")
 
             col = layout.column()
-            col.prop(automasking, "use_automasking_custom_cavity_curve", text="Custom Curve")
+            col.prop(brush, "use_automasking_custom_cavity_curve", text="Custom Curve")
 
-            if automasking.use_automasking_custom_cavity_curve:
-                col.template_curve_mapping(automasking, "cavity_curve", brush=True)
+            if brush.use_automasking_custom_cavity_curve:
+                col.template_curve_mapping(brush, "automasking_cavity_curve", brush=True)
 
         layout.separator()
 
         col = layout.column(align=True)
-        col.prop(automasking, "use_automasking_view_normal", text="View Normal")
+        col.prop(brush, "use_automasking_view_normal", text="View Normal")
 
-        if automasking.use_automasking_view_normal:
-            col.prop(automasking, "use_automasking_view_occlusion", text="Occlusion")
+        if brush.use_automasking_view_normal:
+            col.prop(brush, "use_automasking_view_occlusion", text="Occlusion")
             subcol = col.column(align=True)
-            subcol.active = not automasking.use_automasking_view_occlusion
-            subcol.prop(automasking, "view_normal_limit", text="Limit")
-            subcol.prop(automasking, "view_normal_falloff", text="Falloff")
+            subcol.active = not brush.use_automasking_view_occlusion
+            subcol.prop(brush, "automasking_view_normal_limit", text="Limit")
+            subcol.prop(brush, "automasking_view_normal_falloff", text="Falloff")
 
         col = layout.column()
-        col.prop(automasking, "use_automasking_start_normal", text="Area Normal")
+        col.prop(brush, "use_automasking_start_normal", text="Area Normal")
 
-        if automasking.use_automasking_start_normal:
+        if brush.use_automasking_start_normal:
             col = layout.column(align=True)
-            col.prop(automasking, "start_normal_limit", text="Limit")
-            col.prop(automasking, "start_normal_falloff", text="Falloff")
+            col.prop(brush, "automasking_start_normal_limit", text="Limit")
+            col.prop(brush, "automasking_start_normal_falloff", text="Falloff")
 
         layout.separator()
 
@@ -1513,6 +1472,21 @@ def brush_settings_advanced(layout, context, settings, brush, popover=False):
 
     if popover:
         color_jitter_panel(layout, context, brush)
+
+    # Brush modes
+    header, panel = layout.panel("modes", default_closed=True)
+    header.label(text="Modes")
+    if panel:
+        panel.use_property_split = True
+        panel.use_property_decorate = False
+
+        col = panel.column(align=True)
+        col.prop(brush, "use_paint_sculpt", text="Sculpt")
+        col.prop(brush, "use_paint_uv_sculpt", text="UV Sculpt")
+        col.prop(brush, "use_paint_vertex", text="Vertex Paint")
+        col.prop(brush, "use_paint_weight", text="Weight Paint")
+        col.prop(brush, "use_paint_image", text="Texture Paint")
+        col.prop(brush, "use_paint_sculpt_curves", text="Sculpt Curves")
 
 
 def draw_color_settings(context, layout, brush, color_type=False):

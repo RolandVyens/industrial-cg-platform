@@ -1012,7 +1012,7 @@ static bool skip_fcurve_selected_data(bAnimContext *ac,
                                       ID *owner_id,
                                       const eAnimFilter_Flags filter_mode)
 {
-  if (fcu->grp != nullptr && fcu->grp->flag & AGRP_CURVES_ALWAYS_VISIBLE) {
+  if (fcu->grp != nullptr && fcu->grp->flag & ADT_CURVES_ALWAYS_VISIBLE) {
     return false;
   }
   /* hidden items should be skipped if we only care about visible data,
@@ -1033,7 +1033,7 @@ static bool skip_fcurve_selected_data(bAnimContext *ac,
       pchan = BKE_pose_channel_find_name(ob->pose, bone_name);
 
       /* check whether to continue or skip */
-      if (pchan && pchan->bone_get(*ob)) {
+      if (pchan && pchan->bone) {
         /* If only visible channels,
          * skip if bone not visible unless user wants channels from hidden data too. */
         if (skip_hidden) {
@@ -1396,7 +1396,7 @@ static inline bool fcurve_span_must_be_selected(const eAnimFilter_Flags filter_m
  *    used later to look up the ID* of the user of the slot, which in turn is
  *    used to construct a suitable F-Curve label for in the channels list.
  *
- * \param animated_id: The ID whose 'animdata->action' pointer was followed to get to
+ * \param owner_id: The ID whose 'animdata->action' pointer was followed to get to
  *    these F-Curves. This ID may be animated by a different slot than referenced by
  *    `slot_handle`, so do _not_ treat this as "the ID animated by these F-Curves".
  *
@@ -3080,8 +3080,6 @@ static size_t animdata_filter_ds_obdata(bAnimContext *ac,
       expanded = FILTER_LIGHTPROBE_OBJD(probe);
       break;
     }
-    default:
-      break;
   }
 
   /* add object data animation channels */
@@ -3102,8 +3100,6 @@ static size_t animdata_filter_ds_obdata(bAnimContext *ac,
         }
         break;
       }
-      default:
-        break;
     }
   }
   END_ANIMFILTER_SUBCHANNELS;

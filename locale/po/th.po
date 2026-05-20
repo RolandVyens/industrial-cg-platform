@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2026-03-19 12:41+0000\n"
 "Last-Translator: Banditer1483 <pleum.wongvarit@gmail.com>\n"
 "Language-Team: Thai <https://translate.blender.org/projects/blender-ui/ui/th/>\n"
@@ -4941,6 +4941,14 @@ msgid "Mix Color"
 msgstr "ผสมสี"
 
 
+msgid "Math"
+msgstr "คณิตศาสตร์"
+
+
+msgid "Mirror"
+msgstr "กระจกสะท้อน"
+
+
 msgid "Snap"
 msgstr "ยึดติด"
 
@@ -4969,12 +4977,12 @@ msgid "View Regions"
 msgstr "ขอบเขตมุมมอง"
 
 
-msgid "Math"
-msgstr "คณิตศาสตร์"
-
-
 msgid "Metaball"
 msgstr "เมตาบอล"
+
+
+msgid "Import"
+msgstr "นำเข้า"
 
 
 msgid "Light"
@@ -4985,6 +4993,10 @@ msgid "Add Image"
 msgstr "เพิ่มภาพ"
 
 
+msgid "UV"
+msgstr "UV"
+
+
 msgid "Apply"
 msgstr "นำไปใช้"
 
@@ -4993,16 +5005,8 @@ msgid "Track"
 msgstr "แทร็ค"
 
 
-msgid "Import"
-msgstr "นำเข้า"
-
-
 msgid "Hooks"
 msgstr "ตะขอ"
-
-
-msgid "UV"
-msgstr "UV"
 
 
 msgid "Names"
@@ -5035,10 +5039,6 @@ msgstr "แก้ไข"
 
 msgid "Mask Edit"
 msgstr "การแก้ไขหน้ากาก"
-
-
-msgid "Mirror"
-msgstr "กระจกสะท้อน"
 
 
 msgid "Zoom"
@@ -6299,12 +6299,12 @@ msgid "Single Image"
 msgstr "ภาพเดี่ยว"
 
 
-msgid "View Lock"
-msgstr "ล็อกมุมมอง"
-
-
 msgid "Overlays"
 msgstr "วางซ้อน"
+
+
+msgid "View Lock"
+msgstr "ล็อกมุมมอง"
 
 
 msgid "Mask Display"

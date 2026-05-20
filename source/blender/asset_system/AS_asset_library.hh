@@ -9,7 +9,6 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include <optional>
 
 #include "AS_asset_catalog.hh"
@@ -76,12 +75,10 @@ class AssetLibrary {
      * not dangling before accessing. */
 
     Set<std::shared_ptr<AssetRepresentation>> external_assets;
-    Mutex external_assets_mutex;
     /* Store local ID assets separately for efficient lookups.
      * TODO(Julian): A [ID *, asset] or even [ID.session_uid, asset] map would be preferable for
      * faster lookups. Not possible until each asset is only represented once in the storage. */
     Set<std::shared_ptr<AssetRepresentation>> local_id_assets;
-    Mutex local_id_assets_mutex;
   };
   AssetStorage asset_storage_;
 
@@ -90,11 +87,16 @@ class AssetLibrary {
    * within the catalog service may still happen without the mutex being locked. They should be
    * protected separately. */
   std::unique_ptr<AssetCatalogService> catalog_service_;
-  std::recursive_mutex catalog_service_mutex_;
+  Mutex catalog_service_mutex_;
 
+  /* TODO: Add virtual getter. */
+  std::optional<eAssetImportMethod> import_method_;
   /** Assets owned by this library may be imported with a different method than set in
    * #import_method_ above, it's just a default. */
   bool may_override_import_method_ = false;
+
+  /* TODO: Add virtual getter. */
+  bool use_relative_path_ = true;
 
   bCallbackFuncStore on_save_callback_store_{};
 
@@ -137,17 +139,6 @@ class AssetLibrary {
    * were loaded directly through a path.
    */
   virtual std::optional<AssetLibraryReference> library_reference() const = 0;
-
-  /**
-   * Get the import method that should be used for assets in this library.
-   *
-   * \return The import method or no value if the library doesn't support importing. For example
-   *   because the library is the "Current File" library or the library was removed from the
-   *   Preferences.
-   */
-  virtual std::optional<eAssetImportMethod> import_method() const = 0;
-
-  virtual bool use_relative_paths() const;
 
   /**
    * Return the URL of the remote asset library, or #std::nullopt if this is not a remote library.
@@ -249,21 +240,16 @@ class AssetLibrary {
 Vector<AssetLibraryReference> all_valid_asset_library_refs();
 
 AssetLibraryReference all_library_reference();
-AssetLibraryReference essentials_library_reference();
 AssetLibraryReference current_file_library_reference();
-AssetLibraryReference online_essentials_library_reference();
-
-void all_library_tag_catalogs_dirty();
 void all_library_reload_catalogs_if_dirty();
 
 /**
  * Return whether this is a remote asset library, or contains remote assets.
  *
- * The All and Essentials libraries can have a mixture of local & remote assets.
+ * The All and Essentials libraries can (now resp. in the future) have a mixture of local & remote
+ * assets.
  */
 bool is_or_contains_remote_libraries(const AssetLibraryReference &reference);
-
-bool contains_assets_from_remote_url(const AssetLibrary &library, StringRef remote_url);
 
 }  // namespace asset_system
 
@@ -298,8 +284,12 @@ std::string AS_asset_library_root_path_from_library_ref(
  * * If \a input_path is empty or doesn't have a parent path (e.g. because a .blend wasn't saved
  *   yet), there is no suitable path. The caller has to decide how to handle this case.
  *
- * \return The returned asset library path with a trailing slash,
- * or an empty string if no suitable path is found.
+ * \param r_library_path: The returned asset library path with a trailing slash, or an empty string
+ *                        if no suitable path is found. Assumed to be a buffer of at least
+ *                        #FILE_MAXDIR bytes.
+ *
+ * \return True if the function could find a valid, that is, a non-empty path to return in \a
+ *         r_library_path.
  */
 std::string AS_asset_library_find_suitable_root_path_from_path(StringRefNull input_path);
 
@@ -370,5 +360,11 @@ void AS_asset_full_path_explode_from_weak_ref(const AssetWeakReference *asset_re
  * #U.experimental.no_data_block_packing.
  */
 void AS_asset_library_import_method_ensure_valid(Main &bmain);
+/**
+ * This is not done as part of #AS_asset_library_import_method_ensure_valid because it changes
+ * run-time data only and does not need to happen during versioning (also it appears to break tests
+ * when run during versioning).
+ */
+void AS_asset_library_essential_import_method_update();
 
 }  // namespace blender

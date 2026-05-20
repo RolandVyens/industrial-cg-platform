@@ -64,7 +64,6 @@ set(SRC
   bpy_rna_text.cc
   bpy_rna_types_capi.cc
   bpy_rna_ui.cc
-  bpy_rna_wm.cc
   bpy_traceback.cc
   bpy_utils_previews.cc
   bpy_utils_units.cc
@@ -96,7 +95,6 @@ set(SRC
   bpy_library.hh
   bpy_msgbus.hh
   bpy_operator.hh
-  bpy_operator_function.hh
   bpy_operator_wrap.hh
   bpy_path.hh
   bpy_props.hh
@@ -112,7 +110,6 @@ set(SRC
   bpy_rna_text.hh
   bpy_rna_types_capi.hh
   bpy_rna_ui.hh
-  bpy_rna_wm.hh
   bpy_traceback.hh
   bpy_utils_previews.hh
   bpy_utils_units.hh
@@ -232,6 +229,10 @@ if(WITH_IMAGE_CINEON)
   add_definitions(-DWITH_IMAGE_CINEON)
 endif()
 
+if(WITH_IMAGE_OPENEXR)
+  add_definitions(-DWITH_IMAGE_OPENEXR)
+endif()
+
 if(WITH_IMAGE_OPENJPEG)
   add_definitions(-DWITH_IMAGE_OPENJPEG)
 endif()
@@ -339,10 +340,6 @@ endif()
 
 if(WITH_HARU)
   add_definitions(-DWITH_HARU)
-endif()
-
-if(WITH_SDL)
-  add_definitions(-DWITH_SDL)
 endif()
 
 if(WITH_HYDRA)

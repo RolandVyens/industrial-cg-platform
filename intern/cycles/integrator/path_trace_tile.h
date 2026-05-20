@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "kernel/types.h"
+#include "scene/pass.h"
 #include "session/output_driver.h"
 
 CCL_NAMESPACE_BEGIN
@@ -22,9 +22,7 @@ class PathTraceTile : public OutputDriver::Tile {
   bool get_pass_pixels(const string_view pass_name,
                        const int num_channels,
                        float *pixels) const override;
-  bool get_pass_pixels(const PassType pass_type,
-                       const int num_channels,
-                       float *pixels) const;
+  bool get_pass_pixels(const PassType pass_type, const int num_channels, float *pixels) const;
   bool set_pass_pixels(const string_view pass_name,
                        const int num_channels,
                        const float *pixels) const override;

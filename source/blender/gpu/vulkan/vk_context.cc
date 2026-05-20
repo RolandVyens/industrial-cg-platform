@@ -26,15 +26,6 @@
 namespace blender::gpu {
 
 VKContext::VKContext(GHOST_IWindow *ghost_window, GHOST_IContext *ghost_context)
-    : push_constants_pool(VKBufferPool("PushConstants",
-                                       64 * 1024,
-                                       VKBackend::get()
-                                           .device.physical_device_properties_get()
-                                           .limits.minUniformBufferOffsetAlignment,
-                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                       VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
-                                       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-                                       0.8f))
 {
   ghost_window_ = ghost_window;
   ghost_context_ = ghost_context;
@@ -177,8 +168,6 @@ TimelineValue VKContext::flush_render_graph(RenderGraphFlushFlags flags,
     }
   }
   VKDevice &device = VKBackend::get().device;
-  push_constants_pool.ensure_uploaded();
-  push_constants_pool.discard();
   descriptor_set_get().upload_descriptor_sets();
   TimelineValue timeline = device.render_graph_submit(
       &render_graph_.value().get(),
@@ -207,11 +196,7 @@ TimelineValue VKContext::flush_render_graph(RenderGraphFlushFlags flags,
   return timeline;
 }
 
-void VKContext::finish()
-{
-  flush_render_graph(RenderGraphFlushFlags::SUBMIT | RenderGraphFlushFlags::WAIT_FOR_COMPLETION |
-                     RenderGraphFlushFlags::RENEW_RENDER_GRAPH);
-}
+void VKContext::finish() {}
 
 void VKContext::memory_statistics_get(int *r_total_mem_kb, int *r_free_mem_kb)
 {
@@ -439,9 +424,8 @@ void VKContext::swap_buffer_draw_handler(const GHOST_VulkanSwapChainData &swap_c
                                          bool wait_for_submission)
 {
   const bool do_blit_to_swapchain = swap_chain_data.image != VK_NULL_HANDLE;
-  const bool use_shader = ELEM(swap_chain_data.surface_format.colorSpace,
-                               VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT,
-                               VK_COLOR_SPACE_PASS_THROUGH_EXT);
+  const bool use_shader = swap_chain_data.surface_format.colorSpace ==
+                          VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;
 
   /* When swapchain is invalid/minimized we only flush the render graph to free GPU resources. */
   if (!do_blit_to_swapchain) {
@@ -581,9 +565,7 @@ void VKContext::openxr_acquire_framebuffer_image_handler(GHOST_VulkanOpenXRData 
 
   switch (openxr_data.data_transfer_mode) {
     case GHOST_kVulkanXRModeCPU:
-      openxr_data.cpu.image_data = MEM_new_uninitialized(
-          color_attachment->read_size_get(0, data_format), __func__);
-      color_attachment->read(0, data_format, openxr_data.cpu.image_data);
+      openxr_data.cpu.image_data = color_attachment->read(0, data_format);
       break;
 
     case GHOST_kVulkanXRModeFD: {

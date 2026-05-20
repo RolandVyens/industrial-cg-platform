@@ -34,10 +34,15 @@ class EdgeNeighborCountFieldInput final : public bke::MeshFieldInput {
         VArray<int>::from_container(std::move(counts)), AttrDomain::Edge, domain);
   }
 
-  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
+  uint64_t hash() const override
   {
-    static constexpr int8_t id = 0;
-    hash.add(&id);
+    /* Some random constant hash. */
+    return 985671075;
+  }
+
+  bool is_equal_to(const fn::FieldInput &other) const override
+  {
+    return dynamic_cast<const EdgeNeighborCountFieldInput *>(&other) != nullptr;
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

@@ -675,9 +675,7 @@ MovieTrackingTrack **BKE_tracking_selected_tracks_in_active_object(MovieTracking
   return source_tracks;
 }
 
-void BKE_tracking_track_flag_set(MovieTrackingTrack *track,
-                                 eTrackArea area,
-                                 TrackingTrackFlag flag)
+void BKE_tracking_track_flag_set(MovieTrackingTrack *track, eTrackArea area, int flag)
 {
   if (area == TRACK_AREA_NONE) {
     return;
@@ -694,9 +692,7 @@ void BKE_tracking_track_flag_set(MovieTrackingTrack *track,
   }
 }
 
-void BKE_tracking_track_flag_clear(MovieTrackingTrack *track,
-                                   eTrackArea area,
-                                   TrackingTrackFlag flag)
+void BKE_tracking_track_flag_clear(MovieTrackingTrack *track, eTrackArea area, int flag)
 {
   if (area == TRACK_AREA_NONE) {
     return;
@@ -1199,7 +1195,7 @@ void BKE_tracking_track_select(ListBaseT<MovieTrackingTrack> *tracksbase,
                                bool extend)
 {
   if (extend) {
-    BKE_tracking_track_flag_set(track, area, TRACK_SELECT);
+    BKE_tracking_track_flag_set(track, area, SELECT);
   }
   else {
     MovieTrackingTrack *cur = static_cast<MovieTrackingTrack *>(tracksbase->first);
@@ -1207,11 +1203,11 @@ void BKE_tracking_track_select(ListBaseT<MovieTrackingTrack> *tracksbase,
     while (cur) {
       if ((cur->flag & TRACK_HIDDEN) == 0) {
         if (cur == track) {
-          BKE_tracking_track_flag_clear(cur, TRACK_AREA_ALL, TRACK_SELECT);
-          BKE_tracking_track_flag_set(cur, area, TRACK_SELECT);
+          BKE_tracking_track_flag_clear(cur, TRACK_AREA_ALL, SELECT);
+          BKE_tracking_track_flag_set(cur, area, SELECT);
         }
         else {
-          BKE_tracking_track_flag_clear(cur, TRACK_AREA_ALL, TRACK_SELECT);
+          BKE_tracking_track_flag_clear(cur, TRACK_AREA_ALL, SELECT);
         }
       }
 
@@ -1222,14 +1218,14 @@ void BKE_tracking_track_select(ListBaseT<MovieTrackingTrack> *tracksbase,
 
 void BKE_tracking_track_deselect(MovieTrackingTrack *track, eTrackArea area)
 {
-  BKE_tracking_track_flag_clear(track, area, TRACK_SELECT);
+  BKE_tracking_track_flag_clear(track, area, SELECT);
 }
 
 void BKE_tracking_tracks_deselect_all(ListBaseT<MovieTrackingTrack> *tracksbase)
 {
   for (MovieTrackingTrack &track : *tracksbase) {
     if ((track.flag & TRACK_HIDDEN) == 0) {
-      BKE_tracking_track_flag_clear(&track, TRACK_AREA_ALL, TRACK_SELECT);
+      BKE_tracking_track_flag_clear(&track, TRACK_AREA_ALL, SELECT);
     }
   }
 }
@@ -1486,7 +1482,7 @@ bool BKE_tracking_marker_get_interpolated(MovieTrackingTrack *track,
   interp_v2_v2v2(r_marker->search_max, left_marker->search_max, right_marker->search_max, factor);
 
   r_marker->framenr = framenr;
-  r_marker->flag = TrackingMarkerFlag{};
+  r_marker->flag = 0;
 
   if (framenr == left_marker->framenr) {
     r_marker->flag = left_marker->flag;
@@ -1599,7 +1595,7 @@ MovieTrackingPlaneTrack *BKE_tracking_plane_track_add(
 
   /* Setup new plane marker and add it to the track. */
   plane_marker.framenr = framenr;
-  plane_marker.flag = TrackingPlaneMarkerFlag{};
+  plane_marker.flag = 0;
 
   copy_v2_v2(plane_marker.corners[0], tracks_min);
   copy_v2_v2(plane_marker.corners[2], tracks_max);
@@ -1641,7 +1637,7 @@ void BKE_tracking_plane_track_free(MovieTrackingPlaneTrack *plane_track)
 void BKE_tracking_plane_tracks_deselect_all(ListBaseT<MovieTrackingPlaneTrack> *plane_tracks_base)
 {
   for (MovieTrackingPlaneTrack &plane_track : *plane_tracks_base) {
-    plane_track.flag &= ~PLANE_TRACK_SELECT;
+    plane_track.flag &= ~SELECT;
   }
 }
 
@@ -2548,10 +2544,8 @@ ImBuf *BKE_tracking_sample_pattern(const int frame_width,
     return nullptr;
   }
 
-  pattern_ibuf = IMB_allocImBuf(num_samples_x,
-                                num_samples_y,
-                                search_ibuf->float_data() ? ImBufFlags::FloatData :
-                                                            ImBufFlags::ByteData);
+  pattern_ibuf = IMB_allocImBuf(
+      num_samples_x, num_samples_y, 32, search_ibuf->float_data() ? IB_float_data : IB_byte_data);
 
   tracking_get_marker_coords_for_tracking(
       frame_width, frame_height, marker, src_pixel_x, src_pixel_y);
@@ -2690,28 +2684,9 @@ ImBuf *BKE_tracking_get_search_imbuf(const ImBuf *ibuf,
     return nullptr;
   }
 
-  searchibuf = IMB_allocImBuf(
-      w, h, ibuf->float_data() ? ImBufFlags::FloatData : ImBufFlags::ByteData);
+  searchibuf = IMB_allocImBuf(w, h, 32, ibuf->float_data() ? IB_float_data : IB_byte_data);
 
-  /* Clamp copy region to image bounds. */
-  int dst_x = 0, dst_y = 0;
-  if (x < 0) {
-    dst_x = -x;
-    w += x;
-    x = 0;
-  }
-  if (y < 0) {
-    dst_y = -y;
-    h += y;
-    y = 0;
-  }
-  if (x + w > ibuf->x) {
-    w = ibuf->x - x;
-  }
-  if (y + h > ibuf->y) {
-    h = ibuf->y - y;
-  }
-  IMB_copy_rect(searchibuf, ibuf, int2(x, y), int2(dst_x, dst_y), int2(w, h));
+  IMB_rectcpy(searchibuf, ibuf, 0, 0, x, y, w, h);
 
   if (disable_channels) {
     if ((track->flag & TRACK_PREVIEW_GRAYSCALE) || (track->flag & TRACK_DISABLE_RED) ||
@@ -2762,10 +2737,8 @@ ImBuf *BKE_tracking_get_plane_imbuf(const ImBuf *frame_ibuf,
   const int num_samples_y = max_ii(left_side_len_px, right_side_len_px);
 
   /* Create new result image with the same type of content as the original. */
-  ImBuf *plane_ibuf = IMB_allocImBuf(num_samples_x,
-                                     num_samples_y,
-                                     frame_ibuf->float_data() ? ImBufFlags::FloatData :
-                                                                ImBufFlags::ByteData);
+  ImBuf *plane_ibuf = IMB_allocImBuf(
+      num_samples_x, num_samples_y, 32, frame_ibuf->float_data() ? IB_float_data : IB_byte_data);
 
   /* Calculate corner coordinates in pixel space, as separate X/Y arrays. */
   const double src_pixel_x[4] = {corners[0][0] * frame_width,
@@ -3280,7 +3253,7 @@ static void tracking_dopesheet_calc_coverage(MovieTracking *tracking)
 {
   MovieTrackingDopesheet *dopesheet = &tracking->dopesheet;
   MovieTrackingObject *tracking_object = BKE_tracking_object_get_active(tracking);
-  int frames, start_frame = INT_MAX, end_frame = INT_MIN;
+  int frames, start_frame = INT_MAX, end_frame = -INT_MAX;
   int *per_frame_counter;
   TrackingCoverage prev_coverage;
   int last_segment_frame;

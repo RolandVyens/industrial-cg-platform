@@ -39,7 +39,6 @@ set(LIB
   PRIVATE bf::dna
   PRIVATE bf::geometry
   PRIVATE bf::gpu
-  PRIVATE bf::imbuf
   PRIVATE bf::intern::guardedalloc
   PRIVATE bf::nodes
   PRIVATE bf::windowmanager

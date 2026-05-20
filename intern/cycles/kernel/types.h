@@ -339,6 +339,11 @@ enum PassType {
   PASS_TRANSMISSION_COLOR,
   /* No Scatter color since it's tricky to define what it would even mean. */
   PASS_MIST,
+  PASS_DENOISING_ALBEDO,
+  PASS_DENOISING_SPECULAR_ALBEDO,
+  PASS_DENOISING_NORMAL,
+  PASS_DENOISING_ROUGHNESS,
+  PASS_DENOISING_DEPTH,
   PASS_RENDER_TIME,
 
   /* PASS_SHADOW_CATCHER accumulates contribution of shadow catcher object which is not affected by
@@ -369,19 +374,10 @@ enum PassType {
   PASS_VOLUME_MAJORANT_SAMPLE_COUNT,
   PASS_CATEGORY_DATA_END = 63,
 
-  /* Denoising passes */
-  PASS_DENOISING_ALBEDO,
-  PASS_DENOISING_SPECULAR_ALBEDO,
-  PASS_DENOISING_NORMAL,
-  PASS_DENOISING_ROUGHNESS,
-  PASS_DENOISING_DEPTH,
-  PASS_DENOISING_BACKWARD_MOTION,
-  PASS_CATEGORY_DENOISING_END = 95,
-
   PASS_BAKE_PRIMITIVE,
   PASS_BAKE_SEED,
   PASS_BAKE_DIFFERENTIAL,
-  PASS_CATEGORY_BAKE_END = 127,
+  PASS_CATEGORY_BAKE_END = 95,
 
   PASS_DENOISING_PREVIOUS,
 
@@ -402,13 +398,6 @@ struct BsdfEval {
   Spectrum diffuse;
   Spectrum glossy;
   Spectrum sum;
-};
-
-enum DenoisingPassFlag {
-  /* Whether to follow reflections for the denoising passes. */
-  DENOISING_PASS_FOLLOW_REFLECTIONS = (1 << 0),
-  /* Whether to use roughness-based weighting for the albedo or split by the BSDF type. */
-  DENOISING_PASS_USE_ALBEDO_ROUGHNESS_WEIGHTING = (1 << 1),
 };
 
 /* Closure Filter */
@@ -719,7 +708,7 @@ enum AttributeElement {
                                          ATTR_ELEMENT_IS_MOTION,
 };
 
-enum AttributeStandard : int {
+enum AttributeStandard {
   ATTR_STD_NONE = 0,
   ATTR_STD_VERTEX_NORMAL,
   ATTR_STD_CORNER_NORMAL,
@@ -758,7 +747,7 @@ enum AttributeStandard : int {
   ATTR_STD_SHADOW_TRANSPARENCY,
   ATTR_STD_NUM,
 
-  ATTR_STD_NOT_FOUND = -0x7fffffff
+  ATTR_STD_NOT_FOUND = ~0
 };
 
 enum AttributeFlag {
@@ -1465,8 +1454,9 @@ struct KernelLight {
   int object_id;
   float max_bounces;
   float strength[3];
+  float shadow_color[3];
   int use_caustics;
-  int pad;
+  int pad[2];
   union {
     KernelSpotLight spot;
     KernelAreaLight area;

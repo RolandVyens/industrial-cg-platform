@@ -55,7 +55,7 @@ Strip &TreeElementStrip::get_strip() const
 
 StripType TreeElementStrip::get_strip_type() const
 {
-  return strip_.type;
+  return StripType(strip_.type);
 }
 
 /* -------------------------------------------------------------------- */

@@ -59,7 +59,7 @@ class SocketValueVariant {
      * Indicates that there is a `GVolumeGrid` stored.
      */
     Grid,
-    /** Indicates that there is a `GListPtr` stored. */
+    /** Indicates that there is a `ListPtr` stored. */
     List,
   };
 

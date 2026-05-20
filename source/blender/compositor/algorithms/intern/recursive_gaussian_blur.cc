@@ -49,25 +49,23 @@ static float2 compute_sigma_from_radius(float2 radius)
 void recursive_gaussian_blur(Context &context,
                              const Result &input,
                              Result &output,
-                             const float2 &radius,
-                             const bool extend_bounds)
+                             const float2 &radius)
 {
   /* The radius is in pixel units, while both recursive implementations expect the sigma value of
    * the Gaussian function. */
   const float2 sigma = compute_sigma_from_radius(radius);
 
   if (math::reduce_max(sigma) < 3.0f) {
-    symmetric_separable_blur(
-        context, input, output, radius, math::FilterKernel::Gauss, extend_bounds);
+    symmetric_separable_blur(context, input, output, radius);
     return;
   }
 
   if (math::reduce_max(sigma) < 32.0f) {
-    deriche_gaussian_blur(context, input, output, sigma, extend_bounds);
+    deriche_gaussian_blur(context, input, output, sigma);
     return;
   }
 
-  van_vliet_gaussian_blur(context, input, output, sigma, extend_bounds);
+  van_vliet_gaussian_blur(context, input, output, sigma);
 }
 
 }  // namespace blender::compositor

@@ -49,6 +49,7 @@
 namespace blender {
 
 namespace lf = fn::lazy_function;
+namespace geo_log = nodes::geo_eval_log;
 
 namespace nodes {
 
@@ -62,7 +63,7 @@ bool input_has_attribute_toggle(const bNodeTree &node_tree, const int socket_ind
   node_tree.ensure_interface_cache();
   const bke::bNodeSocketType *typeinfo =
       node_tree.interface_inputs()[socket_index]->socket_typeinfo();
-  if (!typeinfo || !socket_type_has_attribute_toggle(typeinfo->type)) {
+  if (ELEM(typeinfo->type, SOCK_MENU)) {
     return false;
   }
 

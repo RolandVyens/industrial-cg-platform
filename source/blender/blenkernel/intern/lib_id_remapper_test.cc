@@ -4,7 +4,6 @@
 
 #include "testing/testing.h"
 
-#include "BKE_gtest_base.hh"
 #include "BKE_idtype.hh"
 #include "BKE_lib_remap.hh"
 
@@ -18,10 +17,10 @@ using namespace blender::bke::id;
 
 namespace bke::id::tests {
 
-class LibIdRemapperTest : public BlenderGTestBase {};
-
-TEST_F(LibIdRemapperTest, unavailable)
+TEST(lib_id_remapper, unavailable)
 {
+  BKE_idtype_init();
+
   ID id1;
   ID *idp = &id1;
 
@@ -30,8 +29,10 @@ TEST_F(LibIdRemapperTest, unavailable)
   EXPECT_EQ(result, ID_REMAP_RESULT_SOURCE_UNAVAILABLE);
 }
 
-TEST_F(LibIdRemapperTest, not_mappable)
+TEST(lib_id_remapper, not_mappable)
 {
+  BKE_idtype_init();
+
   ID *idp = nullptr;
 
   IDRemapper remapper;
@@ -39,8 +40,10 @@ TEST_F(LibIdRemapperTest, not_mappable)
   EXPECT_EQ(result, ID_REMAP_RESULT_SOURCE_NOT_MAPPABLE);
 }
 
-TEST_F(LibIdRemapperTest, mapped)
+TEST(lib_id_remapper, mapped)
 {
+  BKE_idtype_init();
+
   ID id1;
   ID id2;
   ID *idp = &id1;
@@ -54,8 +57,10 @@ TEST_F(LibIdRemapperTest, mapped)
   EXPECT_EQ(idp, &id2);
 }
 
-TEST_F(LibIdRemapperTest, unassigned)
+TEST(lib_id_remapper, unassigned)
 {
+  BKE_idtype_init();
+
   ID id1;
   ID *idp = &id1;
   STRNCPY(id1.name, "OB2");
@@ -67,8 +72,10 @@ TEST_F(LibIdRemapperTest, unassigned)
   EXPECT_EQ(idp, nullptr);
 }
 
-TEST_F(LibIdRemapperTest, unassign_when_mapped_to_self)
+TEST(lib_id_remapper, unassign_when_mapped_to_self)
 {
+  BKE_idtype_init();
+
   ID id_self;
   ID id1;
   ID id2;

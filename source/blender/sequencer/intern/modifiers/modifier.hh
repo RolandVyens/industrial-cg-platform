@@ -42,15 +42,11 @@ struct ModifierApplyContext {
                        SeqRenderState &render_state,
                        const Strip &strip,
                        const float3x3 &transform,
-                       const float3x3 &transform_comp_result,
-                       const float timeline_frame,
                        ImBuf *image)
       : render_data(render_data),
         render_state(render_state),
         strip(strip),
         transform(transform),
-        transform_comp_result(transform_comp_result),
-        timeline_frame(timeline_frame),
         image(image)
   {
   }
@@ -62,10 +58,6 @@ struct ModifierApplyContext {
    * full render area pixel coordinates.This is used to sample
    * modifier masks (since masks are in full render area space). */
   const float3x3 transform;
-  /* Transformation to apply when sampling masks in compositor modifier. */
-  const float3x3 transform_comp_result;
-  /* Timeline frame at which the modifiers are being applied at. */
-  const float timeline_frame;
   ImBuf *const image;
 
   /* How much the resulting image should be translated, in pixels.
@@ -74,10 +66,11 @@ struct ModifierApplyContext {
   float2 result_translation = float2(0, 0);
 };
 
-void modifier_apply_stack(ModifierApplyContext &context);
+void modifier_apply_stack(ModifierApplyContext &context, int timeline_frame);
 
 ImBuf *modifier_render_mask_input(const ModifierApplyContext &context,
-                                  const StripModifierData &smd);
+                                  const StripModifierData &smd,
+                                  int timeline_frame);
 
 bool modifier_persistent_uids_are_valid(const Strip &strip);
 

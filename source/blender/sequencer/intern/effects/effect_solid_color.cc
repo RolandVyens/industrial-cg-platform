@@ -81,7 +81,7 @@ static ImBuf *do_solid_color(const RenderData *context,
     }
   });
 
-  out->color_mode = ImColorMode::RGB;
+  out->planes = R_IMF_PLANES_RGB;
 
   return out;
 }

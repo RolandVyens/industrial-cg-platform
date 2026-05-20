@@ -217,12 +217,12 @@ class ForwardPipeline {
                                      blender::Material *blender_mat,
                                      GPUMaterial *gpumat);
 
-  void transparent_add(const Object *ob,
-                       const float3 &ob_location,
-                       blender::Material *blender_mat,
-                       GPUMaterial *gpumat,
-                       PassMain::Sub *&r_prepass_subpass,
-                       PassMain::Sub *&r_material_subpass);
+  PassMain::Sub *prepass_transparent_add(const Object *ob,
+                                         blender::Material *blender_mat,
+                                         GPUMaterial *gpumat);
+  PassMain::Sub *material_transparent_add(const Object *ob,
+                                          blender::Material *blender_mat,
+                                          GPUMaterial *gpumat);
 
   bool use_colored_transparency() const;
 
@@ -262,8 +262,6 @@ struct DeferredLayerBase {
   eClosureBits closure_bits_ = CLOSURE_NONE;
   /* Maximum closure count considering all material in this pass. */
   int closure_count_ = 0;
-  /* True if this is a planar probe deferred layer. To be set before sync. */
-  bool is_probe_ = false;
 
   /* Stencil values used during the deferred pipeline. */
   enum class StencilBits : uint8_t {
@@ -405,7 +403,8 @@ class DeferredLayer : DeferredLayerBase {
   static bool do_split_direct_indirect_radiance(const Instance &inst);
 
   /* Returns the radiance buffer to feed the next layer. */
-  gpu::Texture *render(View &render_view,
+  gpu::Texture *render(View &main_view,
+                       View &render_view,
                        Framebuffer &prepass_fb,
                        Framebuffer &combined_fb,
                        Framebuffer &gbuffer_fb,
@@ -492,7 +491,7 @@ struct VolumeObjectBounds {
   /* Combined bounds in Z. Allow tighter integration bounds. */
   std::optional<Bounds<float>> z_range;
 
-  VolumeObjectBounds(const Camera &camera, const ObjectHandle &ob_handle, int instance_index);
+  VolumeObjectBounds(const Camera &camera, Object *ob);
 };
 
 /**
@@ -558,7 +557,11 @@ class VolumePipeline {
   void sync();
   void render(View &view, Texture &occupancy_tx);
 
-  VolumeLayer *register_and_get_layer(const VolumeObjectBounds &object_bounds);
+  /**
+   * Returns correct volume layer for a given object and add the object to the layer.
+   * Returns nullptr if the object is not visible at all.
+   */
+  VolumeLayer *register_and_get_layer(Object *ob);
 
   std::optional<Bounds<float>> object_integration_range() const;
 
@@ -608,7 +611,6 @@ class DeferredProbePipeline {
     float4 data(0.0f);
     dummy_black.ensure_2d(
         gpu::TextureFormat::SFLOAT_16_16_16_16, int2(1), GPU_TEXTURE_USAGE_SHADER_READ, data);
-    opaque_layer_.is_probe_ = true;
   }
 
   void begin_sync();
@@ -663,7 +665,6 @@ class PlanarProbePipeline : DeferredLayerBase {
     float4 data(0.0f);
     dummy_black_.ensure_2d(
         gpu::TextureFormat::SFLOAT_16_16_16_16, int2(1), GPU_TEXTURE_USAGE_SHADER_READ, data);
-    is_probe_ = true;
   };
 
   void begin_sync();

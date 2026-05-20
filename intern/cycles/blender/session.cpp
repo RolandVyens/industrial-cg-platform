@@ -27,6 +27,7 @@
 #include "scene/stats.h"
 
 #include "session/buffers.h"
+#include "session/deep_buffers.h"
 #include "session/deep_output_driver.h"
 #include "session/session.h"
 
@@ -49,6 +50,16 @@
 #include "blender/util.h"
 
 CCL_NAMESPACE_BEGIN
+
+namespace {
+
+bool deep_file_debug_enabled()
+{
+  const char *value = std::getenv("CYCLES_DEEP_FILE_DEBUG");
+  return value && value[0] != '\0' && value[0] != '0';
+}
+
+}  // namespace
 
 DeviceTypeMask BlenderSession::device_override = DEVICE_MASK_ALL;
 bool BlenderSession::headless = false;
@@ -433,6 +444,15 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                                      evaluated_scene->r.im_format.imtype ==
                                          blender::R_IMF_IMTYPE_DEEP_EXR);
     const bool need_deep_output = is_deep_exr_format || compositor_needs_deep;
+    const bool deep_file_debug = deep_file_debug_enabled();
+
+    if (deep_file_debug) {
+      LOG_DEBUG << "Deep file debug: pre-driver view=" << b_rview_name
+                << " is_deep_exr_format=" << is_deep_exr_format
+                << " compositor_needs_deep=" << compositor_needs_deep
+                << " need_deep_output=" << need_deep_output
+                << " film_use_deep_before=" << scene->film->get_use_deep_output();
+    }
 
     if (is_multi_view && need_deep_output) {
       if (!deep_output_error_reported) {
@@ -450,6 +470,12 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       if (!scene->film->get_use_deep_output()) {
         scene->film->set_use_deep_output(true);
         scene->film->tag_modified();
+      }
+
+      if (deep_file_debug) {
+        LOG_DEBUG << "Deep file debug: post-driver view=" << b_rview_name
+                  << " film_use_deep_after=" << scene->film->get_use_deep_output()
+                  << " deep_driver_exists=" << (session->get_deep_output_driver() != nullptr);
       }
 
       DeepOutputDriver *deep_driver = session->get_deep_output_driver();
@@ -487,16 +513,13 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
         deep_driver->set_compression(image_format.exr_codec);
         deep_driver->set_use_half_float(image_format.depth == blender::R_IMF_CHAN_DEPTH_16);
 
-        int max_deep_samples = scene->film->get_deep_max_samples();
-        if (scene->integrator->get_volume_ray_marching()) {
-          constexpr int deep_volume_max_samples_cap = 256;
-          const int max_steps = scene->integrator->get_volume_max_steps();
-          const int min_required = std::min(max_steps, deep_volume_max_samples_cap);
-          if (max_deep_samples < min_required) {
-            LOG_INFO << "Deep EXR: increasing max samples from " << max_deep_samples << " to "
-                     << min_required << " for ray-marched volumes";
-            max_deep_samples = min_required;
-          }
+        const int requested_deep_samples = scene->film->get_deep_max_samples();
+        const int max_deep_samples = deep_effective_max_samples(scene->film, scene->integrator);
+        if (scene->integrator && scene->integrator->get_volume_ray_marching() &&
+            max_deep_samples > requested_deep_samples)
+        {
+          LOG_INFO << "Deep EXR: increasing max samples from " << requested_deep_samples << " to "
+                   << max_deep_samples << " for ray-marched volumes";
         }
 
         const bool needs_reset = (deep_driver->get_width() != width ||
@@ -576,20 +599,27 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                                        blender::R_IMF_IMTYPE_DEEP_EXR);
   const bool finalize_deep = (is_deep_exr_format || compositor_needs_deep) && !deep_output_blocked;
   if (finalize_deep && !session->progress.get_cancel()) {
+    const bool deep_file_debug = deep_file_debug_enabled();
     DeepOutputDriver *deep_driver = session->get_deep_output_driver();
     if (deep_driver && deep_driver->is_enabled()) {
       const float *combined_data = nullptr;
       int combined_w = 0;
       int combined_h = 0;
+      const float *sample_count_data = nullptr;
+      int sample_count_w = 0;
+      int sample_count_h = 0;
 
       /* Get beauty (Combined pass) for deep recolor.
        * Prefer output driver capture, fallback to RenderResult. */
       vector<float> combined_local;
+      vector<float> sample_count_local;
       if (blender_output_driver) {
         combined_data = blender_output_driver->get_combined_pass(combined_w, combined_h);
+        sample_count_data = blender_output_driver->get_sample_count_pass(sample_count_w,
+                                                                         sample_count_h);
       }
       blender::RenderResult *beauty_result = RE_engine_get_result(&b_engine);
-      if (!combined_data && beauty_result) {
+      if ((!combined_data || !sample_count_data) && beauty_result) {
         blender::RenderLayer *beauty_layer = RE_GetRenderLayer(beauty_result, b_rlay_name.c_str());
         if (!beauty_layer) {
           beauty_layer = static_cast<blender::RenderLayer *>(beauty_result->layers.first);
@@ -600,19 +630,31 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                b_pass;
                b_pass = b_pass->next)
           {
-            if (b_pass->name && strcmp(b_pass->name, "Combined") == 0 && b_pass->channels == 4 &&
-                b_pass->ibuf && b_pass->ibuf->float_buffer.data)
-            {
+            if (b_pass->name && b_pass->ibuf && b_pass->ibuf->float_buffer.data) {
               const int w = b_pass->rectx;
               const int h = b_pass->recty;
-              if (w > 0 && h > 0) {
+              if (w <= 0 || h <= 0) {
+                continue;
+              }
+
+              if (!combined_data && strcmp(b_pass->name, "Combined") == 0 && b_pass->channels == 4)
+              {
                 const size_t size = static_cast<size_t>(w) * h * 4;
                 combined_local.assign(b_pass->ibuf->float_buffer.data,
                                       b_pass->ibuf->float_buffer.data + size);
                 combined_data = combined_local.data();
                 combined_w = w;
                 combined_h = h;
-                break;
+              }
+              else if (!sample_count_data && strcmp(b_pass->name, "Debug Sample Count") == 0 &&
+                       b_pass->channels == 1)
+              {
+                const size_t size = static_cast<size_t>(w) * h;
+                sample_count_local.assign(b_pass->ibuf->float_buffer.data,
+                                          b_pass->ibuf->float_buffer.data + size);
+                sample_count_data = sample_count_local.data();
+                sample_count_w = w;
+                sample_count_h = h;
               }
             }
           }
@@ -639,6 +681,13 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       if (combined_data) {
         deep_driver->set_beauty_buffer(combined_data, combined_w, combined_h);
       }
+      /* Blender's Debug Sample Count pass is normalized by the active render sample limit.
+       * Convert it back to absolute per-pixel counts before deep edge reconstruction. */
+      const float sample_count_scale = max(float(session->params.samples), 1.0f);
+      if (sample_count_data) {
+        deep_driver->set_sample_count_buffer(
+            sample_count_data, sample_count_w, sample_count_h, sample_count_scale);
+      }
 
       if (is_deep_exr_format) {
         /* Construct deep output path. */
@@ -655,41 +704,60 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
           deep_filepath += ".exr";
         }
 
+        if (deep_file_debug) {
+          LOG_DEBUG << "Deep file debug: is_deep_exr_format=" << is_deep_exr_format
+                    << " compositor_needs_deep=" << compositor_needs_deep
+                    << " deep_output_blocked=" << deep_output_blocked
+                    << " b_render->pic=" << b_render->pic << " deep_filepath=" << deep_filepath
+                    << " combined_buffer=" << (combined_data != nullptr)
+                    << " sample_count_buffer=" << (sample_count_data != nullptr)
+                    << " driver_size=" << deep_driver->get_width() << "x"
+                    << deep_driver->get_height();
+        }
+
         deep_driver->finalize_deep_output(deep_filepath);
       }
 
-      /* Store deep data in RenderResult for compositor access.
-       * The compositor needs access to deep data via RenderResult.deep_data. */
-      blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
-      if (render_result) {
-        unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_data(
-            deep_driver->get_processed_deep_data());
-        if (processed_data) {
-          unique_ptr<blender::RenderDeepData> converted_data =
-              make_unique<blender::RenderDeepData>();
-          converted_data->pixels = std::move(*processed_data);
+      const bool render_result_needs_processed_deep = (compositor_needs_deep ||
+                                                       is_deep_exr_format);
+      if (render_result_needs_processed_deep) {
+        /* Store processed deep data in RenderResult.
+         *
+         * The compositor needs access to deep data via RenderResult.deep_data.
+         * Direct scene-output Deep EXR also needs the processed data there so the
+         * regular render-result save path does not write the raw unprocessed deep
+         * buffers instead. */
+        blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
+        if (render_result) {
+          unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_data(
+              deep_driver->get_processed_deep_data());
+          if (processed_data) {
+            unique_ptr<blender::RenderDeepData> converted_data =
+                make_unique<blender::RenderDeepData>();
+            converted_data->pixels = std::move(*processed_data);
 
-          blender::RenderLayer *deep_layer = RE_GetRenderLayer(render_result, b_rlay_name.c_str());
-          if (!deep_layer) {
-            deep_layer = static_cast<blender::RenderLayer *>(render_result->layers.first);
-          }
-
-          if (deep_layer) {
-            if (deep_layer->deep_data && deep_layer->deep_data_owned) {
-              delete deep_layer->deep_data;
+            blender::RenderLayer *deep_layer = RE_GetRenderLayer(render_result, b_rlay_name.c_str());
+            if (!deep_layer) {
+              deep_layer = static_cast<blender::RenderLayer *>(render_result->layers.first);
             }
-            deep_layer->deep_data = converted_data.release();
-            deep_layer->deep_width = deep_driver->get_width();
-            deep_layer->deep_height = deep_driver->get_height();
-            deep_layer->deep_data_owned = true;
 
-            if (render_result->deep_data && render_result->deep_data_owned) {
-              delete render_result->deep_data;
+            if (deep_layer) {
+              if (deep_layer->deep_data && deep_layer->deep_data_owned) {
+                delete deep_layer->deep_data;
+              }
+              deep_layer->deep_data = converted_data.release();
+              deep_layer->deep_width = deep_driver->get_width();
+              deep_layer->deep_height = deep_driver->get_height();
+              deep_layer->deep_data_owned = true;
+
+              if (render_result->deep_data && render_result->deep_data_owned) {
+                delete render_result->deep_data;
+              }
+              render_result->deep_data = deep_layer->deep_data;
+              render_result->deep_width = deep_layer->deep_width;
+              render_result->deep_height = deep_layer->deep_height;
+              render_result->deep_data_owned = false;
             }
-            render_result->deep_data = deep_layer->deep_data;
-            render_result->deep_width = deep_layer->deep_width;
-            render_result->deep_height = deep_layer->deep_height;
-            render_result->deep_data_owned = false;
           }
         }
       }
@@ -1139,12 +1207,6 @@ void BlenderSession::view_draw(const int w, const int h)
   /* pause in redraw in case update is not being called due to final render */
   session->set_pause(BlenderSync::get_session_pause(*b_scene, background));
 
-  /* Update navigating state. */
-  const bool dimensions_changed = (width != w || height != h || pixelsize != blender::U.pixelsize);
-  const bool is_navigating = region_view3d_navigating_or_transforming(b_rv3d) ||
-                             dimensions_changed;
-  session->set_navigating(is_navigating);
-
   /* before drawing, we verify camera and viewport size changes, because
    * we do not get update callbacks for those, we must detect them here */
   if (session->ready_to_reset()) {
@@ -1152,7 +1214,8 @@ void BlenderSession::view_draw(const int w, const int h)
 
     /* If dimensions changed, reset. We need to check pixel size here because
      * it's only valid during drawing, as it can change per window. */
-    if (dimensions_changed) {
+    const float new_pixelsize = blender::U.pixelsize;
+    if (width != w || height != h || pixelsize != new_pixelsize) {
       if (start_resize_time == 0.0) {
         /* don't react immediately to resizes to avoid flickery resizing
          * of the viewport, and some window managers changing the window
@@ -1166,7 +1229,7 @@ void BlenderSession::view_draw(const int w, const int h)
       else {
         width = w;
         height = h;
-        pixelsize = blender::U.pixelsize;
+        pixelsize = new_pixelsize;
         reset = true;
       }
     }

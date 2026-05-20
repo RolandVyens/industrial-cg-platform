@@ -286,7 +286,6 @@ void AssetViewItem::build_grid_tile(const bContext &C, ui::Layout &layout) const
   if (asset_.is_online() && is_highlighted) {
     ui::Button *online_icon = uiItemL_ex(&overlay_row, "", ICON_INTERNET, false, false);
     button_label_alpha_factor_set(online_icon, 0.6f);
-    button_label_draw_icon_border_set(online_icon, true);
   }
 }
 

@@ -196,11 +196,12 @@ void PathTrace::render_pipeline(RenderWork render_work)
   rebalance(render_work);
   sync_deep_output_buffers();
 
-  /* Initialize kernel execution AFTER deep buffer sync so that CPU thread-local kernel globals
+  /* Initialize kernel execution after deep buffer sync so that CPU thread-local kernel globals
    * have the updated deep buffer pointers. This is critical for mixed CPU/GPU rendering where
-   * rebalance can change slice layouts and deep buffer allocations. */
-  SCOPED_DEFER(render_deinit_kernel_execution());
+   * rebalance can change slice layouts and deep buffer allocations. Keep the matching deinit
+   * scoped so early returns unwind cleanly. */
   render_init_kernel_execution();
+  SCOPED_DEFER(render_deinit_kernel_execution());
 
   /* Reset sample limit. */
   render_scheduler_.set_limit_samples_per_update(0);
@@ -666,8 +667,7 @@ void PathTrace::denoise(const RenderWork &render_work)
                                 render_state_.effective_denoised_big_tile_params,
                                 buffer_to_denoise,
                                 get_num_samples_in_buffer(),
-                                allow_inplace_modification,
-                                device_scene_->data.integrator.pixel_jitter))
+                                allow_inplace_modification))
   {
     render_state_.has_denoised_result = true;
   }
@@ -902,6 +902,26 @@ void PathTrace::write_tile_buffer(const RenderWork &render_work)
   render_state_.tile_written = true;
 
   const bool has_multiple_tiles = tile_manager_.has_multiple_tiles();
+
+  if (deep_output_driver_ && deep_output_driver_->is_enabled() && has_multiple_tiles) {
+    const int2 tile_size = get_render_tile_size();
+    const int2 tile_offset = get_render_tile_offset();
+    vector<float> beauty_pixels(static_cast<size_t>(tile_size.x) * tile_size.y * 4);
+    vector<float> sample_count_pixels(static_cast<size_t>(tile_size.x) * tile_size.y);
+
+    const PathTraceTile tile(*this);
+    const bool has_beauty = tile.get_pass_pixels("Combined", 4, beauty_pixels.data());
+    const bool has_sample_count = tile.get_pass_pixels(
+        PASS_SAMPLE_COUNT, 1, sample_count_pixels.data());
+
+    deep_output_driver_->accumulate_tile(has_beauty ? beauty_pixels.data() : nullptr,
+                                         has_sample_count ? sample_count_pixels.data() : nullptr,
+                                         float(get_num_render_tile_samples()),
+                                         tile_size.x,
+                                         tile_size.y,
+                                         tile_offset.x,
+                                         tile_offset.y);
+  }
 
   /* Write render tile result, but only if not using tiled rendering.
    *

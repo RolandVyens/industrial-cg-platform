@@ -196,6 +196,15 @@ static StructRNA *create_panels_srna(const bNodeTree &tree, GeneratedTreeSrnaDat
   return srna;
 }
 
+GeneratedTreeSrnaData::GeneratedTreeSrnaData()
+{
+  generated_rna = RNA_create_runtime();
+}
+GeneratedTreeSrnaData::~GeneratedTreeSrnaData()
+{
+  RNA_free(generated_rna);
+}
+
 std::shared_ptr<GeneratedTreeSrnaData> create_geometry_nodes_rna_for_modifier(
     const bNodeTree &tree)
 {

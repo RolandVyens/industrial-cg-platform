@@ -359,20 +359,18 @@ static void do_version_color_to_float_conversion(bNodeTree *node_tree)
     dot_product_node->location[1] = link.fromnode->location[1];
 
     /* Link the source socket to the dot product input. */
-    bNodeSocket *dot_product_a_input = bke::node_find_socket(
-        *dot_product_node, SOCK_IN, "Vector"_ustr);
+    bNodeSocket *dot_product_a_input = bke::node_find_socket(*dot_product_node, SOCK_IN, "Vector");
     version_node_add_link(
         *node_tree, *link.fromnode, *link.fromsock, *dot_product_node, *dot_product_a_input);
 
     /* Set the dot product vector to 1 / 3 to compute the average. */
     bNodeSocket *dot_product_b_input = bke::node_find_socket(
-        *dot_product_node, SOCK_IN, "Vector_001"_ustr);
+        *dot_product_node, SOCK_IN, "Vector_001");
     copy_v3_fl(dot_product_b_input->default_value_typed<bNodeSocketValueVector>()->value,
                1.0f / 3.0f);
 
     /* Link the dot product node output to the link target. */
-    bNodeSocket *dot_product_output = bke::node_find_socket(
-        *dot_product_node, SOCK_OUT, "Value"_ustr);
+    bNodeSocket *dot_product_output = bke::node_find_socket(*dot_product_node, SOCK_OUT, "Value");
     bNodeLink *output_link = &version_node_add_link(
         *node_tree, *dot_product_node, *dot_product_output, *link.tonode, *link.tosock);
 
@@ -391,7 +389,7 @@ static void do_version_bump_filter_width(bNodeTree *node_tree)
       continue;
     }
 
-    bNodeSocket *filter_width_input = bke::node_find_socket(node, SOCK_IN, "Filter Width"_ustr);
+    bNodeSocket *filter_width_input = bke::node_find_socket(node, SOCK_IN, "Filter Width");
     if (filter_width_input) {
       *version_cycles_node_socket_float_value(filter_width_input) = 1.0f;
     }
@@ -533,8 +531,8 @@ static bool versioning_convert_seq_text_anchor(Strip *strip, void * /*user_data*
   }
 
   TextVars *data = static_cast<TextVars *>(strip->effectdata);
-  data->anchor_x = eEffectTextAnchorX(data->align);
-  data->anchor_y = eEffectTextAnchorY(data->align_y_legacy);
+  data->anchor_x = data->align;
+  data->anchor_y = data->align_y_legacy;
   data->align = SEQ_TEXT_ALIGN_X_LEFT;
 
   return true;
@@ -572,8 +570,8 @@ static void remove_triangulate_node_min_size_input(bNodeTree *tree)
   }
 
   for (bNode *triangulate : triangulate_nodes) {
-    bNodeSocket *selection = bke::node_find_socket(*triangulate, SOCK_IN, "Selection"_ustr);
-    bNodeSocket *min_verts = bke::node_find_socket(*triangulate, SOCK_IN, "Minimum Vertices"_ustr);
+    bNodeSocket *selection = bke::node_find_socket(*triangulate, SOCK_IN, "Selection");
+    bNodeSocket *min_verts = bke::node_find_socket(*triangulate, SOCK_IN, "Minimum Vertices");
     if (!min_verts) {
       /* Make versioning idempotent. */
       continue;
@@ -622,16 +620,15 @@ static void remove_triangulate_node_min_size_input(bNodeTree *tree)
     greater_or_equal.flag &= ~NODE_OPTIONS;
     version_node_add_link(*tree,
                           corners_of_face,
-                          *bke::node_find_socket(*&corners_of_face, SOCK_OUT, "Total"_ustr),
+                          *bke::node_find_socket(*&corners_of_face, SOCK_OUT, "Total"),
                           greater_or_equal,
-                          *bke::node_find_socket(*&greater_or_equal, SOCK_IN, "A_INT"_ustr));
+                          *bke::node_find_socket(*&greater_or_equal, SOCK_IN, "A_INT"));
     if (bNodeLink **min_verts_link = input_links.lookup_ptr(min_verts)) {
       (*min_verts_link)->tonode = &greater_or_equal;
-      (*min_verts_link)->tosock = bke::node_find_socket(*&greater_or_equal, SOCK_IN, "B_INT"_ustr);
+      (*min_verts_link)->tosock = bke::node_find_socket(*&greater_or_equal, SOCK_IN, "B_INT");
     }
     else {
-      bNodeSocket *new_min_verts = bke::node_find_socket(
-          *&greater_or_equal, SOCK_IN, "B_INT"_ustr);
+      bNodeSocket *new_min_verts = bke::node_find_socket(*&greater_or_equal, SOCK_IN, "B_INT");
       static_cast<bNodeSocketValueInt *>(new_min_verts->default_value)->value = old_min_verts;
     }
 
@@ -650,23 +647,23 @@ static void remove_triangulate_node_min_size_input(bNodeTree *tree)
       boolean_and.custom1 = NODE_BOOLEAN_MATH_AND;
 
       (*selection_link)->tonode = &boolean_and;
-      (*selection_link)->tosock = bke::node_find_socket(*&boolean_and, SOCK_IN, "Boolean"_ustr);
+      (*selection_link)->tosock = bke::node_find_socket(*&boolean_and, SOCK_IN, "Boolean");
       version_node_add_link(*tree,
                             greater_or_equal,
-                            *bke::node_find_socket(*&greater_or_equal, SOCK_OUT, "Result"_ustr),
+                            *bke::node_find_socket(*&greater_or_equal, SOCK_OUT, "Result"),
                             boolean_and,
-                            *bke::node_find_socket(*&boolean_and, SOCK_IN, "Boolean_001"_ustr));
+                            *bke::node_find_socket(*&boolean_and, SOCK_IN, "Boolean_001"));
 
       version_node_add_link(*tree,
                             boolean_and,
-                            *bke::node_find_socket(*&boolean_and, SOCK_OUT, "Boolean"_ustr),
+                            *bke::node_find_socket(*&boolean_and, SOCK_OUT, "Boolean"),
                             *triangulate,
                             *selection);
     }
     else {
       version_node_add_link(*tree,
                             greater_or_equal,
-                            *bke::node_find_socket(*&greater_or_equal, SOCK_OUT, "Result"_ustr),
+                            *bke::node_find_socket(*&greater_or_equal, SOCK_OUT, "Result"),
                             *triangulate,
                             *selection);
     }
@@ -734,8 +731,6 @@ static void version_group_input_socket_data_block_reference(bNodeTree &ntree)
         case SOCK_MATERIAL:
           socket.default_value_typed<bNodeSocketValueMaterial>()->value = nullptr;
           break;
-        default:
-          break;
       }
     }
   }
@@ -743,7 +738,7 @@ static void version_group_input_socket_data_block_reference(bNodeTree &ntree)
 
 static bool versioning_clear_strip_unused_flag(Strip *strip, void * /*user_data*/)
 {
-  strip->flag &= ~eStripFlag(1 << 6);
+  strip->flag &= ~(1 << 6);
   return true;
 }
 

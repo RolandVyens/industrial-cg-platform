@@ -431,12 +431,14 @@ int BezierCurveShader::shade(Stroke &stroke) const
   // assigns the new coordinates:
   p = CurveVertices.begin();
   vector<Vec2d>::iterator last = p;
+  int n;
   StrokeInternal::StrokeVertexIterator it, itend;
-  for (it = stroke.strokeVerticesBegin(),
+  for (n = 0,
+      it = stroke.strokeVerticesBegin(),
       itend = stroke.strokeVerticesEnd(),
       pend = CurveVertices.end();
        (it != itend) && (p != pend);
-       ++it, ++p)
+       ++it, ++p, ++n)
   {
     it->setX(p->x());
     it->setY(p->y());
@@ -452,7 +454,7 @@ int BezierCurveShader::shade(Stroke &stroke) const
   // nExtraVertex should stay unassigned
   vector<StrokeAttribute> attributes;
   vector<StrokeVertex *> verticesToRemove;
-  for (int i = 0; i < nExtraVertex; ++i, ++it) {
+  for (int i = 0; i < nExtraVertex; ++i, ++it, ++n) {
     verticesToRemove.push_back(&(*it));
     if (it.isEnd()) {
       // XXX Shocking! :P Shouldn't we break in this case???

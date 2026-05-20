@@ -350,19 +350,24 @@ static void draw_filled_lasso(wmGesture *gt, const int2 *lasso_pt_extra)
 
     GPU_blend(GPU_BLEND_ADDITIVE_PREMULT);
 
-    PixelBitmapDrawer drawer(GPU_SHADER_2D_IMAGE_SHUFFLE_COLOR);
+    IMMDrawPixelsTexState state = immDrawPixelsTexSetup(GPU_SHADER_2D_IMAGE_SHUFFLE_COLOR);
+    GPU_shader_bind(state.shader);
     GPU_shader_uniform_float_ex(
-        drawer.shader_get(), GPU_shader_get_uniform(drawer.shader_get(), "shuffle"), 4, 1, red);
-    drawer.draw(rect.xmin,
-                rect.ymin,
-                w,
-                h,
-                gpu::TextureFormat::UNORM_8,
-                false,
-                pixel_buf,
-                1.0f,
-                1.0f,
-                nullptr);
+        state.shader, GPU_shader_get_uniform(state.shader, "shuffle"), 4, 1, red);
+
+    immDrawPixelsTexTiled(&state,
+                          rect.xmin,
+                          rect.ymin,
+                          w,
+                          h,
+                          gpu::TextureFormat::UNORM_8,
+                          false,
+                          pixel_buf,
+                          1.0f,
+                          1.0f,
+                          nullptr);
+
+    GPU_shader_unbind();
 
     MEM_delete(pixel_buf);
 

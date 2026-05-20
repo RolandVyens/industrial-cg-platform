@@ -4,11 +4,13 @@
 
 #pragma once
 
-#include "MEM_guardedalloc.h"
+#if defined(WITH_OPENCOLORIO)
 
-#include "OCIO_gpu_shader_binder.hh"
+#  include "MEM_guardedalloc.h"
 
-#include "../opencolorio.hh"
+#  include "OCIO_gpu_shader_binder.hh"
+
+#  include "../opencolorio.hh"
 
 namespace blender::ocio {
 
@@ -31,3 +33,5 @@ class LibOCIOGPUShaderBinder : public GPUShaderBinder {
 };
 
 }  // namespace blender::ocio
+
+#endif

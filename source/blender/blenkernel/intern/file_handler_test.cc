@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "BKE_file_handler.hh"
-#include "BKE_gtest_base.hh"
 
 #include "BLI_string.h"
 
@@ -37,9 +36,7 @@ static void file_handler_add_test(const int test_number,
   EXPECT_EQ(file_handlers()[test_number - 1]->file_extensions, expected_file_extensions);
 }
 
-class FileHandlerTest : public BlenderGTestBase {};
-
-TEST_F(FileHandlerTest, add)
+TEST(file_handler, add)
 {
   file_handler_add_test(1,
                         "Test_FH_blender1",
@@ -55,7 +52,7 @@ TEST_F(FileHandlerTest, add)
   file_handler_add_test(8, "Test_FH_blender8", "File Handler Test 8", "", {});
 }
 
-TEST_F(FileHandlerTest, find)
+TEST(file_handler, find)
 {
   EXPECT_EQ(file_handlers().size(), MAX_FILE_HANDLERS_TEST_SIZE);
   EXPECT_EQ(file_handler_find("Test_FH_blender1"), test_file_handlers[0]);
@@ -70,7 +67,7 @@ TEST_F(FileHandlerTest, find)
   EXPECT_EQ(file_handler_find("TstFH_blen"), nullptr);
 }
 
-TEST_F(FileHandlerTest, remove)
+TEST(file_handler, remove)
 {
   EXPECT_EQ(file_handlers().size(), MAX_FILE_HANDLERS_TEST_SIZE);
 

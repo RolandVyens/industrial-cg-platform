@@ -8,12 +8,10 @@
 
 #pragma once
 
-#include "BLI_enum_flags.hh"
-
 namespace blender {
 
 /** Settings for off-screen rendering. */
-enum eV3DOffscreenDrawFlag : int {
+enum eV3DOffscreenDrawFlag {
   V3D_OFSDRAW_NONE = (0),
   V3D_OFSDRAW_SHOW_ANNOTATION = (1 << 0),
   V3D_OFSDRAW_OVERRIDE_SCENE_SETTINGS = (1 << 1),
@@ -27,17 +25,16 @@ enum eV3DOffscreenDrawFlag : int {
    * In some specific case, we want to use the actual setting from the viewport or scene data. */
   V3D_OFSDRAW_NO_WORLD_BACKGROUND_OVERRIDE = (1 << 8),
 };
-ENUM_OPERATORS(eV3DOffscreenDrawFlag)
 
 /** #View3DShading.light */
-enum eV3DShadingLightingMode : char {
+enum eV3DShadingLightingMode {
   V3D_LIGHTING_FLAT = 0,
   V3D_LIGHTING_STUDIO = 1,
   V3D_LIGHTING_MATCAP = 2,
 };
 
 /** #View3DShading.color_type, #View3DShading.wire_color_type */
-enum eV3DShadingColorType : char {
+enum eV3DShadingColorType {
   V3D_SHADING_MATERIAL_COLOR = 0,
   V3D_SHADING_RANDOM_COLOR = 1,
   V3D_SHADING_SINGLE_COLOR = 2,
@@ -47,7 +44,7 @@ enum eV3DShadingColorType : char {
 };
 
 /** #View3DShading.background_type */
-enum eV3DShadingBackgroundType : char {
+enum eV3DShadingBackgroundType {
   V3D_SHADING_BACKGROUND_THEME = 0,
   V3D_SHADING_BACKGROUND_WORLD = 1,
   V3D_SHADING_BACKGROUND_VIEWPORT = 2,

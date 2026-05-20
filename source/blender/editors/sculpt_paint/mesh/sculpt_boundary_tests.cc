@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 #include "sculpt_boundary.hh"
 
-#include "BKE_gtest_base.hh"
+#include "BKE_idtype.hh"
 #include "BKE_lib_id.hh"
+
+#include "CLG_log.h"
 
 #include "DNA_mesh_types.h"
 
@@ -14,9 +16,20 @@
 #include "testing/testing.h"
 
 namespace blender::ed::sculpt_paint::tests {
-class MeshTests : public bke::BlenderGTestBase {
+class MeshTests : public testing::Test {
  public:
   Mesh *mesh = nullptr;
+
+  static void SetUpTestSuite()
+  {
+    CLG_init();
+    BKE_idtype_init();
+  }
+
+  static void TearDownTestSuite()
+  {
+    CLG_exit();
+  }
 
   void TearDown() override
   {

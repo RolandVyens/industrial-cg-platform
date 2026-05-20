@@ -107,7 +107,7 @@ static void rna_Image_source_set(PointerRNA *ptr, int value)
   Image *ima = id_cast<Image *>(ptr->owner_id);
 
   if (value != ima->source) {
-    ima->source = eImageSource(value);
+    ima->source = value;
     BLI_assert(BKE_id_is_in_global_main(&ima->id));
     BKE_image_signal(G_MAIN, ima, nullptr, IMA_SIGNAL_SRC_CHANGE);
     if (ima->source == IMA_SRC_TILED) {
@@ -140,7 +140,7 @@ static void rna_Image_generated_type_set(PointerRNA *ptr, int value)
 {
   Image *ima = static_cast<Image *>(ptr->data);
   ImageTile *base_tile = BKE_image_get_tile(ima, 0);
-  base_tile->gen_type = eImageGenType(value);
+  base_tile->gen_type = value;
 }
 
 static int rna_Image_generated_width_get(PointerRNA *ptr)
@@ -572,23 +572,25 @@ static void rna_Image_resolution_set(PointerRNA *ptr, const float *values)
 static int rna_Image_depth_get(PointerRNA *ptr)
 {
   Image *im = static_cast<Image *>(ptr->data);
+  ImBuf *ibuf;
   void *lock;
-  ImBuf *ibuf = BKE_image_acquire_ibuf(im, nullptr, &lock);
+  int planes;
 
-  int depth = 0;
+  ibuf = BKE_image_acquire_ibuf(im, nullptr, &lock);
+
   if (!ibuf) {
-    depth = 0;
+    planes = 0;
   }
   else if (ibuf->float_data()) {
-    depth = ibuf->color_mode_channels_get() * 8 * 4;
+    planes = ibuf->planes * 4;
   }
   else {
-    depth = ibuf->color_mode_channels_get() * 8;
+    planes = ibuf->planes;
   }
 
   BKE_image_release_ibuf(im, ibuf, lock);
 
-  return depth;
+  return planes;
 }
 
 static int rna_Image_frame_duration_get(PointerRNA *ptr)

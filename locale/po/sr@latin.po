@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'8c7c45ad114e')\n"
+"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-11 07:23+0000\n"
+"POT-Creation-Date: 2026-04-06 09:15+0000\n"
 "PO-Revision-Date: 2025-07-23 14:56+0000\n"
 "Last-Translator: Anonymous <noreply@weblate.org>\n"
 "Language-Team: Serbian (Latin script) <https://translate.blender.org/projects/blender-ui/ui/sr_Latn/>\n"
@@ -8486,16 +8486,20 @@ msgid "Dots"
 msgstr "Tufne"
 
 
-msgid "Placement"
-msgstr "Lokacija"
-
-
 msgid "Material slot in an object"
 msgstr "Slot materijala u objektu"
 
 
 msgid "Material slot name"
 msgstr "Naziv slota materijala"
+
+
+msgid "Math"
+msgstr "Matematika"
+
+
+msgid "Mirror"
+msgstr "Ogledalo"
 
 
 msgid "Snap"
@@ -8522,12 +8526,12 @@ msgid "Select Linked"
 msgstr "Izaberi povezano"
 
 
-msgid "Math"
-msgstr "Matematika"
-
-
 msgid "Metaball"
 msgstr "Meta lopta"
+
+
+msgid "Import"
+msgstr "Uvoz"
 
 
 msgid "Light"
@@ -8540,6 +8544,10 @@ msgstr "Odnosi"
 
 msgid "Rigid Body"
 msgstr "Kruto telo"
+
+
+msgid "UV"
+msgstr "UV"
 
 
 msgid "Apply"
@@ -8558,16 +8566,8 @@ msgid "Show/Hide"
 msgstr "Prikaži/sakrij"
 
 
-msgid "Import"
-msgstr "Uvoz"
-
-
 msgid "Hooks"
 msgstr "Udice"
-
-
-msgid "UV"
-msgstr "UV"
 
 
 msgid "Clear Transform"
@@ -8610,20 +8610,16 @@ msgid "Special Characters"
 msgstr "Specijalni znaci"
 
 
-msgid "Bone Roll"
-msgstr "Rolna kostiju"
-
-
 msgid "Keying"
 msgstr "Zbirka tastera"
 
 
+msgid "Bone Roll"
+msgstr "Rolna kostiju"
+
+
 msgid "Tracking"
 msgstr "Praćenje"
-
-
-msgid "Mirror"
-msgstr "Ogledalo"
 
 
 msgid "Basic"
@@ -11247,6 +11243,11 @@ msgstr "Uvoz BVH"
 
 
 msgctxt "Operator"
+msgid "Import SVG"
+msgstr "Uvoz SVG"
+
+
+msgctxt "Operator"
 msgid "Import FBX"
 msgstr "Izvoz FBX"
 
@@ -12351,6 +12352,10 @@ msgstr "Detektuj mogućnosti"
 
 msgid "Automatically detect features and place markers to track"
 msgstr "Samostalno detektuj mogućnost i postavi marker na stazu"
+
+
+msgid "Placement"
+msgstr "Lokacija"
 
 
 msgid "Placement for detected features"
@@ -18184,6 +18189,10 @@ msgid "Average Islands Scale"
 msgstr "Prosečna veličina ostrva"
 
 
+msgid "Axis Direction"
+msgstr "Smer osa"
+
+
 msgctxt "Operator"
 msgid "Cube Projection"
 msgstr "Kubična projekcija"
@@ -19062,12 +19071,12 @@ msgid "Restrict"
 msgstr "Ograniči"
 
 
-msgid "Transform Orientations"
-msgstr "Transformacija orijentacija"
-
-
 msgid "Motion Tracking"
 msgstr "Praćenje pokreta"
+
+
+msgid "Transform Orientations"
+msgstr "Transformacija orijentacija"
 
 
 msgid "Bone Constraints"
@@ -20155,6 +20164,10 @@ msgstr "Ograniči veličinu teksture radi uštede memorije grafičke kartice"
 
 msgid "Device"
 msgstr "Uređaj"
+
+
+msgid "2D Texture"
+msgstr "2D tekstura"
 
 
 msgid "Ambient Color"
@@ -23983,6 +23996,10 @@ msgstr "Modifikator vrednosti F-krive"
 
 msgid "Nothing selected"
 msgstr "Ništa nije izabrano"
+
+
+msgid "Pin"
+msgstr "Zakači"
 
 
 msgctxt "Operator"

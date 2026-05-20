@@ -1662,8 +1662,6 @@ void DepsgraphNodeBuilder::build_particle_systems(Object *object, bool is_object
           build_collection(nullptr, part->instance_collection);
         }
         break;
-      default:
-        break;
     }
   }
   op_node = add_operation_node(psys_comp, OperationCode::PARTICLE_SYSTEM_DONE);
@@ -2350,12 +2348,11 @@ static bool strip_node_build_cb(Strip *strip, void *user_data)
     nb->build_scene_parameters(strip->scene);
   }
   if (strip->type == STRIP_TYPE_SCENE && strip->scene != nullptr) {
-    BLI_assert(strip->scene_view_layer_name != nullptr);
     if (strip->flag & SEQ_SCENE_STRIPS) {
       nb->build_scene_sequencer(strip->scene);
     }
-    ViewLayer *strip_view_layer = BKE_view_layer_find(strip->scene, strip->scene_view_layer_name);
-    nb->build_scene_speakers(strip->scene, strip_view_layer);
+    ViewLayer *sequence_view_layer = BKE_view_layer_default_render(strip->scene);
+    nb->build_scene_speakers(strip->scene, sequence_view_layer);
   }
 
   if (strip->type == STRIP_TYPE_COMPOSITOR && strip->effectdata) {

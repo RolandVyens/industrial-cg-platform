@@ -87,8 +87,15 @@ ccl_device void osl_closure_diffuse_setup(KernelGlobals kg,
     return;
   }
 
-  const float3 N = safe_normalize_fallback(closure->N, sd->N);
-  bsdf_diffuse_setup(sd, N, rgb_to_spectrum(weight));
+  ccl_private DiffuseBsdf *bsdf = (ccl_private DiffuseBsdf *)bsdf_alloc(
+      sd, sizeof(DiffuseBsdf), rgb_to_spectrum(weight));
+  if (!bsdf) {
+    return;
+  }
+
+  bsdf->N = safe_normalize_fallback(closure->N, sd->N);
+
+  sd->flag |= bsdf_diffuse_setup(bsdf);
 }
 
 /* Deprecated form, will be removed in OSL 2.0. */
@@ -103,9 +110,16 @@ ccl_device void osl_closure_oren_nayar_setup(KernelGlobals kg,
     return;
   }
 
-  const float3 N = safe_normalize_fallback(closure->N, sd->N);
-  const Spectrum color = rgb_to_spectrum(weight);
-  bsdf_oren_nayar_setup(sd, N, color, closure->roughness, color);
+  ccl_private OrenNayarBsdf *bsdf = (ccl_private OrenNayarBsdf *)bsdf_alloc(
+      sd, sizeof(OrenNayarBsdf), rgb_to_spectrum(weight));
+  if (!bsdf) {
+    return;
+  }
+
+  bsdf->N = safe_normalize_fallback(closure->N, sd->N);
+  bsdf->roughness = closure->roughness;
+
+  sd->flag |= bsdf_oren_nayar_setup(sd, bsdf, rgb_to_spectrum(weight));
 }
 
 ccl_device void osl_closure_oren_nayar_diffuse_bsdf_setup(
@@ -120,10 +134,16 @@ ccl_device void osl_closure_oren_nayar_diffuse_bsdf_setup(
     return;
   }
 
-  const float3 N = safe_normalize_fallback(closure->N, sd->N);
-  const Spectrum closure_weight = rgb_to_spectrum(weight * closure->albedo);
-  const Spectrum color = rgb_to_spectrum(closure->albedo);
-  bsdf_oren_nayar_setup(sd, N, closure_weight, closure->roughness, color);
+  ccl_private OrenNayarBsdf *bsdf = (ccl_private OrenNayarBsdf *)bsdf_alloc(
+      sd, sizeof(OrenNayarBsdf), rgb_to_spectrum(weight * closure->albedo));
+  if (!bsdf) {
+    return;
+  }
+
+  bsdf->N = safe_normalize_fallback(closure->N, sd->N);
+  bsdf->roughness = closure->roughness;
+
+  sd->flag |= bsdf_oren_nayar_setup(sd, bsdf, rgb_to_spectrum(closure->albedo));
 }
 
 ccl_device void osl_closure_burley_diffuse_bsdf_setup(
@@ -160,8 +180,15 @@ ccl_device void osl_closure_translucent_setup(KernelGlobals kg,
     return;
   }
 
-  const float3 N = safe_normalize_fallback(closure->N, sd->N);
-  bsdf_translucent_setup(sd, N, rgb_to_spectrum(weight));
+  ccl_private DiffuseBsdf *bsdf = (ccl_private DiffuseBsdf *)bsdf_alloc(
+      sd, sizeof(DiffuseBsdf), rgb_to_spectrum(weight));
+  if (!bsdf) {
+    return;
+  }
+
+  bsdf->N = safe_normalize_fallback(closure->N, sd->N);
+
+  sd->flag |= bsdf_translucent_setup(bsdf);
 }
 
 ccl_device void osl_closure_translucent_bsdf_setup(
@@ -176,8 +203,15 @@ ccl_device void osl_closure_translucent_bsdf_setup(
     return;
   }
 
-  const float3 N = safe_normalize_fallback(closure->N, sd->N);
-  bsdf_translucent_setup(sd, N, rgb_to_spectrum(weight * closure->albedo));
+  ccl_private DiffuseBsdf *bsdf = (ccl_private DiffuseBsdf *)bsdf_alloc(
+      sd, sizeof(DiffuseBsdf), rgb_to_spectrum(weight * closure->albedo));
+  if (!bsdf) {
+    return;
+  }
+
+  bsdf->N = safe_normalize_fallback(closure->N, sd->N);
+
+  sd->flag |= bsdf_translucent_setup(bsdf);
 }
 
 ccl_device void osl_closure_reflection_setup(KernelGlobals kg,
@@ -967,9 +1001,6 @@ ccl_device void osl_closure_bssrdf_setup(KernelGlobals /*kg*/,
   }
   else if (closure->method == make_string("random_walk_skin", 3096325052680726300ull)) {
     type = CLOSURE_BSSRDF_RANDOM_WALK_SKIN_ID;
-  }
-  else if (closure->method == make_string("random_walk_legacy", 3162086485308246001ull)) {
-    type = CLOSURE_BSSRDF_RANDOM_WALK_LEGACY_ID;
   }
   else {
     return;

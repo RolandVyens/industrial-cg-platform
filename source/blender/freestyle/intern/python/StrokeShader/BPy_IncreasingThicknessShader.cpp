@@ -27,9 +27,9 @@ PyDoc_STRVAR(
     "\n"
     "   Builds an IncreasingThicknessShader object.\n"
     "\n"
-    "   :param thickness_A: The first thickness value.\n"
+    "   :arg thickness_A: The first thickness value.\n"
     "   :type thickness_A: float\n"
-    "   :param thickness_B: The second thickness value.\n"
+    "   :arg thickness_B: The second thickness value.\n"
     "   :type thickness_B: float\n"
     "\n"
     ".. method:: shade(stroke)\n"
@@ -40,7 +40,7 @@ PyDoc_STRVAR(
     "   this midpoint vertex and the last vertex. The thickness is\n"
     "   linearly interpolated from A to B.\n"
     "\n"
-    "   :param stroke: A Stroke object.\n"
+    "   :arg stroke: A Stroke object.\n"
     "   :type stroke: :class:`freestyle.types.Stroke`\n");
 static int IncreasingThicknessShader___init__(BPy_IncreasingThicknessShader *self,
                                               PyObject *args,

@@ -25,10 +25,7 @@ bool imb_is_a_dpx(const uchar *mem, size_t size)
   return imb_oiio_check(mem, size, "dpx");
 }
 
-ImBuf *imb_load_dpx(const uchar *mem,
-                    size_t size,
-                    ImBufFlags flags,
-                    ImFileColorSpace &r_colorspace)
+ImBuf *imb_load_dpx(const uchar *mem, size_t size, int flags, ImFileColorSpace &r_colorspace)
 {
   ImageSpec config, spec;
 
@@ -36,8 +33,8 @@ ImBuf *imb_load_dpx(const uchar *mem,
 
   ImBuf *ibuf = imb_oiio_read(ctx, config, r_colorspace, spec);
   if (ibuf) {
-    if (flag_is_set(flags, ImBufFlags::AlphaDetect)) {
-      ibuf->flags |= ImBufFlags::AlphaPremul;
+    if (flags & IB_alphamode_detect) {
+      ibuf->flags |= IB_alphamode_premul;
     }
   }
 
@@ -46,7 +43,7 @@ ImBuf *imb_load_dpx(const uchar *mem,
   return ibuf;
 }
 
-static std::tuple<WriteContext, ImageSpec> prepare_save_dpx(ImBuf *ibuf, ImBufFlags flags)
+bool imb_save_dpx(ImBuf *ibuf, const char *filepath, int flags)
 {
   int bits_per_sample = 8;
   if (ibuf->foptions.flag & CINEON_10BIT) {
@@ -59,7 +56,7 @@ static std::tuple<WriteContext, ImageSpec> prepare_save_dpx(ImBuf *ibuf, ImBufFl
     bits_per_sample = 16;
   }
 
-  const int file_channels = ibuf->color_mode_channels_get();
+  const int file_channels = ibuf->planes >> 3;
   const TypeDesc data_format = bits_per_sample == 8 ? TypeDesc::UINT8 : TypeDesc::UINT16;
 
   WriteContext ctx = imb_create_write_context("dpx", ibuf, flags);
@@ -89,19 +86,8 @@ static std::tuple<WriteContext, ImageSpec> prepare_save_dpx(ImBuf *ibuf, ImBufFl
   else {
     file_spec.attribute("dpx:Packing", "Filled, method A");
   }
-  return {ctx, file_spec};
-}
 
-bool imb_save_dpx(ImBuf *ibuf, const char *filepath, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_dpx(ibuf, flags);
   return imb_oiio_write(ctx, filepath, file_spec);
-}
-
-Vector<uint8_t> imb_save_buffer_dpx(ImBuf *ibuf, ImBufFlags flags)
-{
-  const auto [ctx, file_spec] = prepare_save_dpx(ibuf, flags);
-  return imb_oiio_write_buffer(ctx, file_spec);
 }
 
 }  // namespace blender
