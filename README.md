@@ -5,7 +5,7 @@ See 'release/text/readme.html' for the end user read-me.
 -->
 
 # Industrial CG Platform
-
+<img width="3840" height="1920" alt="splash_v002" src="https://github.com/user-attachments/assets/d39387c0-57a6-4420-81f9-67a1e31b1915" />
 <p align="center">
   <strong>Built for VFX. Built from Blender. Built for shots.</strong><br>
   A Blender-based production platform for advanced VFX workflows: bundled Qt runtime support,
@@ -48,16 +48,24 @@ Industrial CG Platform exists to push Blender further in that direction while st
 These features are based on work already present in this repository, not roadmap-only promises.
 
 - **Deep EXR output**  
-  For workflows that need per-sample depth and color data for compositing.
+  The very first deep exr function for blender
+  
+  <img width="797" height="260" alt="image" src="https://github.com/user-attachments/assets/6912ec1b-1505-44dc-8117-cc08a29575bc" />
 
 - **Cycles light and world shadow color controls**  
   For stylized lighting, shot-specific shadow tuning, and more flexible art direction.
+  
+  <img width="1164" height="665" alt="image" src="https://github.com/user-attachments/assets/5b254d1b-a674-4f4c-8ca7-6c7f50101525" />
 
 - **Lightgroup split and Light AOV workflows in Cycles**  
-  Including support for lightgroups that only need combined output.
+  Including support for lightgroups that splitted to material passes.
+  
+  <img width="878" height="405" alt="image" src="https://github.com/user-attachments/assets/626ecc8b-67db-4e63-b16a-c63726d7b2f7" />
 
 - **Bundled bQt runtime integration**  
   The repository includes a fork-owned Qt wrapper in `scripts/modules/blender_vfx_qt` and a bundled System Extension runtime payload for Qt-based tools.
+
+  <img width="1834" height="1277" alt="image" src="https://github.com/user-attachments/assets/1abe6843-2f21-4a61-9dd6-81c0e876260e" />
 
 ## Roadmap
 
