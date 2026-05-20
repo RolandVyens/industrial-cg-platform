@@ -23,6 +23,10 @@ Industrial CG Platform is a Blender-derived production distribution focused on t
 
 It is not a general Blender fork with random extras. It is a production-oriented Blender platform for artists, TDs, pipeline developers, and small teams who need VFX-style rendering behavior directly inside a Blender-based toolchain.
 
+### Website & Documents: https://rolandvyens.github.io/industrial-cg-platform-docs/
+
+---
+
 ## Support / Sponsor
 
 Industrial CG Platform is developed as production-focused open-source R&D.
