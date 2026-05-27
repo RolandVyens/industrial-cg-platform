@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.machinery
 import os
 from pathlib import Path
@@ -16,6 +17,12 @@ import sys
 _RUNTIME_EXTENSION_ID = "blender_vfx_qt_runtime"
 _SYSTEM_REPOSITORY_MODULE = "system"
 _RUNTIME_DLL_DIR_HANDLES: list[object] = []
+_RUNTIME_IMPORT_PREFIXES = (
+    "bqt",
+    "PySide6",
+    "shiboken6",
+    "blender_stylesheet",
+)
 
 _BQT_SAFE_ENV = {
     "BQT_DISABLE_WRAP": "1",
@@ -99,6 +106,10 @@ def _runtime_extension_module_name() -> str | None:
     return None
 
 
+def _import_extension_module(module_name: str) -> object:
+    return importlib.import_module(module_name)
+
+
 def _enable_runtime_extension() -> None:
     module_name = _runtime_extension_module_name()
     if module_name is None:
@@ -122,13 +133,43 @@ def _enable_runtime_extension() -> None:
         raise RuntimeError(err_str or "Failed to enable the bundled BQt runtime extension")
 
 
-def _import_runtime_packages():
+def _module_name_matches_prefix(module_name: str, prefixes: tuple[str, ...]) -> bool:
+    return any(
+        module_name == prefix or module_name.startswith(f"{prefix}.")
+        for prefix in prefixes
+    )
+
+
+def _clear_runtime_import_state() -> None:
+    importlib.invalidate_caches()
+    for module_name in tuple(sys.modules):
+        if _module_name_matches_prefix(module_name, _RUNTIME_IMPORT_PREFIXES):
+            sys.modules.pop(module_name, None)
+
+
+def _required_bqt_modules() -> tuple[str, ...]:
+    modules = ["bqt.manager"]
+    if sys.platform == "win32":
+        modules.append("bqt.blender_applications.win32_blender_application")
+    elif sys.platform == "darwin":
+        modules.append("bqt.blender_applications.darwin_blender_application")
+    return tuple(modules)
+
+
+def _import_runtime_packages() -> tuple[object | None, object | None, Exception | None]:
     try:
         import bqt
         from PySide6.QtWidgets import QApplication
-    except Exception:
-        return None, None
-    return bqt, QApplication
+
+        for module_name in _required_bqt_modules():
+            importlib.import_module(module_name)
+        if not callable(getattr(bqt, "register", None)):
+            raise RuntimeError("BQt runtime does not expose register()")
+        if not callable(getattr(bqt, "add", None)):
+            raise RuntimeError("BQt runtime does not expose add()")
+    except Exception as ex:
+        return None, None, ex
+    return bqt, QApplication, None
 
 
 def _debug_extension_suffixes_only() -> bool:
@@ -191,16 +232,20 @@ def _ensure_debug_extension_aliases() -> None:
 def ensure_bqt_runtime():
     configure_bqt_environment()
 
-    bqt, qapplication = _import_runtime_packages()
+    bqt, qapplication, import_error = _import_runtime_packages()
     if bqt is None:
+        _clear_runtime_import_state()
         _enable_runtime_extension()
         _ensure_runtime_dll_directories()
         _ensure_debug_extension_aliases()
-        bqt, qapplication = _import_runtime_packages()
+        _clear_runtime_import_state()
+        bqt, qapplication, import_error = _import_runtime_packages()
         if bqt is None:
+            error_suffix = f" ({import_error})" if import_error is not None else ""
             raise RuntimeError(
                 "BQt runtime is not available. Ensure blender_vfx_qt_runtime is "
                 "installed and bundled with the current build."
+                f"{error_suffix}"
             )
 
     try:

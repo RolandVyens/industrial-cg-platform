@@ -28,7 +28,7 @@ namespace blender {
 /** Blender release type suffix. LTS or blank. */
 #define BLENDER_VERSION_SUFFIX
 /** User-facing release date suffix appended to branded release builds. */
-#define BLENDER_VERSION_DATE_SUFFIX "-2026-05-25"
+#define BLENDER_VERSION_DATE_SUFFIX "-2026-05-27"
 /** Branch brand suffix appended to Goo-style user-facing version strings. */
 #define BLENDER_VERSION_BRAND_SUFFIX "Industrial CG Platform"
 
