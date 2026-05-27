@@ -130,6 +130,8 @@ Industrial CG Platform is authored and directed by Roland Vyens, with developmen
 
 These tools are part of the working process behind the project, but the platform direction, feature choices, release decisions, and fork maintenance remain project-owned.
 
+The project also gratefully acknowledges the MoonRay project, whose public implementation ideas helped inform some of the rendering-side approaches explored in this branch.
+
 ## License
 
 Industrial CG Platform follows Blender's GPL licensing model for the core application, and it also ships a bundled bQt runtime extension with additional third-party components.
