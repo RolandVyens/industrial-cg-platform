@@ -5,6 +5,8 @@ See 'release/text/readme.html' for the end user read-me.
 -->
 
 # Industrial CG Platform
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 <img width="3840" height="1920" alt="splash_v002" src="https://github.com/user-attachments/assets/d39387c0-57a6-4420-81f9-67a1e31b1915" />
 <p align="center">
   <strong>Built for VFX. Built from Blender. Built for shots.</strong><br>
