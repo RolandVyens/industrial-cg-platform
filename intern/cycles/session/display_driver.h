@@ -110,7 +110,6 @@ class DisplayDriver {
      * render. */
     int2 full_size = make_int2(0, 0);
     int2 full_offset = make_int2(0, 0);
-
     bool modified(const Params &other) const
     {
       return !(full_offset == other.full_offset && full_size == other.full_size &&

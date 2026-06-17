@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 #include "BLI_assert.h"
 #include "BLI_cpp_type.hh"
@@ -620,6 +619,12 @@ class FileOutputOperation : public NodeOperation {
     return STREQ(linked_link->fromsock->name, "Alpha");
   }
 
+  bool domain_has_display_window(const Domain &domain) const
+  {
+    return domain.display_size != domain.data_size || domain.data_offset != int2(0) ||
+           int2(domain.transformation.location()) != int2(0);
+  }
+
   void execute() override
   {
     /* Check if format is Deep EXR - if so, use deep data from render context. */
@@ -684,12 +689,36 @@ class FileOutputOperation : public NodeOperation {
     if (depth_merge_tolerance > 0.0f) {
       std::vector<std::vector<DeepSample>> merged_samples = deep_samples;
       deep_merge_samples(merged_samples, depth_merge_tolerance, alpha_merge_tolerance);
-      IMB_exr_save_deep(merged_samples, width, height, image_path, storage.format.exr_codec,
-                        (storage.format.depth == R_IMF_CHAN_DEPTH_16), alpha_only);
+      IMB_exr_save_deep(merged_samples,
+                        width,
+                        height,
+                        image_path,
+                        storage.format.exr_codec,
+                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
+                        alpha_only,
+                        deep_data->has_display_window,
+                        deep_data->display_size[0],
+                        deep_data->display_size[1],
+                        deep_data->display_offset[0],
+                        deep_data->display_offset[1],
+                        deep_data->data_offset[0],
+                        deep_data->data_offset[1]);
     }
     else {
-      IMB_exr_save_deep(deep_samples, width, height, image_path, storage.format.exr_codec,
-                        (storage.format.depth == R_IMF_CHAN_DEPTH_16), alpha_only);
+      IMB_exr_save_deep(deep_samples,
+                        width,
+                        height,
+                        image_path,
+                        storage.format.exr_codec,
+                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
+                        alpha_only,
+                        deep_data->has_display_window,
+                        deep_data->display_size[0],
+                        deep_data->display_size[1],
+                        deep_data->display_offset[0],
+                        deep_data->display_offset[1],
+                        deep_data->data_offset[0],
+                        deep_data->data_offset[1]);
     }
   }
 
@@ -734,9 +763,17 @@ class FileOutputOperation : public NodeOperation {
         continue;
       }
 
-      const int2 size = result.domain().data_size;
+      const Domain &domain = result.domain();
+      const int2 size = domain.data_size;
       FileOutput &file_output = this->context().render_context()->get_file_output(
-          image_path, format, size, save_as_render);
+          image_path,
+          format,
+          size,
+          save_as_render,
+          this->domain_has_display_window(domain),
+          domain.display_size,
+          int2(domain.transformation.location()),
+          domain.data_offset);
 
       this->add_view_for_result(file_output, result, context().get_view_name().data());
 
@@ -765,9 +802,17 @@ class FileOutputOperation : public NodeOperation {
       return;
     }
 
-    const int2 size = result.domain().data_size;
+    const Domain &domain = result.domain();
+    const int2 size = domain.data_size;
     FileOutput &file_output = this->context().render_context()->get_file_output(
-        image_path, format, size, true);
+        image_path,
+        format,
+        size,
+        true,
+        this->domain_has_display_window(domain),
+        domain.display_size,
+        int2(domain.transformation.location()),
+        domain.data_offset);
 
     /* The EXR stores all views in the same file, so we add the actual render view. Otherwise, we
      * add a default unnamed view. */
@@ -785,7 +830,8 @@ class FileOutputOperation : public NodeOperation {
   void execute_multi_layer()
   {
     /* We only write images, not single values. */
-    const int2 size = this->compute_domain().data_size;
+    const Domain domain = this->compute_domain();
+    const int2 size = domain.data_size;
     if (size == int2(1)) {
       return;
     }
@@ -805,7 +851,14 @@ class FileOutputOperation : public NodeOperation {
     }
 
     FileOutput &file_output = this->context().render_context()->get_file_output(
-        image_path, format, size, true);
+        image_path,
+        format,
+        size,
+        true,
+        this->domain_has_display_window(domain),
+        domain.display_size,
+        int2(domain.transformation.location()),
+        domain.data_offset);
 
     /* If we are saving views in separate files, we needn't store the view in the channel names, so
      * we add an unnamed view. */

@@ -230,6 +230,10 @@ class PathTrace {
   void write_tile_buffer(const RenderWork &render_work);
   void finalize_full_buffer_on_disk(const RenderWork &render_work);
   void sync_deep_output_buffers();
+  void get_deep_tile_pixels(vector<float> &beauty_pixels,
+                            bool &has_beauty_pixels,
+                            vector<float> &sample_count_pixels,
+                            bool &has_sample_count_pixels);
 
   /* Updates/initializes the guiding structures after a rendering iteration.
    * The structures are updated using the training data/samples generated during the previous

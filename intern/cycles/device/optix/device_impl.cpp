@@ -24,10 +24,67 @@
 #  include "util/progress.h"
 #  include "util/task.h"
 
+#  include <cstdlib>
+
 #  define __KERNEL_OPTIX__
 #  include "kernel/device/optix/globals.h"
 
 CCL_NAMESPACE_BEGIN
+
+static bool optix_cache_path_is_user_set()
+{
+  const char *cache_path = getenv("OPTIX_CACHE_PATH");
+  return cache_path != nullptr && cache_path[0] != '\0';
+}
+
+static bool ensure_optix_cache_directory_exists(const string &cache_path)
+{
+  if (cache_path.empty()) {
+    return false;
+  }
+
+  if (path_is_directory(cache_path)) {
+    return true;
+  }
+
+  /* `path_create_directories()` creates the parent directory of a filepath.
+   * Provide a dummy child so the requested cache directory itself is created. */
+  return path_create_directories(path_join(cache_path, "optix7cache.db")) &&
+         path_is_directory(cache_path);
+}
+
+static string industrial_cg_platform_optix_cache_path()
+{
+#  ifdef _WIN32
+  const char *local_app_data = getenv("LOCALAPPDATA");
+  if (local_app_data == nullptr || local_app_data[0] == '\0') {
+    return string();
+  }
+  return path_join(path_join(path_join(string(local_app_data), "IndustrialCGPlatform"), "Cache"),
+                   "OptiX");
+#  elif defined(__APPLE__)
+  const char *home = getenv("HOME");
+  if (home == nullptr || home[0] == '\0') {
+    return string();
+  }
+  return path_join(path_join(path_join(string(home), "Library"), "Caches"),
+                   path_join("IndustrialCGPlatform", "OptiX"));
+#  else
+  const char *cache_home = getenv("XDG_CACHE_HOME");
+  string root;
+  if (cache_home != nullptr && cache_home[0] != '\0') {
+    root = cache_home;
+  }
+  else {
+    const char *home = getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+      return string();
+    }
+    root = path_join(string(home), ".cache");
+  }
+  return path_join(path_join(root, "industrial-cg-platform"), "optix");
+#  endif
+}
 
 static void execute_optix_task(TaskPool &pool, OptixTask task, OptixResult &failure_reason)
 {
@@ -90,6 +147,24 @@ OptiXDevice::OptiXDevice(const DeviceInfo &info, Stats &stats, Profiler &profile
   optix_assert(optixDeviceContextCreate(cuContext, &options, &context));
   optix_assert(optixDeviceContextSetLogCallback(
       context, options.logCallbackFunction, options.logCallbackData, options.logCallbackLevel));
+  if (!optix_cache_path_is_user_set()) {
+    const string cache_path = industrial_cg_platform_optix_cache_path();
+    if (ensure_optix_cache_directory_exists(cache_path)) {
+      const OptixResult cache_result = optixDeviceContextSetCacheLocation(context,
+                                                                          cache_path.c_str());
+      if (cache_result == OPTIX_SUCCESS) {
+        LOG_INFO << "Using Industrial CG Platform OptiX cache: " << cache_path;
+      }
+      else {
+        LOG_WARNING << "Failed to set Industrial CG Platform OptiX cache at " << cache_path
+                    << " (" << optixGetErrorName(cache_result) << ")";
+      }
+    }
+    else if (!cache_path.empty()) {
+      LOG_WARNING << "Failed to create Industrial CG Platform OptiX cache directory: "
+                  << cache_path;
+    }
+  }
 
   /* Fix weird compiler bug that assigns wrong size. */
   launch_params.data_elements = sizeof(KernelParamsOptiX);

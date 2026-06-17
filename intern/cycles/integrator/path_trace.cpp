@@ -4,6 +4,8 @@
 
 #include "integrator/path_trace.h"
 
+#include <cstring>
+
 #include "device/cpu/device.h"
 #include "device/device.h"
 
@@ -25,6 +27,22 @@
 #include "util/time.h"
 
 CCL_NAMESPACE_BEGIN
+
+namespace {
+
+uint32_t pass_float_as_uint(const float value)
+{
+  uint32_t result;
+  memcpy(&result, &value, sizeof(result));
+  return result;
+}
+
+float combined_transparency_to_alpha(const float transparency)
+{
+  return min(max(1.0f - transparency, 0.0f), 1.0f);
+}
+
+}  // namespace
 
 PathTrace::PathTrace(Device *device,
                      Device *denoise_device,
@@ -908,11 +926,10 @@ void PathTrace::write_tile_buffer(const RenderWork &render_work)
     const int2 tile_offset = get_render_tile_offset();
     vector<float> beauty_pixels(static_cast<size_t>(tile_size.x) * tile_size.y * 4);
     vector<float> sample_count_pixels(static_cast<size_t>(tile_size.x) * tile_size.y);
+    bool has_beauty = false;
+    bool has_sample_count = false;
 
-    const PathTraceTile tile(*this);
-    const bool has_beauty = tile.get_pass_pixels("Combined", 4, beauty_pixels.data());
-    const bool has_sample_count = tile.get_pass_pixels(
-        PASS_SAMPLE_COUNT, 1, sample_count_pixels.data());
+    get_deep_tile_pixels(beauty_pixels, has_beauty, sample_count_pixels, has_sample_count);
 
     deep_output_driver_->accumulate_tile(has_beauty ? beauty_pixels.data() : nullptr,
                                          has_sample_count ? sample_count_pixels.data() : nullptr,
@@ -1029,6 +1046,88 @@ void PathTrace::tile_buffer_read()
     parallel_for_each(path_trace_works_, [](unique_ptr<PathTraceWork> &path_trace_work) {
       path_trace_work->copy_render_buffers_to_device();
     });
+  }
+}
+
+void PathTrace::get_deep_tile_pixels(vector<float> &beauty_pixels,
+                                     bool &has_beauty_pixels,
+                                     vector<float> &sample_count_pixels,
+                                     bool &has_sample_count_pixels)
+{
+  has_beauty_pixels = false;
+  has_sample_count_pixels = false;
+
+  if (!copy_render_tile_from_device()) {
+    return;
+  }
+
+  const int2 tile_size = get_render_tile_size();
+  const int2 tile_offset = get_render_tile_offset();
+  const int fallback_sample_count = get_num_render_tile_samples();
+
+  for (const unique_ptr<PathTraceWork> &path_trace_work : path_trace_works_) {
+    RenderBuffers *buffers = path_trace_work->get_render_buffers();
+    const BufferParams &params = buffers->params;
+
+    const int combined_offset = params.get_pass_offset(PASS_COMBINED);
+    const int sample_count_offset = params.get_pass_offset(PASS_SAMPLE_COUNT);
+
+    if (params.width <= 0 || params.height <= 0 || params.stride <= 0 || params.pass_stride <= 0 ||
+        buffers->buffer.size() < static_cast<size_t>(params.width) * params.height *
+                                     params.pass_stride)
+    {
+      continue;
+    }
+
+    if (combined_offset == PASS_UNUSED && sample_count_offset == PASS_UNUSED) {
+      continue;
+    }
+
+    const int64_t pass_stride = params.pass_stride;
+    const int64_t row_stride = params.stride * pass_stride;
+    const float *buffer = buffers->buffer.data();
+
+    for (int y = 0; y < params.window_height; y++) {
+      const int local_y = params.window_y + y;
+      const int global_y = params.full_y + local_y;
+      const int tile_y = global_y - tile_offset.y;
+      if (local_y < 0 || local_y >= params.height || tile_y < 0 || tile_y >= tile_size.y) {
+        continue;
+      }
+
+      const float *row = buffer + static_cast<int64_t>(local_y) * row_stride;
+      for (int x = 0; x < params.window_width; x++) {
+        const int local_x = params.window_x + x;
+        const int global_x = params.full_x + local_x;
+        const int tile_x = global_x - tile_offset.x;
+        if (local_x < 0 || local_x >= params.width || tile_x < 0 || tile_x >= tile_size.x) {
+          continue;
+        }
+
+        const float *pixel = row + static_cast<int64_t>(local_x) * pass_stride;
+        const size_t dst_index = static_cast<size_t>(tile_y) * tile_size.x + tile_x;
+
+        uint32_t sample_count = fallback_sample_count;
+        if (sample_count_offset != PASS_UNUSED) {
+          sample_count = pass_float_as_uint(pixel[sample_count_offset]);
+          sample_count_pixels[dst_index] = fallback_sample_count > 0 ?
+                                               float(sample_count) / float(fallback_sample_count) :
+                                               0.0f;
+          has_sample_count_pixels = true;
+        }
+
+        if (combined_offset != PASS_UNUSED) {
+          const float scale = sample_count > 0 ? 1.0f / float(sample_count) : 0.0f;
+          const size_t beauty_index = dst_index * 4;
+          beauty_pixels[beauty_index + 0] = pixel[combined_offset + 0] * scale * params.exposure;
+          beauty_pixels[beauty_index + 1] = pixel[combined_offset + 1] * scale * params.exposure;
+          beauty_pixels[beauty_index + 2] = pixel[combined_offset + 2] * scale * params.exposure;
+          beauty_pixels[beauty_index + 3] = combined_transparency_to_alpha(
+              pixel[combined_offset + 3] * scale);
+          has_beauty_pixels = true;
+        }
+      }
+    }
   }
 }
 
@@ -1194,6 +1293,14 @@ void PathTrace::process_full_buffer_from_disk(string_view filename)
 
     render_state_.has_denoised_result = true;
   }
+
+  /* Full-buffer replay writes the whole loaded physical buffer back to Blender as one tile.
+   * Normalize the replay window to the loaded buffer extent so pass accessors do not apply the
+   * display-window offset a second time. */
+  full_frame_buffers.params.window_x = 0;
+  full_frame_buffers.params.window_y = 0;
+  full_frame_buffers.params.window_width = full_frame_buffers.params.width;
+  full_frame_buffers.params.window_height = full_frame_buffers.params.height;
 
   full_frame_state_.render_buffers = &full_frame_buffers;
 

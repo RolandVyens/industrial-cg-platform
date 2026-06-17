@@ -2,8 +2,6 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#include <cstring>
-
 #include "blender/output_driver.h"
 
 #include "BLI_listbase.h"
@@ -13,7 +11,6 @@
 CCL_NAMESPACE_BEGIN
 
 BlenderOutputDriver::BlenderOutputDriver(blender::RenderEngine &b_engine) : b_engine_(b_engine) {}
-
 BlenderOutputDriver::~BlenderOutputDriver() = default;
 
 bool BlenderOutputDriver::read_render_tile(const Tile &tile)

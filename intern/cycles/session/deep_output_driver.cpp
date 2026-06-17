@@ -516,6 +516,7 @@ DeepOutputDriver::DeepOutputDriver(Device *device) : device_(device)
 
 DeepOutputDriver::~DeepOutputDriver()
 {
+  release_temporary_host_caches();
 }
 
 void DeepOutputDriver::reset(int width, int height, int max_samples_per_pixel)
@@ -886,7 +887,19 @@ void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
   /* Write using provided callback. */
   if (write_callback_) {
     bool success = write_callback_(
-        *deep_data_to_write, width_, height_, filepath, compression_, use_half_float_);
+        *deep_data_to_write,
+        width_,
+        height_,
+        filepath,
+        compression_,
+        use_half_float_,
+        has_display_window_,
+        display_width_,
+        display_height_,
+        display_offset_x_,
+        display_offset_y_,
+        data_offset_x_,
+        data_offset_y_);
     if (success) {
     LOG_INFO << "Deep EXR saved successfully: " << filepath;
     }
@@ -913,6 +926,17 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::get_processed_d
   }
 
   return processed_cache_.release();
+}
+
+void DeepOutputDriver::release_temporary_host_caches()
+{
+  processed_cache_.reset();
+  pixel_written_.free_memory();
+  sample_count_buffer_.free_memory();
+  beauty_buffer_.free_memory();
+  use_sample_count_buffer_ = false;
+  use_beauty_buffer_ = false;
+  sample_count_scale_ = 1.0f;
 }
 
 void DeepOutputDriver::set_beauty_buffer(const float *rgba_buffer, int width, int height)
@@ -1059,6 +1083,23 @@ void DeepOutputDriver::set_compression(int compression)
 void DeepOutputDriver::set_use_half_float(bool use_half)
 {
   use_half_float_ = use_half;
+}
+
+void DeepOutputDriver::set_display_window(bool has_display_window,
+                                          int display_width,
+                                          int display_height,
+                                          int display_offset_x,
+                                          int display_offset_y,
+                                          int data_offset_x,
+                                          int data_offset_y)
+{
+  has_display_window_ = has_display_window;
+  display_width_ = display_width;
+  display_height_ = display_height;
+  display_offset_x_ = display_offset_x;
+  display_offset_y_ = display_offset_y;
+  data_offset_x_ = data_offset_x;
+  data_offset_y_ = data_offset_y;
 }
 
 void DeepOutputDriver::set_write_callback(DeepExrWriteCallback callback)

@@ -50,6 +50,11 @@ enum_filter_types = (
     ('BLACKMAN_HARRIS', "Blackman-Harris", "Blackman-Harris filter"),
 )
 
+enum_overscan_modes = (
+    ('PERCENTAGE', "Percentage", "Use the same overscan percentage on all four sides"),
+    ('PIXELS', "Pixels", "Set overscan pixels independently for each side"),
+)
+
 enum_curve_shape = (
     ('RIBBONS',
      "Rounded Ribbons",
@@ -356,6 +361,25 @@ def update_render_passes(self, context):
 def update_render_engine(self, context):
     scene = context.scene
     scene.update_render_engine()
+
+
+def overscan_controls_enabled(self):
+    if getattr(self, "overscan_mode", 'PERCENTAGE') == 'PIXELS':
+        return any(
+            getattr(self, prop_name) > 0
+            for prop_name in ("overscan_left", "overscan_right", "overscan_bottom", "overscan_top")
+        )
+
+    return getattr(self, "overscan_size", 0.0) > 0.0
+
+
+def update_overscan_controls(self, context):
+    enabled = overscan_controls_enabled(self)
+    if getattr(self, "use_overscan", False) != enabled:
+        self.use_overscan = enabled
+        return
+
+    update_render_engine(self, context)
 
 
 def update_world(self, context):
@@ -895,6 +919,68 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         description="Image brightness scale",
         min=0.0, soft_max=2**10, max=2**32,
         default=1.0,
+    )
+    use_overscan: BoolProperty(
+        name="Overscan",
+        description="Internally render past the image border for EXR output while keeping viewport "
+        "rendering on the native camera frame",
+        default=False,
+        update=update_render_engine,
+        options={'HIDDEN'},
+    )
+    overscan_mode: EnumProperty(
+        name="Mode",
+        description="How overscan padding is controlled",
+        items=enum_overscan_modes,
+        default='PERCENTAGE',
+        update=update_overscan_controls,
+    )
+    overscan_size: FloatProperty(
+        name="Overscan Size",
+        description="Percentage of render size to add as overscan to the internal render buffers, set to 0 to disable",
+        min=0.0,
+        soft_max=100.0,
+        max=100.0,
+        default=0.0,
+        precision=2,
+        subtype='PERCENTAGE',
+        update=update_overscan_controls,
+    )
+    overscan_left: IntProperty(
+        name="Left",
+        description="Additional overscan pixels to render on the left side, set all sides to 0 to disable",
+        min=0,
+        soft_max=2048,
+        max=1048576,
+        default=0,
+        update=update_overscan_controls,
+    )
+    overscan_right: IntProperty(
+        name="Right",
+        description="Additional overscan pixels to render on the right side",
+        min=0,
+        soft_max=2048,
+        max=1048576,
+        default=0,
+        update=update_overscan_controls,
+    )
+    overscan_bottom: IntProperty(
+        name="Bottom",
+        description="Additional overscan pixels to render on the bottom side",
+        min=0,
+        soft_max=2048,
+        max=1048576,
+        default=0,
+        update=update_overscan_controls,
+    )
+    overscan_top: IntProperty(
+        name="Top",
+        description="Additional overscan pixels to render on the top side",
+        min=0,
+        soft_max=2048,
+        max=1048576,
+        default=0,
+        update=update_overscan_controls,
     )
     film_transparent_glass: BoolProperty(
         name="Transparent Glass",

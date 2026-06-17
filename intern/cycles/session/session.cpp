@@ -31,6 +31,32 @@
 
 CCL_NAMESPACE_BEGIN
 
+namespace {
+
+bool buffer_params_has_expanded_data_window(const BufferParams &buffer_params)
+{
+  return buffer_params.window_x != 0 || buffer_params.window_y != 0 ||
+         buffer_params.width > buffer_params.full_width ||
+         buffer_params.height > buffer_params.full_height ||
+         buffer_params.full_x < 0 || buffer_params.full_y < 0 ||
+         (buffer_params.full_x + buffer_params.width) > buffer_params.full_width ||
+         (buffer_params.full_y + buffer_params.height) > buffer_params.full_height;
+}
+
+bool buffer_params_use_data_window_camera_resolution(const BufferParams &buffer_params)
+{
+  if (!buffer_params_has_expanded_data_window(buffer_params)) {
+    return false;
+  }
+
+  /* A negative window offset marks full-frame overscan whose camera space expands with the
+   * physical buffer. Cropped and viewport buffers instead keep global pixel coordinates in the
+   * original full-frame camera space, even when their padded data window extends outside it. */
+  return buffer_params.window_x < 0 || buffer_params.window_y < 0;
+}
+
+}  // namespace
+
 Session::Session(const SessionParams &params_, const SceneParams &scene_params)
     : params(params_), render_scheduler_(tile_manager_, params)
 {
@@ -403,8 +429,14 @@ RenderWork Session::run_update_for_next_iteration()
      * knows nothing about progressive or cropped rendering, it just gets the
      * image dimensions passed in. */
     const float resolution = render_work.resolution_divider;
-    const int width = max(1, int(buffer_params_.full_width / resolution));
-    const int height = max(1, int(buffer_params_.full_height / resolution));
+    const bool use_data_window_resolution = buffer_params_use_data_window_camera_resolution(
+        buffer_params_);
+    const int width = max(
+        1, int((use_data_window_resolution ? buffer_params_.width : buffer_params_.full_width) /
+               resolution));
+    const int height = max(
+        1, int((use_data_window_resolution ? buffer_params_.height : buffer_params_.full_height) /
+               resolution));
 
     scene->update_camera_resolution(progress, width, height);
 

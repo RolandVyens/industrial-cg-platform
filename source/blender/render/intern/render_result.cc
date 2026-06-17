@@ -7,9 +7,6 @@
  */
 
 #include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 #include "MEM_guardedalloc.h"
 
@@ -397,6 +394,11 @@ void render_result_passes_allocated_ensure(RenderResult *rr)
   }
 
   rr->passes_allocated = true;
+}
+
+void RE_render_result_passes_allocated_ensure(RenderResult *rr)
+{
+  render_result_passes_allocated_ensure(rr);
 }
 
 void render_result_clone_passes(Render *re, RenderResult *rr, const char *viewname)
@@ -1107,19 +1109,83 @@ bool render_result_exr_file_cache_read(Render *re)
 /** \name Combined Pixel Rect
  * \{ */
 
+static void render_result_copy_display_window(ImBuf *dst, const ImBuf *src)
+{
+  if (!src || !(src->flags & IB_has_display_window)) {
+    return;
+  }
+
+  dst->flags |= IB_has_display_window;
+  copy_v2_v2_int(dst->display_size, src->display_size);
+  copy_v2_v2_int(dst->display_offset, src->display_offset);
+  copy_v2_v2_int(dst->data_offset, src->data_offset);
+}
+
+static ImBuf *render_result_rect_crop_to_display_window(const ImBuf *src, const int planes)
+{
+  ImBuf *dst = IMB_allocImBuf(src->display_size[0], src->display_size[1], planes, 0);
+  dst->channels = src->channels;
+
+  const int src_x = max_ii(0, -src->data_offset[0]);
+  const int src_y = max_ii(0, -src->data_offset[1]);
+  const int dst_x = max_ii(0, src->data_offset[0]);
+  const int dst_y = max_ii(0, src->data_offset[1]);
+  const int copy_width = min_ii(src->x - src_x, dst->x - dst_x);
+  const int copy_height = min_ii(src->y - src_y, dst->y - dst_y);
+
+  if (copy_width <= 0 || copy_height <= 0) {
+    return dst;
+  }
+
+  if (src->float_data()) {
+    IMB_alloc_float_pixels(dst, src->channels, true);
+
+    for (int y = 0; y < copy_height; y++) {
+      const int64_t src_offset =
+          (int64_t(src_y + y) * src->x + src_x) * int64_t(src->channels);
+      const int64_t dst_offset =
+          (int64_t(dst_y + y) * dst->x + dst_x) * int64_t(src->channels);
+      memcpy(dst->float_data_for_write() + dst_offset,
+             src->float_data() + src_offset,
+             sizeof(float) * size_t(copy_width) * size_t(src->channels));
+    }
+  }
+
+  if (src->byte_data()) {
+    IMB_alloc_byte_pixels(dst, true);
+
+    for (int y = 0; y < copy_height; y++) {
+      const int64_t src_offset = (int64_t(src_y + y) * src->x + src_x) * 4;
+      const int64_t dst_offset = (int64_t(dst_y + y) * dst->x + dst_x) * 4;
+      memcpy(dst->byte_data_for_write() + dst_offset,
+             src->byte_data() + src_offset,
+             sizeof(uchar) * size_t(copy_width) * 4);
+    }
+  }
+
+  return dst;
+}
+
 ImBuf *RE_render_result_rect_to_ibuf(RenderResult *rr,
                                      const ImageFormatData *imf,
                                      const float dither,
                                      const int view_id)
 {
-  ImBuf *ibuf = IMB_allocImBuf(rr->rectx, rr->recty, imf->planes, 0);
   RenderView *rv = RE_RenderViewGetById(rr, view_id);
+  const bool has_display_window = rv->ibuf && (rv->ibuf->flags & IB_has_display_window);
+  const bool keep_display_window = has_display_window &&
+                                   ELEM(imf->imtype, R_IMF_IMTYPE_OPENEXR, R_IMF_IMTYPE_MULTILAYER);
+  const bool crop_to_display_window = has_display_window && !keep_display_window;
+  ImBuf *ibuf = crop_to_display_window ? render_result_rect_crop_to_display_window(rv->ibuf,
+                                                                                   imf->planes) :
+                                         IMB_allocImBuf(rr->rectx, rr->recty, imf->planes, 0);
 
   /* if not exists, BKE_imbuf_write makes one */
-  if (rv->ibuf) {
+  if (rv->ibuf && !crop_to_display_window) {
     IMB_assign_byte_buffer(ibuf, rv->ibuf->byte_data_for_write(), IB_DO_NOT_TAKE_OWNERSHIP);
     IMB_assign_float_buffer(ibuf, rv->ibuf->float_data_for_write(), IB_DO_NOT_TAKE_OWNERSHIP);
     ibuf->channels = rv->ibuf->channels;
+    render_result_copy_display_window(ibuf, rv->ibuf);
   }
 
   IMB_colormanagement_assign_float_colorspace(

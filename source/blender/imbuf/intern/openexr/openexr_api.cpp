@@ -88,6 +88,7 @@
 #include "BLI_listbase.h"
 #include "BLI_math_base.hh"
 #include "BLI_math_color.h"
+#include "BLI_math_vector_types.hh"
 #include "BLI_mmap.h"
 #include "BLI_string.h"
 #include "BLI_string_ref.hh"
@@ -598,6 +599,49 @@ static void openexr_header_metadata_callback(void *data,
   header->insert(propname, StringAttribute(prop));
 }
 
+static bool imb_exr_has_display_window(const ImBuf *ibuf)
+{
+  return ibuf && (ibuf->flags & IB_has_display_window);
+}
+
+static void openexr_header_set_display_window(Header *header,
+                                              const int data_width,
+                                              const int data_height,
+                                              const int display_size[2],
+                                              const int display_offset[2],
+                                              const int data_offset[2])
+{
+  Box2i display_window;
+  display_window.min = V2i(display_offset[0], display_offset[1]);
+  display_window.max = V2i(
+      display_offset[0] + display_size[0] - 1, display_offset[1] + display_size[1] - 1);
+
+  const int data_window_min_x = display_offset[0] + data_offset[0];
+  const int data_window_min_y = display_offset[1] + data_offset[1];
+
+  Box2i data_window;
+  data_window.min = V2i(data_window_min_x, data_window_min_y);
+  data_window.max = V2i(data_window_min_x + data_width - 1, data_window_min_y + data_height - 1);
+
+  header->displayWindow() = display_window;
+  header->dataWindow() = data_window;
+}
+
+static void openexr_header_set_display_window(Header *header, const ImBuf *ibuf)
+{
+  if (!imb_exr_has_display_window(ibuf)) {
+    return;
+  }
+
+  openexr_header_set_display_window(
+      header, ibuf->x, ibuf->y, ibuf->display_size, ibuf->display_offset, ibuf->data_offset);
+}
+
+static int2 openexr_data_window_min(const int display_offset[2], const int data_offset[2])
+{
+  return int2(display_offset[0] + data_offset[0], display_offset[1] + data_offset[1]);
+}
+
 static bool imb_save_openexr_half(ImBuf *ibuf, const char *filepath, const int flags)
 {
   const int channels = ibuf->channels;
@@ -608,6 +652,7 @@ static bool imb_save_openexr_half(ImBuf *ibuf, const char *filepath, const int f
 
   try {
     Header header(width, height);
+    openexr_header_set_display_window(&header, ibuf);
 
     const int compression = ibuf->foptions.flag & OPENEXR_CODEC_MASK;
     openexr_header_compression(&header, compression, ibuf->foptions.quality);
@@ -640,14 +685,22 @@ static bool imb_save_openexr_half(ImBuf *ibuf, const char *filepath, const int f
     std::unique_ptr<RGBAZ[]> pixels = std::unique_ptr<RGBAZ[]>(new RGBAZ[int64_t(height) * width]);
     RGBAZ *to = pixels.get();
     int xstride = sizeof(RGBAZ);
-    int ystride = xstride * width;
+    int ystride = -xstride * width;
+    const int2 data_window_min = imb_exr_has_display_window(ibuf) ?
+                                     openexr_data_window_min(ibuf->display_offset,
+                                                             ibuf->data_offset) :
+                                     int2(0);
+    char *first = reinterpret_cast<char *>(pixels.get());
+    first -= data_window_min.x * xstride;
+    first += data_window_min.y * (width * xstride);
+    first += int64_t(height - 1) * width * xstride;
 
     /* indicate used buffers */
-    frameBuffer.insert("R", Slice(HALF, (char *)&to->r, xstride, ystride));
-    frameBuffer.insert("G", Slice(HALF, (char *)&to->g, xstride, ystride));
-    frameBuffer.insert("B", Slice(HALF, (char *)&to->b, xstride, ystride));
+    frameBuffer.insert("R", Slice(HALF, first + offsetof(RGBAZ, r), xstride, ystride));
+    frameBuffer.insert("G", Slice(HALF, first + offsetof(RGBAZ, g), xstride, ystride));
+    frameBuffer.insert("B", Slice(HALF, first + offsetof(RGBAZ, b), xstride, ystride));
     if (is_alpha) {
-      frameBuffer.insert("A", Slice(HALF, (char *)&to->a, xstride, ystride));
+      frameBuffer.insert("A", Slice(HALF, first + offsetof(RGBAZ, a), xstride, ystride));
     }
     if (ibuf->float_data()) {
       const float *float_data = ibuf->float_data();
@@ -714,6 +767,7 @@ static bool imb_save_openexr_float(ImBuf *ibuf, const char *filepath, const int 
 
   try {
     Header header(width, height);
+    openexr_header_set_display_window(&header, ibuf);
 
     openexr_header_compression(
         &header, ibuf->foptions.flag & OPENEXR_CODEC_MASK, ibuf->foptions.quality);
@@ -742,6 +796,10 @@ static bool imb_save_openexr_float(ImBuf *ibuf, const char *filepath, const int 
 
     int xstride = sizeof(float) * channels;
     int ystride = -xstride * width;
+    const int2 data_window_min = imb_exr_has_display_window(ibuf) ?
+                                     openexr_data_window_min(ibuf->display_offset,
+                                                             ibuf->data_offset) :
+                                     int2(0);
 
     /* Last scan-line, stride negative. */
     float *rect[4] = {nullptr, nullptr, nullptr, nullptr};
@@ -751,6 +809,13 @@ static bool imb_save_openexr_float(ImBuf *ibuf, const char *filepath, const int 
     rect[3] = (channels >= 4) ?
                   rect[0] + 3 :
                   rect[0]; /* red as alpha, is this needed since alpha isn't written? */
+
+    for (int i = 0; i < 4; i++) {
+      if (rect[i] != nullptr) {
+        rect[i] -= channels * data_window_min.x;
+        rect[i] += channels * data_window_min.y * width;
+      }
+    }
 
     frameBuffer.insert("R", Slice(Imf::FLOAT, (char *)rect[0], xstride, ystride));
     frameBuffer.insert("G", Slice(Imf::FLOAT, (char *)rect[1], xstride, ystride));
@@ -807,7 +872,14 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
                        const char *filepath,
                        int compression,
                        bool use_half_float,
-                       bool alpha_only)
+                       bool alpha_only,
+                       bool has_display_window,
+                       int display_width,
+                       int display_height,
+                       int display_offset_x,
+                       int display_offset_y,
+                       int data_offset_x,
+                       int data_offset_y)
 {
   if (!BLI_file_ensure_parent_dir_exists(filepath)) {
     CLOG_ERROR(&LOG,
@@ -820,7 +892,19 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
   std::unique_ptr<OStream> file_stream;
 
   try {
+    const bool use_custom_display_window = has_display_window && display_width > 0 &&
+                                           display_height > 0;
+    const Box2i display_window(V2i(display_offset_x, display_offset_y),
+                               V2i(display_offset_x + display_width - 1,
+                                   display_offset_y + display_height - 1));
+    const Box2i data_window(V2i(data_offset_x, data_offset_y),
+                            V2i(data_offset_x + width - 1, data_offset_y + height - 1));
+
     Header header(width, height);
+    if (use_custom_display_window) {
+      header.displayWindow() = display_window;
+      header.dataWindow() = data_window;
+    }
     header.setType(DEEPSCANLINE);
 
     /* Deep EXR only supports: NONE, RLE, ZIPS.
@@ -881,6 +965,7 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
     for (int y = 0; y < height; y++) {
       /* Y-flip: deep_data is stored top-to-bottom, EXR expects bottom-to-top. */
       int src_y = height - 1 - y;
+      const int exr_y = data_window.min.y + y;
 
       for (int x = 0; x < width; x++) {
         const std::vector<DeepSample> &samples = deep_data[src_y * width + x];
@@ -921,33 +1006,33 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
 
       /* Set up the deep frame buffer for this scanline. */
       DeepFrameBuffer frameBuffer;
-      
+
       /* Sample count slice - points to start of scanline buffer. */
       frameBuffer.insertSampleCountSlice(
-          Slice(UINT, 
-                (char *)(sampleCount.data() - y * width), 
+          Slice(UINT,
+                (char *)(sampleCount.data() - data_window.min.x - exr_y * width),
                 sizeof(unsigned int),           /* xStride */
                 sizeof(unsigned int) * width)); /* yStride (not used for single scanline but required) */
 
       /* Data slices for this scanline. */
-      frameBuffer.insert("A", DeepSlice(Imf::FLOAT, 
-          (char *)(dataA.data() - y * width), 
+      frameBuffer.insert("A", DeepSlice(Imf::FLOAT,
+          (char *)(dataA.data() - data_window.min.x - exr_y * width),
           sizeof(float *), sizeof(float *) * width, sizeof(float)));
-      frameBuffer.insert("Z", DeepSlice(Imf::FLOAT, 
-          (char *)(dataZ.data() - y * width), 
+      frameBuffer.insert("Z", DeepSlice(Imf::FLOAT,
+          (char *)(dataZ.data() - data_window.min.x - exr_y * width),
           sizeof(float *), sizeof(float *) * width, sizeof(float)));
-      frameBuffer.insert("ZBack", DeepSlice(Imf::FLOAT, 
-          (char *)(dataZBack.data() - y * width), 
+      frameBuffer.insert("ZBack", DeepSlice(Imf::FLOAT,
+          (char *)(dataZBack.data() - data_window.min.x - exr_y * width),
           sizeof(float *), sizeof(float *) * width, sizeof(float)));
       if (!alpha_only) {
-        frameBuffer.insert("R", DeepSlice(Imf::FLOAT, 
-            (char *)(dataR.data() - y * width), 
+        frameBuffer.insert("R", DeepSlice(Imf::FLOAT,
+            (char *)(dataR.data() - data_window.min.x - exr_y * width),
             sizeof(float *), sizeof(float *) * width, sizeof(float)));
-        frameBuffer.insert("G", DeepSlice(Imf::FLOAT, 
-            (char *)(dataG.data() - y * width), 
+        frameBuffer.insert("G", DeepSlice(Imf::FLOAT,
+            (char *)(dataG.data() - data_window.min.x - exr_y * width),
             sizeof(float *), sizeof(float *) * width, sizeof(float)));
-        frameBuffer.insert("B", DeepSlice(Imf::FLOAT, 
-            (char *)(dataB.data() - y * width), 
+        frameBuffer.insert("B", DeepSlice(Imf::FLOAT,
+            (char *)(dataB.data() - data_window.min.x - exr_y * width),
             sizeof(float *), sizeof(float *) * width, sizeof(float)));
       }
 
@@ -1048,6 +1133,10 @@ struct ExrHandle {
   int tilex = 0, tiley = 0;
   int width = 0, height = 0;
   int mipmap = 0;
+  bool has_display_window = false;
+  int display_size[2] = {0, 0};
+  int display_offset[2] = {0, 0};
+  int data_offset[2] = {0, 0};
 
   StringVector views;
 
@@ -1075,6 +1164,20 @@ ExrHandle *IMB_exr_get_handle(const bool write_multipart)
 void IMB_exr_add_view(ExrHandle *handle, const char *name)
 {
   handle->views.emplace_back(name);
+}
+
+void IMB_exr_set_display_window(ExrHandle *handle,
+                                const int display_size[2],
+                                const int display_offset[2],
+                                const int data_offset[2])
+{
+  handle->has_display_window = true;
+  handle->display_size[0] = display_size[0];
+  handle->display_size[1] = display_size[1];
+  handle->display_offset[0] = display_offset[0];
+  handle->display_offset[1] = display_offset[1];
+  handle->data_offset[0] = data_offset[0];
+  handle->data_offset[1] = data_offset[1];
 }
 
 static int imb_exr_get_multiView_id(StringVector &views, const std::string &name)
@@ -1214,6 +1317,10 @@ bool IMB_exr_begin_write(ExrHandle *handle,
   }
 
   Header header(width, height);
+  if (handle->has_display_window) {
+    openexr_header_set_display_window(
+        &header, width, height, handle->display_size, handle->display_offset, handle->data_offset);
+  }
 
   handle->width = width;
   handle->height = height;
@@ -1402,6 +1509,10 @@ void IMB_exr_write_channels(ExrHandle *handle)
     }
 
     FrameBuffer frameBuffer;
+    const int2 data_window_min = handle->has_display_window ?
+                                     openexr_data_window_min(handle->display_offset,
+                                                             handle->data_offset) :
+                                     int2(0);
 
     for (const ExrChannel &echan : handle->channels) {
       /* Writing starts from last scan-line, stride negative. */
@@ -1416,13 +1527,18 @@ void IMB_exr_write_channels(ExrHandle *handle)
           *cur = float_to_half_safe(rect[i * echan.xstride], handle->half_max_val);
         }
         half *rect_to_write = current_rect_half + (handle->height - 1L) * handle->width;
+        rect_to_write -= data_window_min.x;
+        rect_to_write += data_window_min.y * handle->width;
         frameBuffer.insert(
             echan.name,
             Slice(Imf::HALF, (char *)rect_to_write, sizeof(half), -handle->width * sizeof(half)));
         current_rect_half += num_pixels;
       }
       else {
-        float *rect = echan.rect + echan.xstride * (handle->height - 1L) * handle->width;
+        float *rect = echan.rect;
+        rect -= echan.xstride * data_window_min.x;
+        rect += echan.ystride * data_window_min.y;
+        rect += echan.ystride * (handle->height - 1L);
         frameBuffer.insert(echan.name,
                            Slice(Imf::FLOAT,
                                  (char *)rect,

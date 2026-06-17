@@ -12,6 +12,8 @@
 #include "BLI_fileops.h"
 #include "BLI_index_range.hh"
 #include "BLI_listbase.h"
+#include "BLI_listbase_wrapper.hh"
+#include "BLI_math_vector.h"
 #include "BLI_path_utils.hh"
 #include "BLI_string_ref.hh"
 #include "BLI_string_utf8.h"
@@ -881,6 +883,63 @@ static void add_exr_compositing_result(ExrHandle *exr_handle,
   }
 }
 
+static bool image_render_exr_display_window_matches(const ImBuf *image_buffer,
+                                                    const int display_size[2],
+                                                    const int display_offset[2],
+                                                    const int data_offset[2])
+{
+  return image_buffer->display_size[0] == display_size[0] &&
+         image_buffer->display_size[1] == display_size[1] &&
+         image_buffer->display_offset[0] == display_offset[0] &&
+         image_buffer->display_offset[1] == display_offset[1] &&
+         image_buffer->data_offset[0] == data_offset[0] &&
+         image_buffer->data_offset[1] == data_offset[1];
+}
+
+static bool image_render_result_get_display_window(const RenderResult *render_result,
+                                                   int display_size[2],
+                                                   int display_offset[2],
+                                                   int data_offset[2])
+{
+  bool found = false;
+
+  auto accumulate_display_window = [&](const ImBuf *image_buffer) {
+    if (!image_buffer || !(image_buffer->flags & IB_has_display_window)) {
+      return true;
+    }
+
+    if (!found) {
+      copy_v2_v2_int(display_size, image_buffer->display_size);
+      copy_v2_v2_int(display_offset, image_buffer->display_offset);
+      copy_v2_v2_int(data_offset, image_buffer->data_offset);
+      found = true;
+      return true;
+    }
+
+    return image_render_exr_display_window_matches(
+        image_buffer, display_size, display_offset, data_offset);
+  };
+
+  for (const RenderView *render_view = static_cast<const RenderView *>(render_result->views.first);
+       render_view;
+       render_view = render_view->next)
+  {
+    if (!accumulate_display_window(render_view->ibuf)) {
+      return false;
+    }
+  }
+
+  for (const RenderLayer *render_layer : ConstListBaseWrapper<RenderLayer>(render_result->layers)) {
+    for (const RenderPass *render_pass : ConstListBaseWrapper<RenderPass>(render_layer->passes)) {
+      if (!accumulate_display_window(render_pass->ibuf)) {
+        return false;
+      }
+    }
+  }
+
+  return found;
+}
+
 bool BKE_image_render_write_exr(ReportList *reports,
                                 const RenderResult *rr,
                                 const char *filepath,
@@ -910,6 +969,15 @@ bool BKE_image_render_write_exr(ReportList *reports,
 
   Vector<float *> tmp_output_rects;
   add_exr_compositing_result(exrhandle, rr, imf, save_as_render, view, layer, tmp_output_rects);
+
+  int display_size[2];
+  int display_offset[2];
+  int data_offset[2];
+  const bool has_display_window = image_render_result_get_display_window(
+      rr, display_size, display_offset, data_offset);
+  if (has_display_window) {
+    IMB_exr_set_display_window(exrhandle, display_size, display_offset, data_offset);
+  }
 
   /* Other render layers. */
   int nr = (rr->have_combined) ? 1 : 0;

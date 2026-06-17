@@ -22,6 +22,194 @@
 
 CCL_NAMESPACE_BEGIN
 
+namespace {
+
+struct CyclesOverscanSettings {
+  bool enabled = false;
+  int pad_left = 0;
+  int pad_right = 0;
+  int pad_bottom = 0;
+  int pad_top = 0;
+  int reference_width = 0;
+  int reference_height = 0;
+  int data_width = 0;
+  int data_height = 0;
+};
+
+static bool blender_camera_type_supports_overscan(const CameraType camera_type)
+{
+  return ELEM(camera_type, CAMERA_PERSPECTIVE, CAMERA_ORTHOGRAPHIC);
+}
+
+static bool blender_overscan_mode_is_pixels(blender::PointerRNA *cscene)
+{
+  blender::PropertyRNA *mode_prop = RNA_struct_find_property(cscene, "overscan_mode");
+  if (!mode_prop) {
+    return false;
+  }
+
+  const int mode_value = RNA_property_enum_get(cscene, mode_prop);
+  const char *mode_identifier = nullptr;
+  if (!RNA_property_enum_identifier(nullptr, cscene, mode_prop, mode_value, &mode_identifier) ||
+      mode_identifier == nullptr)
+  {
+    return false;
+  }
+
+  return STREQ(mode_identifier, "PIXELS");
+}
+
+static bool blender_border_is_valid(const BoundBox2D &border)
+{
+  return border.right > border.left && border.top > border.bottom;
+}
+
+static bool blender_border_is_full_frame(const BoundBox2D &border)
+{
+  constexpr float epsilon = 1e-5f;
+  return fabsf(border.left) <= epsilon && fabsf(border.bottom) <= epsilon &&
+         fabsf(border.right - 1.0f) <= epsilon && fabsf(border.top - 1.0f) <= epsilon;
+}
+
+static int blender_overscan_reference_dimension_from_border(const float border_min,
+                                                            const float border_max,
+                                                            const int full_size)
+{
+  const float clamped_min = clamp(border_min, 0.0f, 1.0f);
+  const float clamped_max = clamp(border_max, 0.0f, 1.0f);
+  if (clamped_max <= clamped_min) {
+    return full_size;
+  }
+  return max(1, int(roundf((clamped_max - clamped_min) * float(full_size))));
+}
+
+static bool blender_camera_overscan_render_border_get(const CyclesOverscanSettings &overscan_settings,
+                                                      const BoundBox2D &reference_border,
+                                                      BoundBox2D *r_render_border)
+{
+  if (!r_render_border) {
+    return false;
+  }
+
+  *r_render_border = reference_border;
+
+  if (!overscan_settings.enabled || !blender_border_is_valid(reference_border) ||
+      overscan_settings.reference_width <= 0 || overscan_settings.reference_height <= 0)
+  {
+    return false;
+  }
+
+  const float reference_border_width = reference_border.right - reference_border.left;
+  const float reference_border_height = reference_border.top - reference_border.bottom;
+  const float pad_left = (float(overscan_settings.pad_left) /
+                          float(overscan_settings.reference_width)) *
+                         reference_border_width;
+  const float pad_right = (float(overscan_settings.pad_right) /
+                           float(overscan_settings.reference_width)) *
+                          reference_border_width;
+  const float pad_bottom = (float(overscan_settings.pad_bottom) /
+                            float(overscan_settings.reference_height)) *
+                           reference_border_height;
+  const float pad_top = (float(overscan_settings.pad_top) /
+                         float(overscan_settings.reference_height)) *
+                        reference_border_height;
+
+  r_render_border->left = reference_border.left - pad_left;
+  r_render_border->right = reference_border.right + pad_right;
+  r_render_border->bottom = reference_border.bottom - pad_bottom;
+  r_render_border->top = reference_border.top + pad_top;
+  return true;
+}
+
+static CyclesOverscanSettings blender_overscan_settings_get(blender::PointerRNA *cscene,
+                                                            const CameraType camera_type,
+                                                            const int width,
+                                                            const int height,
+                                                            const bool allow_overscan,
+                                                            const BoundBox2D *reference_border)
+{
+  CyclesOverscanSettings overscan_settings;
+
+  if (!allow_overscan || cscene == nullptr || !blender_camera_type_supports_overscan(camera_type))
+  {
+    return overscan_settings;
+  }
+
+  if (!RNA_boolean_get(cscene, "use_overscan")) {
+    return overscan_settings;
+  }
+
+  int reference_width = width;
+  int reference_height = height;
+  if (reference_border != nullptr && blender_border_is_valid(*reference_border)) {
+    reference_width = blender_overscan_reference_dimension_from_border(
+        reference_border->left, reference_border->right, width);
+    reference_height = blender_overscan_reference_dimension_from_border(
+        reference_border->bottom, reference_border->top, height);
+  }
+
+  int pad_left = 0;
+  int pad_right = 0;
+  int pad_bottom = 0;
+  int pad_top = 0;
+
+  if (blender_overscan_mode_is_pixels(cscene)) {
+    pad_left = max(0, RNA_int_get(cscene, "overscan_left"));
+    pad_right = max(0, RNA_int_get(cscene, "overscan_right"));
+    pad_bottom = max(0, RNA_int_get(cscene, "overscan_bottom"));
+    pad_top = max(0, RNA_int_get(cscene, "overscan_top"));
+  }
+  else {
+    const float overscan = max(0.0f, RNA_float_get(cscene, "overscan_size")) / 100.0f;
+    const int pad = max(0, int(ceilf(overscan * max(reference_width, reference_height))));
+    pad_left = pad;
+    pad_right = pad;
+    pad_bottom = pad;
+    pad_top = pad;
+  }
+
+  if (pad_left == 0 && pad_right == 0 && pad_bottom == 0 && pad_top == 0) {
+    return overscan_settings;
+  }
+
+  overscan_settings.enabled = true;
+  overscan_settings.pad_left = pad_left;
+  overscan_settings.pad_right = pad_right;
+  overscan_settings.pad_bottom = pad_bottom;
+  overscan_settings.pad_top = pad_top;
+  overscan_settings.reference_width = reference_width;
+  overscan_settings.reference_height = reference_height;
+  overscan_settings.data_width = reference_width + pad_left + pad_right;
+  overscan_settings.data_height = reference_height + pad_bottom + pad_top;
+  return overscan_settings;
+}
+
+static void blender_camera_viewplane_apply_overscan_region(
+    BoundBox2D &viewplane,
+    const CyclesOverscanSettings &overscan_settings,
+    const int width,
+    const int height,
+    const BoundBox2D *reference_border)
+{
+  if (!overscan_settings.enabled) {
+    return;
+  }
+
+  const float viewplane_width = viewplane.right - viewplane.left;
+  const float viewplane_height = viewplane.top - viewplane.bottom;
+  const float reference_width = float(max(overscan_settings.reference_width, 1));
+  const float reference_height = float(max(overscan_settings.reference_height, 1));
+
+  UNUSED_VARS(width, height, reference_border);
+
+  viewplane.left -= (float(overscan_settings.pad_left) / reference_width) * viewplane_width;
+  viewplane.right += (float(overscan_settings.pad_right) / reference_width) * viewplane_width;
+  viewplane.bottom -= (float(overscan_settings.pad_bottom) / reference_height) * viewplane_height;
+  viewplane.top += (float(overscan_settings.pad_top) / reference_height) * viewplane_height;
+}
+
+}  // namespace
+
 /* Blender Camera Intermediate: we first convert both the offline and 3d view
  * render camera to this, and from there convert to our native camera format. */
 
@@ -553,22 +741,47 @@ static void blender_camera_sync(Camera *cam,
                                 const int width,
                                 const int height,
                                 const char *viewname,
-                                blender::PointerRNA *cscene)
+                                blender::PointerRNA *cscene,
+                                const bool use_overscan)
 {
   float aspectratio;
   float sensor_size;
+  BoundBox2D overscan_reference_border_storage;
+  const BoundBox2D *overscan_reference_border = nullptr;
+  if (use_overscan && blender_border_is_valid(bcam->border)) {
+    overscan_reference_border_storage = bcam->border;
+    overscan_reference_border = &overscan_reference_border_storage;
+  }
+  const CyclesOverscanSettings overscan_settings = blender_overscan_settings_get(
+      cscene, bcam->type, width, height, use_overscan, overscan_reference_border);
+  const bool use_full_frame_overscan_camera_space = overscan_settings.enabled &&
+                                                    (overscan_reference_border == nullptr ||
+                                                     blender_border_is_full_frame(
+                                                         *overscan_reference_border));
+  BoundBox2D camera_render_border = bcam->border;
+  if (overscan_reference_border != nullptr) {
+    blender_camera_overscan_render_border_get(
+        overscan_settings, *overscan_reference_border, &camera_render_border);
+  }
 
   /* viewplane */
   BoundBox2D viewplane;
   blender_camera_viewplane(bcam, width, height, viewplane, aspectratio, sensor_size);
+  /* Full-frame overscan uses an enlarged raster and viewplane together. Cropped buffers already
+   * sample outside the original frame through global pixel coordinates; expanding their viewplane
+   * as well would apply the overscan offset twice. */
+  if (use_full_frame_overscan_camera_space) {
+    blender_camera_viewplane_apply_overscan_region(
+        viewplane, overscan_settings, width, height, overscan_reference_border);
+  }
 
   cam->set_viewplane_left(viewplane.left);
   cam->set_viewplane_right(viewplane.right);
   cam->set_viewplane_top(viewplane.top);
   cam->set_viewplane_bottom(viewplane.bottom);
-
-  cam->set_full_width(width);
-  cam->set_full_height(height);
+  cam->set_full_width(use_full_frame_overscan_camera_space ? overscan_settings.data_width : width);
+  cam->set_full_height(use_full_frame_overscan_camera_space ? overscan_settings.data_height :
+                                                              height);
 
   /* Set panorama or custom sensor. */
   if ((bcam->type == CAMERA_PANORAMA &&
@@ -696,10 +909,10 @@ static void blender_camera_sync(Camera *cam,
   cam->set_shutter_curve(bcam->shutter_curve);
 
   /* border */
-  cam->set_border_left(bcam->border.left);
-  cam->set_border_right(bcam->border.right);
-  cam->set_border_top(bcam->border.top);
-  cam->set_border_bottom(bcam->border.bottom);
+  cam->set_border_left(camera_render_border.left);
+  cam->set_border_right(camera_render_border.right);
+  cam->set_border_top(camera_render_border.top);
+  cam->set_border_bottom(camera_render_border.bottom);
 
   cam->set_viewport_camera_border_left(bcam->viewport_camera_border.left);
   cam->set_viewport_camera_border_right(bcam->viewport_camera_border.right);
@@ -729,7 +942,8 @@ static MotionPosition blender_motion_blur_position_type_to_cycles(const int type
 void BlenderSync::sync_camera(const blender::RenderData &b_render,
                               const int width,
                               const int height,
-                              const char *viewname)
+                              const char *viewname,
+                              const bool use_overscan)
 {
   BlenderCamera bcam(b_render);
 
@@ -778,7 +992,7 @@ void BlenderSync::sync_camera(const blender::RenderData &b_render,
 
   /* sync */
   Camera *cam = scene->camera;
-  blender_camera_sync(cam, scene, &bcam, width, height, viewname, &cscene);
+  blender_camera_sync(cam, scene, &bcam, width, height, viewname, &cscene, use_overscan);
 
   /* dicing camera */
   b_ob = RNA_pointer_get(&cscene, "dicing_camera").data_as<blender::Object>();
@@ -789,7 +1003,8 @@ void BlenderSync::sync_camera(const blender::RenderData &b_render,
         b_engine, b_ob, bcam.use_spherical_stereo, b_ob_matrix.base_ptr());
     bcam.matrix = get_transform(b_ob_matrix);
 
-    blender_camera_sync(scene->dicing_camera, nullptr, &bcam, width, height, viewname, &cscene);
+    blender_camera_sync(
+        scene->dicing_camera, nullptr, &bcam, width, height, viewname, &cscene, use_overscan);
   }
   else {
     *scene->dicing_camera = *cam;
@@ -1158,7 +1373,8 @@ static void blender_camera_border(BlenderCamera *bcam,
 void BlenderSync::sync_view(blender::View3D *b_v3d,
                             blender::RegionView3D *b_rv3d,
                             const int width,
-                            const int height)
+                            const int height,
+                            const bool use_overscan)
 {
   const blender::RenderData &b_render_settings = b_scene->r;
   BlenderCamera bcam(b_render_settings);
@@ -1168,7 +1384,7 @@ void BlenderSync::sync_view(blender::View3D *b_v3d,
       &bcam, *b_engine, b_render_settings, *b_scene, *b_data, b_v3d, b_rv3d, width, height);
   blender::PointerRNA scene_rna_ptr = RNA_id_pointer_create(&b_scene->id);
   blender::PointerRNA cscene = RNA_pointer_get(&scene_rna_ptr, "cycles");
-  blender_camera_sync(scene->camera, scene, &bcam, width, height, "", &cscene);
+  blender_camera_sync(scene->camera, scene, &bcam, width, height, "", &cscene, use_overscan);
 
   /* dicing camera */
   blender::Object *b_ob = RNA_pointer_get(&cscene, "dicing_camera").data_as<blender::Object>();
@@ -1180,7 +1396,8 @@ void BlenderSync::sync_view(blender::View3D *b_v3d,
         b_engine, b_ob, bcam.use_spherical_stereo, b_ob_matrix.base_ptr());
     bcam.matrix = get_transform(b_ob_matrix);
 
-    blender_camera_sync(scene->dicing_camera, nullptr, &bcam, width, height, "", &cscene);
+    blender_camera_sync(
+        scene->dicing_camera, nullptr, &bcam, width, height, "", &cscene, use_overscan);
   }
   else {
     *scene->dicing_camera = *scene->camera;
@@ -1189,12 +1406,15 @@ void BlenderSync::sync_view(blender::View3D *b_v3d,
 
 BufferParams BlenderSync::get_buffer_params(blender::View3D *b_v3d,
                                             blender::RegionView3D *b_rv3d,
+                                            blender::Scene *b_scene,
                                             Camera *cam,
                                             const int width,
-                                            const int height)
+                                            const int height,
+                                            const bool use_overscan)
 {
   BufferParams params;
   bool use_border = false;
+  BoundBox2D screen_border = cam->border.clamp();
 
   params.full_width = width;
   params.full_height = height;
@@ -1208,13 +1428,14 @@ BufferParams BlenderSync::get_buffer_params(blender::View3D *b_v3d,
   }
 
   if (use_border) {
+    screen_border = cam->border.clamp();
+
     /* border render */
     /* the viewport may offset the border outside the view */
-    const BoundBox2D border = cam->border.clamp();
-    params.full_x = (int)(border.left * (float)width);
-    params.full_y = (int)(border.bottom * (float)height);
-    params.width = (int)(border.right * (float)width) - params.full_x;
-    params.height = (int)(border.top * (float)height) - params.full_y;
+    params.full_x = (int)(screen_border.left * (float)width);
+    params.full_y = (int)(screen_border.bottom * (float)height);
+    params.width = (int)(screen_border.right * (float)width) - params.full_x;
+    params.height = (int)(screen_border.top * (float)height) - params.full_y;
 
     /* survive in case border goes out of view or becomes too small */
     params.width = max(params.width, 1);
@@ -1227,6 +1448,35 @@ BufferParams BlenderSync::get_buffer_params(blender::View3D *b_v3d,
 
   params.window_width = params.width;
   params.window_height = params.height;
+
+  if (b_scene && cam) {
+    blender::PointerRNA scene_rna_ptr = RNA_id_pointer_create(&b_scene->id);
+    blender::PointerRNA cscene = RNA_pointer_get(&scene_rna_ptr, "cycles");
+    const CyclesOverscanSettings overscan_settings = blender_overscan_settings_get(
+        &cscene, cam->get_camera_type(), width, height, use_overscan, &screen_border);
+    if (overscan_settings.enabled) {
+      const bool use_full_frame_overscan_buffer_space = !blender_border_is_valid(screen_border) ||
+                                                        blender_border_is_full_frame(screen_border);
+      if (use_full_frame_overscan_buffer_space) {
+        params.width = overscan_settings.data_width;
+        params.height = overscan_settings.data_height;
+        params.window_x = -overscan_settings.pad_left;
+        params.window_y = -overscan_settings.pad_bottom;
+        params.window_width = overscan_settings.data_width;
+        params.window_height = overscan_settings.data_height;
+      }
+      else {
+        params.full_x -= overscan_settings.pad_left;
+        params.full_y -= overscan_settings.pad_bottom;
+        params.width = overscan_settings.data_width;
+        params.height = overscan_settings.data_height;
+        params.window_x = overscan_settings.pad_left;
+        params.window_y = overscan_settings.pad_bottom;
+        params.window_width = overscan_settings.reference_width;
+        params.window_height = overscan_settings.reference_height;
+      }
+    }
+  }
 
   return params;
 }

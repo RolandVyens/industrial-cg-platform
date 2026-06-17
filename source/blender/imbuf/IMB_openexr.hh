@@ -93,6 +93,12 @@ bool IMB_exr_has_multilayer(ExrHandle *handle);
 
 bool IMB_exr_get_ppm(ExrHandle *handle, double ppm[2]);
 
+/* Configure the EXR data/display window information for subsequent writes. */
+void IMB_exr_set_display_window(ExrHandle *handle,
+                                const int display_size[2],
+                                const int display_offset[2],
+                                const int data_offset[2]);
+
 /* Retrieves the EXR display window information. The information is in the same structure specified
  * in ImBuf, see its documentation for more information. */
 void IMB_exr_get_display_window(ExrHandle *handle,
@@ -118,6 +124,13 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
                        const char *filepath,
                        int compression,
                        bool use_half_float,
-                       bool alpha_only);
+                       bool alpha_only,
+                       bool has_display_window = false,
+                       int display_width = 0,
+                       int display_height = 0,
+                       int display_offset_x = 0,
+                       int display_offset_y = 0,
+                       int data_offset_x = 0,
+                       int data_offset_y = 0);
 
 }  // namespace blender

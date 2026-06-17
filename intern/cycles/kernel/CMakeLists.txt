@@ -169,6 +169,7 @@ set(SRC_KERNEL_FILM_HEADERS
   film/adaptive_sampling.h
   film/aov_passes.h
   film/data_passes.h
+  film/deep_write.h
   film/denoising_passes.h
   film/volume_guiding_denoise.h
   film/cryptomatte_passes.h

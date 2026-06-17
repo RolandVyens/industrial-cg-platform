@@ -40,8 +40,18 @@ namespace blender::compositor {
 FileOutput::FileOutput(const std::string &path,
                        const ImageFormatData &format,
                        int2 size,
-                       bool save_as_render)
-    : path_(path), format_(format), save_as_render_(save_as_render)
+                       bool save_as_render,
+                       bool has_display_window,
+                       int2 display_size,
+                       int2 display_offset,
+                       int2 data_offset)
+    : path_(path),
+      format_(format),
+      save_as_render_(save_as_render),
+      has_display_window_(has_display_window),
+      display_size_(display_size),
+      display_offset_(display_offset),
+      data_offset_(data_offset)
 {
   render_result_ = MEM_new<RenderResult>("Temporary Render Result For File Output");
 
@@ -72,6 +82,21 @@ FileOutput::~FileOutput()
   RE_FreeRenderResult(render_result_);
 }
 
+void FileOutput::assign_display_window(ImBuf *image_buffer) const
+{
+  if (!has_display_window_) {
+    return;
+  }
+
+  image_buffer->flags |= IB_has_display_window;
+  image_buffer->display_size[0] = display_size_.x;
+  image_buffer->display_size[1] = display_size_.y;
+  image_buffer->display_offset[0] = display_offset_.x;
+  image_buffer->display_offset[1] = display_offset_.y;
+  image_buffer->data_offset[0] = data_offset_.x;
+  image_buffer->data_offset[1] = data_offset_.y;
+}
+
 void FileOutput::add_view(const char *view_name)
 {
   /* Empty views can only be added for EXR images. */
@@ -91,6 +116,7 @@ void FileOutput::add_view(const char *view_name, int channels, float *buffer)
   render_view->ibuf = IMB_allocImBuf(
       render_result_->rectx, render_result_->recty, channels * 8, 0);
   render_view->ibuf->channels = channels;
+  this->assign_display_window(render_view->ibuf);
   IMB_assign_float_buffer(render_view->ibuf, buffer, IB_TAKE_OWNERSHIP);
 }
 
@@ -118,6 +144,7 @@ void FileOutput::add_pass(const char *pass_name,
       render_result_->rectx, render_result_->recty, channels_count * 8, 0);
   render_pass->ibuf->channels = channels_count;
   copy_v2_v2_db(render_pass->ibuf->ppm, render_result_->ppm);
+  this->assign_display_window(render_pass->ibuf);
   IMB_assign_float_buffer(render_pass->ibuf, buffer, IB_TAKE_OWNERSHIP);
 }
 
@@ -156,10 +183,16 @@ void FileOutput::save(Scene *scene)
 FileOutput &RenderContext::get_file_output(std::string path,
                                            ImageFormatData format,
                                            int2 size,
-                                           bool save_as_render)
+                                           bool save_as_render,
+                                           bool has_display_window,
+                                           int2 display_size,
+                                           int2 display_offset,
+                                           int2 data_offset)
 {
-  return *file_outputs_.lookup_or_add_cb(
-      path, [&]() { return std::make_unique<FileOutput>(path, format, size, save_as_render); });
+  return *file_outputs_.lookup_or_add_cb(path, [&]() {
+    return std::make_unique<FileOutput>(
+        path, format, size, save_as_render, has_display_window, display_size, display_offset, data_offset);
+  });
 }
 
 void RenderContext::save_file_outputs(Scene *scene)

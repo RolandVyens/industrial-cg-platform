@@ -214,7 +214,6 @@ PassAccessor::Destination PathTraceWork::get_display_destination_template(
   const BufferParams &effective_buffer_params = (mode == PassMode::DENOISED) ?
                                                     effective_denoised_buffer_params_ :
                                                     effective_buffer_params_;
-
   const int2 display_texture_size = display->get_texture_size();
   const int texture_x = effective_buffer_params.full_x - effective_big_tile_params.full_x +
                         effective_buffer_params.window_x - effective_big_tile_params.window_x;

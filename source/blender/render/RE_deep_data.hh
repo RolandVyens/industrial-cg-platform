@@ -19,6 +19,10 @@ namespace blender {
  */
 struct RenderDeepData {
   std::vector<std::vector<DeepSample>> pixels;
+  bool has_display_window = false;
+  int display_size[2] = {0, 0};
+  int display_offset[2] = {0, 0};
+  int data_offset[2] = {0, 0};
 };
 
 }  // namespace blender

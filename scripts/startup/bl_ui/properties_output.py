@@ -132,6 +132,50 @@ class RENDER_PT_format(RenderOutputButtonsPanel, Panel):
         self.draw_framerate(col, rd)
 
 
+class RENDER_PT_overscan(RenderOutputButtonsPanel, Panel):
+    bl_label = "Overscan"
+    bl_options = {'DEFAULT_CLOSED'}
+    COMPAT_ENGINES = {
+        'BLENDER_RENDER',
+        'BLENDER_EEVEE',
+        'BLENDER_WORKBENCH',
+        'CYCLES',
+    }
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        scene = context.scene
+        render = scene.render
+        cscene = scene.cycles
+        engine_is_cycles = (context.engine == 'CYCLES')
+        render_region_enabled = render.use_border
+
+        if not engine_is_cycles:
+            notice = layout.column(align=True)
+            notice.label(text="Overscan EXR output is available in Cycles only", icon='INFO')
+
+        if render_region_enabled:
+            notice = layout.column(align=True)
+            notice.label(text="Disable Render Region to use Overscan", icon='INFO')
+
+        col = layout.column()
+        col.active = engine_is_cycles and not render_region_enabled
+        col.prop(cscene, "overscan_mode", text="Mode")
+
+        if cscene.overscan_mode == 'PERCENTAGE':
+            col.prop(cscene, "overscan_size", text="Amount", slider=True)
+        else:
+            col = layout.column(align=True)
+            col.active = engine_is_cycles and not render_region_enabled
+            col.prop(cscene, "overscan_left", text="Left")
+            col.prop(cscene, "overscan_right", text="Right")
+            col.prop(cscene, "overscan_bottom", text="Bottom")
+            col.prop(cscene, "overscan_top", text="Top")
+
+
 class RENDER_PT_frame_range(RenderOutputButtonsPanel, Panel):
     bl_label = "Frame Range"
     COMPAT_ENGINES = {
@@ -323,30 +367,6 @@ class RENDER_PT_output(RenderOutputButtonsPanel, Panel):
             col = layout.column(heading="Image Sequence")
             col.prop(rd, "use_overwrite")
             col.prop(rd, "use_placeholder")
-
-
-class RENDER_PT_output_deep_exr(RenderOutputButtonsPanel, Panel):
-    bl_label = "Deep Output"
-    bl_parent_id = "RENDER_PT_output"
-    bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'CYCLES'}
-
-    @classmethod
-    def poll(cls, context):
-        rd = context.scene.render
-        return (context.engine in cls.COMPAT_ENGINES and 
-                rd.image_settings.file_format == 'DEEP_EXR')
-
-    def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        imf = context.scene.render.image_settings
-        
-        layout.prop(imf, "exr_codec", text="Compression")
-        layout.prop(imf, "deep_merge_tolerance")
-        layout.prop(imf, "deep_alpha_merge_tolerance")
 
 
 class RENDER_PT_output_views(RenderOutputButtonsPanel, Panel):
@@ -748,11 +768,11 @@ classes = (
     RENDER_MT_framerate_presets,
     RENDER_MT_pixeldensity_presets,
     RENDER_PT_format,
+    RENDER_PT_overscan,
     RENDER_PT_frame_range,
     RENDER_PT_time_stretching,
     RENDER_PT_stereoscopy,
     RENDER_PT_output,
-    RENDER_PT_output_deep_exr,
     RENDER_PT_output_views,
     RENDER_PT_output_color_management,
     RENDER_PT_output_pixel_density,

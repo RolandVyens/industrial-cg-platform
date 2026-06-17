@@ -210,6 +210,7 @@ void PathTraceWorkCPU::copy_to_display(PathTraceDisplay *display,
 
   const PassAccessor::PassAccessInfo pass_access_info = get_display_pass_access_info(pass_mode);
   if (pass_access_info.type == PASS_NONE) {
+    display->unmap_texture_buffer();
     return;
   }
 

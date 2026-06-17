@@ -605,7 +605,15 @@ bool ImageMerger::run()
   images.clear();
 
   /* Save output file. */
-  return save_output(output, out_spec, out_pixels, error);
+  const bool ok = save_output(output, out_spec, out_pixels, error);
+
+  for (auto &item : layer_samples) {
+    item.second.per_pixel.clear();
+  }
+  layer_samples.clear();
+  out_pixels.clear();
+
+  return ok;
 }
 
 CCL_NAMESPACE_END

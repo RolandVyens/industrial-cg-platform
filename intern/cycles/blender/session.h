@@ -118,6 +118,8 @@ class BlenderSession {
   float pixelsize;
   bool preview_osl;
   double start_resize_time;
+  bool direct_deep_without_compositor_ = false;
+  bool skip_full_buffer_readback_for_background_direct_deep_ = false;
 
   void *python_thread_state;
 

@@ -129,6 +129,15 @@ class NodeGroupOperation : public Operation {
   /* Compile and evaluate the node group. */
   void execute() override;
 
+  /* Free results owned by evaluated operations in the compiled stream. This is used on successful
+   * completion after outputs have been transferred out of the node group operation. */
+  void free_evaluated_operation_results()
+  {
+    for (const std::unique_ptr<Operation> &operation : operations_stream_) {
+      operation->free_results();
+    }
+  }
+
  private:
   /* Compile the given node into a node operation, map each input to the result of the output
    * linked to it, update the compile state, add the newly created operation to the operations

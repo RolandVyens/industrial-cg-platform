@@ -241,9 +241,7 @@ static PyObject *render_func(PyObject * /*self*/, PyObject *args)
 
   /* Allow Blender to execute other Python scripts. */
   python_thread_state_save(&session->python_thread_state);
-
   session->render(*b_depsgraph);
-
   python_thread_state_restore(&session->python_thread_state);
 
   Py_RETURN_NONE;
@@ -261,9 +259,7 @@ static PyObject *render_frame_finish_func(PyObject * /*self*/, PyObject *args)
 
   /* Allow Blender to execute other Python scripts. */
   python_thread_state_save(&session->python_thread_state);
-
   session->render_frame_finish();
-
   python_thread_state_restore(&session->python_thread_state);
 
   Py_RETURN_NONE;

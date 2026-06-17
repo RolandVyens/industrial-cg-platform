@@ -1081,6 +1081,16 @@ if(TEST_SRC_DIR_EXISTS)
   )
 endif()
 
+if(WITH_CYCLES)
+  add_python_test(
+    exr_overscan
+    ${CMAKE_CURRENT_LIST_DIR}/exr_overscan_ctest.py
+    --blender "${TEST_BLENDER_EXE}"
+    --test-script "${CMAKE_CURRENT_LIST_DIR}/exr_overscan_tests.py"
+    --outdir "${TEST_OUT_DIR}/exr_overscan"
+  )
+endif()
+
 if(WITH_GPU_COMPOSITOR_TESTS AND TEST_SRC_DIR_EXISTS)
   set(compositor_tests
     input

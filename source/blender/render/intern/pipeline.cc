@@ -11,7 +11,6 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdlib>
-#include <cstring>
 #include <forward_list>
 #include <memory>
 
@@ -1007,11 +1006,38 @@ static void render_result_disprect_to_full_resolution(Render *re)
   re->recty = re->winy;
 }
 
+static bool render_result_has_display_window(const RenderResult *render_result)
+{
+  if (!render_result) {
+    return false;
+  }
+
+  for (const RenderView &render_view : render_result->views) {
+    if (render_view.ibuf && (render_view.ibuf->flags & IB_has_display_window)) {
+      return true;
+    }
+  }
+
+  for (const RenderLayer &render_layer : render_result->layers) {
+    for (const RenderPass &render_pass : render_layer.passes) {
+      if (render_pass.ibuf && (render_pass.ibuf->flags & IB_has_display_window)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 static void render_result_uncrop(Render *re)
 {
   /* when using border render with crop disabled, insert render result into
    * full size with black pixels outside */
   if (re->result && (re->r.mode & R_BORDER)) {
+    if (render_result_has_display_window(re->result)) {
+      return;
+    }
+
     if ((re->r.mode & R_CROP) == 0) {
       RenderResult *rres;
 
@@ -1691,6 +1717,42 @@ static bool node_tree_has_deep_exr_output(const bNodeTree *node_tree)
   return false;
 }
 
+static bool node_tree_has_exr_output(const bNodeTree *node_tree)
+{
+  if (!node_tree) {
+    return false;
+  }
+
+  node_tree->ensure_topology_cache();
+  for (const bNode *node : node_tree->nodes_by_type("CompositorNodeOutputFile"_ustr)) {
+    if (node->is_muted() || !node->storage) {
+      continue;
+    }
+
+    const NodeCompositorFileOutput *storage = static_cast<const NodeCompositorFileOutput *>(
+        node->storage);
+    if (ELEM(storage->format.imtype,
+             R_IMF_IMTYPE_OPENEXR,
+             R_IMF_IMTYPE_MULTILAYER,
+             R_IMF_IMTYPE_DEEP_EXR))
+    {
+      return true;
+    }
+  }
+
+  for (const bNode *node : node_tree->group_nodes()) {
+    if (node->is_muted() || !node->id) {
+      continue;
+    }
+
+    if (node_tree_has_exr_output(reinterpret_cast<const bNodeTree *>(node->id))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static bool scene_has_compositor_output(Scene *scene)
 {
   if (scene->compositing_node_group == nullptr) {
@@ -1716,6 +1778,20 @@ bool RE_scene_has_deep_exr_file_output(Scene *scene)
     return false;
   }
   return node_tree_has_deep_exr_output(scene->compositing_node_group);
+}
+
+bool RE_scene_has_exr_file_output(Scene *scene)
+{
+  if (!scene) {
+    return false;
+  }
+  if (!(scene->r.scemode & R_DOCOMP)) {
+    return false;
+  }
+  if (!scene->compositing_node_group) {
+    return false;
+  }
+  return node_tree_has_exr_output(scene->compositing_node_group);
 }
 
 /* Identify if the compositor can run on the GPU. Currently, this only checks if the compositor is

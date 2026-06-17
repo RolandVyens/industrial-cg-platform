@@ -288,9 +288,7 @@ void NodeGroupOperation::map_pixel_operation_inputs_to_their_results(PixelOperat
 
 void NodeGroupOperation::cancel_evaluation()
 {
-  for (const std::unique_ptr<Operation> &operation : operations_stream_) {
-    operation->free_results();
-  }
+  this->free_evaluated_operation_results();
 }
 
 }  // namespace blender::compositor

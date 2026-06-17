@@ -250,6 +250,7 @@ void RE_FreeUnusedGPUResources(void);
  * Get results and statistics.
  */
 void RE_FreeRenderResult(struct RenderResult *rr);
+void RE_render_result_passes_allocated_ensure(struct RenderResult *rr);
 /**
  * If you want to know exactly what has been done.
  */
@@ -508,6 +509,7 @@ bool RE_is_rendering_allowed(const Main &bmain,
  * Used by Cycles to know when to generate deep data for compositor passthrough.
  */
 bool RE_scene_has_deep_exr_file_output(struct Scene *scene);
+bool RE_scene_has_exr_file_output(struct Scene *scene);
 
 bool RE_allow_render_generic_object(struct Object *ob);
 

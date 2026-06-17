@@ -78,11 +78,13 @@ class BlenderSync {
   void sync_camera(const blender::RenderData &b_render,
                    const int width,
                    const int height,
-                   const char *viewname);
+                   const char *viewname,
+                   const bool use_overscan);
   void sync_view(blender::View3D *b_v3d,
                  blender::RegionView3D *b_rv3d,
                  const int width,
-                 const int height);
+                 const int height,
+                 const bool use_overscan);
   int get_layer_samples()
   {
     return view_layer.samples;
@@ -109,9 +111,11 @@ class BlenderSync {
   static bool get_session_pause(blender::Scene &b_scene, bool background);
   static BufferParams get_buffer_params(blender::View3D *b_v3d,
                                         blender::RegionView3D *b_rv3d,
+                                        blender::Scene *b_scene,
                                         Camera *cam,
                                         const int width,
-                                        const int height);
+                                        const int height,
+                                        const bool use_overscan);
 
   static DenoiseParams get_denoise_params(blender::Scene &b_scene,
                                           blender::ViewLayer *b_view_layer,

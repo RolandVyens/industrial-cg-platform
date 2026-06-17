@@ -803,7 +803,6 @@ void BlenderDisplayDriver::draw(const Params &params)
   blender::immUnbindProgram();
 
   display_shader_->unbind();
-
   blender::GPU_blend(blender::GPU_BLEND_NONE);
 
   blender::GPU_fence_signal(gpu_render_sync_);

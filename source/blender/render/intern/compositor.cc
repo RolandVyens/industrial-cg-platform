@@ -2,10 +2,10 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
-#include <cstring>
 #include <string>
 
 #include "BLI_listbase.h"
+#include "BLI_math_matrix.hh"
 #include "BLI_math_vector_types.hh"
 #include "BLI_memory_utils.hh"
 #include "BLI_threads.h"
@@ -51,6 +51,34 @@
 namespace blender {
 
 namespace render {
+
+static void result_apply_imbuf_display_window(compositor::Result &result, const ImBuf *image_buffer)
+{
+  if (!image_buffer || !(image_buffer->flags & IB_has_display_window)) {
+    return;
+  }
+
+  result.domain().display_size = int2(image_buffer->display_size);
+  result.domain().data_offset = int2(image_buffer->data_offset);
+  result.domain().transformation = math::from_location<float3x3>(
+      float2(int2(image_buffer->display_offset)));
+}
+
+static bool node_tree_has_live_group_output(const bNodeTree *node_tree)
+{
+  if (!node_tree) {
+    return false;
+  }
+
+  node_tree->ensure_topology_cache();
+  for (const bNode *node : node_tree->all_nodes()) {
+    if (node->is_group_output() && (node->flag & NODE_DO_OUTPUT) && !node->is_muted()) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Render Context Data
@@ -169,14 +197,26 @@ class Context : public compositor::Context {
     RenderResult *render_result = RE_AcquireResultWrite(render);
 
     if (render_result) {
+      const bool has_live_group_output = node_tree_has_live_group_output(input_data_.node_tree);
       RenderView *render_view = RE_RenderViewGetByName(render_result,
                                                        input_data_.view_name.c_str());
       ImBuf *image_buffer = RE_RenderViewEnsureImBuf(render_result, render_view);
       render_result->have_combined = true;
+      const int2 size = has_live_group_output && !result.is_single_value() ?
+                            result.domain().data_size :
+                            int2(render_result->rectx, render_result->recty);
+
+      if (int2(image_buffer->x, image_buffer->y) != size) {
+        IMB_free_byte_pixels(image_buffer);
+        IMB_free_float_pixels(image_buffer);
+        IMB_free_gpu_textures(image_buffer);
+        image_buffer->x = size.x;
+        image_buffer->y = size.y;
+      }
 
       if (result.is_single_value()) {
-        float *data = MEM_new_array_uninitialized<float>(
-            4 * size_t(render_result->rectx) * size_t(render_result->recty), __func__);
+        float *data =
+            MEM_new_array_uninitialized<float>(4 * size_t(size.x) * size_t(size.y), __func__);
         IMB_assign_float_buffer(image_buffer, data, IB_TAKE_OWNERSHIP);
         IMB_rectfill(image_buffer, result.get_single_value<compositor::Color>());
       }
@@ -186,12 +226,23 @@ class Context : public compositor::Context {
         IMB_assign_float_buffer(image_buffer, output_buffer, IB_TAKE_OWNERSHIP);
       }
       else {
-        float *data = MEM_new_array_uninitialized<float>(
-            4 * size_t(render_result->rectx) * size_t(render_result->recty), __func__);
+        float *data =
+            MEM_new_array_uninitialized<float>(4 * size_t(size.x) * size_t(size.y), __func__);
         IMB_assign_float_buffer(image_buffer, data, IB_TAKE_OWNERSHIP);
         std::memcpy(image_buffer->float_data_for_write(),
                     result.cpu_data().data(),
-                    render_result->rectx * render_result->recty * 4 * sizeof(float));
+                    size.x * size.y * 4 * sizeof(float));
+      }
+
+      if (has_live_group_output && !result.is_single_value()) {
+        image_buffer->flags |= IB_has_display_window;
+        const int2 display_offset = int2(result.domain().transformation.location());
+        copy_v2_v2_int(image_buffer->display_size, result.domain().display_size);
+        copy_v2_v2_int(image_buffer->display_offset, display_offset);
+        copy_v2_v2_int(image_buffer->data_offset, result.domain().data_offset);
+      }
+      else {
+        image_buffer->flags &= ~IB_has_display_window;
       }
     }
     RE_ReleaseResult(render);
@@ -445,6 +496,7 @@ class Context : public compositor::Context {
       /* Don't assume render will keep pass data stored, add our own reference. */
       GPU_texture_ref(pass_texture);
       pass_data.wrap_external(pass_texture);
+      result_apply_imbuf_display_window(pass_data, render_pass->ibuf);
       cached_gpu_passes_.append(pass_texture);
     }
     else {
@@ -452,6 +504,7 @@ class Context : public compositor::Context {
       IMB_refImBuf(render_pass->ibuf);
       pass_data.wrap_external(render_pass->ibuf->float_data_for_write(),
                               int2(render_pass->ibuf->x, render_pass->ibuf->y));
+      result_apply_imbuf_display_window(pass_data, render_pass->ibuf);
       cached_cpu_passes_.append(render_pass->ibuf);
     }
 
@@ -692,12 +745,12 @@ class Context : public compositor::Context {
         continue;
       }
 
-      /* Realize the output on the compositing domain if needed. */
-      const Domain compositing_domain = this->get_compositing_domain();
+      /* Realize the output on its own domain if needed, so display/data-window semantics are
+       * preserved for later EXR and non-EXR save paths. */
       const InputDescriptor input_descriptor = {ResultType::Color,
                                                 InputRealizationMode::OperationDomain};
       SimpleOperation *realization_operation = RealizeOnDomainOperation::construct_if_needed(
-          *this, output_result, input_descriptor, compositing_domain);
+          *this, output_result, input_descriptor, output_result.domain());
       if (realization_operation) {
         realization_operation->map_input_to_result(&output_result);
         realization_operation->evaluate();
@@ -711,6 +764,8 @@ class Context : public compositor::Context {
       this->write_output(output_result);
       output_result.release();
     }
+
+    node_group_operation.free_evaluated_operation_results();
   }
 };
 

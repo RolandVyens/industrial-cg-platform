@@ -32,7 +32,14 @@ using DeepExrWriteCallback = std::function<bool(
     int height,
     const std::string &filepath,
     int compression,
-    bool use_half_float)>;
+    bool use_half_float,
+    bool has_display_window,
+    int display_width,
+    int display_height,
+    int display_offset_x,
+    int display_offset_y,
+    int data_offset_x,
+    int data_offset_y)>;
 
 /* Deep output driver for writing deep EXR files.
  *
@@ -91,6 +98,15 @@ class DeepOutputDriver {
   /* Set the callback function for writing deep EXR files. */
   void set_write_callback(DeepExrWriteCallback callback);
 
+  /* Set EXR display/data window semantics for overscan delivery. */
+  void set_display_window(bool has_display_window,
+                          int display_width,
+                          int display_height,
+                          int display_offset_x,
+                          int display_offset_y,
+                          int data_offset_x,
+                          int data_offset_y);
+
   /* Set beauty buffer for uniform RGB and alpha normalization.
    * The buffer should contain RGBA floats, size = width * height * 4. */
   void set_beauty_buffer(const float *rgba_buffer, int width, int height);
@@ -116,6 +132,11 @@ class DeepOutputDriver {
    * Must call set_beauty_buffer first for Deep Recolor. */
   std::vector<std::vector<blender::DeepSample>> *get_processed_deep_data();
 
+  /* Release large temporary host-side caches after final deep output has been written or copied
+   * into Blender-owned RenderResult structures. Keeps the driver object and device buffers alive
+   * until the session/frame teardown finishes. */
+  void release_temporary_host_caches();
+
   /* Get deep output dimensions. */
   int get_width() const { return width_; }
   int get_height() const { return height_; }
@@ -134,6 +155,13 @@ class DeepOutputDriver {
   int max_samples_per_pixel_ = 0;
   int compression_ = 1; /* ZIPS by default */
   bool use_half_float_ = false;
+  bool has_display_window_ = false;
+  int display_width_ = 0;
+  int display_height_ = 0;
+  int display_offset_x_ = 0;
+  int display_offset_y_ = 0;
+  int data_offset_x_ = 0;
+  int data_offset_y_ = 0;
 
   struct DeepBufferSlice {
     Device *device = nullptr;

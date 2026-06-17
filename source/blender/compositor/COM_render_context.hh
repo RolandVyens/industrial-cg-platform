@@ -14,6 +14,7 @@
 
 namespace blender {
 
+struct ImBuf;
 struct RenderResult;
 struct RenderDeepData;
 
@@ -47,7 +48,13 @@ class FileOutput {
   ImageFormatData format_;
   RenderResult *render_result_;
   bool save_as_render_;
+  bool has_display_window_;
+  int2 display_size_;
+  int2 display_offset_;
+  int2 data_offset_;
   Map<std::string, std::string> meta_data_;
+
+  void assign_display_window(ImBuf *image_buffer) const;
 
  public:
   /* Allocate and initialize the internal render result of the file output using the give
@@ -55,7 +62,11 @@ class FileOutput {
   FileOutput(const std::string &path,
              const ImageFormatData &format,
              int2 size,
-             bool save_as_render);
+             bool save_as_render,
+             bool has_display_window,
+             int2 display_size,
+             int2 display_offset,
+             int2 data_offset);
 
   /* Free the internal render result. */
   ~FileOutput();
@@ -124,7 +135,11 @@ class RenderContext {
   FileOutput &get_file_output(std::string path,
                               ImageFormatData format,
                               int2 size,
-                              bool save_as_render);
+                              bool save_as_render,
+                              bool has_display_window,
+                              int2 display_size,
+                              int2 display_offset,
+                              int2 data_offset);
 
   /* Write the file outputs that were added to the context. The render pipeline code should call
    * this method after all views were evaluated to write the file outputs. See the get_file_output
