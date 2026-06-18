@@ -68,8 +68,11 @@ These features are based on work already present in this repository, not roadmap
   
   <img width="878" height="405" alt="image" src="https://github.com/user-attachments/assets/626ecc8b-67db-4e63-b16a-c63726d7b2f7" />
 
-- **Bundled bQt runtime integration**  
-  The repository includes a fork-owned Qt wrapper in `scripts/modules/blender_vfx_qt` and a bundled System Extension runtime payload for Qt-based tools.
+- **EXR Overscan workflow**  
+  Delivery-frame `displayWindow` output with overscanned `dataWindow` render data for compositor-friendly edge handling.
+
+- **Bundled bQt runtime integration and ViewLayer Manager**  
+  The repository includes a fork-owned Qt wrapper in `scripts/modules/blender_vfx_qt`, a bundled System Extension runtime payload for Qt-based tools, and the BQt ViewLayer Manager.
 
   <img width="1834" height="1277" alt="image" src="https://github.com/user-attachments/assets/1abe6843-2f21-4a61-9dd6-81c0e876260e" />
 

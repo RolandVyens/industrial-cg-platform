@@ -68,8 +68,11 @@ Industrial CG Platform 的目标，就是在尽量贴近上游 Blender 的前提
 
   <img width="878" height="405" alt="image" src="https://github.com/user-attachments/assets/626ecc8b-67db-4e63-b16a-c63726d7b2f7" />
 
-- **内置 bQt 运行时集成**<br>
-  仓库内包含 `scripts/modules/blender_vfx_qt` 下的分支自有 Qt 包装层，以及面向 Qt 工具的打包 System Extension 运行时载荷。
+- **EXR Overscan 工作流**<br>
+  使用交付画幅 `displayWindow` 与带 overscan 的 `dataWindow` 渲染数据，方便合成阶段处理画面边缘。
+
+- **内置 bQt 运行时集成与 ViewLayer Manager**<br>
+  仓库内包含 `scripts/modules/blender_vfx_qt` 下的分支自有 Qt 包装层、面向 Qt 工具的打包 System Extension 运行时载荷，以及 BQt ViewLayer Manager。
 
   <img width="1834" height="1277" alt="image" src="https://github.com/user-attachments/assets/1abe6843-2f21-4a61-9dd6-81c0e876260e" />
 
