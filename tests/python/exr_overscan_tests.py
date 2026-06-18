@@ -8,6 +8,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import bpy
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
@@ -32,6 +34,12 @@ class ExrOverscanTests(unittest.TestCase):
                 overscan=overscan,
             )
         return cls._case_cache[case_name]
+
+    def test_output_panel_uses_unique_exr_identifier(self):
+        panel = getattr(bpy.types, "RENDER_PT_exr_overscan", None)
+        self.assertIsNotNone(panel)
+        self.assertEqual(panel.bl_idname, "RENDER_PT_exr_overscan")
+        self.assertFalse(hasattr(bpy.types, "RENDER_PT_overscan"))
 
     def test_offline_window_contract_matrix(self):
         cases = (

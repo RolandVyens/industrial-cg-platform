@@ -132,7 +132,8 @@ class RENDER_PT_format(RenderOutputButtonsPanel, Panel):
         self.draw_framerate(col, rd)
 
 
-class RENDER_PT_overscan(RenderOutputButtonsPanel, Panel):
+class RENDER_PT_exr_overscan(RenderOutputButtonsPanel, Panel):
+    bl_idname = "RENDER_PT_exr_overscan"
     bl_label = "Overscan"
     bl_options = {'DEFAULT_CLOSED'}
     COMPAT_ENGINES = {
@@ -768,7 +769,7 @@ classes = (
     RENDER_MT_framerate_presets,
     RENDER_MT_pixeldensity_presets,
     RENDER_PT_format,
-    RENDER_PT_overscan,
+    RENDER_PT_exr_overscan,
     RENDER_PT_frame_range,
     RENDER_PT_time_stretching,
     RENDER_PT_stereoscopy,
