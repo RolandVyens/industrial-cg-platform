@@ -6,6 +6,7 @@
 
 #include "kernel/integrator/guiding.h"
 #include "kernel/integrator/shade_volume.h"
+#include "kernel/integrator/shadow_color.h"
 #include "kernel/integrator/surface_shader.h"
 #include "kernel/integrator/volume_stack.h"
 
@@ -113,7 +114,7 @@ integrate_transparent_surface_shadow(KernelGlobals kg,
   /* Evaluate shader. */
   if (!(shadow_sd->flag & SD_HAS_ONLY_VOLUME)) {
     surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_SHADOW>(
-        kg, state, shadow_sd, nullptr, PATH_RAY_SHADOW);
+        kg, state, shadow_sd, nullptr, PATH_RAY_VISIBILITY_SHADOW, PATH_RAY_FLAG_NONE);
     if (shadow_sd->flag & SD_CACHE_MISS) {
       result = SHADER_EVAL_CACHE_MISS;
       return zero_spectrum();
@@ -269,27 +270,13 @@ ccl_device void integrator_shade_shadow(KernelGlobals kg,
   PROFILING_INIT(kg, PROFILING_SHADE_SHADOW_SETUP);
   const uint packed_num_hits = INTEGRATOR_STATE(state, shadow_path, packed_num_hits);
   const uint32_t path_flag = INTEGRATOR_STATE(state, shadow_path, flag);
-  Spectrum shadow_color = zero_spectrum();
-  bool apply_shadow_color = false;
+  const Spectrum shadow_color = integrator_shadow_color(
+      kg,
+      state,
+      path_flag,
+      kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR);
+  const bool apply_shadow_color = !is_zero(shadow_color);
   bool opaque = false;
-
-  if (!(path_flag & PATH_RAY_SHADOW_FOR_AO)) {
-    Ray ray ccl_optional_struct_init;
-    integrator_state_read_shadow_ray(state, &ray);
-    integrator_state_read_shadow_ray_self(state, &ray);
-
-    if (ray.self.light_object != OBJECT_NONE && ray.self.light_prim != PRIM_NONE) {
-      const KernelObject &kobject = kernel_data_fetch(objects, ray.self.light_object);
-      if (kobject.primitive_type == PRIMITIVE_LAMP) {
-        const ccl_global KernelLight *klight = &kernel_data_fetch(lights, ray.self.light_prim);
-        shadow_color = make_float3(klight->shadow_color[0],
-                                   klight->shadow_color[1],
-                                   klight->shadow_color[2]);
-        shadow_color = clamp(shadow_color, zero_spectrum(), one_spectrum());
-        apply_shadow_color = !is_zero(shadow_color);
-      }
-    }
-  }
 
 #ifdef __TRANSPARENT_SHADOWS__
   /* Evaluate transparent shadows. */
@@ -324,10 +311,10 @@ ccl_device void integrator_shade_shadow(KernelGlobals kg,
       const Spectrum shadowed_throughput = INTEGRATOR_STATE(state, shadow_path, throughput);
       Spectrum transmittance = safe_divide_color(shadowed_throughput, unshadowed_throughput);
       transmittance = clamp(transmittance, zero_spectrum(), one_spectrum());
-      const Spectrum tinted_transmittance =
-          transmittance + (one_spectrum() - transmittance) * shadow_color;
-      INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) =
-          unshadowed_throughput * tinted_transmittance;
+      const Spectrum tinted_transmittance = transmittance +
+                                            (one_spectrum() - transmittance) * shadow_color;
+      INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) = unshadowed_throughput *
+                                                               tinted_transmittance;
     }
   }
 

@@ -2,20 +2,24 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-"""Version-keyed pass property catalog for the ViewLayer manager."""
+"""Build- and specification-keyed pass property catalog for the ViewLayer manager."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import Any, Iterable, Mapping, Sequence
 
 import bpy
 
+from .blender_adapter import (
+    TARGET_VIEW_LAYER,
+    TARGET_VIEW_LAYER_CYCLES,
+    TARGET_VIEW_LAYER_EEVEE,
+    resolve_target,
+)
 
-TARGET_VIEW_LAYER = "view_layer"
-TARGET_VIEW_LAYER_EEVEE = "view_layer.eevee"
-TARGET_VIEW_LAYER_CYCLES = "view_layer.cycles"
 
 _TARGET_PATHS = (
     TARGET_VIEW_LAYER,
@@ -41,11 +45,11 @@ _FALLBACK_TYPE_NAMES = {
 }
 
 _DEFAULT_PACKAGE = "bl_ext.system.blender_vfx_viewlayer_manager"
-_CATALOG_FORMAT_VERSION = 1
+_CATALOG_FORMAT_VERSION = 2
 _CATALOG_SUBDIR = "cache"
 _CATALOG_FILENAME = "view_layer_pass_catalog.json"
 
-_CATALOG_CACHE_BY_VERSION: dict[tuple[int, int, int], dict[str, object]] = {}
+_CATALOG_CACHE: dict[str, dict[str, object]] = {}
 
 
 def _version_key() -> tuple[int, int, int]:
@@ -53,6 +57,54 @@ def _version_key() -> tuple[int, int, int]:
     if len(version) < 3:
         version = version + (0,) * (3 - len(version))
     return (version[0], version[1], version[2])
+
+
+def _build_hash() -> str:
+    return str(getattr(bpy.app, "build_hash", "") or "unknown")
+
+
+def _spec_fingerprint(
+    eevee_specs: Sequence[tuple[str, str, Sequence[tuple[str, str]]]],
+    cycles_specs: Sequence[tuple[str, str, Sequence[tuple[str, str]]]],
+    known_props_by_target: Mapping[str, Iterable[str]] | None,
+) -> str:
+    payload = {
+        "eevee_specs": _serialize_specs(eevee_specs),
+        "cycles_specs": _serialize_specs(cycles_specs),
+        "known_props_by_target": {
+            target_path: sorted(str(prop_name) for prop_name in prop_names)
+            for target_path, prop_names in sorted((known_props_by_target or {}).items())
+        },
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _catalog_identity(
+    eevee_specs: Sequence[tuple[str, str, Sequence[tuple[str, str]]]],
+    cycles_specs: Sequence[tuple[str, str, Sequence[tuple[str, str]]]],
+    known_props_by_target: Mapping[str, Iterable[str]] | None,
+) -> dict[str, object]:
+    return {
+        "version_key": _version_key(),
+        "build_hash": _build_hash(),
+        "spec_fingerprint": _spec_fingerprint(eevee_specs, cycles_specs, known_props_by_target),
+    }
+
+
+def _serialize_identity(identity: Mapping[str, object]) -> dict[str, object]:
+    version_key = identity.get("version_key", ())
+    if not isinstance(version_key, Sequence):
+        version_key = ()
+    return {
+        "version_key": [int(part) for part in version_key[:3]],
+        "build_hash": str(identity.get("build_hash", "")),
+        "spec_fingerprint": str(identity.get("spec_fingerprint", "")),
+    }
+
+
+def _identity_cache_key(identity: Mapping[str, object]) -> str:
+    return json.dumps(_serialize_identity(identity), sort_keys=True, separators=(",", ":"))
 
 
 def _extension_package() -> str:
@@ -120,16 +172,6 @@ def _sample_view_layer():
     return None
 
 
-def _resolve_target_owner(view_layer, target_path: str):
-    if target_path == TARGET_VIEW_LAYER:
-        return view_layer
-    if target_path == TARGET_VIEW_LAYER_EEVEE:
-        return getattr(view_layer, "eevee", None) if view_layer is not None else None
-    if target_path == TARGET_VIEW_LAYER_CYCLES:
-        return getattr(view_layer, "cycles", None) if view_layer is not None else None
-    return None
-
-
 def _fallback_target_owner(target_path: str):
     for type_name in _FALLBACK_TYPE_NAMES.get(target_path, ()):
         owner = getattr(bpy.types, type_name, None)
@@ -141,7 +183,7 @@ def _fallback_target_owner(target_path: str):
 def _collect_target_owners() -> dict[str, object | None]:
     view_layer = _sample_view_layer()
     owners: dict[str, object | None] = {
-        target_path: _resolve_target_owner(view_layer, target_path)
+        target_path: resolve_target(view_layer, target_path)
         for target_path in _TARGET_PATHS
     }
     for target_path, owner in owners.items():
@@ -294,7 +336,22 @@ def _deserialize_specs(data: Any) -> tuple[tuple[str, str, tuple[tuple[str, str]
     return tuple(specs)
 
 
-def _load_persisted_catalog(version_key: tuple[int, int, int]) -> dict[str, object] | None:
+def _catalog_is_available(
+    catalog: Mapping[str, object],
+    available_props_by_target: Mapping[str, Mapping[str, str]],
+) -> bool:
+    for specs_key in ("eevee_specs", "cycles_specs"):
+        for _title, target_path, props in catalog.get(specs_key, ()):
+            available_props = available_props_by_target.get(target_path, {})
+            if any(prop_name not in available_props for prop_name, _label in props):
+                return False
+    return True
+
+
+def _load_persisted_catalog(
+    identity: Mapping[str, object],
+    available_props_by_target: Mapping[str, Mapping[str, str]],
+) -> dict[str, object] | None:
     filepath = _catalog_filepath(create=False)
     if not filepath or not os.path.isfile(filepath):
         return None
@@ -310,23 +367,19 @@ def _load_persisted_catalog(version_key: tuple[int, int, int]) -> dict[str, obje
     if int(payload.get("catalog_format_version", 0)) != _CATALOG_FORMAT_VERSION:
         return None
 
-    raw_version = payload.get("version_key")
-    if not isinstance(raw_version, Sequence):
-        return None
-    try:
-        stored_version = tuple(int(part) for part in raw_version[:3])
-    except Exception:
-        return None
-    if stored_version != version_key:
+    if payload.get("identity") != _serialize_identity(identity):
         return None
 
     catalog = {
-        "version_key": version_key,
+        "version_key": tuple(identity["version_key"]),
+        "identity": dict(identity),
         "eevee_specs": _deserialize_specs(payload.get("eevee_specs")),
         "cycles_specs": _deserialize_specs(payload.get("cycles_specs")),
     }
-    _CATALOG_CACHE_BY_VERSION.clear()
-    _CATALOG_CACHE_BY_VERSION[version_key] = catalog
+    if not _catalog_is_available(catalog, available_props_by_target):
+        return None
+    _CATALOG_CACHE.clear()
+    _CATALOG_CACHE[_identity_cache_key(identity)] = catalog
     return catalog
 
 
@@ -337,7 +390,7 @@ def _write_persisted_catalog(catalog: Mapping[str, object]) -> None:
 
     payload = {
         "catalog_format_version": _CATALOG_FORMAT_VERSION,
-        "version_key": list(catalog.get("version_key", ())),
+        "identity": _serialize_identity(catalog.get("identity", {})),
         "eevee_specs": _serialize_specs(catalog.get("eevee_specs", ())),
         "cycles_specs": _serialize_specs(catalog.get("cycles_specs", ())),
     }
@@ -360,19 +413,23 @@ def load_view_layer_pass_catalog(
     cycles_specs: Sequence[tuple[str, str, Sequence[tuple[str, str]]]],
     known_props_by_target: Mapping[str, Iterable[str]] | None = None,
 ) -> dict[str, object]:
-    version_key = _version_key()
-    cached = _CATALOG_CACHE_BY_VERSION.get(version_key)
-    if cached is not None:
-        return cached
-    persisted = _load_persisted_catalog(version_key)
-    if persisted is not None:
-        return persisted
-
+    identity = _catalog_identity(eevee_specs, cycles_specs, known_props_by_target)
+    identity_key = _identity_cache_key(identity)
     owners = _collect_target_owners()
     available_props_by_target = {
         target_path: _collect_pass_like_boolean_properties(owner)
         for target_path, owner in owners.items()
     }
+
+    cached = _CATALOG_CACHE.get(identity_key)
+    if cached is not None:
+        if _catalog_is_available(cached, available_props_by_target):
+            return cached
+        _CATALOG_CACHE.pop(identity_key, None)
+    persisted = _load_persisted_catalog(identity, available_props_by_target)
+    if persisted is not None:
+        return persisted
+
     known_props = _build_known_props_by_target(
         eevee_specs,
         cycles_specs,
@@ -384,7 +441,8 @@ def load_view_layer_pass_catalog(
     additional_by_target = _build_additional_by_target(available_props_by_target, known_props)
 
     catalog = {
-        "version_key": version_key,
+        "version_key": tuple(identity["version_key"]),
+        "identity": identity,
         "eevee_specs": _append_additional_sections(
             filtered_eevee_specs,
             additional_by_target,
@@ -397,9 +455,8 @@ def load_view_layer_pass_catalog(
         ),
     }
 
-    # Keep the latest computed Blender-version catalog and drop older entries.
-    _CATALOG_CACHE_BY_VERSION.clear()
-    _CATALOG_CACHE_BY_VERSION[version_key] = catalog
+    _CATALOG_CACHE.clear()
+    _CATALOG_CACHE[identity_key] = catalog
     _write_persisted_catalog(catalog)
     return catalog
 

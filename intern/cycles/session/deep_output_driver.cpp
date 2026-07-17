@@ -6,10 +6,9 @@
 
 #include <limits>
 
-#include "IMB_deep_sample_merge.hh"
-
 #include "device/device.h"
 #include "kernel/types.h"
+#include "session/deep_camera_sample_set.h"
 
 #include "util/log.h"
 #include "util/math.h"
@@ -18,67 +17,6 @@
 
 #include <cstring>
 
-namespace blender::imbuf::deep_merge {
-
-template<> struct DeepSampleTraits<blender::DeepSample> {
-  static float r(const blender::DeepSample &sample)
-  {
-    return sample.r;
-  }
-
-  static float g(const blender::DeepSample &sample)
-  {
-    return sample.g;
-  }
-
-  static float b(const blender::DeepSample &sample)
-  {
-    return sample.b;
-  }
-
-  static float a(const blender::DeepSample &sample)
-  {
-    return sample.a;
-  }
-
-  static float z(const blender::DeepSample &sample)
-  {
-    return sample.z;
-  }
-
-  static float z_back(const blender::DeepSample &sample)
-  {
-    return sample.z_back;
-  }
-
-  static void set_r(blender::DeepSample &sample, const float value)
-  {
-    sample.r = value;
-  }
-
-  static void set_g(blender::DeepSample &sample, const float value)
-  {
-    sample.g = value;
-  }
-
-  static void set_b(blender::DeepSample &sample, const float value)
-  {
-    sample.b = value;
-  }
-
-  static void set_a(blender::DeepSample &sample, const float value)
-  {
-    sample.a = value;
-  }
-
-  static void set_z_back(blender::DeepSample &sample, const float value)
-  {
-    sample.z_back = value;
-  }
-};
-
-}  // namespace blender::imbuf::deep_merge
-
 CCL_NAMESPACE_BEGIN
 
 namespace {
@@ -86,7 +24,6 @@ constexpr float deep_alpha_epsilon = 1e-6f;
 constexpr float deep_alpha_linear_fallback = 1e-3f;
 constexpr float deep_alpha_log_min_transparency = 1e-5f;
 constexpr float deep_surface_depth_epsilon = 1e-6f;
-constexpr float deep_volume_depth_epsilon = 1e-6f;
 constexpr float deep_opaque_surface_alpha_threshold = 1.0f - 1e-6f;
 constexpr float deep_inactive_sample_epsilon = 1e-8f;
 constexpr float deep_surface_normal_dot_threshold = 0.94f;
@@ -300,39 +237,26 @@ bool build_opaque_surface_prefix_groups(const DeepSampleData *sample_data,
 {
   groups.clear();
 
-  uint32_t max_camera_sample = 0;
-  bool have_camera_sample = false;
   for (int s = 0; s < info.prefix_count; s++) {
     const DeepSampleData &sample = sample_data[offset + s];
     if (!deep_sample_has_hard_surface_metadata(sample)) {
       groups.clear();
       return false;
     }
-
-    const uint32_t camera_sample = deep_sample_camera_sample(sample);
-    if (!have_camera_sample || camera_sample > max_camera_sample) {
-      max_camera_sample = camera_sample;
-      have_camera_sample = true;
-    }
   }
 
-  if (!have_camera_sample) {
+  if (info.prefix_count <= 0) {
     return false;
   }
 
-  vector<uint8_t> camera_sample_seen(static_cast<size_t>(max_camera_sample) + 1, 0);
+  DeepCameraSampleSet camera_samples_seen(static_cast<size_t>(info.prefix_count));
 
   for (int s = 0; s < info.prefix_count; s++) {
     const DeepSampleData &sample = sample_data[offset + s];
     const uint32_t camera_sample = deep_sample_camera_sample(sample);
-    if (camera_sample >= camera_sample_seen.size()) {
-      groups.clear();
-      return false;
-    }
-    if (camera_sample_seen[camera_sample]) {
+    if (!camera_samples_seen.add(camera_sample)) {
       continue;
     }
-    camera_sample_seen[camera_sample] = 1;
 
     const float3 sample_normal = deep_unpack_packed_geometric_normal(
         sample.packed_geometric_normal);
@@ -375,8 +299,6 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
   representative_count = 0;
   first_active_index = -1;
 
-  uint32_t max_camera_sample = 0;
-  bool have_camera_sample = false;
   for (int s = 0; s < count; s++) {
     const DeepSampleData &sample = sample_data[offset + s];
     if (deep_sample_is_inactive(sample)) {
@@ -386,22 +308,16 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
       groups.clear();
       return false;
     }
-
-    const uint32_t camera_sample = deep_sample_camera_sample(sample);
-    if (!have_camera_sample || camera_sample > max_camera_sample) {
-      max_camera_sample = camera_sample;
-      have_camera_sample = true;
-    }
     if (first_active_index == -1) {
       first_active_index = s;
     }
   }
 
-  if (!have_camera_sample || first_active_index == -1) {
+  if (first_active_index == -1) {
     return false;
   }
 
-  vector<uint8_t> camera_sample_seen(static_cast<size_t>(max_camera_sample) + 1, 0);
+  DeepCameraSampleSet camera_samples_seen(static_cast<size_t>(count));
 
   for (int s = 0; s < count; s++) {
     const DeepSampleData &sample = sample_data[offset + s];
@@ -410,14 +326,9 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
     }
 
     const uint32_t camera_sample = deep_sample_camera_sample(sample);
-    if (camera_sample >= camera_sample_seen.size()) {
-      groups.clear();
-      return false;
-    }
-    if (camera_sample_seen[camera_sample]) {
+    if (!camera_samples_seen.add(camera_sample)) {
       continue;
     }
-    camera_sample_seen[camera_sample] = 1;
 
     const float3 sample_normal = deep_unpack_packed_geometric_normal(
         sample.packed_geometric_normal);
@@ -451,39 +362,6 @@ bool build_opaque_surface_groups(const DeepSampleData *sample_data,
   }
 
   return !groups.empty() && representative_count > 0;
-}
-
-std::vector<std::vector<blender::DeepSample>> deep_copy_merged_samples(
-    const std::vector<std::vector<blender::DeepSample>> &deep_data,
-    const float merge_threshold,
-    const float alpha_merge_threshold)
-{
-  std::vector<std::vector<blender::DeepSample>> merged_samples = deep_data;
-
-  if (merge_threshold <= 0.0f) {
-    return merged_samples;
-  }
-
-  for (std::vector<blender::DeepSample> &pixel_samples : merged_samples) {
-    if (pixel_samples.size() <= 1) {
-      continue;
-    }
-
-    std::sort(pixel_samples.begin(),
-              pixel_samples.end(),
-              [](const blender::DeepSample &a, const blender::DeepSample &b) {
-                return a.z < b.z;
-              });
-    const size_t merged_count = blender::imbuf::deep_merge::merge_sorted_deep_samples(
-        pixel_samples.data(),
-        pixel_samples.size(),
-        merge_threshold,
-        alpha_merge_threshold,
-        deep_volume_depth_epsilon);
-    pixel_samples.resize(merged_count);
-  }
-
-  return merged_samples;
 }
 
 }  // namespace
@@ -876,23 +754,17 @@ void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
     return;
   }
 
-  const std::vector<std::vector<blender::DeepSample>> *deep_data_to_write = deep_data;
-  std::vector<std::vector<blender::DeepSample>> merged_samples_storage;
-  if (merge_threshold_ > 0.0f) {
-    merged_samples_storage = deep_copy_merged_samples(
-        *deep_data, merge_threshold_, alpha_merge_threshold_);
-    deep_data_to_write = &merged_samples_storage;
-  }
-
   /* Write using provided callback. */
   if (write_callback_) {
     bool success = write_callback_(
-        *deep_data_to_write,
+        *deep_data,
         width_,
         height_,
         filepath,
         compression_,
         use_half_float_,
+        merge_threshold_,
+        alpha_merge_threshold_,
         has_display_window_,
         display_width_,
         display_height_,
@@ -913,16 +785,12 @@ void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
   }
 }
 
-std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::get_processed_deep_data()
+std::vector<std::vector<blender::DeepSample>> *
+DeepOutputDriver::get_unmerged_processed_deep_data()
 {
   std::vector<std::vector<blender::DeepSample>> *deep_data = ensure_processed_cache();
   if (!deep_data) {
     return nullptr;
-  }
-
-  if (merge_threshold_ > 0.0f) {
-    return new std::vector<std::vector<blender::DeepSample>>(
-        deep_copy_merged_samples(*deep_data, merge_threshold_, alpha_merge_threshold_));
   }
 
   return processed_cache_.release();
@@ -1489,6 +1357,9 @@ bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
                                        max(sample_count, float(representative_count)) :
                                        float(representative_count);
   float remaining_coverage = 1.0f;
+  float prefix_r = 0.0f;
+  float prefix_g = 0.0f;
+  float prefix_b = 0.0f;
 
   std::vector<blender::DeepSample> &pixel_samples = (*processed_cache_)[global_idx];
   pixel_samples.clear();
@@ -1516,10 +1387,14 @@ bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
     dst.z = group.output_z;
     dst.z_back = group.output_z;
 
+    prefix_r += remaining_coverage * dst.r;
+    prefix_g += remaining_coverage * dst.g;
+    prefix_b += remaining_coverage * dst.b;
     remaining_coverage = max(0.0f, remaining_coverage - group_coverage);
   }
 
   const float prefix_coverage = 1.0f - remaining_coverage;
+
   vector<float> tail_alphas;
   tail_alphas.reserve(static_cast<size_t>(count - prefix_info.prefix_count));
   for (int s = prefix_info.prefix_count; s < count; s++) {
@@ -1543,6 +1418,22 @@ bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
     deep_scale_alpha_values(tail_alphas, target_tail_alpha);
   }
 
+  float tail_transparency = 1.0f;
+  for (const float alpha : tail_alphas) {
+    tail_transparency *= 1.0f - clamp(alpha, 0.0f, 1.0f);
+  }
+
+  const float tail_coverage = 1.0f - tail_transparency;
+  const float tail_denominator = remaining_coverage * tail_coverage;
+  float tail_r = 0.0f;
+  float tail_g = 0.0f;
+  float tail_b = 0.0f;
+  if (tail_denominator > deep_alpha_epsilon) {
+    tail_r = (beauty_r - prefix_r) / tail_denominator;
+    tail_g = (beauty_g - prefix_g) / tail_denominator;
+    tail_b = (beauty_b - prefix_b) / tail_denominator;
+  }
+
   size_t tail_alpha_index = 0;
   for (int s = prefix_info.prefix_count; s < count; s++) {
     const DeepSampleData &src = sample_data[offset + s];
@@ -1555,9 +1446,9 @@ bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
                                    clamp(src.a, 0.0f, 1.0f);
     tail_alpha_index++;
     blender::DeepSample &dst = pixel_samples.emplace_back();
-    dst.r = beauty_r * sample_alpha;
-    dst.g = beauty_g * sample_alpha;
-    dst.b = beauty_b * sample_alpha;
+    dst.r = tail_r * sample_alpha;
+    dst.g = tail_g * sample_alpha;
+    dst.b = tail_b * sample_alpha;
     dst.a = sample_alpha;
     dst.z = src.z;
     dst.z_back = src.z_back;

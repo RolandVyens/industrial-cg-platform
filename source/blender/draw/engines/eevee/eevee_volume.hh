@@ -57,6 +57,7 @@ class VolumeModule {
   Instance &inst_;
 
   bool enabled_;
+  bool viewport_sampling_is_reset_ = false;
   bool use_reprojection_;
   bool use_lights_;
 
@@ -167,7 +168,9 @@ class VolumeModule {
 
   void end_sync();
 
-  /* Render material properties. */
+  void set_view(View &main_view);
+
+  /* Render material properties. Needs to be called after `set_view`. */
   void draw_prepass(View &main_view);
   /* Compute scattering and integration. */
   void draw_compute(View &main_view, int2 extent);

@@ -50,7 +50,7 @@ static BaseSocketDeclarationBuilder &declare_existing_output(NodeDeclarationBuil
         .structure_type(StructureType::Dynamic)
         .available(output->is_available());
   }
-  return b.add_output(eNodeSocketDatatype(output->type), UString(output->name))
+  return b.add_output(output->type, UString(output->name))
       .structure_type(StructureType::Dynamic)
       .available(output->is_available());
 }
@@ -284,8 +284,8 @@ class ImageOperation : public NodeOperation {
       return;
     }
 
-    Result cached_image = this->context().cache_manager().cached_images.get(
-        this->context(), this->get_image(), this->get_image_user(), identifier.data());
+    const Result &cached_image = this->context().cache_manager().cached_images.get(
+        this->context(), *this->get_image(), *this->get_image_user(), identifier.data());
     if (!cached_image.is_allocated()) {
       result.allocate_invalid();
       return;
@@ -293,14 +293,14 @@ class ImageOperation : public NodeOperation {
 
     result.set_type(cached_image.type());
     result.set_precision(cached_image.precision());
-    result.wrap_external(cached_image);
+    result.share_data(cached_image);
   }
 
   void compute_alpha()
   {
     Result &result = this->get_result("Alpha");
-    Result cached_alpha = this->context().cache_manager().cached_images.get(
-        this->context(), this->get_image(), this->get_image_user(), "Alpha");
+    const Result &cached_alpha = this->context().cache_manager().cached_images.get(
+        this->context(), *this->get_image(), *this->get_image_user(), "Alpha");
 
     /* For single layer images, the returned cached alpha is actually just the image, and we just
      * extract the alpha from it. */
@@ -319,13 +319,13 @@ class ImageOperation : public NodeOperation {
     if (cached_alpha.is_allocated()) {
       result.set_type(cached_alpha.type());
       result.set_precision(cached_alpha.precision());
-      result.wrap_external(cached_alpha);
+      result.share_data(cached_alpha);
       return;
     }
 
     /* Otherwise, we try to extract the alpha from the combined pass if it exists. */
-    Result cached_combined_image = this->context().cache_manager().cached_images.get(
-        this->context(), this->get_image(), this->get_image_user(), RE_PASSNAME_COMBINED);
+    const Result &cached_combined_image = this->context().cache_manager().cached_images.get(
+        this->context(), *this->get_image(), *this->get_image_user(), RE_PASSNAME_COMBINED);
     if (!cached_combined_image.is_allocated()) {
       result.allocate_invalid();
       return;

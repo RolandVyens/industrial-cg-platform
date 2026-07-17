@@ -3,35 +3,16 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "gpu_shader_common_color_utils.glsl"
+#include "gpu_shader_math_rotation_lib.glsl"
 
 [[node]]
-void node_mix_blend(float fac,
-                    float3 facvec,
-                    float f1,
-                    float f2,
-                    float3 v1,
-                    float3 v2,
-                    float4 col1,
-                    float4 col2,
-                    float &outfloat,
-                    float3 &outvec,
-                    float4 &outcol)
+void node_mix_blend(float fac, float4 col1, float4 col2, float4 &outcol)
 {
   outcol = mix(col1, col2, fac);
 }
 
 [[node]]
-void node_mix_add(float fac,
-                  float3 facvec,
-                  float f1,
-                  float f2,
-                  float3 v1,
-                  float3 v2,
-                  float4 col1,
-                  float4 col2,
-                  float &outfloat,
-                  float3 &outvec,
-                  float4 &outcol)
+void node_mix_add(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = mix(col1, col1 + col2, fac);
@@ -39,17 +20,7 @@ void node_mix_add(float fac,
 }
 
 [[node]]
-void node_mix_mult(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_mult(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = mix(col1, col1 * col2, fac);
@@ -57,17 +28,7 @@ void node_mix_mult(float fac,
 }
 
 [[node]]
-void node_mix_screen(float fac,
-                     float3 facvec,
-                     float f1,
-                     float f2,
-                     float3 v1,
-                     float3 v2,
-                     float4 col1,
-                     float4 col2,
-                     float &outfloat,
-                     float3 &outvec,
-                     float4 &outcol)
+void node_mix_screen(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   float facm = 1.0f - fac;
@@ -77,17 +38,7 @@ void node_mix_screen(float fac,
 }
 
 [[node]]
-void node_mix_overlay(float fac,
-                      float3 facvec,
-                      float f1,
-                      float f2,
-                      float3 v1,
-                      float3 v2,
-                      float4 col1,
-                      float4 col2,
-                      float &outfloat,
-                      float3 &outvec,
-                      float4 &outcol)
+void node_mix_overlay(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   float facm = 1.0f - fac;
@@ -117,17 +68,7 @@ void node_mix_overlay(float fac,
 }
 
 [[node]]
-void node_mix_sub(float fac,
-                  float3 facvec,
-                  float f1,
-                  float f2,
-                  float3 v1,
-                  float3 v2,
-                  float4 col1,
-                  float4 col2,
-                  float &outfloat,
-                  float3 &outvec,
-                  float4 &outcol)
+void node_mix_sub(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = mix(col1, col1 - col2, fac);
@@ -136,17 +77,7 @@ void node_mix_sub(float fac,
 
 /* A variant of mix_div that fallback to the first color upon zero division. */
 [[node]]
-void node_mix_div_fallback(float fac,
-                           float3 facvec,
-                           float f1,
-                           float f2,
-                           float3 v1,
-                           float3 v2,
-                           float4 col1,
-                           float4 col2,
-                           float &outfloat,
-                           float3 &outvec,
-                           float4 &outcol)
+void node_mix_div_fallback(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   float facm = 1.0f - fac;
@@ -165,17 +96,7 @@ void node_mix_div_fallback(float fac,
 }
 
 [[node]]
-void node_mix_diff(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_diff(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = mix(col1, abs(col1 - col2), fac);
@@ -183,17 +104,7 @@ void node_mix_diff(float fac,
 }
 
 [[node]]
-void node_mix_exclusion(float fac,
-                        float3 facvec,
-                        float f1,
-                        float f2,
-                        float3 v1,
-                        float3 v2,
-                        float4 col1,
-                        float4 col2,
-                        float &outfloat,
-                        float3 &outvec,
-                        float4 &outcol)
+void node_mix_exclusion(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = max(mix(col1, col1 + col2 - 2.0f * col1 * col2, fac), 0.0f);
@@ -201,17 +112,7 @@ void node_mix_exclusion(float fac,
 }
 
 [[node]]
-void node_mix_dark(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_dark(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol.rgb = mix(col1.rgb, min(col1.rgb, col2.rgb), fac);
@@ -219,34 +120,14 @@ void node_mix_dark(float fac,
 }
 
 [[node]]
-void node_mix_light(float fac,
-                    float3 facvec,
-                    float f1,
-                    float f2,
-                    float3 v1,
-                    float3 v2,
-                    float4 col1,
-                    float4 col2,
-                    float &outfloat,
-                    float3 &outvec,
-                    float4 &outcol)
+void node_mix_light(float fac, float4 col1, float4 col2, float4 &outcol)
 {
   outcol.rgb = mix(col1.rgb, max(col1.rgb, col2.rgb), fac);
   outcol.a = col1.a;
 }
 
 [[node]]
-void node_mix_dodge(float fac,
-                    float3 facvec,
-                    float f1,
-                    float f2,
-                    float3 v1,
-                    float3 v2,
-                    float4 col1,
-                    float4 col2,
-                    float &outfloat,
-                    float3 &outvec,
-                    float4 &outcol)
+void node_mix_dodge(float fac, float4 col1, float4 col2, float4 &outcol)
 {
   outcol = col1;
 
@@ -289,17 +170,7 @@ void node_mix_dodge(float fac,
 }
 
 [[node]]
-void node_mix_burn(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_burn(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   float tmp, facm = 1.0f - fac;
@@ -350,20 +221,8 @@ void node_mix_burn(float fac,
 }
 
 [[node]]
-void node_mix_hue(float fac,
-                  float3 facvec,
-                  float f1,
-                  float f2,
-                  float3 v1,
-                  float3 v2,
-                  float4 col1,
-                  float4 col2,
-                  float &outfloat,
-                  float3 &outvec,
-                  float4 &outcol)
+void node_mix_hue(float fac, float4 col1, float4 col2, float4 &outcol)
 {
-
-  float facm = 1.0f - fac;
 
   outcol = col1;
 
@@ -381,20 +240,8 @@ void node_mix_hue(float fac,
 }
 
 [[node]]
-void node_mix_sat(float fac,
-                  float3 facvec,
-                  float f1,
-                  float f2,
-                  float3 v1,
-                  float3 v2,
-                  float4 col1,
-                  float4 col2,
-                  float &outfloat,
-                  float3 &outvec,
-                  float4 &outcol)
+void node_mix_sat(float fac, float4 col1, float4 col2, float4 &outcol)
 {
-
-  float facm = 1.0f - fac;
 
   outcol = col1;
 
@@ -404,51 +251,26 @@ void node_mix_sat(float fac,
   if (hsv.y != 0.0f) {
     rgb_to_hsv(col2, hsv2);
 
-    hsv.y = facm * hsv.y + fac * hsv2.y;
+    hsv.y = (1.0f - fac) * hsv.y + fac * hsv2.y;
     hsv_to_rgb(hsv, outcol);
   }
 }
 
 [[node]]
-void node_mix_val(float fac,
-                  float3 facvec,
-                  float f1,
-                  float f2,
-                  float3 v1,
-                  float3 v2,
-                  float4 col1,
-                  float4 col2,
-                  float &outfloat,
-                  float3 &outvec,
-                  float4 &outcol)
+void node_mix_val(float fac, float4 col1, float4 col2, float4 &outcol)
 {
-
-  float facm = 1.0f - fac;
 
   float4 hsv, hsv2;
   rgb_to_hsv(col1, hsv);
   rgb_to_hsv(col2, hsv2);
 
-  hsv.z = facm * hsv.z + fac * hsv2.z;
+  hsv.z = (1.0f - fac) * hsv.z + fac * hsv2.z;
   hsv_to_rgb(hsv, outcol);
 }
 
 [[node]]
-void node_mix_color(float fac,
-                    float3 facvec,
-                    float f1,
-                    float f2,
-                    float3 v1,
-                    float3 v2,
-                    float4 col1,
-                    float4 col2,
-                    float &outfloat,
-                    float3 &outvec,
-                    float4 &outcol)
+void node_mix_color(float fac, float4 col1, float4 col2, float4 &outcol)
 {
-
-  float facm = 1.0f - fac;
-
   outcol = col1;
 
   float4 hsv, hsv2, tmp;
@@ -466,17 +288,7 @@ void node_mix_color(float fac,
 }
 
 [[node]]
-void node_mix_soft(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_soft(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   float facm = 1.0f - fac;
@@ -488,17 +300,7 @@ void node_mix_soft(float fac,
 }
 
 [[node]]
-void node_mix_linear(float fac,
-                     float3 facvec,
-                     float f1,
-                     float f2,
-                     float3 v1,
-                     float3 v2,
-                     float4 col1,
-                     float4 col2,
-                     float &outfloat,
-                     float3 &outvec,
-                     float4 &outcol)
+void node_mix_linear(float fac, float4 col1, float4 col2, float4 &outcol)
 {
 
   outcol = col1 + fac * (2.0f * (col2 - float4(0.5f)));
@@ -506,68 +308,28 @@ void node_mix_linear(float fac,
 }
 
 [[node]]
-void node_mix_float(float fac,
-                    float3 facvec,
-                    float f1,
-                    float f2,
-                    float3 v1,
-                    float3 v2,
-                    float4 col1,
-                    float4 col2,
-                    float &outfloat,
-                    float3 &outvec,
-                    float4 &outcol)
+void node_mix_float(float fac, float f1, float f2, float &outfloat)
 {
   /* Avoid using mix() due to float precision issues caused by different implementations. */
   outfloat = f1 * (1.0f - fac) + f2 * fac;
 }
 
 [[node]]
-void node_mix_vector(float fac,
-                     float3 facvec,
-                     float f1,
-                     float f2,
-                     float3 v1,
-                     float3 v2,
-                     float4 col1,
-                     float4 col2,
-                     float &outfloat,
-                     float3 &outvec,
-                     float4 &outcol)
+void node_mix_vector(float fac, float3 v1, float3 v2, float3 &outvec)
 {
   /* Avoid using mix() due to float precision issues caused by different implementations. */
   outvec = v1 * (1.0f - fac) + v2 * fac;
 }
 
 [[node]]
-void node_mix_vector_non_uniform(float fac,
-                                 float3 facvec,
-                                 float f1,
-                                 float f2,
-                                 float3 v1,
-                                 float3 v2,
-                                 float4 col1,
-                                 float4 col2,
-                                 float &outfloat,
-                                 float3 &outvec,
-                                 float4 &outcol)
+void node_mix_vector_non_uniform(float3 facvec, float3 v1, float3 v2, float3 &outvec)
 {
   /* Avoid using mix() due to float precision issues caused by different implementations. */
   outvec = v1 * (float3(1.0f) - facvec) + v2 * facvec;
 }
 
 [[node]]
-void node_mix_rgba(float fac,
-                   float3 facvec,
-                   float f1,
-                   float f2,
-                   float3 v1,
-                   float3 v2,
-                   float4 col1,
-                   float4 col2,
-                   float &outfloat,
-                   float3 &outvec,
-                   float4 &outcol)
+void node_mix_rgba(float fac, float4 col1, float4 col2, float4 &outcol)
 {
   outcol = mix(col1, col2, fac);
 }
@@ -588,4 +350,10 @@ void node_mix_clamp_vector(float3 vec, float3 min, float3 max, float3 &outvec)
 void node_mix_clamp_value(float value, float min, float max, float &outfloat)
 {
   outfloat = clamp(value, min, max);
+}
+
+[[node]]
+void node_mix_rotation(float fac, float4 rot1, float4 rot2, float4 &outrot)
+{
+  outrot = interpolate(Quaternion{UNPACK4(rot1)}, Quaternion{UNPACK4(rot2)}, fac).as_float4();
 }

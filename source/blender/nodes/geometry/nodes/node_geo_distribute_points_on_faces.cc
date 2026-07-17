@@ -41,7 +41,10 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.add_input<decl::Geometry>("Mesh"_ustr)
       .supported_type(GeometryComponent::Type::Mesh)
       .description("Mesh on whose faces to distribute points on");
-  b.add_input<decl::Bool>("Selection"_ustr).default_value(true).hide_value().field_on_all();
+  b.add_input<decl::Bool>("Selection"_ustr)
+      .default_value(true)
+      .hide_value()
+      .evaluated_geometry_field();
   auto &distance_min = b.add_input<decl::Float>("Distance Min"_ustr)
                            .min(0.0f)
                            .subtype(PROP_DISTANCE)
@@ -55,7 +58,7 @@ static void node_declare(NodeDeclarationBuilder &b)
   auto &density = b.add_input<decl::Float>("Density"_ustr)
                       .default_value(10.0f)
                       .min(0.0f)
-                      .field_on_all()
+                      .evaluated_geometry_field()
                       .make_available(enable_random)
                       .available(false);
   auto &density_factor = b.add_input<decl::Float>("Density Factor"_ustr)
@@ -63,14 +66,14 @@ static void node_declare(NodeDeclarationBuilder &b)
                              .min(0.0f)
                              .max(1.0f)
                              .subtype(PROP_FACTOR)
-                             .field_on_all()
+                             .evaluated_geometry_field()
                              .make_available(enable_poisson)
                              .available(false);
   b.add_input<decl::Int>("Seed"_ustr);
 
-  b.add_output<decl::Geometry>("Points"_ustr).propagate_all();
-  b.add_output<decl::Vector>("Normal"_ustr).field_on_all();
-  b.add_output<decl::Rotation>("Rotation"_ustr).field_on_all();
+  b.add_output<decl::Geometry>("Points"_ustr).propagate_all_geometry();
+  b.add_output<decl::Vector>("Normal"_ustr).anonymous_attribute_output();
+  b.add_output<decl::Rotation>("Rotation"_ustr).anonymous_attribute_output();
 
   const bNode *node = b.node_or_null();
   if (node != nullptr) {
@@ -201,17 +204,17 @@ static void sample_bary_coords(const Mesh &mesh,
           [&](const IndexRange range) { return points_by_tri[range].size(); }));
 }
 
-BLI_NOINLINE static KDTree_3d *build_kdtree(Span<float3> positions)
+BLI_NOINLINE static KDTree<float3> *build_kdtree(Span<float3> positions)
 {
-  KDTree_3d *kdtree = kdtree_3d_new(positions.size());
+  KDTree<float3> *kdtree = kdtree_new<float3>(positions.size());
 
   int i_point = 0;
   for (const float3 position : positions) {
-    kdtree_3d_insert(kdtree, i_point, position);
+    kdtree_insert<float3>(kdtree, i_point, position);
     i_point++;
   }
 
-  kdtree_3d_balance(kdtree);
+  kdtree_balance<float3>(kdtree);
   return kdtree;
 }
 
@@ -222,31 +225,23 @@ BLI_NOINLINE static void update_elimination_mask_for_close_points(
     return;
   }
 
-  KDTree_3d *kdtree = build_kdtree(positions);
-  BLI_SCOPED_DEFER([&]() { kdtree_3d_free(kdtree); });
+  KDTree<float3> *kdtree = build_kdtree(positions);
+  BLI_SCOPED_DEFER([&]() { kdtree_free<float3>(kdtree); });
 
   for (const int i : positions.index_range()) {
     if (elimination_mask[i]) {
       continue;
     }
 
-    struct CallbackData {
-      int index;
-      MutableSpan<bool> elimination_mask;
-    } callback_data = {i, elimination_mask};
-
-    kdtree_3d_range_search_cb(
-        kdtree,
-        positions[i],
-        minimum_distance,
-        [](void *user_data, int index, const float3 & /*co*/, float /*dist_sq*/) {
-          CallbackData &callback_data = *static_cast<CallbackData *>(user_data);
-          if (index != callback_data.index) {
-            callback_data.elimination_mask[index] = true;
-          }
-          return true;
-        },
-        &callback_data);
+    kdtree_range_search_cb<float3>(kdtree,
+                                   positions[i],
+                                   minimum_distance,
+                                   [&](int index, const float3 & /*co*/, float /*dist_sq*/) {
+                                     if (index != i) {
+                                       elimination_mask[index] = true;
+                                     }
+                                     return true;
+                                   });
   }
 }
 
@@ -707,7 +702,7 @@ static void node_register()
   ntype.ui_description = "Generate points spread out on the surface of a mesh";
   ntype.enum_name_legacy = "DISTRIBUTE_POINTS_ON_FACES";
   ntype.nclass = NODE_CLASS_GEOMETRY;
-  bke::node_type_size(ntype, 170, 100, 320);
+  ntype.default_width = bke::NodeWidth::_180;
   ntype.declare = node_declare;
   ntype.geometry_node_execute = node_geo_exec;
   ntype.draw_buttons = node_layout;

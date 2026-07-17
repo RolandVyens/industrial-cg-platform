@@ -78,13 +78,26 @@ static PreviewImage *previewimg_deferred_create(const char *filepath, ThumbSourc
   return prv;
 }
 
-static void previewimg_free_or_defer(PreviewImage **prv)
+/**
+ * \return True if the preview image was deleted or marked for deferred deletion. User counting may
+ *     prevent the freeing so this will return false then.
+ */
+static bool previewimg_free_or_defer(PreviewImage **prv)
 {
   if (*prv == nullptr) {
-    return;
+    return false;
   }
 
   BLI_assert(BLI_thread_is_main());
+
+  /* User counting is only done in few cases. If the count is 0, no counting is being used. */
+  if ((*prv)->runtime->user_count > 0) {
+    (*prv)->runtime->user_count--;
+    if ((*prv)->runtime->user_count > 0) {
+      /* Don't free yet. */
+      return false;
+    }
+  }
 
   bool do_delete = true;
 
@@ -101,6 +114,7 @@ static void previewimg_free_or_defer(PreviewImage **prv)
     BKE_previewimg_free(prv);
   }
   *prv = nullptr;
+  return true;
 }
 
 PreviewImage *BKE_previewimg_create()
@@ -303,7 +317,8 @@ PreviewImage *BKE_previewimg_cached_ensure(const char *name)
 PreviewImage *BKE_previewimg_cached_thumbnail_read(const char *name,
                                                    const char *filepath,
                                                    const int source,
-                                                   bool force_update)
+                                                   bool force_update,
+                                                   const bool count_users)
 {
   BLI_assert(BLI_thread_is_main());
 
@@ -337,6 +352,10 @@ PreviewImage *BKE_previewimg_cached_thumbnail_read(const char *name,
     force_update = true;
   }
 
+  if (count_users) {
+    prv->runtime->user_count++;
+  }
+
   if (force_update) {
     if (prv_p) {
       *prv_p = prv;
@@ -351,10 +370,11 @@ PreviewImage *BKE_previewimg_cached_thumbnail_read(const char *name,
 
 PreviewImage *BKE_previewimg_online_thumbnail_read(const char *name,
                                                    const char *dst_filepath,
-                                                   const bool force_update)
+                                                   const bool force_update,
+                                                   const bool count_users)
 {
   PreviewImage *preview = BKE_previewimg_cached_thumbnail_read(
-      name, dst_filepath, THB_SOURCE_DIRECT, force_update);
+      name, dst_filepath, THB_SOURCE_DIRECT, force_update, count_users);
   preview->runtime->deferred_loading_data->is_online = true;
 
   return preview;
@@ -364,8 +384,12 @@ void BKE_previewimg_cached_release(const char *name)
 {
   BLI_assert(BLI_thread_is_main());
   CachedPreviewMap &cache = get_cached_previews_map();
-  PreviewImage *prv = cache.pop_default_as(name, nullptr);
-  previewimg_free_or_defer(&prv);
+  PreviewImage *prv = cache.lookup_default(name, nullptr);
+  /* The preview may not be freed when there are more users still. In that case, keep the preview
+   * in the cache, so other users can still find it an free it eventually. */
+  if (previewimg_free_or_defer(&prv)) {
+    cache.pop_try(name);
+  }
 }
 
 void BKE_previewimg_ensure(PreviewImage *prv, const int size)
@@ -396,7 +420,7 @@ void BKE_previewimg_ensure(PreviewImage *prv, const int size)
   if (do_preview) {
     prv->w[ICON_SIZE_PREVIEW] = thumb->x;
     prv->h[ICON_SIZE_PREVIEW] = thumb->y;
-    prv->rect[ICON_SIZE_PREVIEW] = reinterpret_cast<unsigned int *>(
+    prv->rect[ICON_SIZE_PREVIEW] = reinterpret_cast<uint *>(
         MEM_dupalloc<uint8_t>(thumb->byte_data()));
     prv->flag[ICON_SIZE_PREVIEW] &= ~(PRV_CHANGED | PRV_USER_EDITED | PRV_RENDERING);
   }
@@ -416,7 +440,7 @@ void BKE_previewimg_ensure(PreviewImage *prv, const int size)
     IMB_scale(thumb, icon_w, icon_h, IMBScaleFilter::Box, false);
     prv->w[ICON_SIZE_ICON] = icon_w;
     prv->h[ICON_SIZE_ICON] = icon_h;
-    prv->rect[ICON_SIZE_ICON] = reinterpret_cast<unsigned int *>(
+    prv->rect[ICON_SIZE_ICON] = reinterpret_cast<uint *>(
         MEM_dupalloc<uint8_t>(thumb->byte_data()));
     prv->flag[ICON_SIZE_ICON] &= ~(PRV_CHANGED | PRV_USER_EDITED | PRV_RENDERING);
   }
@@ -460,7 +484,7 @@ ImBuf *BKE_previewimg_to_imbuf(const PreviewImage *prv, const int size)
 
   if (w > 0 && h > 0 && rect) {
     /* first allocate imbuf for copying preview into it */
-    ima = IMB_allocImBuf(w, h, 32, IB_byte_data);
+    ima = IMB_allocImBuf(w, h, ImBufFlags::ByteData);
     memcpy(ima->byte_data_for_write(), rect, w * h * sizeof(uint8_t) * 4);
   }
 
@@ -581,7 +605,10 @@ void BKE_previewimg_blend_read(BlendDataReader *reader, PreviewImage *prv)
 
   for (int i = 0; i < NUM_ICON_SIZES; i++) {
     if (prv->rect[i]) {
-      BLO_read_uint32_array(reader, prv->w[i] * prv->h[i], &prv->rect[i]);
+      if (!BLO_read_array(reader, &prv->rect[i], int64_t(prv->w[i]) * prv->h[i])) {
+        prv->w[i] = 0;
+        prv->h[i] = 0;
+      }
     }
 
     /* PRV_RENDERING is a runtime only flag currently, but for undo indicates that we need

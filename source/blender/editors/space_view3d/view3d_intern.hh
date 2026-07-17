@@ -61,6 +61,8 @@ void VIEW3D_OT_toggle_xray(wmOperatorType *ot);
 
 /* `view3d_draw.cc` */
 
+int view3d_cycles_render_resolution_get(int dimension, int percentage_scale);
+
 void view3d_main_region_draw(const bContext *C, ARegion *region);
 /**
  * Information drawn on top of the solid plates and composed data.
@@ -193,6 +195,11 @@ void VIEW3D_OT_snap_cursor_to_active(wmOperatorType *ot);
 /* `view3d_placement.cc` */
 
 void VIEW3D_OT_interactive_add(wmOperatorType *ot);
+
+/* `view3d_location_scouting.cc` */
+
+void vr_location_scouting_capture_review_modal_keymap(wmKeyConfig *keyconf);
+void VIEW3D_OT_vr_location_scouting_capture_review(wmOperatorType *ot);
 
 /* space_view3d.cc */
 

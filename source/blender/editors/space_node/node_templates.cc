@@ -437,7 +437,7 @@ static void ui_node_sock_name(const bNodeTree *ntree,
     bNode *node = sock->link->fromnode;
     const std::string node_name = bke::node_label(*ntree, *node);
 
-    if (BLI_listbase_is_empty(&node->inputs) && node->outputs.first != node->outputs.last) {
+    if (node->inputs.is_empty() && node->outputs.first != node->outputs.last) {
       BLI_snprintf_utf8(name,
                         UI_MAX_NAME_STR,
                         "%s | %s",
@@ -667,6 +667,8 @@ void uiTemplateNodeLink(
 {
   using namespace blender::ed::space_node;
 
+  layout->active_set(!input->is_inactive());
+
   ui::Block *block = layout->block();
   NodeLinkArg *arg;
   ui::Button *but;
@@ -784,7 +786,8 @@ static void ui_node_draw_recursive(ui::Layout &layout,
     }
     else if (const auto *layout_decl = dynamic_cast<const nodes::LayoutDeclaration *>(item_decl)) {
       PointerRNA nodeptr = RNA_pointer_create_discrete(&ntree.id, RNA_Node, &node);
-      layout_decl->draw(*panel_layout.body, &C, &nodeptr);
+      ui::Layout &layout = panel_layout.body->column(false);
+      layout_decl->draw(layout, &C, &nodeptr);
     }
   }
 }

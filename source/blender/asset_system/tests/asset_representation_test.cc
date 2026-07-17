@@ -10,12 +10,14 @@
 #include "BKE_lib_id.hh"
 #include "BKE_main.hh"
 
+#if defined(WIN32)
+#  include "BLI_string.h"
+#endif
+
 #include "DNA_asset_types.h"
 #include "DNA_object_types.h"
 
 #include "ED_asset_mark_clear.hh"
-
-#include "BLI_string.h"
 
 #include "../intern/utils.hh"
 
@@ -149,7 +151,8 @@ TEST_F(AssetRepresentationTest, weak_reference__compare)
 
     /* Arbitrary individual member changes to test how it affects the comparison. */
     b.asset_library_identifier = "My lib";
-    EXPECT_NE(a, b);
+    /* Asset library identifier should be ignored unless the type is #ASSET_LIBRARY_CUSTOM. */
+    EXPECT_EQ(a, b);
     a.asset_library_identifier = "My lib";
     EXPECT_EQ(a, b);
     a.asset_library_type = ASSET_LIBRARY_ESSENTIALS;

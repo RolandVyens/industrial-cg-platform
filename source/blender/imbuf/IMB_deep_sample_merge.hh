@@ -14,9 +14,68 @@
 #include <cmath>
 #include <cstddef>
 
+#include "IMB_deep_sample.hh"
+
 namespace blender::imbuf::deep_merge {
 
 template<typename Sample> struct DeepSampleTraits;
+
+template<> struct DeepSampleTraits<blender::DeepSample> {
+  static float r(const blender::DeepSample &sample)
+  {
+    return sample.r;
+  }
+
+  static float g(const blender::DeepSample &sample)
+  {
+    return sample.g;
+  }
+
+  static float b(const blender::DeepSample &sample)
+  {
+    return sample.b;
+  }
+
+  static float a(const blender::DeepSample &sample)
+  {
+    return sample.a;
+  }
+
+  static float z(const blender::DeepSample &sample)
+  {
+    return sample.z;
+  }
+
+  static float z_back(const blender::DeepSample &sample)
+  {
+    return sample.z_back;
+  }
+
+  static void set_r(blender::DeepSample &sample, const float value)
+  {
+    sample.r = value;
+  }
+
+  static void set_g(blender::DeepSample &sample, const float value)
+  {
+    sample.g = value;
+  }
+
+  static void set_b(blender::DeepSample &sample, const float value)
+  {
+    sample.b = value;
+  }
+
+  static void set_a(blender::DeepSample &sample, const float value)
+  {
+    sample.a = value;
+  }
+
+  static void set_z_back(blender::DeepSample &sample, const float value)
+  {
+    sample.z_back = value;
+  }
+};
 
 template<typename Sample>
 inline size_t merge_sorted_deep_samples(Sample *samples,
@@ -57,19 +116,19 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
           }
           const bool alpha_similar = std::abs(curr_a - prev_a) < alpha_merge_threshold;
           if (depth_similar && alpha_similar) {
-            /* Merge: composite current over previous. */
-            const float one_minus_a = 1.0f - curr_a;
+            /* Samples are sorted front to back: composite the nearer previous sample first. */
+            const float one_minus_a = 1.0f - prev_a;
             const float prev_r = DeepSampleTraits<Sample>::r(prev);
             const float prev_g = DeepSampleTraits<Sample>::g(prev);
             const float prev_b = DeepSampleTraits<Sample>::b(prev);
 
-            DeepSampleTraits<Sample>::set_r(prev, DeepSampleTraits<Sample>::r(current) +
-                                                       prev_r * one_minus_a);
-            DeepSampleTraits<Sample>::set_g(prev, DeepSampleTraits<Sample>::g(current) +
-                                                       prev_g * one_minus_a);
-            DeepSampleTraits<Sample>::set_b(prev, DeepSampleTraits<Sample>::b(current) +
-                                                       prev_b * one_minus_a);
-            DeepSampleTraits<Sample>::set_a(prev, curr_a + prev_a * one_minus_a);
+            DeepSampleTraits<Sample>::set_r(prev, prev_r + DeepSampleTraits<Sample>::r(current) *
+                                                         one_minus_a);
+            DeepSampleTraits<Sample>::set_g(prev, prev_g + DeepSampleTraits<Sample>::g(current) *
+                                                         one_minus_a);
+            DeepSampleTraits<Sample>::set_b(prev, prev_b + DeepSampleTraits<Sample>::b(current) *
+                                                         one_minus_a);
+            DeepSampleTraits<Sample>::set_a(prev, prev_a + curr_a * one_minus_a);
 
             if (prev_volume) {
               DeepSampleTraits<Sample>::set_z_back(prev, std::max(prev_z_back, curr_z_back));

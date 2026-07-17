@@ -50,13 +50,11 @@ using namespace bke::id;
 void BKE_libblock_free_data(ID *id, const bool do_id_user)
 {
   if (id->properties) {
-    IDP_FreePropertyContent_ex(id->properties, do_id_user);
-    MEM_delete(id->properties);
+    IDP_FreeProperty_ex(id->properties, do_id_user);
     id->properties = nullptr;
   }
   if (id->system_properties) {
-    IDP_FreePropertyContent_ex(id->system_properties, do_id_user);
-    MEM_delete(id->system_properties);
+    IDP_FreeProperty_ex(id->system_properties, do_id_user);
     id->system_properties = nullptr;
   }
 
@@ -262,6 +260,7 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDelete
 {
   const int extra_remapping_flags = options.extra_remapping_flags;
   bool has_deleted_library = false;
+  bool has_deleted_linked_or_liboverride_id = false;
 
   /* Used by batch tagged deletion, when we call BKE_id_free then, id is no more in Main database,
    * and has already properly unlinked its other IDs usages.
@@ -277,6 +276,24 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDelete
   BKE_main_lock(bmain);
   BKE_layer_collection_resync_forbid(*bmain);
   IDRemapper id_remapper;
+
+  auto process_id_to_delete =
+      [&bmain, &ids_to_delete, &id_remapper, &has_deleted_linked_or_liboverride_id](
+          ListBaseT<ID> *lb, ID *id_iter) -> void {
+    /* Do not tag as no_main now, we want to unlink it first (lower-level ID management
+     * code has some specific handling of 'no main' IDs that would be a problem in that
+     * case). */
+    BLI_remlink(lb, id_iter);
+    BKE_main_namemap_remove_id(*bmain, *id_iter);
+    ids_to_delete.add(id_iter);
+    id_remapper.add(id_iter, nullptr);
+
+    if (!has_deleted_linked_or_liboverride_id &&
+        (ID_IS_LINKED(id_iter) || ID_IS_OVERRIDE_LIBRARY(id_iter)))
+    {
+      has_deleted_linked_or_liboverride_id = true;
+    }
+  };
 
   /* Main idea of batch deletion is to remove all IDs to be deleted from Main database.
    * This means that we won't have to loop over all deleted IDs to remove usages
@@ -302,23 +319,14 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDelete
         if (ids_to_delete.contains(id_iter) ||
             (ID_IS_LINKED(id_iter) && ids_to_delete.contains(&id_iter->lib->id)))
         {
-          BLI_remlink(lb, id_iter);
-          BKE_main_namemap_remove_id(*bmain, *id_iter);
-          ids_to_delete.add(id_iter);
-          id_remapper.add(id_iter, nullptr);
-          /* Do not tag as no_main now, we want to unlink it first (lower-level ID management
-           * code has some specific handling of 'no main' IDs that would be a problem in that
-           * case). */
+          process_id_to_delete(lb, id_iter);
 
           /* Forcefully also delete shapekeys of the deleted ID if any, 'orphaned' shapekeys are
            * not allowed in Blender and will cause lots of problem in modern code (liboverrides,
            * warning on write & read, etc.). */
           Key *shape_key = BKE_key_from_id(id_iter);
           if (shape_key && !ids_to_delete.contains(&shape_key->id)) {
-            BLI_remlink(&bmain->shapekeys, &shape_key->id);
-            BKE_main_namemap_remove_id(*bmain, shape_key->id);
-            ids_to_delete.add(&shape_key->id);
-            id_remapper.add(&shape_key->id, nullptr);
+            process_id_to_delete(&bmain->shapekeys.cast<ID>(), &shape_key->id);
           }
 
           keep_looping = true;
@@ -336,6 +344,7 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDelete
     BKE_libblock_remap_multiple_locked(bmain, id_remapper, remapping_flags);
     for (ID *id_never_null_iter : id_remapper.never_null_users()) {
       ids_to_delete.add(id_never_null_iter);
+      keep_looping = true;
     }
     id_remapper.clear();
   }
@@ -378,6 +387,12 @@ static size_t id_delete(Main *bmain, Set<ID *> &ids_to_delete, const BKEIDDelete
 
   if (has_deleted_library) {
     BKE_library_main_rebuild_hierarchy(bmain);
+  }
+
+  /* Deleting a liboverride or linked ID may have had some impact on validity of liboverrides
+   * hierarchy roots, these need to be re-validated/re-generated. */
+  if (has_deleted_linked_or_liboverride_id && !options.prevent_liboverride_hierarchy_root_ensure) {
+    BKE_lib_override_library_main_hierarchy_root_ensure(bmain);
   }
 
   bmain->is_memfile_undo_written = false;

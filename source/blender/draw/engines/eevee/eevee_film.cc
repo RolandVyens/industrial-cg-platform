@@ -322,6 +322,15 @@ void Film::init(const int2 &extent, const rcti *output_rect)
       enabled_passes_ = enabled_passes(inst_.view_layer);
     }
 
+    /* Force enable color passes if light passes are enabled.
+     * This is needed since we need to pre-divide by them. */
+    if (enabled_passes_ & EEVEE_RENDER_PASS_DIFFUSE_LIGHT) {
+      enabled_passes_ |= EEVEE_RENDER_PASS_DIFFUSE_COLOR;
+    }
+    if (enabled_passes_ & EEVEE_RENDER_PASS_SPECULAR_LIGHT) {
+      enabled_passes_ |= EEVEE_RENDER_PASS_SPECULAR_COLOR;
+    }
+
     /* Filter obsolete passes. */
     enabled_passes_ &= ~(EEVEE_RENDER_PASS_UNUSED_8 | EEVEE_RENDER_PASS_UNUSED_14);
 
@@ -393,11 +402,11 @@ void Film::init(const int2 &extent, const rcti *output_rect)
                                                 EEVEE_RENDER_PASS_POSITION |
                                                 EEVEE_RENDER_PASS_VECTOR;
     const eViewLayerEEVEEPassType color_passes_1 = EEVEE_RENDER_PASS_DIFFUSE_LIGHT |
+                                                   EEVEE_RENDER_PASS_DIFFUSE_COLOR |
                                                    EEVEE_RENDER_PASS_SPECULAR_LIGHT |
-                                                   EEVEE_RENDER_PASS_VOLUME_LIGHT |
-                                                   EEVEE_RENDER_PASS_EMIT;
-    const eViewLayerEEVEEPassType color_passes_2 = EEVEE_RENDER_PASS_DIFFUSE_COLOR |
-                                                   EEVEE_RENDER_PASS_SPECULAR_COLOR |
+                                                   EEVEE_RENDER_PASS_SPECULAR_COLOR;
+    const eViewLayerEEVEEPassType color_passes_2 = EEVEE_RENDER_PASS_VOLUME_LIGHT |
+                                                   EEVEE_RENDER_PASS_EMIT |
                                                    EEVEE_RENDER_PASS_ENVIRONMENT |
                                                    EEVEE_RENDER_PASS_MIST |
                                                    EEVEE_RENDER_PASS_SHADOW | EEVEE_RENDER_PASS_AO;
@@ -571,6 +580,7 @@ void Film::sync()
     accumulate_ps_.dispatch(int3(math::divide_ceil(data_.extent, int2(FILM_GROUP_SIZE)), 1));
   }
   else {
+    accumulate_ps_.push_constant("display_only", &display_only_);
     accumulate_ps_.draw_procedural(GPU_PRIM_TRIS, 1, 3);
   }
 
@@ -669,7 +679,9 @@ float2 Film::pixel_jitter_get() const
 {
   float2 jitter = inst_.sampling.rng_2d_get(SAMPLING_FILTER_U);
 
-  if (!use_box_filter && data_.filter_radius < M_SQRT1_2 && !inst_.camera.is_panoramic()) {
+  if (!use_box_filter && data_.filter_radius < M_SQRT1_2 && !inst_.camera.is_panoramic() &&
+      !inst_.sampling.use_custom_pixel_jitter_sample())
+  {
     /* For filter size less than a pixel, change sampling strategy and use a uniform disk
      * distribution covering the filter shape. This avoids putting samples in areas without any
      * weights. */
@@ -858,13 +870,9 @@ void Film::accumulate(View &view, gpu::Texture *combined_final_tx)
     GPU_framebuffer_viewport_set(dfbl->default_fb, UNPACK2(data_.offset), UNPACK2(data_.extent));
   }
 
-  update_sample_table();
-
   combined_final_tx_ = combined_final_tx;
 
-  data_.display_only = false;
-  inst_.uniform_data.push_update();
-
+  display_only_ = false;
   inst_.manager->submit(accumulate_ps_, view);
   inst_.manager->submit(copy_ps_, view);
 
@@ -890,11 +898,9 @@ void Film::display()
 
   combined_final_tx_ = inst_.render_buffers.combined_tx;
 
-  data_.display_only = true;
-  inst_.uniform_data.push_update();
-
   draw::View &drw_view = draw::View::default_get();
 
+  display_only_ = true;
   DRW_manager_get()->submit(accumulate_ps_, drw_view);
 
   inst_.render_buffers.release();
@@ -1013,7 +1019,7 @@ void Film::write_viewport_compositor_passes()
        * all cases for now. */
       const char *pass_name = pass_names[pass_offset].c_str();
       draw::TextureFromPool &output_pass_texture = DRW_viewport_pass_texture_get(pass_name);
-      output_pass_texture.acquire(this->display_extent, GPU_texture_format(pass_texture));
+      output_pass_texture.acquire_2d(this->display_extent, GPU_texture_format(pass_texture));
 
       PassSimple write_pass_ps = {"Film.WriteViewportCompositorPass"};
       const eShaderType write_shader_type = get_write_pass_shader_type(pass_type);
@@ -1039,7 +1045,7 @@ void Film::write_viewport_compositor_passes()
 
     /* See above comment regarding the allocation extent. */
     draw::TextureFromPool &output_pass_texture = DRW_viewport_pass_texture_get(aov.name);
-    output_pass_texture.acquire(this->display_extent, GPU_texture_format(pass_texture));
+    output_pass_texture.acquire_2d(this->display_extent, GPU_texture_format(pass_texture));
 
     PassSimple write_pass_ps = {"Film.WriteViewportCompositorPass"};
     const eShaderType write_shader_type = get_aov_write_pass_shader_type(&aov);

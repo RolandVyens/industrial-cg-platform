@@ -90,6 +90,13 @@ class TestGraph:
             if output_values and len(output_values) > 1:
                 use_error_bars = True
 
+        default_entry = {
+            'x': None,
+            'y': None,
+            'yMin': None,
+            'yMax': None,
+        }
+
         # Convert to chart.js data layout.
         if chart_type == 'comparison':
             # For comparison, tests on the X axis and revisions as datasets.
@@ -104,7 +111,7 @@ class TestGraph:
             for revision, index in sorted_revisions:
                 datasets.append({
                     'label': revision,
-                    'data': [None] * len(tests),
+                    'data': [default_entry] * len(tests),
                 })
 
             for entry in entries:
@@ -131,7 +138,7 @@ class TestGraph:
             for test, index in sorted_tests:
                 datasets.append({
                     'label': test,
-                    'data': [None] * len(revisions),
+                    'data': [default_entry] * len(revisions),
                     'tension': 0.1,
                 })
 

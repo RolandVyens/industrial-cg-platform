@@ -85,7 +85,7 @@ class DeviceInfo {
   int num = 0;
   bool display_device = false;          /* GPU is used as a display device. */
   bool has_nanovdb = false;             /* Support NanoVDB volumes. */
-  bool has_mnee = true;                 /* Support MNEE. */
+  bool has_mnee_ = true;                /* Support MNEE. */
   bool has_osl = false;                 /* Support Open Shading Language. */
   bool has_guiding = false;             /* Support path guiding. */
   bool has_profiling = false;           /* Supports runtime collection of profiling info. */
@@ -118,6 +118,14 @@ class DeviceInfo {
   bool operator!=(const DeviceInfo &info) const
   {
     return !(*this == info);
+  }
+
+  bool has_mnee() const
+  {
+    /* Shadow caustics not supported on HIP without hardware ray-tracing, see #160089.
+     * This is a more complex condition that can't be determined in device_hip_info,
+     * so there is a helper for it here. */
+    return has_mnee_ && (type != DEVICE_HIP || use_hardware_raytracing);
   }
 };
 
@@ -266,6 +274,11 @@ class Device {
     return false;
   }
 
+  virtual bool has_unified_image_memory() const
+  {
+    return false;
+  }
+
   virtual bool is_shared(const void * /*shared_pointer*/,
                          const device_ptr /*device_pointer*/,
                          Device * /*sub_device*/)
@@ -298,6 +311,10 @@ class Device {
 
   /* Returns path guiding device handle. */
   virtual void *get_guiding_device() const;
+
+  /* Read back a device_memory byte buffer from device and OR values into the host buffer.
+   * The host buffer is not zeroed as part of this. */
+  virtual void mem_or_from_device(device_memory &mem);
 
   /* Sub-devices */
 
@@ -389,7 +406,7 @@ class GPUDevice : public Device {
   size_t device_image_headroom = 0;
   size_t device_working_headroom = 0;
   using texMemObject = unsigned long long;
-  using arrayMemObject = unsigned long long;
+  using arrayMemObject = uintptr_t;
   struct Mem {
     Mem() = default;
 

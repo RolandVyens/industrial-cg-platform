@@ -203,6 +203,16 @@ class PushRelaxPoseBone(AbstractPoseSlideTest):
 
 class BreakdownerTestPoseBone(AbstractPoseSlideTest):
 
+    def setUp(self) -> None:
+        super().setUp()
+        bpy.context.preferences.edit.use_keyframe_insert_available = False
+        bpy.context.preferences.edit.use_auto_keyframe_insert_needed = False
+
+    def tearDown(self) -> None:
+        super().tearDown()
+        bpy.context.preferences.edit.use_keyframe_insert_available = True
+        bpy.context.preferences.edit.use_auto_keyframe_insert_needed = True
+
     def test_no_keys(self):
         # The case of no keys will produce no interpolation.
         self.pose_bone.location = (1, 1, 1)
@@ -242,7 +252,9 @@ class BreakdownerTestPoseBone(AbstractPoseSlideTest):
             self.assertAlmostEqual(self.pose_bone.location[i], 1, 3)
 
         # The key count depends on the setting "Only insert available" in the user preferences.
-        self.assertEqual(len(channelbag.fcurves), 10)
+        # Also keys are only inserted into channels that already have keys.
+        self.assertEqual(len(channelbag.fcurves), 3)
+        # This depends on the setting "Only insert needed".
         self.assertEqual(len(channelbag.fcurves[0].keyframe_points), 2)
 
     def test_all_properties(self):
@@ -349,28 +361,7 @@ class BreakdownerTestPoseBone(AbstractPoseSlideTest):
         self.assertAlmostEqual(self.pose_bone.rotation_quaternion[3], 0, 3)
 
 
-def main():
-    global args
-    import argparse
-
-    argv = [sys.argv[0]]
-    if '--' in sys.argv:
-        argv += sys.argv[sys.argv.index('--') + 1:]
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output-dir",
-        dest="output_dir",
-        type=pathlib.Path,
-        default=pathlib.Path("."),
-        help="Where to output temp saved blendfiles",
-        required=False,
-    )
-
-    args, remaining = parser.parse_known_args(argv)
-
-    unittest.main(argv=remaining)
-
-
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.argv = [__file__] + (sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
+    unittest.main()

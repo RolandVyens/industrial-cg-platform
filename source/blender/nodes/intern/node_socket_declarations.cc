@@ -2,6 +2,8 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+#include "NOD_bundle_type.hh"
+#include "NOD_geometry_nodes_closure_signature.hh"
 #include "NOD_socket_declarations.hh"
 #include "NOD_socket_declarations_geometry.hh"
 
@@ -22,8 +24,8 @@ namespace blender::nodes::decl {
 static bool field_types_are_compatible(const SocketDeclaration &input,
                                        const SocketDeclaration &output)
 {
-  if (output.output_field_dependency.field_type() == OutputSocketFieldType::FieldSource) {
-    if (input.input_field_type == InputSocketFieldType::None) {
+  if (output.structure_type == StructureType::Field) {
+    if (!ELEM(input.structure_type, StructureType::Field, StructureType::Dynamic)) {
       return false;
     }
   }
@@ -152,6 +154,17 @@ bNodeSocket &Float::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket &
   return socket;
 }
 
+FloatBuilder &FloatBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Float *other = dynamic_cast<const Float *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+    this->decl_->soft_min_value = other->soft_min_value;
+    this->decl_->soft_max_value = other->soft_max_value;
+    this->decl_->subtype = other->subtype;
+  }
+  return *this;
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -219,6 +232,17 @@ bNodeSocket &Int::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket &so
   value.max = this->soft_max_value;
   value.subtype = this->subtype;
   return socket;
+}
+
+IntBuilder &IntBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Int *other = dynamic_cast<const Int *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+    this->decl_->soft_min_value = other->soft_min_value;
+    this->decl_->soft_max_value = other->soft_max_value;
+    this->decl_->subtype = other->subtype;
+  }
+  return *this;
 }
 
 /** \} */
@@ -297,6 +321,18 @@ bNodeSocket &Vector::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket 
   value.min = this->soft_min_value;
   value.max = this->soft_max_value;
   return socket;
+}
+
+VectorBuilder &VectorBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Vector *other = dynamic_cast<const Vector *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+    this->decl_->soft_min_value = other->soft_min_value;
+    this->decl_->soft_max_value = other->soft_max_value;
+    this->decl_->dimensions = other->dimensions;
+    this->decl_->subtype = other->subtype;
+  }
+  return *this;
 }
 
 /** \} */
@@ -426,6 +462,14 @@ bNodeSocket &Bool::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket &s
   return socket;
 }
 
+BoolBuilder &BoolBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Bool *other = dynamic_cast<const Bool *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+  }
+  return *this;
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -469,6 +513,14 @@ bNodeSocket &Color::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket &
   }
   this->set_common_flags(socket);
   return socket;
+}
+
+ColorBuilder &ColorBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Color *other = dynamic_cast<const Color *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+  }
+  return *this;
 }
 
 /** \} */
@@ -521,6 +573,14 @@ bNodeSocket &Rotation::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocke
   }
   this->set_common_flags(socket);
   return socket;
+}
+
+RotationBuilder &RotationBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const Rotation *other = dynamic_cast<const Rotation *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+  }
+  return *this;
 }
 
 /** \} */
@@ -631,6 +691,16 @@ StringBuilder &StringBuilder::path_filter(std::optional<std::string> filter)
   return *this;
 }
 
+StringBuilder &StringBuilder::try_copy_ui_data(const SocketDeclaration &other_decl)
+{
+  if (const String *other = dynamic_cast<const String *>(&other_decl)) {
+    this->decl_->default_value = other->default_value;
+    this->decl_->subtype = other->subtype;
+    this->decl_->path_filter = other->path_filter;
+  }
+  return *this;
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -673,19 +743,24 @@ bNodeSocket &Menu::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket &s
   return socket;
 }
 
-MenuBuilder &MenuBuilder::static_items(const EnumPropertyItem *items)
+MenuBuilder &MenuBuilder::static_items(const EnumPropertyItem *items,
+                                       const StaticItemFilterFn filter_fn)
 {
   /* Using a global map ensures that the same runtime data is used for the same static items.
    * This is necessary because otherwise each node would have a different (incompatible) menu
    * definition. */
   static Mutex mutex;
-  static Map<const EnumPropertyItem *, ImplicitSharingPtr<bke::RuntimeNodeEnumItems>>
+  static Map<std::pair<const EnumPropertyItem *, StaticItemFilterFn>,
+             ImplicitSharingPtr<bke::RuntimeNodeEnumItems>>
       items_by_enum_ptr;
 
   std::lock_guard lock{mutex};
-  decl_->items = items_by_enum_ptr.lookup_or_add_cb(items, [&]() {
+  decl_->items = items_by_enum_ptr.lookup_or_add_cb({items, filter_fn}, [&]() {
     bke::RuntimeNodeEnumItems *runtime_items = new bke::RuntimeNodeEnumItems();
     for (const EnumPropertyItem *item = items; item->identifier; item++) {
+      if (filter_fn && !filter_fn(*item)) {
+        continue;
+      }
       bke::RuntimeNodeEnumItem runtime_item;
       runtime_item.name = item->name;
       runtime_item.description = item->description;
@@ -741,6 +816,12 @@ bNodeSocket &Bundle::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket 
   return socket;
 }
 
+BundleBuilder &BundleBuilder::bundle_type(BundleType bundle_type)
+{
+  decl_->bundle_type = std::move(bundle_type);
+  return *this;
+}
+
 BundleBuilder &BundleBuilder::pass_through_input_index(const std::optional<int> index)
 {
   BLI_assert(this->is_output());
@@ -753,6 +834,10 @@ BundleBuilder &BundleBuilder::pass_through_input_index(const std::optional<int> 
 /* -------------------------------------------------------------------- */
 /** \name #Closure
  * \{ */
+
+Closure::Closure() = default;
+
+Closure::~Closure() = default;
 
 bNodeSocket &Closure::build(bNodeTree &ntree, bNode &node) const
 {
@@ -794,6 +879,18 @@ bNodeSocket &Closure::update_or_build(bNodeTree &ntree, bNode &node, bNodeSocket
   }
   this->set_common_flags(socket);
   return socket;
+}
+
+void ClosureBuilder::create_signature(
+    std::function<ClosureSignature(const bNode &)> create_signature)
+{
+  if (create_signature) {
+    decl_->create_signature = std::make_unique<std::function<ClosureSignature(const bNode &)>>(
+        std::move(create_signature));
+  }
+  else {
+    decl_->create_signature.reset();
+  }
 }
 
 /** \} */

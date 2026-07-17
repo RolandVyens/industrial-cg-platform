@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import bpy
+import numpy as np
 import OpenImageIO as oiio
 from mathutils import Vector
 
@@ -21,6 +23,11 @@ WINDOW_FIELDS = (
     "full_width",
     "full_height",
 )
+
+BORDER_MIN_X = 0.02
+BORDER_MAX_X = 0.30
+BORDER_MIN_Y = 0.02
+BORDER_MAX_Y = 0.34
 
 
 def _set_object_color(obj: bpy.types.Object, rgba: tuple[float, float, float, float]) -> None:
@@ -63,29 +70,27 @@ def exr_spec(path: Path) -> dict[str, object]:
 def expected_exr_window(
     render_width: int,
     render_height: int,
-    data_width: int,
-    data_height: int,
+    pads: tuple[int, int, int, int],
     effective_overscan: bool,
 ) -> dict[str, int]:
     if not effective_overscan:
         return {
             "x": 0,
             "y": 0,
-            "width": data_width,
-            "height": data_height,
+            "width": render_width,
+            "height": render_height,
             "full_x": 0,
             "full_y": 0,
-            "full_width": data_width,
-            "full_height": data_height,
+            "full_width": render_width,
+            "full_height": render_height,
         }
 
-    data_left = (render_width - data_width) // 2
-    data_bottom = (render_height - data_height) // 2
+    pad_left, pad_right, pad_bottom, pad_top = pads
     return {
-        "x": data_left,
-        "y": render_height - (data_bottom + data_height),
-        "width": data_width,
-        "height": data_height,
+        "x": -pad_left,
+        "y": -pad_top,
+        "width": render_width + pad_left + pad_right,
+        "height": render_height + pad_bottom + pad_top,
         "full_x": 0,
         "full_y": 0,
         "full_width": render_width,
@@ -150,6 +155,7 @@ def _configure_scene(
     samples: int,
     resolution_x: int,
     resolution_y: int,
+    overscan_pixels: tuple[int, int, int, int] | None = None,
 ) -> bpy.types.Scene:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -157,10 +163,10 @@ def _configure_scene(
     scene.render.use_compositing = True
     scene.render.use_border = crop
     scene.render.use_crop_to_border = crop
-    scene.render.border_min_x = 0.02
-    scene.render.border_max_x = 0.30
-    scene.render.border_min_y = 0.02
-    scene.render.border_max_y = 0.34
+    scene.render.border_min_x = BORDER_MIN_X
+    scene.render.border_max_x = BORDER_MAX_X
+    scene.render.border_min_y = BORDER_MIN_Y
+    scene.render.border_max_y = BORDER_MAX_Y
     scene.render.resolution_x = resolution_x
     scene.render.resolution_y = resolution_y
     scene.render.resolution_percentage = 100
@@ -174,8 +180,16 @@ def _configure_scene(
         scene.cycles.use_denoising = False
     if hasattr(scene.cycles, "use_preview_denoising"):
         scene.cycles.use_preview_denoising = False
-    scene.cycles.overscan_mode = "PERCENTAGE"
-    scene.cycles.overscan_size = overscan_percent if overscan else 0.0
+    if overscan_pixels is None:
+        scene.cycles.overscan_mode = "PERCENTAGE"
+        scene.cycles.overscan_size = overscan_percent if overscan else 0.0
+    else:
+        scene.cycles.overscan_mode = "PIXELS"
+        left, right, bottom, top = overscan_pixels if overscan else (0, 0, 0, 0)
+        scene.cycles.overscan_left = left
+        scene.cycles.overscan_right = right
+        scene.cycles.overscan_bottom = bottom
+        scene.cycles.overscan_top = top
 
     world = bpy.data.worlds.new("OverscanWorld")
     world.use_nodes = True
@@ -212,7 +226,7 @@ def _create_file_output_node(
     output_dir: Path,
     output_type: str,
     stem: str,
-) -> None:
+) -> tuple[bpy.types.CompositorNodeOutputFile, object]:
     node = node_tree.nodes.new("CompositorNodeOutputFile")
     node.name = f"Test{output_type}"
     node.label = f"Test {output_type}"
@@ -225,6 +239,7 @@ def _create_file_output_node(
     node.format.file_format = output_type
     item = node.file_output_items.new("RGBA", f"{output_type}_Input")
     node_tree.links.new(render_layers_node.outputs["Image"], node.inputs[item.name])
+    return node, item
 
 
 def _configure_file_output_tree(scene: bpy.types.Scene, output_dir: Path, include_deep: bool) -> None:
@@ -242,6 +257,27 @@ def _configure_file_output_tree(scene: bpy.types.Scene, output_dir: Path, includ
     )
     if include_deep:
         _create_file_output_node(node_tree, render_layers, output_dir, "DEEP_EXR", "comp_deep_")
+
+
+def _configure_single_exr_output_tree(
+    scene: bpy.types.Scene,
+    output_dir: Path,
+    *,
+    item_override: bool,
+) -> None:
+    scene.use_nodes = True
+    node_tree = bpy.data.node_groups.new("OverscanSingleOutputCompositor", "CompositorNodeTree")
+    scene.compositing_node_group = node_tree
+    node_tree.nodes.clear()
+
+    render_layers = node_tree.nodes.new("CompositorNodeRLayers")
+    node, item = _create_file_output_node(
+        node_tree, render_layers, output_dir, "PNG" if item_override else "OPEN_EXR", "single_"
+    )
+    if item_override:
+        item.override_node_format = True
+        item.format.media_type = "IMAGE"
+        item.format.file_format = "OPEN_EXR"
 
 
 def _find_output(path_root: Path, prefix: str) -> Path:
@@ -298,6 +334,7 @@ def render_case(
     resolution_x: int = 320,
     resolution_y: int = 180,
     include_deep: bool = True,
+    overscan_pixels: tuple[int, int, int, int] | None = None,
 ) -> dict[str, object]:
     case_root = output_root / case_name
     file_output_root = case_root / "file_output"
@@ -312,6 +349,7 @@ def render_case(
         samples=samples,
         resolution_x=resolution_x,
         resolution_y=resolution_y,
+        overscan_pixels=overscan_pixels,
     )
     _configure_file_output_tree(scene, file_output_root, include_deep)
 
@@ -329,15 +367,24 @@ def render_case(
         direct_outputs,
         require_deep=include_deep,
     )
-    preview_spec = compositor_outputs["OPEN_EXR_MULTILAYER"]["spec"]
     effective_overscan = overscan and not crop
+    if overscan_pixels is None:
+        pad = math.ceil((overscan_percent if overscan else 0.0) / 100.0 * max(resolution_x, resolution_y))
+        pads = (pad, pad, pad, pad)
+    else:
+        pads = overscan_pixels if effective_overscan else (0, 0, 0, 0)
+    delivery_width = resolution_x
+    delivery_height = resolution_y
+    if crop:
+        delivery_width = int(BORDER_MAX_X * resolution_x) - int(BORDER_MIN_X * resolution_x)
+        delivery_height = int(BORDER_MAX_Y * resolution_y) - int(BORDER_MIN_Y * resolution_y)
     expected_window = expected_exr_window(
-        resolution_x,
-        resolution_y,
-        preview_spec["width"],
-        preview_spec["height"],
+        delivery_width,
+        delivery_height,
+        pads,
         effective_overscan,
     )
+    preview_spec = compositor_outputs["OPEN_EXR_MULTILAYER"]["spec"]
     outputs = {
         "compositor": compositor_outputs,
         "direct_render": direct_outputs,
@@ -369,3 +416,81 @@ def render_case(
             "mismatches": expected_mismatches,
         },
     }
+
+
+def render_item_override_case(
+    case_name: str,
+    output_root: Path,
+    *,
+    resolution_x: int = 160,
+    resolution_y: int = 90,
+    overscan_percent: float = 10.0,
+) -> dict[str, object]:
+    case_root = output_root / case_name
+    case_root.mkdir(parents=True, exist_ok=True)
+    scene = _configure_scene(
+        crop=False,
+        overscan=True,
+        overscan_percent=overscan_percent,
+        samples=1,
+        resolution_x=resolution_x,
+        resolution_y=resolution_y,
+    )
+    _configure_single_exr_output_tree(scene, case_root, item_override=True)
+    bpy.ops.render.render(write_still=False)
+
+    spec = exr_spec(_find_output(case_root, "single_"))
+    pad = math.ceil(overscan_percent / 100.0 * max(resolution_x, resolution_y))
+    expected = expected_exr_window(
+        resolution_x, resolution_y, (pad, pad, pad, pad), effective_overscan=True
+    )
+    differences = {
+        field: {"expected": expected[field], "actual": spec[field]}
+        for field in WINDOW_FIELDS
+        if spec[field] != expected[field]
+    }
+    return {"spec": spec, "expected": expected, "mismatches": differences}
+
+
+def _read_pixels(path: Path) -> np.ndarray:
+    image_input = oiio.ImageInput.open(str(path))
+    if image_input is None:
+        raise RuntimeError(f"OpenImageIO failed to open {path}")
+    try:
+        spec = image_input.spec()
+        return np.asarray(image_input.read_image("float"), dtype=np.float32).reshape(
+            spec.height, spec.width, spec.nchannels
+        )
+    finally:
+        image_input.close()
+
+
+def render_primary_png_case(
+    case_name: str,
+    output_root: Path,
+    *,
+    overscan: bool,
+    overscan_pixels: tuple[int, int, int, int],
+    resolution_x: int = 160,
+    resolution_y: int = 90,
+) -> np.ndarray:
+    case_root = output_root / case_name
+    case_root.mkdir(parents=True, exist_ok=True)
+    scene = _configure_scene(
+        crop=False,
+        overscan=overscan,
+        overscan_percent=0.0,
+        samples=1,
+        resolution_x=resolution_x,
+        resolution_y=resolution_y,
+        overscan_pixels=overscan_pixels,
+    )
+    scene.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.0
+    _configure_single_exr_output_tree(scene, case_root / "exr", item_override=False)
+    scene.render.image_settings.media_type = "IMAGE"
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGBA"
+    scene.render.image_settings.color_depth = "16"
+    scene.render.filepath = str(case_root / "primary.png")
+    bpy.ops.render.render(write_still=True)
+    return _read_pixels(case_root / "primary.png")

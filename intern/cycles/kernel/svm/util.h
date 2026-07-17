@@ -99,6 +99,14 @@ ccl_device_inline float3 stack_load(const ccl_private float *ccl_restrict stack,
       __uint_as_float(v.x.bits), __uint_as_float(v.y.bits), __uint_as_float(v.z.bits));
 }
 
+ccl_device_inline int stack_load(const ccl_private float *stack, const SVMInputInt v)
+{
+  if (v.offset == SVM_STACK_INVALID) {
+    return v.value;
+  }
+  return stack_load_int(stack, v.offset);
+}
+
 template<typename T>
 ccl_device_inline T stack_load(const ccl_private float *stack, const SVMInputFloat v);
 
@@ -190,9 +198,9 @@ ccl_device_inline bool stack_valid(const uint a)
 
 /* Reading Nodes */
 
-/* Read a typed node struct directly from the SVM bytecode stream. The struct T must be a
- * multiple of sizeof(uint) and its memory layout must match the bytecode encoding. Returns
- * a const reference into the bytecode array and advances the offset past the struct. */
+/* Read a typed node struct directly from the SVM byte-code stream. The struct T must be a
+ * multiple of sizeof(uint) and its memory layout must match the byte-code encoding. Returns
+ * a const reference into the byte-code array and advances the offset past the struct. */
 template<typename T>
 ccl_device_inline const ccl_global T &svm_node_get(KernelGlobals kg, ccl_private int *const offset)
 {

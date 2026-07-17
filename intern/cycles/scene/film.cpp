@@ -8,6 +8,7 @@
 #include "scene/bake.h"
 #include "scene/camera.h"
 #include "scene/integrator.h"
+#include "scene/lightgroup_pass.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -87,16 +88,14 @@ static vector<float> filter_table(FilterType type, float width)
 
 static vector<int> lightgroup_split_index_map(const Scene *scene)
 {
-  vector<int> split_index_map(scene->lightgroups.size(), -1);
   if (scene->lightgroups.empty()) {
-    return split_index_map;
+    return {};
   }
 
   vector<bool> has_split_lightgroup(scene->lightgroups.size(), false);
 
   for (const Pass *pass : scene->passes) {
-    if (pass->get_lightgroup().empty() || pass->get_type() == PASS_COMBINED ||
-        !pass->is_written())
+    if (pass->get_lightgroup().empty() || pass->get_type() == PASS_COMBINED || !pass->is_written())
     {
       continue;
     }
@@ -109,16 +108,7 @@ static vector<int> lightgroup_split_index_map(const Scene *scene)
     has_split_lightgroup[it->second] = true;
   }
 
-  int split_index = 0;
-  for (size_t lightgroup_index = 0; lightgroup_index < has_split_lightgroup.size();
-       lightgroup_index++)
-  {
-    if (has_split_lightgroup[lightgroup_index]) {
-      split_index_map[lightgroup_index] = split_index++;
-    }
-  }
-
-  return split_index_map;
+  return compact_lightgroup_split_indices(has_split_lightgroup);
 }
 
 /* Film */
@@ -161,6 +151,11 @@ NODE_DEFINE(Film)
 
   SOCKET_BOOLEAN(use_sample_count, "Use Sample Count Pass", false);
 
+  SOCKET_BOOLEAN(denoising_pass_follow_reflections, "Denoising Pass Reflections", true);
+  SOCKET_BOOLEAN(denoising_pass_use_albedo_roughness_weighting,
+                 "Denoising Pass Albedo Roughness Weighting",
+                 true);
+
   /* Deep EXR output. */
   SOCKET_BOOLEAN(use_deep_output, "Use Deep Output", false);
   SOCKET_INT(deep_max_samples, "Deep Max Samples", 64);
@@ -198,6 +193,7 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->exposure = exposure;
   kfilm->pass_alpha_threshold = pass_alpha_threshold;
   kfilm->pass_flag = 0;
+  kfilm->denoising_pass_flag = 0;
 
   kfilm->use_approximate_shadow_catcher = get_use_approximate_shadow_catcher();
 
@@ -255,6 +251,7 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->pass_denoising_normal = PASS_UNUSED;
   kfilm->pass_denoising_roughness = PASS_UNUSED;
   kfilm->pass_denoising_depth = PASS_UNUSED;
+  kfilm->pass_denoising_backward_motion = PASS_UNUSED;
   kfilm->pass_sample_count = PASS_UNUSED;
   kfilm->pass_render_time = PASS_UNUSED;
   kfilm->pass_adaptive_aux_buffer = PASS_UNUSED;
@@ -291,8 +288,11 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
     }
 
     /* Can't do motion pass if no motion vectors are available. */
-    if (pass->get_type() == PASS_MOTION || pass->get_type() == PASS_MOTION_WEIGHT) {
-      if (scene->need_motion() != Scene::MOTION_PASS) {
+    if (pass->get_type() == PASS_MOTION || pass->get_type() == PASS_MOTION_WEIGHT ||
+        pass->get_type() == PASS_DENOISING_BACKWARD_MOTION)
+    {
+      const Scene::MotionType need_motion = scene->need_motion();
+      if (need_motion != Scene::MOTION_PASS && need_motion != Scene::MOTION_PASS_INTERACTIVE) {
         kfilm->pass_stride += pass->get_info().num_components;
         continue;
       }
@@ -305,59 +305,18 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
     else if (pass->get_type() <= PASS_CATEGORY_DATA_END) {
       kfilm->pass_flag |= pass_flag;
     }
+    else if (pass->get_type() <= PASS_CATEGORY_DENOISING_END) {
+      kfilm->denoising_pass_flag |= pass_flag;
+    }
     else {
       assert(pass->get_type() <= PASS_CATEGORY_BAKE_END);
     }
 
     if (!pass->get_lightgroup().empty()) {
-      int *lightgroup_pass_offset = nullptr;
+      int *lightgroup_offset = lightgroup_pass_offset(*kfilm, pass->get_type());
 
-      switch (pass->get_type()) {
-        case PASS_COMBINED:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup;
-          break;
-        case PASS_DIFFUSE:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse;
-          break;
-        case PASS_DIFFUSE_DIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse_direct;
-          break;
-        case PASS_DIFFUSE_INDIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_diffuse_indirect;
-          break;
-        case PASS_GLOSSY:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy;
-          break;
-        case PASS_GLOSSY_DIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy_direct;
-          break;
-        case PASS_GLOSSY_INDIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_glossy_indirect;
-          break;
-        case PASS_TRANSMISSION:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission;
-          break;
-        case PASS_TRANSMISSION_DIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission_direct;
-          break;
-        case PASS_TRANSMISSION_INDIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_transmission_indirect;
-          break;
-        case PASS_VOLUME:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume;
-          break;
-        case PASS_VOLUME_DIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume_direct;
-          break;
-        case PASS_VOLUME_INDIRECT:
-          lightgroup_pass_offset = &kfilm->pass_lightgroup_volume_indirect;
-          break;
-        default:
-          break;
-      }
-
-      if (lightgroup_pass_offset != nullptr && *lightgroup_pass_offset == PASS_UNUSED) {
-        *lightgroup_pass_offset = kfilm->pass_stride;
+      if (lightgroup_offset != nullptr && *lightgroup_offset == PASS_UNUSED) {
+        *lightgroup_offset = kfilm->pass_stride;
       }
 
       kfilm->pass_stride += pass->get_info().num_components;
@@ -487,6 +446,9 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
       case PASS_DENOISING_DEPTH:
         kfilm->pass_denoising_depth = kfilm->pass_stride;
         break;
+      case PASS_DENOISING_BACKWARD_MOTION:
+        kfilm->pass_denoising_backward_motion = kfilm->pass_stride;
+        break;
 
       case PASS_SHADOW_CATCHER:
         kfilm->pass_shadow_catcher = kfilm->pass_stride;
@@ -551,6 +513,15 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   kfilm->cryptomatte_passes = cryptomatte_passes;
   kfilm->cryptomatte_depth = cryptomatte_depth;
 
+  /* denoiser pass parameters */
+  kfilm->denoising_pass_options_flag = 0;
+  if (denoising_pass_follow_reflections) {
+    kfilm->denoising_pass_options_flag |= DENOISING_PASS_FOLLOW_REFLECTIONS;
+  }
+  if (denoising_pass_use_albedo_roughness_weighting) {
+    kfilm->denoising_pass_options_flag |= DENOISING_PASS_USE_ALBEDO_ROUGHNESS_WEIGHTING;
+  }
+
   /* Deep output settings. */
   kfilm->use_deep_output = use_deep_output;
   kfilm->deep_max_samples = deep_max_samples;
@@ -614,7 +585,7 @@ bool Film::update_lightgroups(Scene *scene)
   for (const Pass *pass : scene->passes) {
     const ustring lightgroup = pass->get_lightgroup();
     if (!lightgroup.empty()) {
-      if (!lightgroups.count(lightgroup)) {
+      if (!lightgroups.contains(lightgroup)) {
         lightgroups[lightgroup] = i++;
       }
     }
@@ -683,6 +654,9 @@ void Film::update_passes(Scene *scene)
     }
     if (denoiser_passes & DENOISER_PASS_MOTION) {
       add_auto_pass(scene, PASS_MOTION);
+    }
+    if (denoiser_passes & DENOISER_PASS_BACKWARD_MOTION) {
+      add_auto_pass(scene, PASS_DENOISING_BACKWARD_MOTION);
     }
   }
 
@@ -759,7 +733,8 @@ void Film::update_passes(Scene *scene)
 
   /* Flush scene updates. */
   const bool have_uv_pass = Pass::contains(scene->passes, PASS_UV);
-  const bool have_motion_pass = Pass::contains(scene->passes, PASS_MOTION);
+  const bool have_motion_pass = Pass::contains(scene->passes, PASS_MOTION) ||
+                                Pass::contains(scene->passes, PASS_DENOISING_BACKWARD_MOTION);
   const bool have_ao_pass = Pass::contains(scene->passes, PASS_AO);
 
   if (have_uv_pass != prev_have_uv_pass) {
@@ -910,7 +885,7 @@ uint Film::get_kernel_features(const Scene *scene) const
                                   !is_volume_guiding_pass(pass_type);
 
     if (has_denoise_pass ||
-        (pass_type >= PASS_DENOISING_ALBEDO && pass_type <= PASS_DENOISING_DEPTH))
+        (pass_type >= PASS_DENOISING_ALBEDO && pass_type <= PASS_DENOISING_BACKWARD_MOTION))
     {
       kernel_features |= KERNEL_FEATURE_DENOISING;
     }

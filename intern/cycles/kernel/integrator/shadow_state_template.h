@@ -32,15 +32,24 @@ KERNEL_STRUCT_MEMBER(shadow_path, uint16_t, volume_bounds_bounce, KERNEL_FEATURE
 KERNEL_STRUCT_MEMBER(shadow_path, uint16_t, portal_bounce, KERNEL_FEATURE_NODE_PORTAL)
 /* DeviceKernel bit indicating queued kernels. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint16_t, queued_kernel, KERNEL_FEATURE_PATH_TRACING)
+/* enum PathRayVisibilityFlag, limited to bits from PATH_RAY_VISIBILITY_ALL  */
+KERNEL_STRUCT_MEMBER(shadow_path, uint8_t, visibility, KERNEL_FEATURE_PATH_TRACING)
 /* enum PathRayFlag */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, flag, KERNEL_FEATURE_PATH_TRACING)
 /* Throughput. */
 KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, throughput, KERNEL_FEATURE_PATH_TRACING)
-/* Throughput for shadow pass. */
+/* Throughput for additive AO or Shadow Color. GPU allocation can use the runtime scene flag. */
+#ifdef KERNEL_STRUCT_MEMBER_RUNTIME_SHADOW_COLOR
+KERNEL_STRUCT_MEMBER_RUNTIME_SHADOW_COLOR(shadow_path,
+                                          PackedSpectrum,
+                                          unshadowed_throughput,
+                                          KERNEL_FEATURE_AO_ADDITIVE)
+#else
 KERNEL_STRUCT_MEMBER(shadow_path,
                      PackedSpectrum,
                      unshadowed_throughput,
                      KERNEL_FEATURE_PATH_TRACING)
+#endif
 /* Ratio of throughput to distinguish diffuse / glossy / transmission render passes. */
 KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, pass_diffuse_weight, KERNEL_FEATURE_LIGHT_PASSES)
 KERNEL_STRUCT_MEMBER(shadow_path, PackedSpectrum, pass_glossy_weight, KERNEL_FEATURE_LIGHT_PASSES)
@@ -62,7 +71,10 @@ KERNEL_STRUCT_MEMBER(shadow_path,
 #else
 KERNEL_STRUCT_MEMBER(shadow_path, uint64_t, path_segment, KERNEL_FEATURE_PATH_GUIDING)
 #endif
-KERNEL_STRUCT_MEMBER(shadow_path, float, guiding_mis_weight, KERNEL_FEATURE_PATH_GUIDING)
+KERNEL_STRUCT_MEMBER(shadow_path,
+                     float,
+                     guiding_light_linking_mis_weight,
+                     KERNEL_FEATURE_PATH_GUIDING)
 /* Only need when path tracing without the light tree. Stored as a single float to save
  * space, as we do not expect to make it a big difference. */
 KERNEL_STRUCT_MEMBER(shadow_path,
@@ -80,6 +92,7 @@ KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, float, tmin, KERNEL_FEATURE_PATH_TRACING
 KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, float, tmax, KERNEL_FEATURE_PATH_TRACING)
 KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, float, time, KERNEL_FEATURE_PATH_TRACING)
 KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, float, dP, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, float, dD, KERNEL_FEATURE_PATH_TRACING)
 KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, int, self_light_object, KERNEL_FEATURE_PATH_TRACING)
 KERNEL_STRUCT_MEMBER_PACKED(shadow_ray, int, self_light_prim, KERNEL_FEATURE_PATH_TRACING)
 KERNEL_STRUCT_END(shadow_ray)

@@ -281,7 +281,9 @@ void VKTexture::read_sub(
                            * bit to improve the performance on AMD GPUs. */
                           VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
                               VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                          0.2f);
+                          0.2f,
+                          false,
+                          "VKTexture::read_sub");
 
     render_graph::VKCopyImageToBufferNode::CreateInfo copy_image_to_buffer = {};
     render_graph::VKCopyImageToBufferNode::Data &node_data = copy_image_to_buffer.node_data;
@@ -312,12 +314,13 @@ void VKTexture::read_sub(
   /* Convert the data to r_data. */
   for (int index : transfer_regions.index_range()) {
     const TransferRegion &transfer_region = transfer_regions[index];
-    const VKBuffer &staging_buffer = staging_buffers[index];
+    VKBuffer &staging_buffer = staging_buffers[index];
     size_t sample_len = transfer_region.sample_count();
 
     size_t data_offset = full_transfer_region.result_offset(transfer_region.offset,
                                                             transfer_region.layers.start()) *
                          sample_bytesize;
+    staging_buffer.invalidate_mapped_memory();
     convert_device_to_host(static_cast<void *>(static_cast<uint8_t *>(r_data) + data_offset),
                            staging_buffer.mapped_memory_get(),
                            sample_len,
@@ -327,7 +330,7 @@ void VKTexture::read_sub(
   }
 }
 
-void *VKTexture::read(int mip, eGPUDataFormat format)
+void VKTexture::read(int mip, eGPUDataFormat format, void *data)
 {
   BLI_assert(!(format_flag_ & GPU_FORMAT_COMPRESSED));
 
@@ -346,18 +349,13 @@ void *VKTexture::read(int mip, eGPUDataFormat format)
     default:
       break;
   }
-
   if (mip_size[2] == 0) {
     mip_size[2] = 1;
   }
   IndexRange layers = IndexRange(layer_offset_, vk_layer_count(1));
-  size_t sample_len = mip_size[0] * mip_size[1] * mip_size[2] * layers.size();
-  size_t host_memory_size = sample_len * to_bytesize(format_, format);
 
-  void *data = MEM_new_uninitialized(host_memory_size, __func__);
   int region[6] = {0, 0, 0, mip_size[0], mip_size[1], mip_size[2]};
   read_sub(mip, format, region, layers, data);
-  return data;
 }
 
 void VKTexture::update_sub(int mip,
@@ -474,7 +472,9 @@ void VKTexture::update_sub(int mip,
                           VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
                           VMA_ALLOCATION_CREATE_MAPPED_BIT |
                               VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-                          0.4f);
+                          0.4f,
+                          false,
+                          "VKTexture::update_sub");
     vk_buffer = staging_buffer.vk_handle();
     /* Rows are sequentially stored, when unpack row length is 0, or equal to the extent width. In
      * other cases we unpack the rows to reduce the size of the staging buffer and data transfer.
@@ -500,6 +500,7 @@ void VKTexture::update_sub(int mip,
         dst_ptr += dst_row_stride;
       }
     }
+    staging_buffer.flush_mapped_memory();
   }
   else {
     BLI_assert(pixel_buffer);
@@ -753,6 +754,12 @@ bool VKTexture::allocate()
     external_memory_create_info.handleTypes = vk_external_memory_handle_type();
     allocCreateInfo.pool = device.vma_pools.external_memory_image.pool;
   }
+
+  if (G.debug & G_DEBUG_GPU) {
+    allocCreateInfo.flags |= VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
+    allocCreateInfo.pUserData = (void *)name_.c_str();
+  }
+
   result = vmaCreateImage(device.mem_allocator_get(),
                           &image_info,
                           &allocCreateInfo,

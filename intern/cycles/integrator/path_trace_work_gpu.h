@@ -131,13 +131,13 @@ class PathTraceWorkGPU : public PathTraceWork {
   /* SoA arrays for integrator state. */
   vector<unique_ptr<device_memory>> integrator_state_soa_;
   uint integrator_state_soa_kernel_features_;
+  bool integrator_state_soa_use_shadow_color_ = false;
   int integrator_state_soa_volume_stack_size_ = 0;
   /* Keep track of number of queued kernels. */
   device_vector<IntegratorQueueCounter> integrator_queue_counter_;
   /* Shader sorting. */
   device_vector<int> integrator_shader_sort_counter_;
   device_vector<int> integrator_shader_raytrace_sort_counter_;
-  device_vector<int> integrator_shader_mnee_sort_counter_;
   device_vector<int> integrator_shader_sort_prefix_sum_;
   device_vector<int> integrator_shader_sort_partition_key_offsets_;
   /* Path split. */

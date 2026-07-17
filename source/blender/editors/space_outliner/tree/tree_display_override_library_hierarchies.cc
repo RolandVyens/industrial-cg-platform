@@ -49,7 +49,7 @@ ListBaseT<TreeElement> TreeDisplayOverrideLibraryHierarchies::build_tree(
     build_hierarchy_for_lib_or_main(source_data.bmain, *current_file_te);
 
     /* Add dummy child if there's nothing to display. */
-    if (BLI_listbase_is_empty(&current_file_te->subtree)) {
+    if (current_file_te->subtree.is_empty()) {
       TreeElement *dummy_te = AbstractTreeDisplay::add_element(&space_outliner_,
                                                                &current_file_te->subtree,
                                                                nullptr,
@@ -76,7 +76,7 @@ ListBaseT<TreeElement> TreeDisplayOverrideLibraryHierarchies::build_tree(
       continue;
     }
 
-    if (BLI_listbase_is_empty(&top_level_te.subtree)) {
+    if (top_level_te.subtree.is_empty()) {
       outliner_free_tree_element(&top_level_te, &tree);
     }
   }
@@ -235,14 +235,11 @@ void OverrideIDHierarchyBuilder::build_hierarchy_for_ID_recursive(const ID &pare
       return FOREACH_BREAK;
     }
 
-    TreeElement *new_te = AbstractTreeDisplay::add_element(&space_outliner_,
-                                                           &te_to_expand.subtree,
-                                                           &id,
-                                                           nullptr,
-                                                           &te_to_expand,
-                                                           TSE_SOME_ID,
-                                                           0,
-                                                           false);
+    /* Shape Key isn't treated as ID in outliner, see #TreeElementShapeKeyBase. */
+    const eTreeStoreElemType type = GS(id.name) == ID_KE ? TSE_SHAPE_KEY_BASE : TSE_SOME_ID;
+
+    TreeElement *new_te = AbstractTreeDisplay::add_element(
+        &space_outliner_, &te_to_expand.subtree, &id, nullptr, &te_to_expand, type, 0, false);
 
     build_data.sibling_ids.add(&id);
 

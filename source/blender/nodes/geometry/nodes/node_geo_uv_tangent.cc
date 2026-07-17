@@ -36,8 +36,11 @@ static EnumPropertyItem method_items[] = {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_input<decl::Menu>("Method"_ustr).static_items(method_items).optional_label();
-  b.add_input<decl::Vector>("UV"_ustr).dimensions(2).subtype(PROP_XYZ).supports_field();
-  b.add_output<decl::Vector>("Tangent"_ustr).field_source_reference_all();
+  b.add_input<decl::Vector>("UV"_ustr).dimensions(2).subtype(PROP_XYZ).structure_type(
+      StructureType::Field);
+  b.add_output<decl::Vector>("Tangent"_ustr)
+      .structure_type(StructureType::Field)
+      .propagate_references();
 }
 
 static float3 compute_triangle_tangent(const float3 &p1,
@@ -201,18 +204,12 @@ class TangentFieldInput final : public bke::MeshFieldInput {
     fn(uv_field_);
   }
 
-  bool is_equal_to(const FieldInput &other) const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
   {
-    if (const TangentFieldInput *other_endpoint = dynamic_cast<const TangentFieldInput *>(&other))
-    {
-      return method_ == other_endpoint->method_ && uv_field_ == other_endpoint->uv_field_;
-    }
-    return false;
-  }
-
-  uint64_t hash() const override
-  {
-    return get_default_hash(method_, uv_field_);
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(method_);
+    hash.add(deep_hash_cache.ensure(uv_field_));
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

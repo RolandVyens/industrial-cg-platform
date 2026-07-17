@@ -207,24 +207,68 @@ def _splittable_lightgroups(scene, view_layer):
     return splittable
 
 
-_LIGHTGROUP_SPLIT_PASS_PREFIXES = (
-    "diffuse_direct_",
-    "diffuse_indirect_",
-    "diffuse_",
-    "glossy_direct_",
-    "glossy_indirect_",
-    "glossy_",
-    "transmission_direct_",
-    "transmission_indirect_",
-    "transmission_",
-    "volume_direct_",
-    "volume_indirect_",
-    "volume_",
+_LIGHTGROUP_SPLIT_PASS_DESCRIPTORS = (
+    ("use_lightgroup_light_pass_aov_diffuse_combined", "diffuse_"),
+    ("use_lightgroup_light_pass_aov_diffuse_direct", "diffuse_direct_"),
+    ("use_lightgroup_light_pass_aov_diffuse_indirect", "diffuse_indirect_"),
+    ("use_lightgroup_light_pass_aov_glossy_combined", "glossy_"),
+    ("use_lightgroup_light_pass_aov_glossy_direct", "glossy_direct_"),
+    ("use_lightgroup_light_pass_aov_glossy_indirect", "glossy_indirect_"),
+    ("use_lightgroup_light_pass_aov_transmission_combined", "transmission_"),
+    ("use_lightgroup_light_pass_aov_transmission_direct", "transmission_direct_"),
+    ("use_lightgroup_light_pass_aov_transmission_indirect", "transmission_indirect_"),
+    ("use_lightgroup_light_pass_aov_volume_combined", "volume_"),
+    ("use_lightgroup_light_pass_aov_volume_direct", "volume_direct_"),
+    ("use_lightgroup_light_pass_aov_volume_indirect", "volume_indirect_"),
+)
+_LIGHTGROUP_SPLIT_PASS_PREFIXES = tuple(
+    descriptor[1] for descriptor in _LIGHTGROUP_SPLIT_PASS_DESCRIPTORS
 )
 
 
 def _is_lightgroup_split_pass_name(name):
     return name.startswith(_LIGHTGROUP_SPLIT_PASS_PREFIXES)
+
+
+_LIGHTGROUP_GENERATED_FILE_OUTPUT_ITEMS_PROP = "cycles_lightgroup_split_generated_items"
+_RENDER_PASS_NAME_MAX_UTF8_BYTES = 63
+
+
+def _lightgroup_generated_file_output_item_names(node):
+    value = node.get(_LIGHTGROUP_GENERATED_FILE_OUTPUT_ITEMS_PROP, ())
+    if isinstance(value, str):
+        return {value} if value else set()
+
+    try:
+        return {str(name) for name in value if name}
+    except TypeError:
+        return set()
+
+
+def _set_lightgroup_generated_file_output_item_names(node, item_names):
+    if item_names:
+        node[_LIGHTGROUP_GENERATED_FILE_OUTPUT_ITEMS_PROP] = sorted(item_names)
+    elif _LIGHTGROUP_GENERATED_FILE_OUTPUT_ITEMS_PROP in node:
+        del node[_LIGHTGROUP_GENERATED_FILE_OUTPUT_ITEMS_PROP]
+
+
+def _lightgroup_pass_name(prefix, lightgroup_index, lightgroup_name, used_names):
+    preferred_name = prefix + lightgroup_name
+    if (
+        len(preferred_name.encode("utf-8")) <= _RENDER_PASS_NAME_MAX_UTF8_BYTES
+        and preferred_name not in used_names
+    ):
+        pass_name = preferred_name
+    else:
+        fallback_base = f"{prefix}__lg{lightgroup_index}"
+        pass_name = fallback_base
+        suffix = 1
+        while pass_name in used_names:
+            pass_name = f"{fallback_base}_{suffix}"
+            suffix += 1
+
+    used_names.add(pass_name)
+    return pass_name
 
 
 def list_render_passes(scene, srl):
@@ -316,69 +360,41 @@ def list_render_passes(scene, srl):
 
     # Light groups.
     lightgroup_names = [lightgroup.name for lightgroup in srl.lightgroups]
-    for lightgroup_name in lightgroup_names:
-        yield ("Combined_%s" % lightgroup_name, "RGB", 'COLOR')
-
-    if crl.use_lightgroup_light_pass_aovs and lightgroup_names:
-        use_diffuse = (
-            crl.use_lightgroup_light_pass_aov_diffuse_combined or
-            crl.use_lightgroup_light_pass_aov_diffuse_direct or
-            crl.use_lightgroup_light_pass_aov_diffuse_indirect
+    used_lightgroup_pass_names = set()
+    for lightgroup_index, lightgroup_name in enumerate(lightgroup_names):
+        yield (
+            _lightgroup_pass_name(
+                "Combined_", lightgroup_index, lightgroup_name, used_lightgroup_pass_names
+            ),
+            "RGB",
+            'COLOR',
         )
-        use_glossy = (
-            crl.use_lightgroup_light_pass_aov_glossy_combined or
-            crl.use_lightgroup_light_pass_aov_glossy_direct or
-            crl.use_lightgroup_light_pass_aov_glossy_indirect
-        )
-        use_transmission = (
-            crl.use_lightgroup_light_pass_aov_transmission_combined or
-            crl.use_lightgroup_light_pass_aov_transmission_direct or
-            crl.use_lightgroup_light_pass_aov_transmission_indirect
-        )
-        use_volume = (
-            crl.use_lightgroup_light_pass_aov_volume_combined or
-            crl.use_lightgroup_light_pass_aov_volume_direct or
-            crl.use_lightgroup_light_pass_aov_volume_indirect
-        )
-        use_any_lobe_split = use_diffuse or use_glossy or use_transmission or use_volume
 
-        if use_any_lobe_split:
-            all_lightgroups = set(lightgroup_names)
-            splittable_lightgroups = _splittable_lightgroups(scene, srl) & all_lightgroups
-            combined_only_lightgroups = all_lightgroups - splittable_lightgroups
+    enabled_split_passes = []
+    if crl.use_lightgroup_light_pass_aovs:
+        enabled_split_passes = [
+            descriptor
+            for descriptor in _LIGHTGROUP_SPLIT_PASS_DESCRIPTORS
+            if getattr(crl, descriptor[0])
+        ]
 
-            if len(combined_only_lightgroups) != len(all_lightgroups):
-                for lightgroup_name in lightgroup_names:
-                    if lightgroup_name not in splittable_lightgroups:
-                        continue
-
-                    if crl.use_lightgroup_light_pass_aov_diffuse_combined:
-                        yield ("diffuse_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_diffuse_direct:
-                        yield ("diffuse_direct_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_diffuse_indirect:
-                        yield ("diffuse_indirect_%s" % lightgroup_name, "RGB", 'COLOR')
-
-                    if crl.use_lightgroup_light_pass_aov_glossy_combined:
-                        yield ("glossy_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_glossy_direct:
-                        yield ("glossy_direct_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_glossy_indirect:
-                        yield ("glossy_indirect_%s" % lightgroup_name, "RGB", 'COLOR')
-
-                    if crl.use_lightgroup_light_pass_aov_transmission_combined:
-                        yield ("transmission_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_transmission_direct:
-                        yield ("transmission_direct_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_transmission_indirect:
-                        yield ("transmission_indirect_%s" % lightgroup_name, "RGB", 'COLOR')
-
-                    if crl.use_lightgroup_light_pass_aov_volume_combined:
-                        yield ("volume_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_volume_direct:
-                        yield ("volume_direct_%s" % lightgroup_name, "RGB", 'COLOR')
-                    if crl.use_lightgroup_light_pass_aov_volume_indirect:
-                        yield ("volume_indirect_%s" % lightgroup_name, "RGB", 'COLOR')
+    if enabled_split_passes and lightgroup_names:
+        all_lightgroups = set(lightgroup_names)
+        splittable_lightgroups = _splittable_lightgroups(scene, srl) & all_lightgroups
+        for lightgroup_index, lightgroup_name in enumerate(lightgroup_names):
+            if lightgroup_name not in splittable_lightgroups:
+                continue
+            for _property_name, pass_name_prefix in enabled_split_passes:
+                yield (
+                    _lightgroup_pass_name(
+                        pass_name_prefix,
+                        lightgroup_index,
+                        lightgroup_name,
+                        used_lightgroup_pass_names,
+                    ),
+                    "RGB",
+                    'COLOR',
+                )
 
     # Path guiding debug passes.
     if _cycles.with_debug and scene.cycles.use_guiding:
@@ -410,10 +426,14 @@ def prune_stale_lightgroup_split_file_outputs(scene):
         if node.type != 'OUTPUT_FILE':
             continue
 
+        generated_item_names = _lightgroup_generated_file_output_item_names(node)
+        if not generated_item_names:
+            continue
+
         stale_item_names = []
         for item in node.file_output_items:
             item_name = item.name
-            if not _is_lightgroup_split_pass_name(item_name):
+            if item_name not in generated_item_names:
                 continue
             if item_name in valid_pass_names:
                 continue
@@ -428,7 +448,7 @@ def prune_stale_lightgroup_split_file_outputs(scene):
         stale_sockets = []
         for socket in node.inputs:
             socket_name = socket.name
-            if not _is_lightgroup_split_pass_name(socket_name):
+            if socket_name not in generated_item_names:
                 continue
             if socket_name in valid_pass_names:
                 continue
@@ -436,3 +456,8 @@ def prune_stale_lightgroup_split_file_outputs(scene):
 
         for socket in stale_sockets:
             node.inputs.remove(socket)
+
+        remaining_generated_items = {
+            item.name for item in node.file_output_items if item.name in generated_item_names
+        }
+        _set_lightgroup_generated_file_output_item_names(node, remaining_generated_items)

@@ -168,6 +168,26 @@ struct FragmentOutputs : std::vector<ParsedFragOuput> {
   std::string serialize() const;
 };
 
+struct ParsedFragInput {
+  /* Line this resource was defined. */
+  size_t line;
+
+  std::string var_type;
+  std::string var_name;
+
+  std::string slot;
+  std::string image_type;
+  std::string raster_order_group;
+
+  std::string serialize() const;
+};
+
+struct FragmentInputs : std::vector<ParsedFragInput> {
+  std::string name;
+
+  std::string serialize() const;
+};
+
 struct ParsedVertInput {
   /* Line this resource was defined. */
   size_t line;
@@ -208,6 +228,9 @@ struct Symbol {
   size_t definition_line;
   bool is_method;
   bool is_static;
+  bool is_struct;
+  /* For structures only. */
+  std::vector<std::pair<std::string, std::string>> members;
 
   bool operator<(const Symbol &other) const
   {
@@ -228,6 +251,9 @@ struct Symbol {
     if (identifier != other.identifier) {
       return identifier < other.identifier;
     }
+    if (is_struct != other.is_struct) {
+      return is_struct < other.is_struct;
+    }
     return false;
   }
 };
@@ -246,6 +272,7 @@ struct Source {
   std::vector<ResourceTable> resource_tables;
   std::vector<StageInterface> stage_interfaces;
   std::vector<FragmentOutputs> fragment_outputs;
+  std::vector<FragmentInputs> fragment_inputs;
   std::vector<VertexInputs> vertex_inputs;
   std::vector<Symbol> symbol_table;
   std::vector<TemplateDefinition> template_definitions;

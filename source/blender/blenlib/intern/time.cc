@@ -8,57 +8,39 @@
 
 #include "BLI_time.h"
 
+#include <chrono>
+
 #ifdef WIN32
 
 #  include <cmath>
 #  include <cstdio>
-
 #  include <windows.h>
-
 /* timeapi.h needs to be included after windows.h. */
 #  include <timeapi.h>
+
+#else
+
+#  include <thread>
+#  include <unistd.h>
+
+#endif
 
 namespace blender {
 
 double BLI_time_now_seconds()
 {
-  static int hasperfcounter = -1; /* (-1 == unknown) */
-  static double perffreq;
-
-  if (hasperfcounter == -1) {
-    __int64 ifreq;
-    hasperfcounter = QueryPerformanceFrequency((LARGE_INTEGER *)&ifreq);
-    perffreq = double(ifreq);
-  }
-
-  if (hasperfcounter) {
-    __int64 count;
-
-    QueryPerformanceCounter((LARGE_INTEGER *)&count);
-
-    return count / perffreq;
-  }
-  else {
-    static double accum = 0.0;
-    static int ltick = 0;
-    int ntick = GetTickCount();
-
-    if (ntick < ltick) {
-      accum += (0xFFFFFFFF - ltick + ntick) / 1000.0;
-    }
-    else {
-      accum += (ntick - ltick) / 1000.0;
-    }
-
-    ltick = ntick;
-    return accum;
-  }
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
 }
 
-long int BLI_time_now_seconds_i()
+int64_t BLI_time_now_seconds_i()
 {
-  return (long int)BLI_time_now_seconds();
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
 }
+
+#ifdef WIN32
 
 void BLI_time_sleep_ms(int ms)
 {
@@ -104,37 +86,7 @@ void BLI_time_sleep_precise_us(int us)
   CloseHandle(timerHandle);
 }
 
-}  // namespace blender
-
 #else
-
-#  include <chrono>
-#  include <thread>
-
-#  include <sys/time.h>
-#  include <unistd.h>
-
-namespace blender {
-
-double BLI_time_now_seconds()
-{
-  timeval tv;
-  struct timezone tz;
-
-  gettimeofday(&tv, &tz);
-
-  return (double(tv.tv_sec) + tv.tv_usec / 1000000.0);
-}
-
-long int BLI_time_now_seconds_i()
-{
-  timeval tv;
-  struct timezone tz;
-
-  gettimeofday(&tv, &tz);
-
-  return tv.tv_sec;
-}
 
 void BLI_time_sleep_ms(int ms)
 {
@@ -151,6 +103,6 @@ void BLI_time_sleep_precise_us(int us)
   std::this_thread::sleep_for(std::chrono::microseconds(us));
 }
 
-}  // namespace blender
-
 #endif
+
+}  // namespace blender

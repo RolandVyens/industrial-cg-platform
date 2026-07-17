@@ -10,14 +10,20 @@ import bpy
 from bqt.utils import context_window
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .i18n import pgettext_iface as iface_, pgettext_tip as tip_
-from .property_catalog import (
+from .blender_adapter import (
     TARGET_VIEW_LAYER,
-    load_view_layer_pass_catalog,
+    TARGET_VIEW_LAYER_CYCLES,
+    ViewLayerAdapter,
+    resolve_target,
+    set_if_changed,
 )
+from .i18n import pgettext_iface as iface_, pgettext_tip as tip_
+from .property_catalog import load_view_layer_pass_catalog
 from .presets import (
-    apply_named_pass_preset,
+    apply_live_pass_state,
+    apply_pass_preset_to_view_layers,
     delete_pass_preset,
+    load_pass_preset,
     list_pass_presets,
     save_pass_preset,
 )
@@ -117,25 +123,6 @@ CRYPTOMATTE_BOOLEAN_SPECS = (
     ("use_pass_cryptomatte_asset", "Asset"),
 )
 CRYPTOMATTE_LEVELS_PROP = "pass_cryptomatte_depth"
-
-
-def _resolve_target(view_layer, target_path):
-    if target_path == "view_layer":
-        return view_layer
-    if target_path == "view_layer.eevee":
-        return getattr(view_layer, "eevee", None)
-    if target_path == "view_layer.cycles":
-        return getattr(view_layer, "cycles", None)
-    raise KeyError(target_path)
-
-
-def _set_if_changed(owner, prop_name: str, value) -> bool:
-    if owner is None:
-        return False
-    if getattr(owner, prop_name) == value:
-        return False
-    setattr(owner, prop_name, value)
-    return True
 
 
 def _configure_smooth_scroll(
@@ -641,6 +628,9 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
     def _scene(self):
         return bpy.context.scene
 
+    def _adapter(self) -> ViewLayerAdapter:
+        return ViewLayerAdapter(self._scene())
+
     def _blender_window(self):
         window = getattr(bpy.context, "window", None)
         if window is not None:
@@ -929,16 +919,13 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         return self._scene().render.engine
 
     def _view_layers(self):
-        return list(self._scene().view_layers)
+        return self._adapter().layers()
 
     def _view_layer_names(self) -> list[str]:
-        return [view_layer.name for view_layer in self._view_layers()]
+        return self._adapter().names()
 
     def _find_view_layer(self, view_layer_name: str):
-        for view_layer in self._view_layers():
-            if view_layer.name == view_layer_name:
-                return view_layer
-        return None
+        return self._adapter().find(view_layer_name)
 
     def _selected_view_layer_names_in_ui(self) -> list[str]:
         selected_names: list[str] = []
@@ -961,15 +948,10 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         return []
 
     def _selected_view_layer(self):
-        view_layer = self._find_view_layer(self._selected_view_layer_name)
-        if view_layer is not None:
-            return view_layer
-        active_name = self._current_active_view_layer_name()
-        view_layer = self._find_view_layer(active_name)
-        if view_layer is not None:
-            return view_layer
-        layers = self._view_layers()
-        return layers[0] if layers else None
+        return self._adapter().selected(
+            self._selected_view_layer_name,
+            self._current_active_view_layer_name(),
+        )
 
     def _selected_pass_preset_name(self) -> str:
         current_data = self.preset_combo.currentData()
@@ -1022,7 +1004,7 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         if not preset_name:
             return
         try:
-            save_pass_preset(view_layer, preset_name)
+            save_pass_preset(view_layer, preset_name, overwrite=False)
         except Exception as ex:
             self._show_preset_error(str(ex))
             return
@@ -1050,12 +1032,9 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         if not preset_name or not target_names:
             return
         try:
-            changed = False
-            for view_layer_name in target_names:
-                view_layer = self._find_view_layer(view_layer_name)
-                if view_layer is None:
-                    continue
-                changed |= apply_named_pass_preset(view_layer, preset_name)
+            preset_data = load_pass_preset(preset_name)
+            view_layers = self._adapter().resolve_names(target_names)
+            changed = apply_pass_preset_to_view_layers(view_layers, preset_data)
         except Exception as ex:
             self._show_preset_error(str(ex))
             return
@@ -1249,7 +1228,7 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         self.eevee_passes_group.setVisible(engine == ENGINE_BLENDER_EEVEE)
         self.cycles_passes_group.setVisible(engine == ENGINE_CYCLES)
         for checkbox, target_path, prop_name in self._classic_pass_bindings:
-            owner = _resolve_target(view_layer, target_path)
+            owner = resolve_target(view_layer, target_path)
             is_supported = owner is not None and (
                 (engine == ENGINE_BLENDER_EEVEE and target_path in {"view_layer", "view_layer.eevee"}) or
                 (engine == ENGINE_CYCLES and target_path in {"view_layer", "view_layer.cycles"})
@@ -1462,10 +1441,18 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
                 raise
         return super().eventFilter(watched, event)
 
-    def closeEvent(self, event) -> None:
+    def _release_lifecycle_resources(self) -> None:
         self._end_checkbox_brush()
         self._active_state_timer.stop()
         self._unregister_message_bus()
+
+    def shutdown(self) -> None:
+        self._release_lifecycle_resources()
+        self.close()
+        self.deleteLater()
+
+    def closeEvent(self, event) -> None:
+        self._release_lifecycle_resources()
         super().closeEvent(event)
 
     @context_window
@@ -1489,21 +1476,25 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
             changed = True
             view_layer_name = view_layer.name
 
-        changed |= _set_if_changed(view_layer, "use", state["view_layer_use"])
+        changed |= set_if_changed(view_layer, "use", state["view_layer_use"])
         view_layer_deep = state.get("view_layer_deep")
         if view_layer_deep is not None and hasattr(view_layer, "use_deep"):
-            changed |= _set_if_changed(view_layer, "use_deep", view_layer_deep)
-        changed |= _set_if_changed(view_layer, "samples", state["view_layer_samples"])
-        changed |= _set_if_changed(view_layer, CRYPTOMATTE_LEVELS_PROP, state["cryptomatte_levels"])
+            changed |= set_if_changed(view_layer, "use_deep", view_layer_deep)
+        changed |= set_if_changed(view_layer, "samples", state["view_layer_samples"])
+        changed |= set_if_changed(view_layer, CRYPTOMATTE_LEVELS_PROP, state["cryptomatte_levels"])
 
-        for target_path, prop_name, value in state["pass_states"]:
-            owner = _resolve_target(view_layer, target_path)
-            changed |= _set_if_changed(owner, prop_name, value)
+        changed |= apply_live_pass_state(
+            view_layer,
+            engine=self._engine(),
+            pass_states=state["pass_states"],
+            use_lightgroup_light_pass_aovs=state["use_lightgroup_light_pass_aovs"],
+            cycles_light_pass_states=state["cycles_light_pass_states"],
+        )
 
         aov = self._selected_aov(view_layer, aov_index)
         if aov is not None:
-            changed |= _set_if_changed(aov, "name", state["aov_name"])
-            changed |= _set_if_changed(aov, "type", state["aov_type"])
+            changed |= set_if_changed(aov, "name", state["aov_name"])
+            changed |= set_if_changed(aov, "type", state["aov_type"])
 
         lightgroup = self._selected_lightgroup(view_layer, lightgroup_index)
         if lightgroup is not None:
@@ -1511,16 +1502,6 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
             if new_lightgroup_name and new_lightgroup_name != lightgroup.name:
                 lightgroup.name = new_lightgroup_name
                 changed = True
-
-        cycles_view_layer = getattr(view_layer, "cycles", None)
-        if cycles_view_layer is not None:
-            changed |= _set_if_changed(
-                cycles_view_layer,
-                "use_lightgroup_light_pass_aovs",
-                state["use_lightgroup_light_pass_aovs"],
-            )
-            for prop_name, value in state["cycles_light_pass_states"]:
-                changed |= _set_if_changed(cycles_view_layer, prop_name, value)
 
         if not changed:
             return False
@@ -1536,10 +1517,12 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         *,
         push_undo: bool = True,
     ) -> bool:
-        view_layer = self._find_view_layer(view_layer_name)
-        if view_layer is None:
-            return False
-        changed = _set_if_changed(view_layer, "use", value)
+        changed = self._adapter().set_property(
+            view_layer_name,
+            TARGET_VIEW_LAYER,
+            "use",
+            value,
+        )
         if changed and push_undo:
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Update")
         return changed
@@ -1555,7 +1538,12 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         view_layer = self._find_view_layer(view_layer_name)
         if view_layer is None or not hasattr(view_layer, "use_deep"):
             return False
-        changed = _set_if_changed(view_layer, "use_deep", value)
+        changed = self._adapter().set_property(
+            view_layer_name,
+            TARGET_VIEW_LAYER,
+            "use_deep",
+            value,
+        )
         if changed and push_undo:
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Update")
         return changed
@@ -1570,11 +1558,12 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         *,
         push_undo: bool = True,
     ) -> bool:
-        view_layer = self._find_view_layer(view_layer_name)
-        if view_layer is None:
-            return False
-        owner = _resolve_target(view_layer, target_path)
-        changed = _set_if_changed(owner, prop_name, value)
+        changed = self._adapter().set_property(
+            view_layer_name,
+            target_path,
+            prop_name,
+            value,
+        )
         if changed and push_undo:
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Update")
         return changed
@@ -1587,11 +1576,12 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         *,
         push_undo: bool = True,
     ) -> bool:
-        view_layer = self._find_view_layer(view_layer_name)
-        cycles_view_layer = getattr(view_layer, "cycles", None) if view_layer is not None else None
-        if cycles_view_layer is None:
-            return False
-        changed = _set_if_changed(cycles_view_layer, "use_lightgroup_light_pass_aovs", value)
+        changed = self._adapter().set_property(
+            view_layer_name,
+            TARGET_VIEW_LAYER_CYCLES,
+            "use_lightgroup_light_pass_aovs",
+            value,
+        )
         if changed and push_undo:
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Update")
         return changed
@@ -1605,32 +1595,19 @@ class ViewLayerManagerWindow(QtWidgets.QDialog):
         *,
         push_undo: bool = True,
     ) -> bool:
-        view_layer = self._find_view_layer(view_layer_name)
-        cycles_view_layer = getattr(view_layer, "cycles", None) if view_layer is not None else None
-        if cycles_view_layer is None:
-            return False
-        changed = _set_if_changed(cycles_view_layer, prop_name, value)
+        changed = self._adapter().set_property(
+            view_layer_name,
+            TARGET_VIEW_LAYER_CYCLES,
+            prop_name,
+            value,
+        )
         if changed and push_undo:
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Update")
         return changed
 
     @context_window
     def _apply_view_layer_order(self, desired_names: list[str]) -> bool:
-        current_names = self._view_layer_names()
-        if current_names == desired_names:
-            return False
-
-        changed = False
-        scene = self._scene()
-        for target_index, view_layer_name in enumerate(desired_names):
-            current_index = current_names.index(view_layer_name)
-            if current_index == target_index:
-                continue
-            scene.view_layers.move(current_index, target_index)
-            moved_name = current_names.pop(current_index)
-            current_names.insert(target_index, moved_name)
-            changed = True
-
+        changed = self._adapter().reorder(desired_names)
         if changed:
             self._tag_blender_ui_redraw()
             bpy.ops.ed.undo_push(message="ViewLayer Manager: Reorder")

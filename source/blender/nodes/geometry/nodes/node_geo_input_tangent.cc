@@ -12,7 +12,7 @@ namespace blender::nodes::node_geo_input_tangent_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_output<decl::Vector>("Tangent"_ustr).field_source();
+  b.add_output<decl::Vector>("Tangent"_ustr).structure_type(StructureType::Field);
 }
 
 static Array<float3> curve_tangent_point_domain(const bke::CurvesGeometry &curves)
@@ -101,15 +101,10 @@ class TangentFieldInput final : public bke::CurvesFieldInput {
     return construct_curve_tangent_gvarray(curves, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random constant hash. */
-    return 91827364589;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const TangentFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

@@ -32,23 +32,26 @@ static void node_declare(NodeDeclarationBuilder &b)
       .description("Mesh whose UV map is used");
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
-    b.add_input(data_type, "Value"_ustr).hide_value().field_on_all();
+    b.add_input(data_type, "Value"_ustr).hide_value().evaluated_geometry_field();
   }
   b.add_input<decl::Vector>("UV Map"_ustr, "Source UV Map"_ustr)
       .hide_value()
-      .field_on_all()
+      .evaluated_geometry_field()
       .description("The mesh UV map to sample. Should not have overlapping faces");
-  b.add_input<decl::Vector>("Sample UV"_ustr)
-      .supports_field()
-      .description("The coordinates to sample within the UV map")
-      .structure_type(StructureType::Dynamic);
+  auto &sample_uv = b.add_input<decl::Vector>("Sample UV"_ustr)
+                        .description("The coordinates to sample within the UV map")
+                        .structure_type(StructureType::Dynamic);
 
+  std::array<int, 1> dynamic_inputs = {sample_uv.index()};
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
-    b.add_output(data_type, "Value"_ustr).dependent_field({3});
+    b.add_output(data_type, "Value"_ustr)
+        .inferred_structure_type(dynamic_inputs)
+        .propagate_references(dynamic_inputs);
   }
   b.add_output<decl::Bool>("Is Valid"_ustr)
-      .dependent_field({3})
+      .inferred_structure_type(dynamic_inputs)
+      .propagate_references(dynamic_inputs)
       .description("Whether the node could find a single face to sample at the UV coordinate");
 }
 
@@ -69,7 +72,7 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
   search_link_ops_for_declarations(params, declaration.outputs);
 
   const std::optional<eCustomDataType> type = bke::socket_type_to_custom_data_type(
-      eNodeSocketDatatype(params.other_socket().type));
+      params.other_socket().type);
   if (type && *type != CD_PROP_STRING) {
     /* The input and output sockets have the same name. */
     params.add_item(IFACE_("Value"), [type](LinkSearchOpParams &params) {
@@ -84,18 +87,17 @@ class ReverseUVSampleFunction : public mf::MultiFunction {
   GeometrySet source_;
   Field<float2> src_uv_map_field_;
 
-  std::optional<bke::MeshFieldContext> source_context_;
-  std::unique_ptr<FieldEvaluator> source_evaluator_;
-  VArraySpan<float2> source_uv_map_;
-
-  std::optional<ReverseUVSampler> reverse_uv_sampler_;
+  mutable CacheMutex mutex_;
+  mutable std::optional<bke::MeshFieldContext> source_context_;
+  mutable std::unique_ptr<FieldEvaluator> source_evaluator_;
+  mutable VArraySpan<float2> source_uv_map_;
+  mutable std::optional<ReverseUVSampler> reverse_uv_sampler_;
 
  public:
   ReverseUVSampleFunction(GeometrySet geometry, Field<float2> src_uv_map_field)
       : source_(std::move(geometry)), src_uv_map_field_(std::move(src_uv_map_field))
   {
     source_.ensure_owns_direct_data();
-    this->evaluate_source();
 
     static const mf::Signature signature = []() {
       mf::Signature signature;
@@ -133,17 +135,27 @@ class ReverseUVSampleFunction : public mf::MultiFunction {
     });
   }
 
- private:
-  void evaluate_source()
+  void hash_unique(UniqueHashBytes &hash) const override
   {
-    const Mesh &mesh = *source_.get_mesh();
-    source_context_.emplace(bke::MeshFieldContext{mesh, AttrDomain::Corner});
-    source_evaluator_ = std::make_unique<FieldEvaluator>(*source_context_, mesh.corners_num);
-    source_evaluator_->add(src_uv_map_field_);
-    source_evaluator_->evaluate();
-    source_uv_map_ = source_evaluator_->get_evaluated<float2>(0);
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(source_.get_mesh());
+    fn::FieldHashDeep field_hash;
+    hash.add(field_hash.ensure(src_uv_map_field_));
+  }
 
-    reverse_uv_sampler_.emplace(source_uv_map_, mesh.corner_tris());
+  void prepare_for_execution() const override
+  {
+    mutex_.ensure([&]() {
+      const Mesh &mesh = *source_.get_mesh();
+      source_context_.emplace(bke::MeshFieldContext{mesh, AttrDomain::Corner});
+      source_evaluator_ = std::make_unique<FieldEvaluator>(*source_context_, mesh.corners_num);
+      source_evaluator_->add(src_uv_map_field_);
+      source_evaluator_->evaluate();
+      source_uv_map_ = source_evaluator_->get_evaluated<float2>(0);
+
+      reverse_uv_sampler_.emplace(source_uv_map_, mesh.corner_tris());
+    });
   }
 };
 

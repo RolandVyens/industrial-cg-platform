@@ -11,16 +11,16 @@ namespace blender::nodes::node_geo_input_mesh_edge_vertices_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_output<decl::Int>("Vertex Index 1"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The index of the first vertex in the edge");
   b.add_output<decl::Int>("Vertex Index 2"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The index of the second vertex in the edge");
   b.add_output<decl::Vector>("Position 1"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The position of the first vertex in the edge");
   b.add_output<decl::Vector>("Position 2"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The position of the second vertex in the edge");
 }
 
@@ -57,17 +57,11 @@ class EdgeVertsInput final : public bke::MeshFieldInput {
     return construct_edge_verts_gvarray(mesh, vertex_, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return vertex_ == VertNumber::V1 ? 23847562893465 : 92384598734567;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const EdgeVertsInput *other_field = dynamic_cast<const EdgeVertsInput *>(&other)) {
-      return vertex_ == other_field->vertex_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(vertex_);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
@@ -114,19 +108,11 @@ class EdgePositionFieldInput final : public bke::MeshFieldInput {
     return construct_edge_positions_gvarray(mesh, vertex_, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return vertex_ == VertNumber::V1 ? 987456978362 : 374587679866;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const EdgePositionFieldInput *other_field = dynamic_cast<const EdgePositionFieldInput *>(
-            &other))
-    {
-      return vertex_ == other_field->vertex_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(vertex_);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

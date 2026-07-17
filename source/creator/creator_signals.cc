@@ -92,16 +92,17 @@ static void crashlog_file_generate(const char *filepath, const void *os_info)
 
   FILE *fp;
   char header[512];
-
-  printf("Writing: %s\n", filepath);
+  if (!app_state.signal.use_console_crash_handler) {
+    printf("Writing: %s\n", filepath);
+  }
   fflush(stdout);
 
 #  ifndef BUILD_DATE
-  SNPRINTF(header, "# " BLEND_VERSION_FMT ", Unknown revision\n", BLEND_VERSION_ARG);
+  SNPRINTF(header, "# %s, Unknown revision\n", BKE_blender_product_version_string());
 #  else
   SNPRINTF(header,
-           "# " BLEND_VERSION_FMT ", Commit date: %s %s, Hash %s\n",
-           BLEND_VERSION_ARG,
+           "# %s, Commit date: %s %s, Hash %s\n",
+           BKE_blender_product_version_string(),
            build_commit_date,
            build_commit_time,
            build_hash);
@@ -109,26 +110,32 @@ static void crashlog_file_generate(const char *filepath, const void *os_info)
 
   /* Open the crash log. */
   errno = 0;
-  fp = BLI_fopen(filepath, "wb");
-  if (fp == nullptr) {
-    fprintf(stderr,
-            "Unable to save '%s': %s\n",
-            filepath,
-            errno ? strerror(errno) : "Unknown error opening file");
+  if (app_state.signal.use_console_crash_handler) {
+    fp = stderr;
   }
   else {
-    if (wm) {
-      BKE_report_write_file_fp(fp, &wm->runtime->reports, header);
+    fp = BLI_fopen(filepath, "wb");
+    if (fp == nullptr) {
+      fprintf(stderr,
+              "Unable to save '%s': %s , falling back to console\n",
+              filepath,
+              errno ? strerror(errno) : "Unknown error opening file");
+      fp = stderr;
     }
+  }
 
-    fputs("\n# backtrace\n", fp);
-    BLI_system_backtrace_with_os_info(fp, os_info);
+  if (wm) {
+    BKE_report_write_file_fp(fp, &wm->runtime->reports, header);
+  }
+
+  fputs("\n# backtrace\n", fp);
+  BLI_system_backtrace_with_os_info(fp, os_info);
 
 #  ifdef WITH_PYTHON
-    /* Generate python back-trace if Python is currently active. */
-    BPY_python_backtrace(fp);
+  /* Generate python back-trace if Python is currently active. */
+  BPY_python_backtrace(fp);
 #  endif
-
+  if (fp != stderr) {
     fclose(fp);
   }
 }
@@ -179,14 +186,14 @@ extern LONG WINAPI windows_exception_handler(EXCEPTION_POINTERS *ExceptionInfo)
 
     /* Disable popup in background mode to avoid blocking automation.
      * (e.g., when used by a render farm; see #142314). */
-    if (!G.background) {
+    if ((!G.background) && (!app_state.signal.use_console_crash_handler)) {
       std::string version;
 #    ifndef BUILD_DATE
       const char *build_hash = G_MAIN ? G_MAIN->build_hash : "unknown";
-      version = std::string(BKE_blender_version_string()) + ", hash: `" + build_hash + "`";
+      version = std::string(BKE_blender_product_version_string()) + ", hash: `" + build_hash + "`";
 #    else
-      version = std::string(BKE_blender_version_string()) + ", Commit date: " + build_commit_date +
-                " " + build_commit_time + ", hash: `" + build_hash + "`";
+      version = std::string(BKE_blender_product_version_string()) + ", Commit date: " +
+                build_commit_date + " " + build_commit_time + ", hash: `" + build_hash + "`";
 #    endif
 
       BLI_windows_exception_show_dialog(

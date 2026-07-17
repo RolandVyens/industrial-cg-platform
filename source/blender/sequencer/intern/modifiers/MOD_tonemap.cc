@@ -14,6 +14,8 @@
 
 #include "IMB_colormanagement.hh"
 
+#include "PRF_profile.hh"
+
 #include "SEQ_modifier.hh"
 #include "SEQ_render.hh"
 
@@ -240,9 +242,9 @@ static void tonemap_calc_chunk_luminance(const int width,
   }
 }
 
-static AreaLuminance tonemap_calc_input_luminance(const ImBuf *ibuf)
+static AreaLuminance tonemap_calc_input_luminance(ImBuf *ibuf)
 {
-  float *float_data = ibuf->float_buffer.data;
+  float *float_data = ibuf->float_data_for_write();
   AreaLuminance lum;
   lum = threading::parallel_reduce(
       IndexRange(ibuf->y),
@@ -283,20 +285,19 @@ static AreaLuminance tonemap_calc_input_luminance(const ImBuf *ibuf)
   return lum;
 }
 
-static void tonemapmodifier_apply(ModifierApplyContext &context,
-                                  StripModifierData *smd,
-                                  int timeline_frame)
+static void tonemapmodifier_apply(ModifierApplyContext &context, StripModifierData *smd)
 {
-  ensure_ibuf_is_sequencer_space(context.render_data.scene, context.image, false);
-  ImBuf *mask = modifier_render_mask_input(context, *smd, timeline_frame);
+  PRF_scope_with_name("SeqModTonemap", ProfileCategory::Draw);
+  ensure_ibuf_is_sequencer_space(context.render_data.scene, context.result.image, false);
+  ImBuf *mask = modifier_render_mask_input(context, *smd);
 
   const SequencerTonemapModifierData *tmmd =
       reinterpret_cast<const SequencerTonemapModifierData *>(smd);
 
   TonemapApplyOp op;
-  op.type = eModTonemapType(tmmd->type);
-  op.ibuf = context.image;
-  op.lum = tonemap_calc_input_luminance(context.image);
+  op.type = tmmd->type;
+  op.ibuf = context.result.image;
+  op.lum = tonemap_calc_input_luminance(context.result.image);
   if (op.lum.pixel_count == 0) {
     return; /* Strip is zero size or off-screen. */
   }
@@ -314,7 +315,7 @@ static void tonemapmodifier_apply(ModifierApplyContext &context,
   op.data.al = (al == 0.0f) ? 0.0f : (tmmd->key / al);
   op.data.igm = (tmmd->gamma == 0.0f) ? 1.0f : (1.0f / tmmd->gamma);
 
-  apply_modifier_op(op, context.image, mask, context.transform);
+  apply_modifier_op(op, context.result.image, mask, context.transform);
 
   if (mask != nullptr) {
     IMB_freeImBuf(mask);

@@ -36,6 +36,9 @@ static void node_declare(NodeDeclarationBuilder &b)
     static_cast<NodeShaderHairPrincipled *>(node.storage)->model = SHD_PRINCIPLED_HAIR_CHIANG;
   };
 
+  const bNodeTree *ntree = b.tree_or_null();
+  const bool is_gpu_internal = ntree && (ntree->flag & NTREE_IS_GPU_SHADER_INTERNAL);
+
   b.add_input<decl::Color>("Color"_ustr)
       .default_value({0.017513f, 0.005763f, 0.002059f, 1.0f})
       .description("The RGB color of the strand. Only used in Direct Coloring")
@@ -133,7 +136,7 @@ static void node_declare(NodeDeclarationBuilder &b)
       .subtype(PROP_FACTOR)
       .description("Vary roughness values for each strand");
   b.add_input<decl::Float>("Random"_ustr).hide_value();
-  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_input<decl::Float>("Weight"_ustr).available(is_gpu_internal);
   b.add_input<decl::Float>("Reflection"_ustr, "R lobe"_ustr)
       .default_value(1.0f)
       .min(0.0f)
@@ -260,7 +263,7 @@ void register_node_type_sh_bsdf_hair_principled()
   ntype.gather_link_search_ops = search_link_ops_for_shader_bsdf_node;
   ntype.add_ui_poll = object_cycles_shader_nodes_poll;
   ntype.draw_buttons = file_ns::node_shader_buts_principled_hair;
-  bke::node_type_size_preset(ntype, bke::eNodeSizePreset::Large);
+  ntype.default_width = bke::NodeWidth::_240;
   ntype.initfunc = file_ns::node_shader_init_hair_principled;
   ntype.updatefunc = file_ns::node_shader_update_hair_principled;
   ntype.gpu_fn = file_ns::node_shader_gpu_hair_principled;

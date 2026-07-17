@@ -91,7 +91,7 @@ ccl_device_inline Float3Type svm_texco_camera(KernelGlobals kg,
 template<typename Float3Type>
 ccl_device_noinline Float3Type svm_node_tex_coord_eval(KernelGlobals kg,
                                                        ccl_private ShaderData *sd,
-                                                       const uint32_t path_flag,
+                                                       const PathRayVisibility path_visibility,
                                                        const NodeTexCoord type,
                                                        ccl_private int *offset)
 {
@@ -126,7 +126,7 @@ ccl_device_noinline Float3Type svm_node_tex_coord_eval(KernelGlobals kg,
       break;
     }
     case NODE_TEXCO_WINDOW: {
-      if ((path_flag & PATH_RAY_CAMERA) && sd->object == OBJECT_NONE &&
+      if ((path_visibility & PATH_RAY_VISIBILITY_CAMERA) && sd->object == OBJECT_NONE &&
           kernel_data.cam.type == CAMERA_ORTHOGRAPHIC)
       {
         data = Float3Type(camera_world_to_ndc(kg, sd, sd->ray_P));
@@ -178,12 +178,13 @@ ccl_device_noinline Float3Type svm_node_tex_coord_eval(KernelGlobals kg,
 
 ccl_device_noinline int svm_node_tex_coord(KernelGlobals kg,
                                            ccl_private ShaderData *sd,
-                                           const uint32_t path_flag,
+                                           const PathRayVisibility path_visibility,
                                            ccl_private float *ccl_restrict stack,
                                            const ccl_global SVMNodeTexCoord &ccl_restrict node,
                                            int offset)
 {
-  const float3 data = svm_node_tex_coord_eval<float3>(kg, sd, path_flag, node.texco_type, &offset);
+  const float3 data = svm_node_tex_coord_eval<float3>(
+      kg, sd, path_visibility, node.texco_type, &offset);
   stack_store(stack, node.out_offset, data);
   return offset;
 }
@@ -191,12 +192,12 @@ ccl_device_noinline int svm_node_tex_coord(KernelGlobals kg,
 ccl_device_noinline int svm_node_tex_coord_derivative(
     KernelGlobals kg,
     ccl_private ShaderData *sd,
-    const uint32_t path_flag,
+    const PathRayVisibility path_visibility,
     ccl_private float *ccl_restrict stack,
     const ccl_global SVMNodeTexCoord &ccl_restrict node,
     int offset)
 {
-  dual3 data = svm_node_tex_coord_eval<dual3>(kg, sd, path_flag, node.texco_type, &offset);
+  dual3 data = svm_node_tex_coord_eval<dual3>(kg, sd, path_visibility, node.texco_type, &offset);
   if (node.bump_offset == NODE_BUMP_OFFSET_DX) {
     data.val += data.dx * node.bump_filter_width;
   }
@@ -245,7 +246,7 @@ ccl_device_noinline void svm_node_normal_map(KernelGlobals kg,
     const AttributeDescriptor attr = find_attribute(kg, sd, node.attr);
     const AttributeDescriptor attr_sign = find_attribute(kg, sd, node.attr_sign);
 
-    if (attr.offset == ATTR_STD_NOT_FOUND || attr_sign.offset == ATTR_STD_NOT_FOUND) {
+    if (!is_attribute_found(attr) || !is_attribute_found(attr_sign)) {
       /* Fall back to unperturbed normal. */
       stack_store_float3(stack, node.normal_offset, sd->N);
       return;
@@ -260,8 +261,8 @@ ccl_device_noinline void svm_node_normal_map(KernelGlobals kg,
       const AttributeDescriptor attr_undisplaced_normal =
           (node.use_original_base) ?
               find_attribute(kg, sd->object, sd->prim, ATTR_STD_NORMAL_UNDISPLACED) :
-              AttributeDescriptor{ATTR_ELEMENT_NONE, NODE_ATTR_FLOAT3, ATTR_STD_NOT_FOUND};
-      if (attr_undisplaced_normal.offset != ATTR_STD_NOT_FOUND) {
+              attribute_not_found();
+      if (is_attribute_found(attr_undisplaced_normal)) {
         normal = primitive_surface_attribute<float3>(kg, sd, attr_undisplaced_normal);
         /* Can't interpolate in tangent space as the displaced normal is not used
          * for the tangent frame. */
@@ -351,7 +352,7 @@ ccl_device_noinline void svm_node_tangent(KernelGlobals kg,
   Float3Type tangent;
   if (node.direction_type == NODE_TANGENT_UVMAP) {
     /* UV map */
-    if (desc.offset == ATTR_STD_NOT_FOUND) {
+    if (!is_attribute_found(desc)) {
       stack_store(stack, node.tangent_offset, Float3Type());
       return;
     }
@@ -370,7 +371,7 @@ ccl_device_noinline void svm_node_tangent(KernelGlobals kg,
   else {
     /* radial */
     Float3Type generated;
-    if (desc.offset == ATTR_STD_NOT_FOUND) {
+    if (!is_attribute_found(desc)) {
       generated = shading_position<Float3Type>(sd);
     }
     else if (desc.type == NODE_ATTR_FLOAT2) {

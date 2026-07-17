@@ -25,7 +25,7 @@
 #include "FN_lazy_function_graph.hh"
 #include "FN_lazy_function_graph_executor.hh"
 
-#include "NOD_geometry_nodes_log.hh"
+#include "NOD_eval_log.hh"
 #include "NOD_multi_function.hh"
 #include "NOD_nested_node_id.hh"
 
@@ -33,8 +33,9 @@
 #include "BLI_math_quaternion_types.hh"
 #include "BLI_multi_value_map.hh"
 
-#include "BKE_bake_items.hh"
+#include "BKE_bake_values.hh"
 #include "BKE_node_tree_zones.hh"
+
 namespace blender {
 
 struct Depsgraph;
@@ -59,22 +60,12 @@ struct PassThrough {};
 /**
  * The input is not evaluated, instead the values provided here are output by the node.
  */
-struct OutputCopy {
+struct UseCache {
   float delta_time;
-  bke::bake::BakeStateRef state;
+  bke::bake::BakeValues values;
 };
 
-/**
- * Same as #OutputCopy, but the values can be output by move, instead of copy.
- * This can reduce the amount of unnecessary copies,
- * when the old simulation state is not needed anymore.
- */
-struct OutputMove {
-  float delta_time;
-  bke::bake::BakeState state;
-};
-
-using Behavior = std::variant<PassThrough, OutputCopy, OutputMove>;
+using Behavior = std::variant<PassThrough, UseCache>;
 
 }  // namespace sim_input
 
@@ -92,14 +83,14 @@ struct PassThrough {};
  * The new simulation state is the output of the node.
  */
 struct StoreNewState {
-  std::function<void(bke::bake::BakeState state)> store_fn;
+  std::function<void(bke::bake::BakeValues values)> store_fn;
 };
 
 /**
  * The inputs are not evaluated, instead the given cached items are output directly.
  */
 struct ReadSingle {
-  bke::bake::BakeStateRef state;
+  bke::bake::BakeValues values;
 };
 
 /**
@@ -108,8 +99,8 @@ struct ReadSingle {
 struct ReadInterpolated {
   /** Factor between 0 and 1 that determines the influence of the two simulation states. */
   float mix_factor;
-  bke::bake::BakeStateRef prev_state;
-  bke::bake::BakeStateRef next_state;
+  bke::bake::BakeValues prev_values;
+  bke::bake::BakeValues next_values;
 };
 
 /**
@@ -225,7 +216,7 @@ struct GeoNodesCallData {
    * Optional logger that keeps track of data generated during evaluation to allow for better
    * debugging afterwards.
    */
-  geo_eval_log::GeoNodesLog *eval_log = nullptr;
+  eval_log::NodesEvalLog *eval_log = nullptr;
   /**
    * Optional injected behavior for simulations.
    */
@@ -306,7 +297,7 @@ struct GeoNodesLocalUserData : public fn::LocalUserData {
    * Thread-local logger for the current node tree in the current compute context. It is only
    * instantiated when it is actually used and then cached for the current thread.
    */
-  mutable std::optional<geo_eval_log::GeoTreeLogger *> tree_logger_;
+  mutable std::optional<eval_log::NodeTreeLogger *> tree_logger_;
 
  public:
   GeoNodesLocalUserData(GeoNodesUserData & /*user_data*/) {}
@@ -315,7 +306,7 @@ struct GeoNodesLocalUserData : public fn::LocalUserData {
    * Get the current tree logger. This method is not thread-safe, each thread is supposed to have
    * a separate logger.
    */
-  geo_eval_log::GeoTreeLogger *try_get_tree_logger(const GeoNodesUserData &user_data) const
+  eval_log::NodeTreeLogger *try_get_tree_logger(const GeoNodesUserData &user_data) const
   {
     if (!tree_logger_.has_value()) {
       this->ensure_tree_logger(user_data);
@@ -479,6 +470,8 @@ std::unique_ptr<LazyFunction> get_bake_lazy_function(
     const bNode &node, GeometryNodesLazyFunctionGraphInfo &own_lf_graph_info);
 std::unique_ptr<LazyFunction> get_menu_switch_node_lazy_function(
     const bNode &node, GeometryNodesLazyFunctionGraphInfo &lf_graph_info);
+std::unique_ptr<LazyFunction> get_menu_switch_node_boolean_outputs_lazy_function(
+    const bNode &node, GeometryNodesLazyFunctionGraphInfo &lf_graph_info);
 std::unique_ptr<LazyFunction> get_menu_switch_node_socket_usage_lazy_function(const bNode &node);
 std::unique_ptr<LazyFunction> get_warning_node_lazy_function(const bNode &node);
 std::unique_ptr<LazyFunction> get_enable_output_node_lazy_function(
@@ -523,24 +516,22 @@ constexpr auto node_timer_log_threshold = std::chrono::microseconds(100);
 class ScopedComputeContextTimer {
  private:
   lf::Context &context_;
-  geo_eval_log::TimePoint start_;
+  eval_log::TimePoint start_;
 
  public:
   ScopedComputeContextTimer(lf::Context &entered_context) : context_(entered_context)
   {
-    start_ = geo_eval_log::Clock::now();
+    start_ = eval_log::Clock::now();
   }
 
   ~ScopedComputeContextTimer()
   {
-    const geo_eval_log::TimePoint end = geo_eval_log::Clock::now();
+    const eval_log::TimePoint end = eval_log::Clock::now();
     auto &user_data = static_cast<GeoNodesUserData &>(*context_.user_data);
     auto &local_user_data = static_cast<GeoNodesLocalUserData &>(*context_.local_user_data);
     const std::chrono::duration duration = end - start_;
     if (user_data.verbose_log || duration > node_timer_log_threshold) {
-      if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
-              user_data))
-      {
+      if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data)) {
         tree_logger->execution_time += duration;
       }
     }
@@ -554,24 +545,22 @@ class ScopedNodeTimer {
  private:
   const lf::Context &context_;
   const bNode &node_;
-  geo_eval_log::TimePoint start_;
+  eval_log::TimePoint start_;
 
  public:
   ScopedNodeTimer(const lf::Context &context, const bNode &node) : context_(context), node_(node)
   {
-    start_ = geo_eval_log::Clock::now();
+    start_ = eval_log::Clock::now();
   }
 
   ~ScopedNodeTimer()
   {
-    const geo_eval_log::TimePoint end = geo_eval_log::Clock::now();
+    const eval_log::TimePoint end = eval_log::Clock::now();
     auto &user_data = static_cast<GeoNodesUserData &>(*context_.user_data);
     auto &local_user_data = static_cast<GeoNodesLocalUserData &>(*context_.local_user_data);
     const std::chrono::duration duration = end - start_;
     if (user_data.verbose_log || duration > node_timer_log_threshold) {
-      if (geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(
-              user_data))
-      {
+      if (eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data)) {
         tree_logger->node_execution_times.append(*tree_logger->allocator,
                                                  {node_.identifier, start_, end});
       }

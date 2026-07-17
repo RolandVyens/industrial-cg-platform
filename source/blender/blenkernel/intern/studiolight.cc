@@ -51,8 +51,6 @@ static const char *STUDIOLIGHT_MATCAP_FOLDER = "studiolights" SEP_STR "matcap" S
 static const char *STUDIOLIGHT_WORLD_DEFAULT = "forest.exr";
 static const char *STUDIOLIGHT_MATCAP_DEFAULT = "basic_1.exr";
 
-static CLG_LogRef LOG = {"bke.studiolight"};
-
 /* ITER MACRO */
 
 /**
@@ -319,16 +317,7 @@ static float *studiolight_multilayer_convert_pass(const ImBuf *ibuf,
 
   float *new_rect = MEM_new_array_zeroed<float>(4 * size_t(ibuf->x) * size_t(ibuf->y), __func__);
 
-  IMB_buffer_float_from_float(new_rect,
-                              rect,
-                              channels,
-                              IB_PROFILE_LINEAR_RGB,
-                              IB_PROFILE_LINEAR_RGB,
-                              false,
-                              ibuf->x,
-                              ibuf->y,
-                              ibuf->x,
-                              ibuf->x);
+  IMB_buffer_float_rgba_from_float(new_rect, rect, channels, ibuf->x, ibuf->y);
 
   MEM_delete(rect);
   return new_rect;
@@ -362,7 +351,8 @@ static void studiolight_multilayer_addpass(void *base,
 static void studiolight_load_equirect_image(StudioLight *sl)
 {
   if (sl->flag & STUDIOLIGHT_EXTERNAL_FILE) {
-    ImBuf *ibuf = IMB_load_image_from_filepath(sl->filepath, IB_multilayer | IB_alphamode_ignore);
+    ImBuf *ibuf = IMB_load_image_from_filepath(sl->filepath,
+                                               ImBufFlags::MultiLayer | ImBufFlags::AlphaIgnore);
     ImBuf *specular_ibuf = nullptr;
     ImBuf *diffuse_ibuf = nullptr;
     const bool failed = (ibuf == nullptr);
@@ -876,14 +866,10 @@ void BKE_studiolight_init()
                                         STUDIOLIGHT_LIGHTS_FOLDER,
                                         STUDIOLIGHT_TYPE_STUDIO |
                                             STUDIOLIGHT_SPECULAR_HIGHLIGHT_PASS);
-#ifdef WITH_IMAGE_OPENEXR
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_WORLD_FOLDER, STUDIOLIGHT_TYPE_WORLD);
   studiolight_add_files_from_datafolder(
       BLENDER_SYSTEM_DATAFILES, STUDIOLIGHT_MATCAP_FOLDER, STUDIOLIGHT_TYPE_MATCAP);
-#else
-  CLOG_WARN(&LOG, "Unable to load matcap or world presets, Built without 'WITH_IMAGE_OPENEXR'");
-#endif
 
   /* sort studio lights on filename. */
   BLI_listbase_sort(&studiolights, studiolight_cmp);

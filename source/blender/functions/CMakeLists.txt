@@ -56,6 +56,8 @@ set(LIB
   PRIVATE bf::dna
   PRIVATE bf::intern::guardedalloc
   PRIVATE bf::intern::clog
+  PUBLIC bf::intern::profile
+  PRIVATE bf::extern::xxhash
 )
 
 blender_add_lib(bf_functions "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
@@ -74,6 +76,7 @@ if(WITH_GTESTS)
   )
   set(TEST_LIB
     bf_functions
+    PRIVATE bf::blenkernel
   )
   blender_add_test_suite_lib(function "${TEST_SRC}" "${INC};${TEST_INC}" "${INC_SYS}" "${LIB};${TEST_LIB}")
 endif()

@@ -9,6 +9,7 @@
 
 #include "kernel/bvh/bvh.h"
 
+#include "kernel/integrator/shadow_color.h"
 #include "kernel/integrator/state.h"
 #include "kernel/integrator/state_flow.h"
 #include "kernel/integrator/state_util.h"
@@ -18,7 +19,7 @@ CCL_NAMESPACE_BEGIN
 /* Visibility for the shadow ray. */
 ccl_device_forceinline uint integrate_intersect_shadow_visibility(ConstIntegratorShadowState state)
 {
-  uint visibility = PATH_RAY_SHADOW;
+  uint visibility = PATH_RAY_VISIBILITY_SHADOW;
 
 #ifdef __SHADOW_CATCHER__
   const uint32_t path_flag = INTEGRATOR_STATE(state, shadow_path, flag);
@@ -37,8 +38,9 @@ ccl_device bool integrate_intersect_shadow_opaque(KernelGlobals kg,
    * Calculate the mask at compile time: the visibility will either be a high bits for the shadow
    * catcher objects, or lower bits for the regular objects (there is no need to check the path
    * state here again). */
-  constexpr const uint opaque_mask = SHADOW_CATCHER_VISIBILITY_SHIFT(PATH_RAY_SHADOW_OPAQUE) |
-                                     PATH_RAY_SHADOW_OPAQUE;
+  constexpr const uint opaque_mask = SHADOW_CATCHER_VISIBILITY_SHIFT(
+                                         PATH_RAY_VISIBILITY_SHADOW_OPAQUE) |
+                                     PATH_RAY_VISIBILITY_SHADOW_OPAQUE;
 
   const bool opaque_hit = scene_intersect_shadow(kg, ray, visibility & opaque_mask);
 
@@ -169,30 +171,19 @@ ccl_device void integrator_intersect_shadow(KernelGlobals kg, IntegratorShadowSt
 #endif
 
   if (opaque_hit) {
-    if (!(path_flag & PATH_RAY_SHADOW_FOR_AO)) {
-      const int light_object = INTEGRATOR_STATE(state, shadow_ray, self_light_object);
-      const int light_prim = INTEGRATOR_STATE(state, shadow_ray, self_light_prim);
-
-      if (light_object != OBJECT_NONE && light_prim != PRIM_NONE) {
-        const KernelObject &kobject = kernel_data_fetch(objects, light_object);
-        if (kobject.primitive_type == PRIMITIVE_LAMP) {
-          const ccl_global KernelLight *klight = &kernel_data_fetch(lights, light_prim);
-          Spectrum shadow_color = make_float3(klight->shadow_color[0],
-                                              klight->shadow_color[1],
-                                              klight->shadow_color[2]);
-          shadow_color = clamp(shadow_color, zero_spectrum(), one_spectrum());
-          /* If the light has a non-zero shadow color, redirect to shade_shadow even on opaque
-           * hits. Set throughput to zero to signal full occlusion; shade_shadow applies tint. */
-          if (!is_zero(shadow_color)) {
-            INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) = zero_spectrum();
-            INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = 0;
-            integrator_shadow_path_next(state,
-                                        DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW,
-                                        DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);
-            return;
-          }
-        }
-      }
+    const Spectrum shadow_color = integrator_shadow_color(
+        kg,
+        state,
+        path_flag,
+        kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR);
+    /* If the light has a non-zero shadow color, redirect to shade_shadow even on opaque hits.
+     * Set throughput to zero to signal full occlusion; shade_shadow applies tint. */
+    if (!is_zero(shadow_color)) {
+      INTEGRATOR_STATE_WRITE(state, shadow_path, throughput) = zero_spectrum();
+      INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = 0;
+      integrator_shadow_path_next(
+          state, DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW, DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW);
+      return;
     }
     /* Hit an opaque surface, shadow path ends here. */
     integrator_shadow_path_terminate(state, DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW);

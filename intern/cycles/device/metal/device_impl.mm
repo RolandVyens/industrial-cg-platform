@@ -125,7 +125,7 @@ MetalDevice::MetalDevice(const DeviceInfo &info, Stats &stats, Profiler &profile
     /* Create a global counter sampling buffer when kernel profiling is enabled.
      * There's a limit to the number of concurrent counter sampling buffers per device, so we
      * create one that can be reused by successive device queues. */
-    if (auto str = getenv("CYCLES_METAL_PROFILING")) {
+    if (auto *str = getenv("CYCLES_METAL_PROFILING")) {
       if (atoi(str) && [mtlDevice supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary])
       {
         NSArray<id<MTLCounterSet>> *counterSets = [mtlDevice counterSets];
@@ -163,16 +163,6 @@ MetalDevice::MetalDevice(const DeviceInfo &info, Stats &stats, Profiler &profile
                  kernel_type_as_string(
                      (MetalPipelineType)min((int)kernel_specialization_level, (int)PSO_NUM - 1)));
 
-    image_bindings = [mtlDevice newBufferWithLength:8192 options:MTLResourceStorageModeShared];
-    stats.mem_alloc(image_bindings.allocatedSize);
-
-    launch_params_buffer = [mtlDevice newBufferWithLength:sizeof(KernelParamsMetal)
-                                                  options:MTLResourceStorageModeShared];
-    stats.mem_alloc(sizeof(KernelParamsMetal));
-
-    /* Cache unified pointer so we can write kernel params directly in place. */
-    launch_params = (KernelParamsMetal *)launch_params_buffer.contents;
-
     /* Command queue for path-tracing work on the GPU. In a situation where multiple
      * MetalDeviceQueues are spawned from one MetalDevice, they share the same MTLCommandQueue.
      * This is thread safe and just as performant as each having their own instance. It also
@@ -181,6 +171,43 @@ MetalDevice::MetalDevice(const DeviceInfo &info, Stats &stats, Profiler &profile
 
     /* Command queue for non-tracing work on the GPU. */
     mtlGeneralCommandQueue = [mtlDevice newCommandQueue];
+
+#  if defined(MAC_OS_VERSION_15_0)
+    if (@available(macos 15.0, *)) {
+      if (DebugFlags().metal.use_residency_sets_if_available) {
+        /* Use a residency set to declare all rendering resources up front, avoiding
+         * the overhead of per-encoder useResource calls on every dispatch. */
+        MTLResidencySetDescriptor *residency_set_desc = [[MTLResidencySetDescriptor alloc] init];
+        residency_set_desc.label = @"CyclesResidencySet";
+        residency_set_desc.initialCapacity = 512;
+        NSError *error = nil;
+        mtlResidencySet = [mtlDevice newResidencySetWithDescriptor:residency_set_desc
+                                                             error:&error];
+        [residency_set_desc release];
+
+        /* Only enable residency sets if creation succeeded. Otherwise we fall back to the
+         * per-encoder useResource path. */
+        if (mtlResidencySet) {
+          mtlResidencySet_enabled = true;
+          [mtlComputeCommandQueue addResidencySet:mtlResidencySet];
+        }
+        else {
+          metal_printf("Failed to create residency set: %s",
+                       [[error localizedDescription] UTF8String]);
+        }
+      }
+    }
+#  endif
+
+    image_bindings = [mtlDevice newBufferWithLength:8192 options:MTLResourceStorageModeShared];
+    metal_mem_alloc(image_bindings);
+
+    launch_params_buffer = [mtlDevice newBufferWithLength:sizeof(KernelParamsMetal)
+                                                  options:MTLResourceStorageModeShared];
+    metal_mem_alloc(launch_params_buffer);
+
+    /* Cache unified pointer so we can write kernel params directly in place. */
+    launch_params = (KernelParamsMetal *)launch_params_buffer.contents;
   }
 }
 
@@ -195,18 +222,25 @@ MetalDevice::~MetalDevice()
 
   /* Release textures that weren't already freed by tex_free. */
   for (int res = 0; res < image_info.size(); res++) {
-    [image_info_id_map[res] release];
+    metal_mem_free(image_info_id_map[res]);
     image_info_id_map[res] = nil;
   }
 
+  /* Queue resources for release, then run flush_delayed_free_list(). */
   free_bvh();
+  metal_mem_free(launch_params_buffer);
+  metal_mem_free(image_bindings);
+  image_info.free();
   flush_delayed_free_list();
 
-  stats.mem_free(sizeof(KernelParamsMetal));
-  [launch_params_buffer release];
-
-  stats.mem_free(image_bindings.allocatedSize);
-  [image_bindings release];
+#  if defined(MAC_OS_VERSION_15_0)
+  if (@available(macos 15.0, *)) {
+    if (mtlResidencySet) {
+      [mtlResidencySet endResidency];
+      [mtlResidencySet release];
+    }
+  }
+#  endif
 
   [mtlComputeCommandQueue release];
   [mtlGeneralCommandQueue release];
@@ -214,8 +248,72 @@ MetalDevice::~MetalDevice()
     [mtlCounterSampleBuffer release];
   }
   [mtlDevice release];
+}
 
-  image_info.free();
+void MetalDevice::add_to_residency_set(id<MTLResource> allocation)
+{
+#  if defined(MAC_OS_VERSION_15_0)
+  if (@available(macos 15.0, *)) {
+    if (allocation && mtlResidencySet) {
+      std::lock_guard<std::mutex> residency_lock(mtlResidencySet_mutex);
+      [mtlResidencySet addAllocation:allocation];
+      mtlResidencySet_dirty = true;
+    }
+  }
+#  endif
+}
+
+void MetalDevice::remove_from_residency_set(id<MTLResource> allocation)
+{
+#  if defined(MAC_OS_VERSION_15_0)
+  if (@available(macos 15.0, *)) {
+    if (allocation && mtlResidencySet) {
+      std::lock_guard<std::mutex> residency_lock(mtlResidencySet_mutex);
+      [mtlResidencySet removeAllocation:allocation];
+      mtlResidencySet_dirty = true;
+    }
+  }
+#  endif
+}
+
+void MetalDevice::metal_mem_alloc(id<MTLResource> allocation)
+{
+  if (allocation) {
+    stats.mem_alloc(allocation.allocatedSize);
+    add_to_residency_set(allocation);
+  }
+}
+
+void MetalDevice::metal_mem_free(id<MTLResource> allocation)
+{
+  if (allocation) {
+    stats.mem_free(allocation.allocatedSize);
+
+    std::lock_guard<std::recursive_mutex> lock(metal_mem_map_mutex);
+    /* Remove from the residency set immediately, but don't commit until next enqueue. A resource
+     * can be repurposed (e.g. a BVH refit) so a deferred removal can spuriously swap the
+     * remove-then-add to be an add-then-remove. */
+    remove_from_residency_set(allocation);
+
+    /* Defer the actual [release] until flush_delayed_free_list(), so the object stays alive for
+     * any command buffer still referencing it. */
+    delayed_free_list.push_back(allocation);
+  }
+}
+
+void MetalDevice::prepare_residency()
+{
+#  if defined(MAC_OS_VERSION_15_0)
+  if (@available(macos 15.0, *)) {
+    if (mtlResidencySet) {
+      std::lock_guard<std::mutex> residency_lock(mtlResidencySet_mutex);
+      if (mtlResidencySet_dirty) {
+        mtlResidencySet_dirty = false;
+        [mtlResidencySet commit];
+      }
+    }
+  }
+#  endif
 }
 
 bool MetalDevice::support_device(const uint /*kernel_features*/)
@@ -424,6 +522,10 @@ void MetalDevice::refresh_source_and_kernels_md5(MetalPipelineType pso_type)
   if (use_metalrt) {
     md5.append(string_printf("metalrt_features=%d", kernel_features & METALRT_FEATURE_MASK));
   }
+  if (pso_type != PSO_GENERIC) {
+    /* Include kernel_features since it's specialized but missed by the constant_values loop. */
+    md5.append(string_printf("kernel_features=%u", launch_params->data.kernel_features));
+  }
   kernels_md5[pso_type] = md5.get_hex();
 }
 
@@ -555,7 +657,6 @@ bool MetalDevice::is_texture(const KernelImageInfo &info)
 
 void MetalDevice::erase_allocation(device_memory &mem)
 {
-  stats.mem_free(mem.device_size);
   mem.device_pointer = 0;
   mem.device_size = 0;
 
@@ -608,7 +709,7 @@ MetalDevice::MetalMem *MetalDevice::generic_alloc(device_memory &mem)
               << string_human_readable_size(mem.memory_size()) << ")";
 
     mem.device_size = metal_buffer.allocatedSize;
-    stats.mem_alloc(mem.device_size);
+    metal_mem_alloc(metal_buffer);
 
     metal_buffer.label = [NSString stringWithFormat:@"%s", mem.log_name().c_str()];
 
@@ -698,7 +799,7 @@ void MetalDevice::generic_free(device_memory &mem)
     mem.shared_pointer = nullptr;
 
     /* Free device memory. */
-    delayed_free_list.push_back(mmem.mtlBuffer);
+    metal_mem_free(mmem.mtlBuffer);
     mmem.mtlBuffer = nil;
   }
 
@@ -753,6 +854,11 @@ void MetalDevice::mem_move_to_host(device_memory & /*mem*/)
 
 void MetalDevice::mem_copy_from(
     device_memory & /*mem*/, const size_t /*y*/, size_t /*w*/, const size_t /*h*/, size_t /*elem*/)
+{
+  /* No need to copy - Apple Silicon has Unified Memory Architecture. */
+}
+
+void MetalDevice::mem_or_from_device(device_memory & /*mem*/)
 {
   /* No need to copy - Apple Silicon has Unified Memory Architecture. */
 }
@@ -1115,7 +1221,7 @@ void MetalDevice::image_alloc(device_image &mem)
 
     mem.device_pointer = (device_ptr)mtlTexture;
     mem.device_size = size;
-    stats.mem_alloc(size);
+    metal_mem_alloc(mtlTexture);
 
     std::lock_guard<std::recursive_mutex> lock(metal_mem_map_mutex);
     unique_ptr<MetalMem> mmem = make_unique<MetalMem>();
@@ -1134,13 +1240,12 @@ void MetalDevice::image_alloc(device_image &mem)
       ssize_t min_buffer_length = sizeof(void *) * image_info.size();
       if (!image_bindings || (image_bindings.length < min_buffer_length)) {
         if (image_bindings) {
-          delayed_free_list.push_back(image_bindings);
-          stats.mem_free(image_bindings.allocatedSize);
+          metal_mem_free(image_bindings);
         }
         image_bindings = [mtlDevice newBufferWithLength:min_buffer_length
                                                 options:MTLResourceStorageModeShared];
 
-        stats.mem_alloc(image_bindings.allocatedSize);
+        metal_mem_alloc(image_bindings);
       }
     }
 
@@ -1183,12 +1288,12 @@ void MetalDevice::image_free(device_image &mem)
   if (mem.data_height == 0) {
     generic_free(mem);
   }
-  else if (metal_mem_map.count(&mem)) {
+  else if (metal_mem_map.contains(&mem)) {
     std::lock_guard<std::recursive_mutex> lock(metal_mem_map_mutex);
     MetalMem &mmem = *metal_mem_map.at(&mem);
 
     /* Free bindless texture. */
-    delayed_free_list.push_back(mmem.mtlTexture);
+    metal_mem_free(mmem.mtlTexture);
     mmem.mtlTexture = nil;
     erase_allocation(mem);
   }
@@ -1256,19 +1361,21 @@ void MetalDevice::build_bvh(BVH *bvh, Progress &progress, bool refit)
 
 void MetalDevice::free_bvh()
 {
+  /* metal_mem_free defers the actual release via delayed_free_list,
+   * since the old BVH may still be referenced by an in-flight command buffer. */
   for (id<MTLAccelerationStructure> &blas : unique_blas_array) {
-    [blas release];
+    metal_mem_free(blas);
   }
   unique_blas_array.clear();
   blas_array.clear();
 
   if (blas_buffer) {
-    [blas_buffer release];
+    metal_mem_free(blas_buffer);
     blas_buffer = nil;
   }
 
   if (accel_struct) {
-    [accel_struct release];
+    metal_mem_free(accel_struct);
     accel_struct = nil;
   }
 }
@@ -1285,15 +1392,20 @@ void MetalDevice::update_bvh(BVHMetal *bvh_metal)
   unique_blas_array = bvh_metal->unique_blas_array;
   blas_array = bvh_metal->blas_array;
 
+  /* Memory tracking and residency are managed here (not in BVHMetal::set_accel_struct)
+   * to pair with free_bvh and reflect actual device ownership. */
+  metal_mem_alloc(accel_struct);
+
   [accel_struct retain];
   for (id<MTLAccelerationStructure> &blas : unique_blas_array) {
     [blas retain];
+    metal_mem_alloc(blas);
   }
 
   // Allocate required buffers for BLAS array.
   uint64_t buffer_size = blas_array.size() * sizeof(uint64_t);
   blas_buffer = [mtlDevice newBufferWithLength:buffer_size options:MTLResourceStorageModeShared];
-  stats.mem_alloc(blas_buffer.allocatedSize);
+  metal_mem_alloc(blas_buffer);
 }
 
 CCL_NAMESPACE_END

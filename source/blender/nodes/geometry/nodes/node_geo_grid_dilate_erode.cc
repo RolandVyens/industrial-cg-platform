@@ -50,18 +50,18 @@ static void node_declare(NodeDeclarationBuilder &b)
       {int(Connectivity::Face),
        "FACE",
        0,
-       "Face",
-       "6-connectivity: affect voxels connected by faces only"},
+       N_("Face"),
+       N_("6-connectivity: affect voxels connected by faces only")},
       {int(Connectivity::FaceEdge),
        "FACE_EDGE",
        0,
-       "Edge",
-       "18-connectivity: affect voxels connected by faces or edges only"},
+       N_("Edge"),
+       N_("18-connectivity: affect voxels connected by faces or edges only")},
       {int(Connectivity::FaceEdgeVertex),
        "FACE_EDGE_VERTEX",
        0,
-       "Vertex",
-       "26-connectivity: affect voxels connected by faces, edges, or vertices"},
+       N_("Vertex"),
+       N_("26-connectivity: affect voxels connected by faces, edges, or vertices")},
       {0, nullptr, 0, nullptr, nullptr},
   };
 
@@ -69,18 +69,19 @@ static void node_declare(NodeDeclarationBuilder &b)
       {int(TilePolicy::Ignore),
        "IGNORE",
        0,
-       "Ignore",
-       "Ignore active tiles; they are neither dilated/eroded nor contribute to the operation"},
+       N_("Ignore"),
+       N_("Ignore active tiles; they are neither dilated/eroded nor contribute to the operation")},
       {int(TilePolicy::Expand),
        "EXPAND",
        0,
-       "Expand",
-       "Voxelize active tiles, apply operation, and leave in voxelized state"},
+       N_("Expand"),
+       N_("Voxelize active tiles, apply operation, and leave in voxelized state")},
       {int(TilePolicy::Preserve),
        "PRESERVE",
        0,
-       "Preserve",
-       "Keep tiles unchanged when possible, only voxelizing if necessary. More memory efficient"},
+       N_("Preserve"),
+       N_("Keep tiles unchanged when possible, only voxelizing if necessary. More memory "
+          "efficient")},
       {0, nullptr, 0, nullptr, nullptr},
   };
 
@@ -139,17 +140,14 @@ static void node_gather_link_search_ops(GatherLinkSearchOpParams &params)
 
   if (params.in_out() == SOCK_IN &&
       ELEM(structure_type, StructureType::Dynamic, StructureType::Single) &&
-      params.node_tree().typeinfo->validate_link(eNodeSocketDatatype(params.other_socket().type),
-                                                 SOCK_INT))
+      params.node_tree().typeinfo->validate_link(params.other_socket().type, SOCK_INT))
   {
     params.add_item(IFACE_("Steps"), [](LinkSearchOpParams &params) {
       bNode &node = params.add_node("GeometryNodeGridDilateAndErode"_ustr);
       params.update_and_connect_available_socket(node, "Steps"_ustr);
     });
   }
-  if (params.node_tree().typeinfo->validate_link(eNodeSocketDatatype(params.other_socket().type),
-                                                 data_type.value()))
-  {
+  if (params.node_tree().typeinfo->validate_link(params.other_socket().type, data_type.value())) {
     if (params.in_out() == SOCK_IN && supports_grid) {
       params.add_item(IFACE_("Grid"), [data_type](LinkSearchOpParams &params) {
         bNode &node = params.add_node("GeometryNodeGridDilateAndErode"_ustr);

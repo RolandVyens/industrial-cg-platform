@@ -24,7 +24,7 @@ static void node_declare(NodeDeclarationBuilder &b)
 {
   b.is_function_node();
 
-  b.add_input<decl::Int>("Value"_ustr).label_fn([](bNode node) {
+  b.add_input<decl::Int>("Value"_ustr).label_fn([](const bNode &node) {
     switch (node.custom1) {
       case NODE_INTEGER_MATH_POWER:
         return IFACE_("Base");
@@ -33,7 +33,7 @@ static void node_declare(NodeDeclarationBuilder &b)
     }
   });
 
-  b.add_input<decl::Int>("Value"_ustr, "Value_001"_ustr).label_fn([](bNode node) {
+  b.add_input<decl::Int>("Value"_ustr, "Value_001"_ustr).label_fn([](const bNode &node) {
     switch (node.custom1) {
       case NODE_INTEGER_MATH_MULTIPLY_ADD:
         return IFACE_("Multiplier");
@@ -43,7 +43,7 @@ static void node_declare(NodeDeclarationBuilder &b)
         return IFACE_("Value");
     }
   });
-  b.add_input<decl::Int>("Value"_ustr, "Value_002"_ustr).label_fn([](bNode node) {
+  b.add_input<decl::Int>("Value"_ustr, "Value_002"_ustr).label_fn([](const bNode &node) {
     switch (node.custom1) {
       case NODE_INTEGER_MATH_MULTIPLY_ADD:
         return IFACE_("Addend");
@@ -75,7 +75,7 @@ static void node_update(bNodeTree *ntree, bNode *node)
 
 static void int_math_input_defaults(bNode &node, const NodeIntegerMathOperation operation)
 {
-  bNodeSocket *socket_2 = bke::node_find_socket(node, SOCK_IN, "Value_001");
+  bNodeSocket *socket_2 = bke::node_find_socket(node, SOCK_IN, "Value_001"_ustr);
   BLI_assert(socket_2 != nullptr);
   int &value_2 = socket_2->default_value_typed<bNodeSocketValueInt>()->value;
 
@@ -112,9 +112,7 @@ class SocketSearchOp {
 
 static void node_gather_link_searches(GatherLinkSearchOpParams &params)
 {
-  if (!params.node_tree().typeinfo->validate_link(eNodeSocketDatatype(params.other_socket().type),
-                                                  SOCK_INT))
-  {
+  if (!params.node_tree().typeinfo->validate_link(params.other_socket().type, SOCK_INT)) {
     return;
   }
 

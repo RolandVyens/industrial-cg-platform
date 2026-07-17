@@ -18,12 +18,12 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.add_input<decl::Bool>("Selection"_ustr)
       .default_value(true)
       .hide_value()
-      .field_on_all()
+      .evaluated_geometry_field()
       .description("Either a curve or instance selection");
   b.add_input<decl::Bool>("Instances as Layers"_ustr)
       .default_value(true)
       .description("Create a separate layer for each instance");
-  b.add_output<decl::Geometry>("Grease Pencil"_ustr).propagate_all();
+  b.add_output<decl::Geometry>("Grease Pencil"_ustr).propagate_all_geometry();
 }
 
 static GreasePencil *curves_to_grease_pencil_with_one_layer(
@@ -88,10 +88,10 @@ static GreasePencil *curve_instances_to_grease_pencil_layers(
 
   VectorSet<Material *> all_materials;
   grease_pencil->add_layers_with_empty_drawings_for_eval(layer_num);
-  instance_selection.foreach_index([&](const int instance_i) {
+  instance_selection.foreach_index([&](const int instance_i, const int layer_i) {
     const bke::InstanceReference &reference = references[reference_handles[instance_i]];
 
-    bke::greasepencil::Layer &layer = grease_pencil->layer(instance_i);
+    bke::greasepencil::Layer &layer = grease_pencil->layer(layer_i);
     bke::greasepencil::Drawing &drawing = *grease_pencil->get_eval_drawing(layer);
     layer.set_name(reference.name());
     layer.set_local_transform(transforms[instance_i]);
@@ -229,7 +229,7 @@ static void node_register()
   ntype.nclass = NODE_CLASS_GEOMETRY;
   ntype.geometry_node_execute = node_geo_exec;
   ntype.declare = node_declare;
-  bke::node_type_size(ntype, 160, 100, 320);
+  ntype.default_width = bke::NodeWidth::_180;
 
   bke::node_register_type(ntype);
 }

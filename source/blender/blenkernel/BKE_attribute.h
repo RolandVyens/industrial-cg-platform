@@ -79,7 +79,7 @@ class AttributeOwner {
   GreasePencilDrawing *get_grease_pencil_drawing() const;
 };
 
-#define ATTR_DOMAIN_AS_MASK(domain) ((AttrDomainMask)((1 << (int)(domain))))
+#define ATTR_DOMAIN_AS_MASK(domain) ((AttrDomainMask)((1 << int(domain))))
 
 /* All domains that support color attributes. */
 #define ATTR_DOMAIN_MASK_COLOR \
@@ -117,6 +117,12 @@ std::optional<StringRefNull> BKE_attributes_active_name_get(AttributeOwner &owne
 void BKE_attributes_active_set(AttributeOwner &owner, StringRef name);
 void BKE_attributes_active_clear(AttributeOwner &owner);
 int *BKE_attributes_active_index_p(AttributeOwner &owner);
+/**
+ * After changing the active attribute index (e.g after removing an attribute) make sure that index
+ * is valid (is pointing to a non-internal attribute), f it is not, then set it to the first
+ * non-internal attribute.
+ */
+void BKE_attributes_active_index_validate(AttributeOwner &owner);
 
 std::optional<StringRef> BKE_attribute_from_index(AttributeOwner &owner,
                                                   int lookup_index,

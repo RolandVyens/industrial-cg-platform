@@ -410,7 +410,7 @@ float2 get_rotation(float4 viewport_res,
  * - ma2 reference the current line second point.
  * - ma3 reference the next adjacency point.
  * Note that we are rendering quad instances and not using any index buffer
- *(except for fills).
+ * (except for fills).
  *
  * Material : x is material index, y is stroke_id, z is point_id,
  *            w is aspect & rotation & hardness packed.
@@ -440,11 +440,11 @@ float4 gpencil_vertex(float4 viewport_res,
                       float4 &out_sspos_2,
                       float2 &out_sspos_3,
                       /* Object-space accumulated length from the start of the stroke
-                        (x: point 1, y: point 2, z: point density).
-                        Note: Z must be already given. */
+                       * (x: point 1, y: point 2, z: point density).
+                       * NOTE: Z must be already given. */
                       float3 &out_point_length,
                       /* Stroke aspect ratio and rotation direction
-                        (xy: aspect ration, zw: rotation direction). */
+                       * (xy: aspect ration, zw: rotation direction). */
                       float4 &out_aspect,
                       /* Stroke thickness and miter limits (x: clamped, y: unclamped,
                        * z: miter limit segment start, w: miter limit segment end). */
@@ -627,6 +627,9 @@ float4 gpencil_vertex(float4 viewport_res,
       out_aspect.zw = x_axis;
 
       out_ndc = dot_segment(float2(x, y), ss1, ss2, is_squares, viewport_res);
+
+      out_ndc /= out_ndc.w;
+      out_ndc.z = (use_curr) ? (ndc1.z / ndc1.w) : (ndc2.z / ndc2.w);
 
       out_uv.x = (use_curr) ? uv1.z : uv2.z;
     }

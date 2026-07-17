@@ -30,6 +30,7 @@
 #include "BKE_bvhutils.hh"
 #include "BKE_context.hh"
 #include "BKE_customdata.hh"
+#include "BKE_global.hh"
 #include "BKE_image.hh"
 #include "BKE_layer.hh"
 #include "BKE_material.hh"
@@ -250,7 +251,7 @@ static std::optional<float3> sample_texture_paint_color(
                                                  imbuf::interpolate_bilinear_wrap_byte(ibuf, u, v);
     rgba_uchar_to_float(rgba_f, rgba);
 
-    if ((ibuf->colormanage_flag & IMB_COLORMANAGE_IS_DATA) == 0) {
+    if (!ibuf->colorspace_is_data()) {
       IMB_colormanagement_colorspace_to_scene_linear_v3(rgba_f, ibuf->byte_buffer.colorspace);
     }
   }
@@ -296,7 +297,7 @@ static void apply_sampled_color(Main &bMain,
     }
 
     PaletteColor *color = BKE_palette_color_add(palette);
-    palette->active_color = BLI_listbase_count(&palette->colors) - 1;
+    palette->active_color = palette->colors.count() - 1;
     BKE_palette_color_set(color, sampled_color);
   }
   else {
@@ -485,8 +486,8 @@ static wmOperatorStatus sample_color_invoke(bContext *C, wmOperator *op, const w
 
   RNA_int_set_array(op->ptr, "location", event->mval);
 
-  int2 mval(std::clamp(event->mval[0], 0, (int)region->winx),
-            std::clamp(event->mval[1], 0, (int)region->winy));
+  int2 mval(std::clamp(event->mval[0], 0, int(region->winx)),
+            std::clamp(event->mval[1], 0, int(region->winy)));
   const float3 sampled_color = paint_sample_color(C, region, mval, use_merged_texture);
   const float3 average_color = sample_average_color(data, sampled_color);
   /* On initial invoke, we never sample to the palette. */
@@ -563,6 +564,10 @@ static wmOperatorStatus sample_color_modal(bContext *C, wmOperator *op, const wm
 
 static bool sample_color_poll(bContext *C)
 {
+  /* Requires a window with pixel-data. */
+  if (G.background) {
+    return false;
+  }
   return (image_paint_poll_ignore_tool(C) || vertex_paint_poll_ignore_tool(C) ||
           sculpt_mode_poll(C) || ed::greasepencil::grease_pencil_painting_poll(C) ||
           ed::greasepencil::grease_pencil_vertex_painting_poll(C));

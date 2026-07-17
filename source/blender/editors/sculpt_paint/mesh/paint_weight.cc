@@ -892,7 +892,7 @@ struct WeightPaintStroke final : public PaintStroke {
   void redraw(bool final) override;
   bool test_cancel() override;
   void update_step(wmOperator *op, PointerRNA *itemptr) override;
-  void done(bool is_cancel) override;
+  void done(bool is_cancel, bool stroke_started) override;
 };
 
 bool WeightPaintStroke::get_location(float out[3], const float mouse[2], bool force_original)
@@ -957,7 +957,7 @@ bool WeightPaintStroke::test_start(wmOperator *op, const float mouse[2])
   }
 
   /* check that multipaint groups are unlocked */
-  defbase_tot = BLI_listbase_count(&mesh.vertex_group_names);
+  defbase_tot = mesh.vertex_group_names.count();
   defbase_sel = BKE_object_defgroup_selected_get(&ob, defbase_tot, &defbase_tot_sel);
 
   if (ts.multipaint && defbase_tot_sel > 1) {
@@ -1099,9 +1099,7 @@ static float wpaint_get_active_weight(const MDeformVert &dv, const WeightPaintIn
 static void precompute_weight_values(
     Object &ob, const Brush &brush, WPaintData &wpd, WeightPaintInfo &wpi, Mesh &mesh)
 {
-  if (wpd.precomputed_weight_ready &&
-      !vwpaint::brush_use_accumulate_ex(brush, eObjectMode(ob.mode)))
-  {
+  if (wpd.precomputed_weight_ready && !vwpaint::brush_use_accumulate_ex(brush, ob.mode)) {
     return;
   }
 
@@ -1909,7 +1907,7 @@ void WeightPaintStroke::update_step(wmOperator * /*op*/, PointerRNA *itemptr)
   ED_region_tag_redraw(vc->region);
 }
 
-void WeightPaintStroke::done(bool /*is_cancel*/)
+void WeightPaintStroke::done(bool /*is_cancel*/, bool /*stroke_started*/)
 {
   Object &ob = *this->object;
 

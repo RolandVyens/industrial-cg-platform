@@ -17,9 +17,9 @@ DeviceScene::DeviceScene(Device *device)
       prim_index(device, "prim_index", MEM_GLOBAL),
       prim_object(device, "prim_object", MEM_GLOBAL),
       prim_time(device, "prim_time", MEM_GLOBAL),
-      tri_verts(device, "tri_verts", MEM_GLOBAL),
       tri_shader(device, "tri_shader", MEM_GLOBAL),
       tri_vindex(device, "tri_vindex", MEM_GLOBAL),
+      tri_verts(device, "tri_verts", MEM_GLOBAL),
       curves(device, "curves", MEM_GLOBAL),
       curve_keys(device, "curve_keys", MEM_GLOBAL),
       curve_segments(device, "curve_segments", MEM_GLOBAL),
@@ -60,7 +60,7 @@ DeviceScene::DeviceScene(Device *device)
       volume_step_size(device, "volume_step_size", MEM_GLOBAL),
       image_textures(device, "image_textures", MEM_GLOBAL),
       image_texture_tile_descriptors(device, "image_texture_tile_descriptors", MEM_GLOBAL),
-      image_texture_tile_request_mask(device, "image_texture_tile_request_mask", MEM_GLOBAL),
+      image_texture_tile_access_state(device, "image_texture_tile_access_state", MEM_GLOBAL),
       image_texture_udims(device, "image_texture_udims", MEM_GLOBAL)
 {
   memset((void *)&data, 0, sizeof(data));

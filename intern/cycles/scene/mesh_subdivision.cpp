@@ -20,6 +20,13 @@ void Mesh::tessellate(SubdParams &params)
   /* reset the number of subdivision vertices, in case the Mesh was not cleared
    * between calls or data updates */
   num_subd_added_verts = 0;
+  const int num_faces = get_num_subd_faces();
+
+  /* If there are no faces there is nothing to subdivide, and the required
+   * subd position attribute may not exist. */
+  if (num_faces == 0) {
+    return;
+  }
 
 #ifdef WITH_OPENSUBDIV
   OsdMesh osd_mesh(*this);
@@ -40,7 +47,6 @@ void Mesh::tessellate(SubdParams &params)
   }
 
   /* count patches */
-  const int num_faces = get_num_subd_faces();
   int num_patches = 0;
   for (int f = 0; f < num_faces; f++) {
     SubdFace face = get_subd_face(f);
@@ -96,6 +102,8 @@ void Mesh::tessellate(SubdParams &params)
   {
     vector<LinearQuadPatch> linear_patches(num_patches);
     LinearQuadPatch *patch = linear_patches.data();
+    const Attribute *subd_attr_P = subd_attributes.find(ATTR_STD_POSITION);
+    const packed_float3 *verts = subd_attr_P->data<packed_float3>();
 
     for (int f = 0; f < num_faces; f++) {
       SubdFace face = get_subd_face(f);

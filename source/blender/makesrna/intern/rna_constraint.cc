@@ -559,7 +559,7 @@ static void rna_Constraint_ik_type_set(PointerRNA *ptr, int value)
       case CONSTRAINT_IK_DISTANCE:
         break;
     }
-    ikdata->type = value;
+    ikdata->type = eConstraint_IK_Type(value);
   }
 }
 
@@ -656,7 +656,7 @@ static void rna_ArmatureConstraint_target_clear(ID *id, bConstraint *con, Main *
 {
   bArmatureConstraint *acon = static_cast<bArmatureConstraint *>(con->data);
 
-  BLI_freelistN(&acon->targets);
+  acon->targets.free_no_destruct();
 
   ed::object::constraint_dependency_tag_update(bmain, id_cast<Object *>(id), con);
 }
@@ -666,7 +666,7 @@ static void rna_ActionConstraint_mix_mode_set(PointerRNA *ptr, int value)
   bConstraint *con = static_cast<bConstraint *>(ptr->data);
   bActionConstraint *acon = static_cast<bActionConstraint *>(con->data);
 
-  acon->mix_mode = value;
+  acon->mix_mode = eActionConstraint_MixMode(value);
 
   /* The After mode can be computed in world space for efficiency
    * and backward compatibility, while Before or Split requires Local. */
@@ -865,7 +865,7 @@ static void rna_ShrinkwrapConstraint_face_cull_set(PointerRNA *ptr, int value)
 {
   bConstraint *con = static_cast<bConstraint *>(ptr->data);
   bShrinkwrapConstraint *swc = static_cast<bShrinkwrapConstraint *>(con->data);
-  swc->flag = (swc->flag & ~CON_SHRINKWRAP_PROJECT_CULL_MASK) | value;
+  swc->flag = (swc->flag & ~CON_SHRINKWRAP_PROJECT_CULL_MASK) | eShrinkwrap_Flags(value);
 }
 
 static bool rna_Constraint_cameraObject_poll(PointerRNA *ptr, PointerRNA value)

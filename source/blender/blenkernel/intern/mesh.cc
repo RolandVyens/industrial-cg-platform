@@ -45,7 +45,6 @@
 #include "BKE_anonymous_attribute_id.hh"
 #include "BKE_attribute.hh"
 #include "BKE_attribute_legacy_convert.hh"
-#include "BKE_attribute_math.hh"
 #include "BKE_attribute_storage.hh"
 #include "BKE_attribute_storage_blend_write.hh"
 #include "BKE_bake_data_block_id.hh"
@@ -242,6 +241,11 @@ static void mesh_copy_data(Main *bmain,
                        &mesh_dst->id,
                        reinterpret_cast<ID **>(&mesh_dst->key),
                        flag);
+    /* It has one user, but its owner reference (added in #id_copy_libmanagement_cb)
+     * is the real owner, remove the reference here, see: #159691. */
+    if ((flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0) {
+      id_us_min(&mesh_dst->key->id);
+    }
   }
 }
 
@@ -254,7 +258,7 @@ static void mesh_free_data(ID *id)
   CustomData_free(&mesh->fdata_legacy);
   CustomData_free(&mesh->corner_data);
   CustomData_free(&mesh->face_data);
-  BLI_freelistN(&mesh->vertex_group_names);
+  mesh->vertex_group_names.free_no_destruct();
   MEM_SAFE_DELETE(mesh->active_color_attribute);
   MEM_SAFE_DELETE(mesh->default_color_attribute);
   MEM_SAFE_DELETE(mesh->active_uv_map_attribute);
@@ -369,10 +373,6 @@ static void mesh_blend_write(BlendWriter *writer, ID *id, const void *id_address
     CustomData_blend_write_prepare(mesh->edge_data, edge_layers);
     CustomData_blend_write_prepare(mesh->face_data, face_layers);
     CustomData_blend_write_prepare(mesh->corner_data, loop_layers);
-    if (!is_undo) {
-      mesh_freestyle_marks_to_legacy(
-          attribute_data, mesh->edge_data, mesh->face_data, edge_layers, face_layers);
-    }
     if (attribute_data.attributes.is_empty()) {
       mesh->attribute_storage.dna_attributes = nullptr;
       mesh->attribute_storage.dna_attributes_num = 0;
@@ -429,23 +429,26 @@ static void mesh_blend_write(BlendWriter *writer, ID *id, const void *id_address
 static void mesh_blend_read_data(BlendDataReader *reader, ID *id)
 {
   Mesh *mesh = reinterpret_cast<Mesh *>(id);
-  BLO_read_pointer_array(reader, mesh->totcol, reinterpret_cast<void **>(&mesh->mat));
+  BLO_read_pointer_array_and_validate_size(reader, &mesh->mat, &mesh->totcol);
   /* This check added for python created meshes. */
   if (!mesh->mat) {
     mesh->totcol = 0;
   }
 
   /* Deprecated pointers to custom data layers are read here for backward compatibility
-   * with files where these were owning pointers rather than a view into custom data. */
-  BLO_read_struct_array(reader, MVert, mesh->verts_num, &mesh->mvert);
-  BLO_read_struct_array(reader, MEdge, mesh->edges_num, &mesh->medge);
-  BLO_read_struct_array(reader, MFace, mesh->totface_legacy, &mesh->mface);
-  BLO_read_struct_array(reader, MTFace, mesh->totface_legacy, &mesh->mtface);
-  BLO_read_struct_array(reader, MDeformVert, mesh->verts_num, &mesh->dvert);
-  BLO_read_struct_array(reader, TFace, mesh->totface_legacy, &mesh->tface);
-  BLO_read_struct_array(reader, MCol, mesh->totface_legacy, &mesh->mcol);
+   * with files where these were owning pointers rather than a view into custom data.
+   *
+   * Ignore failure to read, these arrays are not further accessed here and blend file
+   * read will abort before versioning runs. */
+  (void)BLO_read_array(reader, &mesh->mvert, mesh->verts_num);
+  (void)BLO_read_array(reader, &mesh->medge, mesh->edges_num);
+  (void)BLO_read_array(reader, &mesh->mface, mesh->totface_legacy);
+  (void)BLO_read_array(reader, &mesh->mtface, mesh->totface_legacy);
+  (void)BLO_read_array(reader, &mesh->dvert, mesh->verts_num);
+  (void)BLO_read_array(reader, &mesh->tface, mesh->totface_legacy);
+  (void)BLO_read_array(reader, &mesh->mcol, mesh->totface_legacy);
 
-  BLO_read_struct_array(reader, MSelect, mesh->totselect, &mesh->mselect);
+  BLO_read_array_and_validate_size(reader, &mesh->mselect, &mesh->totselect);
 
   BLO_read_struct_list(reader, bDeformGroup, &mesh->vertex_group_names);
 
@@ -474,8 +477,12 @@ static void mesh_blend_read_data(BlendDataReader *reader, ID *id)
   if (mesh->face_offset_indices) {
     mesh->runtime->face_offsets_sharing_info = BLO_read_shared(
         reader, &mesh->face_offset_indices, [&]() {
-          BLO_read_int32_array(reader, mesh->faces_num + 1, &mesh->face_offset_indices);
-          return implicit_sharing::info_for_mem_free(mesh->face_offset_indices);
+          if (!BLO_read_array(reader, &mesh->face_offset_indices, int64_t(mesh->faces_num) + 1)) {
+            mesh->faces_num = 0;
+          }
+          return mesh->face_offset_indices ?
+                     implicit_sharing::info_for_mem_free(mesh->face_offset_indices) :
+                     nullptr;
         });
   }
 
@@ -642,6 +649,18 @@ void mesh_ensure_active_uv_map(Mesh &mesh)
   const StringRefNull found = get_first_uv_map_name(mesh);
   if (!found.is_empty()) {
     mesh.uv_maps_active_set(found);
+  }
+}
+
+void mesh_ensure_default_uv_map(Mesh &mesh)
+{
+  const StringRefNull default_name = mesh.default_uv_map_name();
+  if (!default_name.is_empty()) {
+    return;
+  }
+  const StringRefNull found = get_first_uv_map_name(mesh);
+  if (!found.is_empty()) {
+    mesh.uv_maps_default_set(found);
   }
 }
 
@@ -959,18 +978,30 @@ void mesh_apply_spatial_organization(Mesh &mesh)
     }
     if (iter.domain == bke::AttrDomain::Face) {
       bke::GSpanAttributeWriter attribute = attributes_for_write.lookup_for_write_span(iter.name);
-      const CPPType &type = attribute.span.type();
+      GMutableSpan attribute_data = attribute.span;
+      const CPPType &type = attribute_data.type();
       GArray<> new_values(type, new_face_order.size());
-      bke::attribute_math::gather(attribute.span, new_face_order, new_values.as_mutable_span());
-      attribute.span.copy_from(new_values.as_span());
+
+      int new_face_idx = 0;
+      for (const int old_face_idx : new_face_order) {
+        type.copy_construct(attribute_data[old_face_idx], new_values[new_face_idx]);
+        new_face_idx++;
+      }
+      attribute_data.copy_from(new_values.as_span());
       attribute.finish();
     }
     else if (iter.domain == bke::AttrDomain::Point) {
       bke::GSpanAttributeWriter attribute = attributes_for_write.lookup_for_write_span(iter.name);
-      const CPPType &type = attribute.span.type();
+      GMutableSpan attribute_data = attribute.span;
+      const CPPType &type = attribute_data.type();
       GArray<> new_values(type, new_vert_order.size());
-      bke::attribute_math::gather(attribute.span, new_vert_order, new_values.as_mutable_span());
-      attribute.span.copy_from(new_values.as_span());
+
+      int new_vert_idx = 0;
+      for (const int old_vert_idx : new_vert_order) {
+        type.copy_construct(attribute_data[old_vert_idx], new_values[new_vert_idx]);
+        new_vert_idx++;
+      }
+      attribute_data.copy_from(new_values.as_span());
       attribute.finish();
     }
     else if (iter.domain == bke::AttrDomain::Corner && iter.name != ".corner_vert") {
@@ -1080,7 +1111,7 @@ static void mesh_clear_geometry(Mesh &mesh)
 
 static void clear_attribute_names(Mesh &mesh)
 {
-  BLI_freelistN(&mesh.vertex_group_names);
+  mesh.vertex_group_names.free_no_destruct();
   MEM_SAFE_DELETE(mesh.active_color_attribute);
   MEM_SAFE_DELETE(mesh.default_color_attribute);
   MEM_SAFE_DELETE(mesh.active_uv_map_attribute);
@@ -1441,7 +1472,7 @@ void BKE_mesh_copy_parameters_for_eval(Mesh *me_dst, const Mesh *me_src)
   copy_attribute_names(*me_src, *me_dst);
 
   /* Copy vertex group names. */
-  BLI_assert(BLI_listbase_is_empty(&me_dst->vertex_group_names));
+  BLI_assert(me_dst->vertex_group_names.is_empty());
   BKE_defgroup_copy_list(&me_dst->vertex_group_names, &me_src->vertex_group_names);
 
   /* Copy materials. */
@@ -2138,7 +2169,7 @@ void BKE_mesh_mselect_validate(Mesh *mesh)
   mesh->mselect = mselect_dst;
 }
 
-int BKE_mesh_mselect_find(const Mesh *mesh, int index, int type)
+int BKE_mesh_mselect_find(const Mesh *mesh, int index, eMSelect_Type type)
 {
   BLI_assert(ELEM(type, ME_VSEL, ME_ESEL, ME_FSEL));
 
@@ -2151,7 +2182,7 @@ int BKE_mesh_mselect_find(const Mesh *mesh, int index, int type)
   return -1;
 }
 
-int BKE_mesh_mselect_active_get(const Mesh *mesh, int type)
+int BKE_mesh_mselect_active_get(const Mesh *mesh, eMSelect_Type type)
 {
   BLI_assert(ELEM(type, ME_VSEL, ME_ESEL, ME_FSEL));
 
@@ -2163,7 +2194,7 @@ int BKE_mesh_mselect_active_get(const Mesh *mesh, int type)
   return -1;
 }
 
-void BKE_mesh_mselect_active_set(Mesh *mesh, int index, int type)
+void BKE_mesh_mselect_active_set(Mesh *mesh, int index, eMSelect_Type type)
 {
   const int msel_index = BKE_mesh_mselect_find(mesh, index, type);
 
@@ -2172,7 +2203,7 @@ void BKE_mesh_mselect_active_set(Mesh *mesh, int index, int type)
     mesh->mselect = static_cast<MSelect *>(
         MEM_realloc_uninitialized(mesh->mselect, sizeof(MSelect) * (mesh->totselect + 1)));
     mesh->mselect[mesh->totselect].index = index;
-    mesh->mselect[mesh->totselect].type = type;
+    mesh->mselect[mesh->totselect].type = eMSelect_Type(type);
     mesh->totselect++;
   }
   else if (msel_index != mesh->totselect - 1) {

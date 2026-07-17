@@ -2,18 +2,77 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+#include "BLI_string_utf8.h"
+
+#include "BKE_gtest_base.hh"
 #include "BKE_idprop.hh"
+
 #include "testing/testing.h"
 
 namespace blender::bke::tests {
 
-TEST(idproperties, CreateGroup)
+class IDPropertyTest : public BlenderGTestBase {};
+
+/* U+1D400 is four bytes (0xF0 0x9D 0x90 0x80). */
+static const char *idp_utf8_4byte =
+    "\U0001D400\U0001D400\U0001D400\U0001D400\U0001D400"; /* 5 x 4 bytes = 20 bytes. */
+
+static bool idp_string_is_valid_utf8(const IDProperty *prop)
+{
+  return BLI_str_utf8_invalid_byte(IDP_string_get(prop), size_t(prop->len - 1)) == -1;
+}
+
+TEST_F(IDPropertyTest, NewStringMaxSizeUtf8Truncate)
+{
+  /* A truncated property must never be left as invalid UTF-8. */
+
+  IDProperty *prop = IDP_NewStringMaxSize(idp_utf8_4byte, 8, "test");
+  EXPECT_TRUE(idp_string_is_valid_utf8(prop));
+  EXPECT_STREQ(IDP_string_get(prop), "\U0001D400");
+  EXPECT_EQ(prop->len, 5);
+  IDP_FreeProperty(prop);
+
+  /* A code-point ending exactly at the limit must not be needlessly dropped. */
+  prop = IDP_NewStringMaxSize(idp_utf8_4byte, 9, "test");
+  EXPECT_TRUE(idp_string_is_valid_utf8(prop));
+  EXPECT_STREQ(IDP_string_get(prop), "\U0001D400\U0001D400");
+  EXPECT_EQ(prop->len, 9);
+  IDP_FreeProperty(prop);
+}
+
+TEST_F(IDPropertyTest, AssignStringMaxSizeUtf8Truncate)
+{
+  /* Re-assignment has its own storage path that must equally avoid invalid UTF-8. */
+  IDProperty *prop = IDP_NewString("", "test");
+  IDP_AssignStringMaxSize(prop, idp_utf8_4byte, 8);
+  EXPECT_TRUE(idp_string_is_valid_utf8(prop));
+  EXPECT_STREQ(IDP_string_get(prop), "\U0001D400");
+  EXPECT_EQ(prop->len, 5);
+  IDP_FreeProperty(prop);
+}
+
+TEST_F(IDPropertyTest, AssignStringMaxSizeBytesIgnoreUtf8)
+{
+  /* Binary data must survive truncation byte-for-byte, never truncated as UTF-8 code-points. */
+  IDPropertyTemplate val = {};
+  val.string.subtype = IDP_STRING_SUB_BYTE;
+  IDProperty *prop = IDP_New(IDP_STRING, &val, "test");
+  ASSERT_EQ(prop->subtype, IDP_STRING_SUB_BYTE);
+
+  IDP_AssignStringMaxSize(prop, idp_utf8_4byte, 4);
+  EXPECT_EQ(prop->len, 3);
+  EXPECT_NE(BLI_str_utf8_invalid_byte(IDP_string_get(prop), size_t(prop->len)), -1);
+
+  IDP_FreeProperty(prop);
+}
+
+TEST_F(IDPropertyTest, CreateGroup)
 {
   IDProperty *prop = idprop::create_group("test").release();
   IDP_FreeProperty(prop);
 }
 
-TEST(idproperties, AddToGroup)
+TEST_F(IDPropertyTest, AddToGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_EQ(IDP_GetPropertyFromGroup(group, "a"), nullptr);
@@ -29,7 +88,7 @@ TEST(idproperties, AddToGroup)
   IDP_FreeProperty(group);
 }
 
-TEST(idproperties, ReplaceInGroup)
+TEST_F(IDPropertyTest, ReplaceInGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_TRUE(IDP_AddToGroup(group, idprop::create("a", 3.0f).release()));
@@ -41,7 +100,7 @@ TEST(idproperties, ReplaceInGroup)
   IDP_FreeProperty(group);
 }
 
-TEST(idproperties, RemoveFromGroup)
+TEST_F(IDPropertyTest, RemoveFromGroup)
 {
   IDProperty *group = idprop::create_group("test").release();
   EXPECT_EQ(IDP_GetPropertyFromGroup(group, "a"), nullptr);
@@ -54,7 +113,7 @@ TEST(idproperties, RemoveFromGroup)
   IDP_FreeProperty(group);
 }
 
-TEST(idproperties, ReplaceGroupInGroup)
+TEST_F(IDPropertyTest, ReplaceGroupInGroup)
 {
   IDProperty *group1 = idprop::create_group("test").release();
   IDP_AddToGroup(group1, idprop::create("a", 1).release());
@@ -72,7 +131,7 @@ TEST(idproperties, ReplaceGroupInGroup)
   IDP_FreeProperty(group2);
 }
 
-TEST(idproperties, SyncGroupValues)
+TEST_F(IDPropertyTest, SyncGroupValues)
 {
   IDProperty *group1 = idprop::create_group("test").release();
   IDProperty *group2 = idprop::create_group("test").release();
@@ -93,7 +152,7 @@ TEST(idproperties, SyncGroupValues)
   IDP_FreeProperty(group2);
 }
 
-TEST(idproperties, ReprGroup)
+TEST_F(IDPropertyTest, ReprGroup)
 {
   auto repr_fn = [](IDProperty *prop) -> std::string {
     uint result_len;

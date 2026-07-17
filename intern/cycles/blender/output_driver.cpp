@@ -30,7 +30,7 @@ bool BlenderOutputDriver::read_render_tile(const Tile &tile)
   }
 
   /* layer will be missing if it was disabled in the UI */
-  if (BLI_listbase_is_empty(&b_rr->layers)) {
+  if (b_rr->layers.is_empty()) {
     return false;
   }
 
@@ -92,7 +92,7 @@ void BlenderOutputDriver::write_render_tile(const Tile &tile)
   }
 
   /* Layer will be missing if it was disabled in the UI. */
-  if (BLI_listbase_is_empty(&b_rr->layers)) {
+  if (b_rr->layers.is_empty()) {
     return;
   }
 

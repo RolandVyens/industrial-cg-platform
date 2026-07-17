@@ -15,10 +15,10 @@ namespace blender::nodes::node_geo_input_mesh_face_neighbors_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_output<decl::Int>("Vertex Count"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("Number of edges or points in the face");
   b.add_output<decl::Int>("Face Count"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("Number of faces which share an edge with the face");
 }
 
@@ -85,15 +85,10 @@ class FaceNeighborCountFieldInput final : public bke::MeshFieldInput {
     return construct_neighbor_count_varray(mesh, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random constant hash. */
-    return 823543774;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const FaceNeighborCountFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
@@ -123,15 +118,10 @@ class FaceVertexCountFieldInput final : public bke::MeshFieldInput {
     return construct_vertex_count_varray(mesh, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random constant hash. */
-    return 236235463634;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const FaceVertexCountFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

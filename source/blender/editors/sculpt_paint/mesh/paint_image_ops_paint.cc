@@ -362,7 +362,7 @@ struct ImagePaintStroke final : public PaintStroke {
   void update_step(wmOperator *op, PointerRNA *itemptr) override;
   void redraw(bool final) override;
   bool test_cancel() override;
-  void done(bool is_cancel) override;
+  void done(bool is_cancel, bool stroke_started) override;
 
   void update_for_exec(bContext *C,
                        const Brush &brush,
@@ -377,6 +377,11 @@ struct ImagePaintStroke final : public PaintStroke {
 void ImagePaintStroke::update_step(wmOperator *op, PointerRNA *itemptr)
 {
   PaintOperation *pop = static_cast<PaintOperation *>(mode_data_.get());
+  BLI_assert(pop != nullptr);
+  if (pop == nullptr) {
+    return;
+  }
+
   Paint *paint = BKE_paint_get_active_from_context(this->evil_C);
   bke::PaintRuntime *paint_runtime = paint->runtime;
   Brush *brush = BKE_paint_brush(paint);
@@ -428,14 +433,24 @@ void ImagePaintStroke::update_step(wmOperator *op, PointerRNA *itemptr)
 void ImagePaintStroke::redraw(bool final)
 {
   PaintOperation *pop = static_cast<PaintOperation *>(mode_data_.get());
+  BLI_assert(pop != nullptr);
+  if (pop == nullptr) {
+    return;
+  }
+
   pop->mode->paint_stroke_redraw(this->evil_C, pop->stroke_handle, final);
 }
 
-void ImagePaintStroke::done(const bool is_cancel)
+void ImagePaintStroke::done(const bool is_cancel, const bool /*stroke_started*/)
 {
   Scene *scene = CTX_data_scene(this->evil_C);
   ToolSettings *toolsettings = scene->toolsettings;
   PaintOperation *pop = static_cast<PaintOperation *>(mode_data_.get());
+
+  if (!pop) {
+    return;
+  }
+
   const Paint *paint = BKE_paint_get_active_from_context(this->evil_C);
   Brush *brush = BKE_paint_brush(&toolsettings->imapaint.paint);
 

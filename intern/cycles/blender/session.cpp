@@ -229,7 +229,7 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
     }
 
     const RenderDisplayWindow display_window = render_display_window_from_buffer_params(buffer_params);
-    image_buffer->flags |= blender::IB_has_display_window;
+    image_buffer->flags |= blender::ImBufFlags::HasDisplayWindow;
     image_buffer->display_size[0] = display_window.display_width;
     image_buffer->display_size[1] = display_window.display_height;
     image_buffer->display_offset[0] = display_window.display_offset_x;
@@ -626,7 +626,8 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
 
   /* Compute render passes and film settings. */
   sync->sync_render_passes(*b_rlay, b_view_layer);
-  const int num_views = BLI_listbase_count(&b_rr->views);
+
+  const int num_views = b_rr->views.count();
   const bool is_multi_view = (num_views > 1);
   bool use_overscan = offline_render_needs_overscan(b_scene, b_render);
   if (use_overscan && is_multi_view) {
@@ -643,14 +644,32 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
   blender::Scene *input_scene = DEG_get_input_scene(b_depsgraph);
   blender::Scene *evaluated_scene = DEG_get_evaluated_scene(b_depsgraph);
   const bool compositor_needs_deep = blender::RE_scene_has_deep_exr_file_output(input_scene);
-  const bool direct_deep_without_compositor = evaluated_scene &&
-                                              evaluated_scene->r.im_format.imtype ==
-                                                  blender::R_IMF_IMTYPE_DEEP_EXR &&
+  const bool is_deep_exr_format = evaluated_scene &&
+                                  evaluated_scene->r.im_format.imtype ==
+                                      blender::R_IMF_IMTYPE_DEEP_EXR;
+  const bool direct_deep_without_compositor = is_deep_exr_format &&
                                               !compositor_needs_deep;
   direct_deep_without_compositor_ = direct_deep_without_compositor;
   skip_full_buffer_readback_for_background_direct_deep_ = background &&
                                                           direct_deep_without_compositor &&
                                                           !is_multi_view;
+  std::string direct_deep_filepath;
+  if (is_deep_exr_format) {
+    char deep_filepath_cstr[FILE_MAX];
+    if (render_output_filepath_for_still(b_data, evaluated_scene, b_render, deep_filepath_cstr)) {
+      direct_deep_filepath = deep_filepath_cstr;
+    }
+    else {
+      direct_deep_filepath = std::string(b_render->pic);
+      const size_t dot_pos = direct_deep_filepath.rfind('.');
+      if (dot_pos == std::string::npos || direct_deep_filepath.substr(dot_pos) != ".exr") {
+        if (dot_pos != std::string::npos) {
+          direct_deep_filepath = direct_deep_filepath.substr(0, dot_pos);
+        }
+        direct_deep_filepath += ".exr";
+      }
+    }
+  }
   bool deep_output_blocked = false;
   bool deep_output_error_reported = false;
 
@@ -687,9 +706,6 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
      * Also auto-enable if compositor has Deep EXR File Output node.
      * Get fresh scene from depsgraph for accurate im_format reading.
      * Only set up once on the first view. */
-    const bool is_deep_exr_format = (evaluated_scene &&
-                                     evaluated_scene->r.im_format.imtype ==
-                                         blender::R_IMF_IMTYPE_DEEP_EXR);
     const bool need_deep_output = is_deep_exr_format || compositor_needs_deep;
 
     if (is_multi_view && need_deep_output) {
@@ -723,6 +739,8 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                const std::string &filepath,
                int compression,
                bool use_half_float,
+               float deep_merge_tolerance,
+               float deep_alpha_merge_tolerance,
                bool has_display_window,
                int display_width,
                int display_height,
@@ -744,7 +762,9 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                   display_offset_x,
                   display_offset_y,
                   data_offset_x,
-                  data_offset_y);
+                  data_offset_y,
+                  deep_merge_tolerance,
+                  deep_alpha_merge_tolerance);
             });
 
         session->set_deep_output_driver(std::move(new_driver));
@@ -856,10 +876,6 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
 
   /* Finalize deep output if enabled or Deep EXR format selected - write deep EXR file.
    * Also finalize for compositor Deep EXR File Output nodes. */
-  blender::Scene *final_evaluated_scene = DEG_get_evaluated_scene(b_depsgraph);
-  const bool is_deep_exr_format = (final_evaluated_scene &&
-                                   final_evaluated_scene->r.im_format.imtype ==
-                                       blender::R_IMF_IMTYPE_DEEP_EXR);
   const bool finalize_deep = (is_deep_exr_format || compositor_needs_deep) && !deep_output_blocked;
   if (finalize_deep && !session->progress.get_cancel()) {
     DeepOutputDriver *deep_driver = session->get_deep_output_driver();
@@ -952,25 +968,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
       }
 
       if (is_deep_exr_format) {
-        /* Construct deep output path. */
-        char deep_filepath_cstr[FILE_MAX];
-        std::string deep_filepath;
-        if (render_output_filepath_for_still(b_data, final_evaluated_scene, b_render, deep_filepath_cstr))
-        {
-          deep_filepath = deep_filepath_cstr;
-        }
-        else {
-          deep_filepath = std::string(b_render->pic);
-          size_t dot_pos = deep_filepath.rfind('.');
-          if (dot_pos == std::string::npos || deep_filepath.substr(dot_pos) != ".exr") {
-            if (dot_pos != std::string::npos) {
-              deep_filepath = deep_filepath.substr(0, dot_pos);
-            }
-            deep_filepath += ".exr";
-          }
-        }
-
-        deep_driver->finalize_deep_output(deep_filepath);
+        deep_driver->finalize_deep_output(direct_deep_filepath);
         if (!compositor_needs_deep) {
           /* Direct-only Deep EXR no longer needs the large processed cache or resolved beauty /
            * sample-count host buffers after the file has been written. Release them here while
@@ -989,7 +987,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
         blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
         if (render_result) {
           unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_data(
-              deep_driver->get_processed_deep_data());
+              deep_driver->get_unmerged_processed_deep_data());
           if (processed_data) {
             unique_ptr<blender::RenderDeepData> converted_data =
                 make_unique<blender::RenderDeepData>();
@@ -1490,6 +1488,12 @@ void BlenderSession::view_draw(const int w, const int h)
   /* pause in redraw in case update is not being called due to final render */
   session->set_pause(BlenderSync::get_session_pause(*b_scene, background));
 
+  /* Update navigating state. */
+  const bool dimensions_changed = (width != w || height != h || pixelsize != blender::U.pixelsize);
+  const bool is_navigating = region_view3d_navigating_or_transforming(b_rv3d) ||
+                             dimensions_changed;
+  session->set_navigating(is_navigating);
+
   /* before drawing, we verify camera and viewport size changes, because
    * we do not get update callbacks for those, we must detect them here */
   if (session->ready_to_reset()) {
@@ -1497,8 +1501,7 @@ void BlenderSession::view_draw(const int w, const int h)
 
     /* If dimensions changed, reset. We need to check pixel size here because
      * it's only valid during drawing, as it can change per window. */
-    const float new_pixelsize = blender::U.pixelsize;
-    if (width != w || height != h || pixelsize != new_pixelsize) {
+    if (dimensions_changed) {
       if (start_resize_time == 0.0) {
         /* don't react immediately to resizes to avoid flickery resizing
          * of the viewport, and some window managers changing the window
@@ -1512,7 +1515,7 @@ void BlenderSession::view_draw(const int w, const int h)
       else {
         width = w;
         height = h;
-        pixelsize = new_pixelsize;
+        pixelsize = blender::U.pixelsize;
         reset = true;
       }
     }

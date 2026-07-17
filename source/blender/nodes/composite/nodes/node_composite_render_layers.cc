@@ -69,7 +69,7 @@ static BaseSocketDeclarationBuilder &declare_existing_output(NodeDeclarationBuil
         .dimensions(dimensions)
         .structure_type(StructureType::Dynamic);
   }
-  return b.add_output(eNodeSocketDatatype(output->type), output->identifier_ustr())
+  return b.add_output(output->type, output->identifier_ustr())
       .structure_type(StructureType::Dynamic);
 }
 
@@ -359,7 +359,7 @@ class RenderLayerOperation : public NodeOperation {
       Result pass = this->context().get_pass(scene, view_layer, output->identifier);
       result.set_type(pass.type());
       result.set_precision(pass.precision());
-      result.steal_data(pass);
+      result.share_data(pass);
       pass.release();
     }
   }
@@ -395,7 +395,7 @@ static void node_register()
   ntype.draw_buttons = node_draw_buttons;
   ntype.get_compositor_operation = get_compositor_operation;
   ntype.get_extra_info = node_extra_info;
-  bke::node_type_size_preset(ntype, bke::eNodeSizePreset::Large);
+  ntype.default_width = bke::NodeWidth::_240;
 
   bke::node_register_type(ntype);
 }

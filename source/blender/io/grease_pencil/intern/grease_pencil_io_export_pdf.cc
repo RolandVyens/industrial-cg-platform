@@ -14,6 +14,9 @@
 #include "DNA_grease_pencil_types.h"
 #include "DNA_scene_types.h"
 
+#include "BKE_curves.hh"
+#include "GEO_resample_curves.hh"
+
 #include "grease_pencil_io.hh"
 #include "grease_pencil_io_intern.hh"
 
@@ -59,7 +62,7 @@ class PDFExporter : public GreasePencilExporter {
 bool PDFExporter::export_scene(Scene &scene, StringRefNull filepath)
 {
   bool result = false;
-  Object &ob_eval = *DEG_get_evaluated(context_.depsgraph, params_.object);
+  Object *ob_eval = DEG_get_evaluated(context_.depsgraph, params_.object);
 
   if (!create_document()) {
     return false;
@@ -78,16 +81,21 @@ bool PDFExporter::export_scene(Scene &scene, StringRefNull filepath)
     case ExportParams::FrameMode::Selected: {
       case ExportParams::FrameMode::Scene:
         const bool only_selected = (params_.frame_mode == ExportParams::FrameMode::Selected);
-        if (only_selected && ob_eval.type != OB_GREASE_PENCIL) {
+        if (only_selected && (!ob_eval || ob_eval->type != OB_GREASE_PENCIL)) {
           /* For exporting "Selected Frames", the active object is required to be a grease pencil
            * object, from which we will read selected frames from. */
           break;
         }
         const int orig_frame = scene.r.cfra;
         for (int frame_number = scene.r.sfra; frame_number <= scene.r.efra; frame_number++) {
-          GreasePencil &grease_pencil = *id_cast<GreasePencil *>(ob_eval.data);
-          if (only_selected && !this->is_selected_frame(grease_pencil, frame_number)) {
-            continue;
+          if (only_selected) {
+            if (!ob_eval) {
+              break;
+            }
+            GreasePencil &grease_pencil = *id_cast<GreasePencil *>(ob_eval->data);
+            if (!this->is_selected_frame(grease_pencil, frame_number)) {
+              continue;
+            }
           }
 
           scene.r.cfra = frame_number;
@@ -136,7 +144,22 @@ void PDFExporter::export_grease_pencil_objects(const int frame_number)
         continue;
       }
 
-      export_grease_pencil_layer(*ob_eval, *layer, *drawing);
+      const bke::CurvesGeometry &curves = drawing->strokes();
+      if (curves.has_curve_with_type(
+              {CURVE_TYPE_CATMULL_ROM, CURVE_TYPE_BEZIER, CURVE_TYPE_NURBS}))
+      {
+        IndexMaskMemory memory;
+        const IndexMask non_poly_selection = curves.indices_for_curve_type(CURVE_TYPE_POLY, memory)
+                                                 .complement(curves.curves_range(), memory);
+        Drawing export_drawing;
+        export_drawing.strokes_for_write() = geometry::resample_to_evaluated(curves,
+                                                                             non_poly_selection);
+        export_drawing.tag_topology_changed();
+        export_grease_pencil_layer(*ob_eval, *layer, export_drawing);
+      }
+      else {
+        export_grease_pencil_layer(*ob_eval, *layer, *drawing);
+      }
     }
   }
 }
@@ -197,7 +220,7 @@ constexpr double default_pdf_ppi = 72.0;
 bool PDFExporter::add_page(Scene &scene)
 {
   page_ = HPDF_AddPage(pdf_);
-  if (!pdf_) {
+  if (!page_) {
     std::cout << "error: cannot create PdfPage\n";
     return false;
   }

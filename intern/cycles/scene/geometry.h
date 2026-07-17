@@ -114,6 +114,18 @@ class Geometry : public Node {
   bool has_volume;         /* Set in the device_update_flags(). */
   bool has_surface_bssrdf; /* Set in the device_update_flags(). */
 
+  /* Position attribute. */
+  const packed_float3 *get_position() const;
+  packed_float3 *get_position_for_write();
+  void tag_position_modified();
+  bool position_is_modified() const;
+
+  /* Radius attribute. */
+  const float *get_radius() const;
+  float *get_radius_for_write();
+  void tag_radius_modified();
+  bool radius_is_modified() const;
+
   /* Update Flags */
   bool need_update_rebuild;
   bool need_update_bvh_for_offset;
@@ -131,7 +143,7 @@ class Geometry : public Node {
   virtual void apply_transform(const Transform &tfm, const bool apply_to_motion) = 0;
 
   /* Attribute Requests */
-  bool need_attribute(Scene *scene, AttributeStandard std);
+  bool need_attribute(const Scene *scene, AttributeStandard std);
   bool need_attribute(Scene *scene, ustring name);
 
   AttributeRequestSet needed_attributes();
@@ -250,6 +262,8 @@ class GeometryManager {
   /* Constructor/Destructor */
   GeometryManager();
   ~GeometryManager();
+
+  void update_interactive_motion(Scene *scene);
 
   /* Device Updates */
   void device_update_preprocess(Device *device, Scene *scene, Progress &progress);

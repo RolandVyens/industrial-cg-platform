@@ -189,8 +189,12 @@ ccl_device_inline void film_write_lightgroup_split_pass(KernelGlobals kg,
                                                         const int lightgroup,
                                                         const Spectrum contribution)
 {
+  if (pass_offset == PASS_UNUSED) {
+    return;
+  }
+
   const int split_lightgroup = film_get_split_lightgroup_index(kg, lightgroup);
-  if (split_lightgroup == LIGHTGROUP_NONE || pass_offset == PASS_UNUSED) {
+  if (split_lightgroup == LIGHTGROUP_NONE) {
     return;
   }
 
@@ -240,17 +244,18 @@ ccl_device void film_write_adaptive_buffer(KernelGlobals kg,
 }
 
 /* Write the volume and surface contribution for volume scattering probability guiding. */
-ccl_device_inline void film_write_volume_scattering_guiding_pass(KernelGlobals kg,
-                                                                 ccl_global float *ccl_restrict
-                                                                     buffer,
-                                                                 const uint32_t path_flag,
-                                                                 const Spectrum contribution)
+ccl_device_inline void film_write_volume_scattering_guiding_pass(
+    KernelGlobals kg,
+    ccl_global float *ccl_restrict buffer,
+    const PathRayVisibility path_visibility,
+    const uint32_t path_flag,
+    const Spectrum contribution)
 {
   int pass_offset = PASS_UNUSED;
   if (path_flag & PATH_RAY_VOLUME_PRIMARY_TRANSMIT) {
     pass_offset = kernel_data.film.pass_volume_transmit;
   }
-  else if (path_flag & PATH_RAY_VOLUME_SCATTER) {
+  else if (path_visibility & PATH_RAY_VISIBILITY_VOLUME_SCATTER) {
     pass_offset = kernel_data.film.pass_volume_scatter;
   }
 
@@ -383,6 +388,7 @@ ccl_device_forceinline void film_write_shadow_catcher_bounce_data(
 
 /* Write combined pass. */
 ccl_device_inline void film_write_combined_pass(KernelGlobals kg,
+                                                const PathRayVisibility path_visibility,
                                                 const uint32_t path_flag,
                                                 const int sample,
                                                 const Spectrum contribution,
@@ -401,7 +407,7 @@ ccl_device_inline void film_write_combined_pass(KernelGlobals kg,
   }
 
   film_write_adaptive_buffer(kg, sample, contribution, buffer);
-  film_write_volume_scattering_guiding_pass(kg, buffer, path_flag, contribution);
+  film_write_volume_scattering_guiding_pass(kg, buffer, path_visibility, path_flag, contribution);
 
 #ifdef __DEEP_OUTPUT__
   /* Deep samples for surfaces are written once in shade_surface.h at first hit.
@@ -465,12 +471,14 @@ ccl_device_inline void film_accumulate_deep_surface_rgb_shadow(KernelGlobals kg,
 #endif
 
 /* Write combined pass with transparency. */
-ccl_device_inline void film_write_combined_transparent_pass(KernelGlobals kg,
-                                                            const uint32_t path_flag,
-                                                            const int sample,
-                                                            const Spectrum contribution,
-                                                            const float transparent,
-                                                            ccl_global float *ccl_restrict buffer)
+ccl_device_inline void film_write_combined_transparent_pass(
+    KernelGlobals kg,
+    const PathRayVisibility path_visibility,
+    const uint32_t path_flag,
+    const int sample,
+    const Spectrum contribution,
+    const float transparent,
+    ccl_global float *ccl_restrict buffer)
 {
 #ifdef __SHADOW_CATCHER__
   if (film_write_shadow_catcher_transparent(kg, path_flag, contribution, transparent, buffer)) {
@@ -489,7 +497,7 @@ ccl_device_inline void film_write_combined_transparent_pass(KernelGlobals kg,
    * reliable depth here, so skip deep output in this pass. */
 
   film_write_adaptive_buffer(kg, sample, contribution, buffer);
-  film_write_volume_scattering_guiding_pass(kg, buffer, path_flag, contribution);
+  film_write_volume_scattering_guiding_pass(kg, buffer, path_visibility, path_flag, contribution);
 }
 
 /* Write background or emission to appropriate pass. */
@@ -667,6 +675,7 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
 
   ccl_global float *buffer = film_pass_pixel_render_buffer_shadow(kg, state, render_buffer);
 
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, shadow_path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, shadow_path, flag);
   const int sample = INTEGRATOR_STATE(state, shadow_path, sample);
 
@@ -684,13 +693,15 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
 
   /* Ambient occlusion. */
   if (path_flag & PATH_RAY_SHADOW_FOR_AO) {
-    if ((kernel_data.kernel_features & KERNEL_FEATURE_AO_PASS) && (path_flag & PATH_RAY_CAMERA)) {
+    if ((kernel_data.kernel_features & KERNEL_FEATURE_AO_PASS) &&
+        (path_visibility & PATH_RAY_VISIBILITY_CAMERA))
+    {
       film_write_pass_spectrum(buffer + kernel_data.film.pass_ao, contribution);
     }
     if (kernel_data.kernel_features & KERNEL_FEATURE_AO_ADDITIVE) {
       const Spectrum ao_weight = INTEGRATOR_STATE(state, shadow_path, unshadowed_throughput);
       film_write_combined_pass(
-          kg, path_flag, sample, contribution * ao_weight, buffer, depth, pixel_index);
+          kg, path_visibility, path_flag, sample, contribution * ao_weight, buffer, depth, pixel_index);
 #ifdef __DEEP_OUTPUT__
       film_accumulate_deep_surface_rgb_shadow(kg, state, contribution * ao_weight);
 #endif
@@ -699,7 +710,8 @@ ccl_device_inline void film_write_direct_light(KernelGlobals kg,
   }
 
   /* Direct light shadow. */
-  film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
+  film_write_combined_pass(
+      kg, path_visibility, path_flag, sample, contribution, buffer, depth, pixel_index);
 #ifdef __DEEP_OUTPUT__
   film_accumulate_deep_surface_rgb_shadow(kg, state, contribution);
 #endif
@@ -881,6 +893,7 @@ ccl_device_inline void film_write_background(KernelGlobals kg,
   film_clamp_light(kg, &contribution, INTEGRATOR_STATE(state, path, bounce) - 1);
 
   ccl_global float *buffer = film_pass_pixel_render_buffer(kg, state, render_buffer);
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
 
   if (is_transparent_background_ray) {
@@ -888,7 +901,8 @@ ccl_device_inline void film_write_background(KernelGlobals kg,
   }
   else {
     const int sample = INTEGRATOR_STATE(state, path, sample);
-    film_write_combined_transparent_pass(kg, path_flag, sample, contribution, transparent, buffer);
+    film_write_combined_transparent_pass(
+        kg, path_visibility, path_flag, sample, contribution, transparent, buffer);
 #ifdef __DEEP_OUTPUT__
     film_accumulate_deep_surface_rgb_path(kg, state, contribution);
 #endif
@@ -915,12 +929,14 @@ ccl_device_inline void film_write_volume_emission(KernelGlobals kg,
   film_clamp_light(kg, &contribution, INTEGRATOR_STATE(state, path, bounce) - 1);
 
   ccl_global float *buffer = film_pass_pixel_render_buffer(kg, state, render_buffer);
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
   const int sample = INTEGRATOR_STATE(state, path, sample);
   const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
 
   /* Write deep sample if depth is valid (>= 0). */
-  film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
+  film_write_combined_pass(
+      kg, path_visibility, path_flag, sample, contribution, buffer, depth, pixel_index);
   film_write_emission_or_background_pass(
       kg, state, contribution, buffer, kernel_data.film.pass_emission, false, lightgroup, false);
 }
@@ -937,6 +953,7 @@ ccl_device_inline void film_write_surface_emission(KernelGlobals kg,
   film_clamp_light(kg, &contribution, INTEGRATOR_STATE(state, path, bounce) - 1);
 
   ccl_global float *buffer = film_pass_pixel_render_buffer(kg, state, render_buffer);
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
   const int sample = INTEGRATOR_STATE(state, path, sample);
   const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
@@ -954,7 +971,8 @@ ccl_device_inline void film_write_surface_emission(KernelGlobals kg,
   }
 #endif
 
-  film_write_combined_pass(kg, path_flag, sample, contribution, buffer, depth, pixel_index);
+  film_write_combined_pass(
+      kg, path_visibility, path_flag, sample, contribution, buffer, depth, pixel_index);
 #ifdef __DEEP_OUTPUT__
   film_accumulate_deep_surface_rgb_path(kg, state, contribution);
 #endif

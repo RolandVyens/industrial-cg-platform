@@ -12,7 +12,7 @@ namespace blender::nodes::node_geo_input_instance_rotation_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_output<decl::Rotation>("Rotation"_ustr).field_source();
+  b.add_output<decl::Rotation>("Rotation"_ustr).structure_type(StructureType::Field);
 }
 
 class InstanceRotationFieldInput final : public bke::InstancesFieldInput {
@@ -31,14 +31,10 @@ class InstanceRotationFieldInput final : public bke::InstancesFieldInput {
         [transforms](const int i) { return math::to_quaternion(math::normalize(transforms[i])); });
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return 22374372;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const InstanceRotationFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 };
 

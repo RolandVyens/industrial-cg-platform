@@ -14,17 +14,17 @@ namespace blender::nodes::node_geo_curve_spline_parameter_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_output<decl::Float>("Factor"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description(
           "For points, the portion of the spline's total length at the control point. For "
           "Splines, the factor of that spline within the entire curve");
   b.add_output<decl::Float>("Length"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description(
           "For points, the distance along the control point's spline, For splines, the "
           "distance along the entire curve");
   b.add_output<decl::Int>("Index"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("Each control point's index on its spline");
 }
 
@@ -197,14 +197,10 @@ class CurveParameterFieldInput final : public bke::CurvesFieldInput {
     }
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return 29837456298;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const CurveParameterFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 };
 
@@ -231,14 +227,10 @@ class CurveLengthParameterFieldInput final : public bke::CurvesFieldInput {
     }
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return 345634563454;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const CurveLengthParameterFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 };
 
@@ -264,14 +256,10 @@ class IndexOnSplineFieldInput final : public bke::CurvesFieldInput {
     return VArray<int>::from_container(std::move(result));
   }
 
-  uint64_t hash() const final
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return 4536246522;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const final
-  {
-    return dynamic_cast<const IndexOnSplineFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

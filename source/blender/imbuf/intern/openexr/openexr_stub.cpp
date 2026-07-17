@@ -118,4 +118,24 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> & /*deep_data*
   return false;
 }
 
+bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> & /*deep_data*/,
+                       int /*width*/,
+                       int /*height*/,
+                       const char * /*filepath*/,
+                       int /*compression*/,
+                       bool /*use_half_float*/,
+                       bool /*alpha_only*/,
+                       bool /*has_display_window*/,
+                       int /*display_width*/,
+                       int /*display_height*/,
+                       int /*display_offset_x*/,
+                       int /*display_offset_y*/,
+                       int /*data_offset_x*/,
+                       int /*data_offset_y*/,
+                       float /*deep_merge_tolerance*/,
+                       float /*deep_alpha_merge_tolerance*/)
+{
+  return false;
+}
+
 }  // namespace blender

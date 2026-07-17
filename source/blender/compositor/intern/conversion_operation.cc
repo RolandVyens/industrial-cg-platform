@@ -28,7 +28,7 @@ ConversionOperation::ConversionOperation(Context &context,
     : SimpleOperation(context)
 {
   this->declare_input_descriptor(InputDescriptor{input_type});
-  this->populate_result(context.create_result(expected_type));
+  this->populate_result(expected_type);
 }
 
 void ConversionOperation::execute()
@@ -106,7 +106,7 @@ void ConversionOperation::execute_single(const Result &input, Result &output)
 void ConversionOperation::execute_cpu(const Result &input, Result &output)
 {
   const bke::DataTypeConversions &conversions = bke::get_implicit_type_conversions();
-  conversions.convert_to_initialized_n(input.cpu_data(), output.cpu_data());
+  conversions.convert_to_initialized_n(input.cpu_data(), output.cpu_data_for_write());
 }
 
 }  // namespace blender::compositor

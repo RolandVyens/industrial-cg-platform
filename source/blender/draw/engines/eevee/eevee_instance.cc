@@ -12,6 +12,7 @@
 
 #include "BKE_global.hh"
 #include "BKE_object.hh"
+#include "BKE_scene.hh"
 
 #include "BLI_rect.h"
 #include "BLI_time.h"
@@ -85,7 +86,7 @@ void Instance::init()
 
     if (camera) {
       if (scene->r.mode & R_BORDER) {
-        if (draw_ctx->is_viewport_image_render()) {
+        if (draw_ctx->is_viewport_image_render() || draw_ctx->is_viewport_xr()) {
           rect.xmin = scene->r.border.xmin * size[0];
           rect.ymin = scene->r.border.ymin * size[1];
           rect.xmax = scene->r.border.xmax * size[0];
@@ -116,7 +117,7 @@ void Instance::init()
       rect.ymax = v3d->render_border.ymax * size[1];
     }
 
-    if (draw_ctx->is_viewport_image_render()) {
+    if (draw_ctx->is_viewport_image_render() || draw_ctx->is_viewport_xr()) {
       const float2 vp_size = draw_ctx->viewport_size_get();
       visible_rect.xmax = vp_size[0];
       visible_rect.ymax = vp_size[1];
@@ -203,6 +204,17 @@ void Instance::init(const int2 &output_res,
     is_image_render = true;
   }
 
+  rcti lookdev_rect = *visible_rect;
+  if (is_viewport() && v3d && rv3d && rv3d->persp == RV3D_CAMOB && v3d->camera &&
+      !draw_ctx->is_viewport_image_render() && !draw_ctx->is_viewport_xr())
+  {
+    rctf camera_border;
+    /* Anchor reference spheres to camera border. */
+    ED_view3d_calc_camera_border(
+        scene, depsgraph, draw_ctx->region, v3d, rv3d, false, &camera_border);
+    BLI_rcti_rctf_copy(&lookdev_rect, &camera_border);
+  }
+
   anisotropic_filtering = GPU_anisotropic_filtering_flags(scene->r.anisotropic_filter);
 
   sampling.init(scene);
@@ -222,7 +234,7 @@ void Instance::init(const int2 &output_res,
   sphere_probes.init();
   volume_probes.init();
   volume.init();
-  lookdev.init(visible_rect);
+  lookdev.init(&lookdev_rect);
 
   /* Request static shaders */
   ShaderGroups shader_request = DEFERRED_LIGHTING_SHADERS | SHADOW_SHADERS | FILM_SHADERS |
@@ -232,7 +244,7 @@ void Instance::init(const int2 &output_res,
   SET_FLAG_FROM_TEST(shader_request, needs_planar_probe_passes(), DEFERRED_PLANAR_SHADERS);
   SET_FLAG_FROM_TEST(shader_request, needs_lightprobe_sphere_passes(), DEFERRED_CAPTURE_SHADERS);
   SET_FLAG_FROM_TEST(shader_request, motion_blur.postfx_enabled(), MOTION_BLUR_SHADERS);
-  SET_FLAG_FROM_TEST(shader_request, raytracing.use_fast_gi(), HORIZON_SCAN_SHADERS);
+  SET_FLAG_FROM_TEST(shader_request, raytracing.use_fast_gi(), FAST_GI_SHADERS);
   SET_FLAG_FROM_TEST(shader_request, raytracing.use_raytracing(), RAYTRACING_SHADERS);
 
   loaded_shaders = ShaderGroups::NONE;
@@ -404,39 +416,32 @@ void Instance::object_sync(ObjectRef &ob_ref, Manager & /*manager*/)
     return;
   }
 
-  ObjectHandle &ob_handle = sync.sync_object(ob_ref);
-
   if (partsys_is_visible && ob != draw_ctx->object_edit) {
-    auto sync_hair =
-        [&](ObjectHandle hair_handle, ModifierData &md, ParticleSystem &particle_sys) {
-          ResourceHandleRange _res_handle = manager->resource_handle_for_psys(
-              ob_ref, ob->object_to_world());
-          sync.sync_curves(ob, hair_handle, ob_ref, _res_handle, &md, &particle_sys);
-        };
-    foreach_hair_particle_handle(*this, ob_ref, ob_handle, sync_hair);
+    auto sync_hair = [&](const HairParticleInfo &info) { sync.sync_curves(ob_ref, &info); };
+    foreach_hair_particle(*this, ob_ref, sync_hair);
   }
 
   if (object_is_visible) {
     switch (ob->type) {
       case OB_LAMP:
-        lights.sync_light(ob, ob_handle);
+        lights.sync_light(ob_ref);
         break;
       case OB_MESH:
-        if (!sync.sync_sculpt(ob, ob_handle, ob_ref)) {
-          sync.sync_mesh(ob, ob_handle, ob_ref);
+        if (!sync.sync_sculpt(ob_ref)) {
+          sync.sync_mesh(ob_ref);
         }
         break;
       case OB_POINTCLOUD:
-        sync.sync_pointcloud(ob, ob_handle, ob_ref);
+        sync.sync_pointcloud(ob_ref);
         break;
       case OB_VOLUME:
-        sync.sync_volume(ob, ob_handle, ob_ref);
+        sync.sync_volume(ob_ref);
         break;
       case OB_CURVES:
-        sync.sync_curves(ob, ob_handle, ob_ref);
+        sync.sync_curves(ob_ref);
         break;
       case OB_LIGHTPROBE:
-        light_probes.sync_probe(ob, ob_handle);
+        light_probes.sync_probe(ob_ref);
         break;
       default:
         break;
@@ -478,8 +483,6 @@ void Instance::end_sync()
   light_probes.end_sync();
   sphere_probes.end_sync();
   planar_probes.end_sync();
-
-  uniform_data.push_update();
 
   depsgraph_last_update_ = DEG_get_update_count(depsgraph);
 }
@@ -534,6 +537,7 @@ void Instance::render_sample()
 {
   if (sampling.finished_viewport()) {
     DRW_submission_start();
+    uniform_data.push_update();
     film.display();
     lookdev.display();
     DRW_submission_end();
@@ -561,6 +565,8 @@ void Instance::render_sample()
     DRW_submission_start();
 
     sampling.step();
+    film.update_sample_table();
+    uniform_data.push_update();
 
     capture_view.render_world();
     lookdev.rotate_world();
@@ -921,6 +927,7 @@ void Instance::light_bake_irradiance(
     /* Sampling module needs to be initialized to computing lighting. */
     sampling.init(probe);
     sampling.step();
+    uniform_data.push_update();
 
     {
       /* Critical section. Potential gpu::Shader concurrent usage. */
@@ -968,7 +975,7 @@ void Instance::light_bake_irradiance(
       /* Batch ray cast. Avoids too much overhead of the context switch. */
       int sample_count_in_batch = ceilf(time_budget_ms / max(0.1f, time_per_sample_ms_smooth));
       /* Avoid batching too many rays, keep system responsive in case of bad values. */
-      sample_count_in_batch = min_iii(32, sample_count_in_batch, remaining_samples);
+      sample_count_in_batch = std::min({32, sample_count_in_batch, remaining_samples});
 
       CLOG_INFO(&Instance::log, "IrradianceBake: Casting %d rays.", sample_count_in_batch);
 

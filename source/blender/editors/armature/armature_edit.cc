@@ -718,9 +718,9 @@ static wmOperatorStatus armature_fill_bones_exec(bContext *C, wmOperator *op)
   /* the number of joints determines how we fill:
    *  1) between joint and cursor (joint=head, cursor=tail)
    *  2) between the two joints (order is dependent on active-bone/hierarchy)
-   *  3+) error (a smarter method involving finding chains needs to be worked out
+   *  3+) error (a smarter method involving finding chains needs to be worked out)
    */
-  count = BLI_listbase_count(&points);
+  count = points.count();
 
   if (count == 0) {
     BKE_report(op->reports, RPT_ERROR, "No joints selected");
@@ -729,7 +729,7 @@ static wmOperatorStatus armature_fill_bones_exec(bContext *C, wmOperator *op)
 
   if (mixed_object_error) {
     BKE_report(op->reports, RPT_ERROR, "Bones for different objects selected");
-    BLI_freelistN(&points);
+    points.free_no_destruct();
     return OPERATOR_CANCELLED;
   }
 
@@ -781,7 +781,7 @@ static wmOperatorStatus armature_fill_bones_exec(bContext *C, wmOperator *op)
         ((ebp_a->tail_owner == ebp_b->head_owner) && (ebp_a->tail_owner != nullptr)))
     {
       BKE_report(op->reports, RPT_ERROR, "Same bone selected...");
-      BLI_freelistN(&points);
+      points.free_no_destruct();
       return OPERATOR_CANCELLED;
     }
 
@@ -874,7 +874,7 @@ static wmOperatorStatus armature_fill_bones_exec(bContext *C, wmOperator *op)
   }
   else {
     BKE_reportf(op->reports, RPT_ERROR, "Too many points selected: %d", count);
-    BLI_freelistN(&points);
+    points.free_no_destruct();
     return OPERATOR_CANCELLED;
   }
 
@@ -889,7 +889,7 @@ static wmOperatorStatus armature_fill_bones_exec(bContext *C, wmOperator *op)
   DEG_id_tag_update(&arm->id, ID_RECALC_SYNC_TO_EVAL);
 
   /* free points */
-  BLI_freelistN(&points);
+  points.free_no_destruct();
 
   return OPERATOR_FINISHED;
 }
@@ -942,7 +942,7 @@ static wmOperatorStatus armature_switch_direction_exec(bContext *C, wmOperator *
 
     /* get chains of bones (ends on chains) */
     chains_find_tips(arm->edbo, &chains);
-    if (BLI_listbase_is_empty(&chains)) {
+    if (chains.is_empty()) {
       continue;
     }
 
@@ -1014,7 +1014,7 @@ static wmOperatorStatus armature_switch_direction_exec(bContext *C, wmOperator *
     }
 
     /* free chains */
-    BLI_freelistN(&chains);
+    chains.free_no_destruct();
 
     /* clear temp flags */
     armature_clear_swap_done_flags(arm);
@@ -1368,7 +1368,7 @@ static wmOperatorStatus armature_dissolve_selected_exec(bContext *C, wmOperator 
     bool changed = false;
 
     /* store for mirror */
-    Map<EditBone *, int> ebone_flag_orig;
+    Map<EditBone *, eBone_Flag> ebone_flag_orig;
     int ebone_num = 0;
 
     for (EditBone &ebone : *arm->edbo) {
@@ -1387,7 +1387,7 @@ static wmOperatorStatus armature_dissolve_selected_exec(bContext *C, wmOperator 
 
       for (const auto &item : ebone_flag_orig.items()) {
         ebone = item.key;
-        int &flag = item.value;
+        eBone_Flag &flag = item.value;
         flag = ebone->flag & ~flag;
       }
     }
@@ -1463,7 +1463,7 @@ static wmOperatorStatus armature_dissolve_selected_exec(bContext *C, wmOperator 
 
       if (arm->flag & ARM_MIRROR_EDIT) {
         for (EditBone &ebone : *arm->edbo) {
-          if (const int *flag_p = ebone_flag_orig.lookup_ptr(&ebone)) {
+          if (const eBone_Flag *flag_p = ebone_flag_orig.lookup_ptr(&ebone)) {
             ebone.flag &= ~*flag_p;
           }
         }

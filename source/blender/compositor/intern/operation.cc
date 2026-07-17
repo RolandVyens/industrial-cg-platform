@@ -27,7 +27,7 @@ void Operation::evaluate()
 {
   this->evaluate_input_processors();
   this->execute();
-  this->compute_preview();
+  this->log_data();
   this->release_inputs();
   this->context().evaluate_operation_post();
 }
@@ -35,6 +35,11 @@ void Operation::evaluate()
 Result &Operation::get_input(StringRef identifier) const
 {
   return *results_mapped_to_inputs_.lookup(identifier);
+}
+
+bool Operation::is_input_mapped(StringRef identifier) const
+{
+  return results_mapped_to_inputs_.contains(identifier);
 }
 
 Result &Operation::get_result(StringRef identifier)
@@ -112,11 +117,11 @@ void Operation::evaluate_input_processors()
   }
 }
 
-void Operation::compute_preview() {};
+void Operation::log_data() {};
 
-void Operation::populate_result(StringRef identifier, Result result)
+void Operation::populate_result(StringRef identifier, const ResultType type)
 {
-  results_.add_new(identifier, result);
+  results_.add_new(identifier, this->context().create_result(type));
 }
 
 void Operation::declare_input_descriptor(StringRef identifier, InputDescriptor descriptor)

@@ -60,12 +60,12 @@ namespace detail {
 template<typename T> static bool item_is_type(const bNodeTreeInterfaceItem &item)
 {
   bool match = false;
-  switch (eNodeTreeInterfaceItemType(item.item_type)) {
-    case NODE_INTERFACE_SOCKET: {
+  switch (item.item_type) {
+    case NodeTreeInterfaceItemType::Socket: {
       match |= std::is_same_v<T, bNodeTreeInterfaceSocket>;
       break;
     }
-    case NODE_INTERFACE_PANEL: {
+    case NodeTreeInterfaceItemType::Panel: {
       match |= std::is_same_v<T, bNodeTreeInterfacePanel>;
       break;
     }
@@ -410,11 +410,11 @@ template<typename T> const T &get_socket_data_as(const bNodeTreeInterfaceSocket 
 
 /**
  * Add a tree interface socket based on the properties of an existing node socket.
- * \param ntree Node tree where the interface socket is added.
- * \param from_node Node that owns the template socket. Does not have to be part of \a ntree.
- * \param from_sock Template socket on which the interface properties are based.
- * \param name Optional custom socket name. By default the visible socket label or name is used.
- * \param in_out Optional input/output direction. By default same as the template socket.
+ * \param ntree: Node tree where the interface socket is added.
+ * \param from_node: Node that owns the template socket. Does not have to be part of `ntree`.
+ * \param from_sock: Template socket on which the interface properties are based.
+ * \param name: Optional custom socket name. By default the visible socket label or name is used.
+ * \param in_out: Optional input/output direction. By default same as the template socket.
  */
 bNodeTreeInterfaceSocket *add_interface_socket_from_node(
     bNodeTree &ntree,
@@ -424,7 +424,7 @@ bNodeTreeInterfaceSocket *add_interface_socket_from_node(
     std::optional<eNodeSocketInOut> in_out = std::nullopt);
 
 /**
- * Reference to a node tree's interface item.
+ * Reference to a node tree's dragged interface items.
  *
  * Used by the node interface drag controller to reorder interface items and
  * the node space drop-boxes to drop Group Input/Output nodes into the node
@@ -432,14 +432,13 @@ bNodeTreeInterfaceSocket *add_interface_socket_from_node(
  */
 struct bNodeTreeInterfaceItemReference {
   bNodeTree *tree;
-  /* The item under the cursor when dragging started. Used to create Group Input node in the node
-   * editor. */
-  bNodeTreeInterfaceItem *item;
   /* All dragged items. If a parent item is selected, its children are excluded because they are
    * dragged implicitly. */
   bNodeTreeInterfaceItem **items;
   int items_count;
 };
+
+void item_reference_free(bNodeTreeInterfaceItemReference *item_reference);
 
 }  // namespace node_interface
 

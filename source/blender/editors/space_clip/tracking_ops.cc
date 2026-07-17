@@ -1052,7 +1052,7 @@ static wmOperatorStatus hide_tracks_exec(bContext *C, wmOperator *op)
   }
 
   const MovieTrackingPlaneTrack *active_plane_track = tracking_object->active_plane_track;
-  if (active_plane_track != nullptr && active_plane_track->flag & TRACK_HIDDEN) {
+  if (active_plane_track != nullptr && active_plane_track->flag & PLANE_TRACK_HIDDEN) {
     tracking_object->active_plane_track = nullptr;
   }
 
@@ -1133,7 +1133,7 @@ void CLIP_OT_hide_tracks_clear(wmOperatorType *ot)
 static bool frame_jump_poll(bContext *C)
 {
   SpaceClip *space_clip = CTX_wm_space_clip(C);
-  return space_clip != nullptr;
+  return space_clip != nullptr && ED_space_clip_get_clip(space_clip) != nullptr;
 }
 
 static wmOperatorStatus frame_jump_exec(bContext *C, wmOperator *op)
@@ -1722,7 +1722,7 @@ static wmOperatorStatus clean_tracks_exec(bContext *C, wmOperator *op)
 
       if (!ok) {
         if (action == TrackingCleanAction::Select) {
-          BKE_tracking_track_flag_set(&track, TRACK_AREA_ALL, SELECT);
+          BKE_tracking_track_flag_set(&track, TRACK_AREA_ALL, TRACK_SELECT);
         }
         else if (action == TrackingCleanAction::DeleteTrack) {
           if (&track == tracking_object->active_track) {

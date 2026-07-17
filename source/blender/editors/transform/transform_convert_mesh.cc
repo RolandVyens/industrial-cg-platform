@@ -1095,8 +1095,12 @@ void transform_convert_mesh_connectivity_distance(BMesh *bm,
            * - Edge itself is loose
            * - Edge has vertex that was originally selected
            * In all these cases a direct distance along the edge is accurate and
-           * required to make sure we visit all edges. Other edges are handled by
-           * propagation across edges below. */
+           * required to make sure we visit all edges.
+           *
+           * Additionally re-add edges whose other vertex already has a known
+           * distance, so that propagation across their adjacent faces can happen
+           * now that this vertex distance is known too. Other edges are handled
+           * by propagation across edges below. */
           const bool need_direct_distance = BM_elem_flag_test(e, tag_loose) ||
                                             BM_elem_flag_test(v1, BM_ELEM_SELECT) ||
                                             BM_elem_flag_test(v2, BM_ELEM_SELECT);
@@ -1105,7 +1109,8 @@ void transform_convert_mesh_connectivity_distance(BMesh *bm,
           BM_ITER_ELEM (e_other, &eiter, v2, BM_EDGES_OF_VERT) {
             if (e_other != e && BM_elem_flag_test(e_other, tag_queued) == 0 &&
                 !BM_elem_flag_test(e_other, BM_ELEM_HIDDEN) &&
-                (need_direct_distance || BM_elem_flag_test(e_other, tag_loose)))
+                (need_direct_distance || BM_elem_flag_test(e_other, tag_loose) ||
+                 dists[BM_elem_index_get(BM_edge_other_vert(e_other, v2))] != FLT_MAX))
             {
               BM_elem_flag_enable(e_other, tag_queued);
               BLI_LINKSTACK_PUSH(queue_next, e_other);
@@ -1919,6 +1924,9 @@ static void mesh_partial_types_calc(TransInfo *t, PartialTypeState *r_partial_st
       break;
     }
     case TFM_RESIZE: {
+      /* Ensure zero (or small) scale calculates normals, see: #159460. */
+      const float zero_resize_threshold_all = 1e-6f;
+
       partial_for_looptris = PARTIAL_TYPE_GROUP;
       partial_for_normals = PARTIAL_TYPE_GROUP;
       /* Non-uniform scale needs to recalculate all normals
@@ -1926,6 +1934,12 @@ static void mesh_partial_types_calc(TransInfo *t, PartialTypeState *r_partial_st
        * Uniform negative scale can keep normals as-is since the faces are flipped,
        * normals remain unchanged. */
       if ((t->con.mode & CON_APPLY) ||
+          /* NOTE(@ideasman42): negative values always recalculate, this is intentional
+           * although it switches between negative and positive uniform scales could be
+           * detected (minor optimization, not so important). */
+          ((t->values_final[0] <= zero_resize_threshold_all) ||
+           (t->values_final[1] <= zero_resize_threshold_all) ||
+           (t->values_final[2] <= zero_resize_threshold_all)) ||
           (t->values_final[0] != t->values_final[1] || t->values_final[0] != t->values_final[2]))
       {
         partial_for_normals = PARTIAL_TYPE_ALL;
@@ -2414,7 +2428,7 @@ Array<TransDataEdgeSlideVert> transform_mesh_edge_slide_data_create(const TransD
        * \param curr_side_other: previous state of the #SlideTempDataMesh where the faces are
        * linked to the previous edge.
        * \param l_src: the source corner in the edge to slide.
-       * \param l_dst: the current destination corner.
+       * \param v_dst: the vertex at the current destination corner.
        */
       int find_best_dir(const SlideTempDataMesh *curr_side_other,
                         const BMFace *f_curr,

@@ -21,6 +21,21 @@ CCL_NAMESPACE_BEGIN
 
 /* Closure */
 
+#if OSL_LIBRARY_VERSION_CODE >= 11500
+
+ccl_device_extern void *rs_allocate_closure(ccl_private ShaderGlobals *sg,
+                                            const size_t size,
+                                            const size_t alignment)
+{
+  ccl_private uint8_t *closure_pool = sg->closure_pool;
+  closure_pool = reinterpret_cast<ccl_private uint8_t *>(
+      (reinterpret_cast<size_t>(closure_pool) + alignment - 1) & (-alignment));
+  sg->closure_pool = closure_pool + size;
+  return closure_pool;
+}
+
+#else
+
 ccl_device_extern ccl_private OSLClosure *osl_mul_closure_color(ccl_private ShaderGlobals *sg,
                                                                 ccl_private OSLClosure *a,
                                                                 const ccl_private float3 *weight)
@@ -138,6 +153,8 @@ ccl_device_extern ccl_private OSLClosure *osl_allocate_weighted_closure_componen
   return closure;
 }
 
+#endif
+
 /* Utilities */
 
 ccl_device_extern void osl_error(ccl_private ShaderGlobals * /*sg*/,
@@ -254,7 +271,7 @@ ccl_device_extern bool osl_get_attribute(ccl_private ShaderGlobals *sg,
   const int object = sd->object;
 
   const AttributeDescriptor desc = find_attribute(kg, object, sd->prim, name);
-  if (desc.offset != ATTR_STD_NOT_FOUND) {
+  if (is_attribute_found(desc)) {
     return osl_shared_get_object_attribute(kg, sd, desc, type, derivatives, res);
   }
   return osl_shared_get_object_standard_attribute(kg, sg, sd, name, type, derivatives, res);

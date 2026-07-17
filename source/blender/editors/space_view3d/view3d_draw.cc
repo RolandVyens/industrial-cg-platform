@@ -57,6 +57,7 @@
 #include "ED_info.hh"
 #include "ED_scene.hh"
 #include "ED_screen.hh"
+#include "ED_util.hh"
 #include "ED_view3d_offscreen.hh"
 #include "ED_viewer_path.hh"
 
@@ -78,6 +79,7 @@
 #include "UI_resources.hh"
 
 #include "RE_engine.h"
+#include "RE_pipeline.h"
 #include "RNA_access.hh"
 #include "RNA_prototypes.hh"
 
@@ -92,8 +94,6 @@
 #include "view3d_intern.hh" /* own include */
 
 namespace blender {
-
-#define M_GOLDEN_RATIO_CONJUGATE 0.618033988749895f
 
 #define VIEW3D_OVERLAY_LINEHEIGHT (ui::style_get()->widget.points * UI_SCALE_FAC * 1.6f)
 
@@ -252,13 +252,14 @@ static bool view3d_stereo3d_active(wmWindow *win,
   return true;
 }
 
-/* setup the view and win matrices for the multiview cameras
+/**
+ * Setup the view and win matrices for the multiview cameras.
  *
- * unlike view3d_stereo3d_setup_offscreen, when view3d_stereo3d_setup is called
+ * Unlike #view3d_stereo3d_setup_offscreen, when view3d_stereo3d_setup is called
  * we have no winmatrix (i.e., projection matrix) defined at that time.
- * Since the camera and the camera shift are needed for the winmat calculation
- * we do a small hack to replace it temporarily so we don't need to change the
- * view3d)main_region_setup_view() code to account for that.
+ * Since the camera and the camera shift are needed for the `winmat` calculation
+ * we do a small hack to replace it temporarily so we don't need to change the view3d
+ * #main_region_setup_view() code to account for that.
  */
 static void view3d_stereo3d_setup(
     Depsgraph *depsgraph, Scene *scene, View3D *v3d, ARegion *region, const rcti *rect)
@@ -457,86 +458,6 @@ void ED_view3d_calc_camera_border(const Scene *scene,
   view3d_camera_border(scene, depsgraph, region, v3d, rv3d, r_viewborder, no_shift, false);
 }
 
-static void drawviewborder_grid3(uint shdr_pos, float x1, float x2, float y1, float y2, float fac)
-{
-  float x3, y3, x4, y4;
-
-  x3 = x1 + fac * (x2 - x1);
-  y3 = y1 + fac * (y2 - y1);
-  x4 = x1 + (1.0f - fac) * (x2 - x1);
-  y4 = y1 + (1.0f - fac) * (y2 - y1);
-
-  immBegin(GPU_PRIM_LINES, 8);
-
-  immVertex2f(shdr_pos, x1, y3);
-  immVertex2f(shdr_pos, x2, y3);
-
-  immVertex2f(shdr_pos, x1, y4);
-  immVertex2f(shdr_pos, x2, y4);
-
-  immVertex2f(shdr_pos, x3, y1);
-  immVertex2f(shdr_pos, x3, y2);
-
-  immVertex2f(shdr_pos, x4, y1);
-  immVertex2f(shdr_pos, x4, y2);
-
-  immEnd();
-}
-
-/* harmonious triangle */
-static void drawviewborder_triangle(
-    uint shdr_pos, float x1, float x2, float y1, float y2, const char golden, const char dir)
-{
-  float ofs;
-  float w = x2 - x1;
-  float h = y2 - y1;
-
-  immBegin(GPU_PRIM_LINES, 6);
-
-  if (w > h) {
-    if (golden) {
-      ofs = w * (1.0f - M_GOLDEN_RATIO_CONJUGATE);
-    }
-    else {
-      ofs = h * (h / w);
-    }
-    if (dir == 'B') {
-      std::swap(y1, y2);
-    }
-
-    immVertex2f(shdr_pos, x1, y1);
-    immVertex2f(shdr_pos, x2, y2);
-
-    immVertex2f(shdr_pos, x2, y1);
-    immVertex2f(shdr_pos, x1 + (w - ofs), y2);
-
-    immVertex2f(shdr_pos, x1, y2);
-    immVertex2f(shdr_pos, x1 + ofs, y1);
-  }
-  else {
-    if (golden) {
-      ofs = h * (1.0f - M_GOLDEN_RATIO_CONJUGATE);
-    }
-    else {
-      ofs = w * (w / h);
-    }
-    if (dir == 'B') {
-      std::swap(x1, x2);
-    }
-
-    immVertex2f(shdr_pos, x1, y1);
-    immVertex2f(shdr_pos, x2, y2);
-
-    immVertex2f(shdr_pos, x2, y1);
-    immVertex2f(shdr_pos, x1, y1 + ofs);
-
-    immVertex2f(shdr_pos, x1, y2);
-    immVertex2f(shdr_pos, x2, y1 + (h - ofs));
-  }
-
-  immEnd();
-}
-
 struct View3DCyclesOverscanPixels {
   int left = 0;
   int right = 0;
@@ -549,10 +470,9 @@ struct View3DCyclesOverscanPixels {
   }
 };
 
-static int view3d_cycles_render_resolution_get(const short dimension,
-                                               const short percentage_scale)
+int view3d_cycles_render_resolution_get(const int dimension, const int percentage_scale)
 {
-  return max_ii(1, int(dimension) * int(percentage_scale) / 100);
+  return max_ii(1, dimension * percentage_scale / 100);
 }
 
 static bool view3d_cycles_overscan_mode_is_pixels(PointerRNA *cscene)
@@ -623,35 +543,26 @@ static bool view3d_cycles_overscan_pixels_get(const Scene *scene,
   const int reference_width = render_width;
   const int reference_height = render_height;
 
-  int pad_left = 0;
-  int pad_right = 0;
-  int pad_bottom = 0;
-  int pad_top = 0;
-  if (view3d_cycles_overscan_mode_is_pixels(&cscene)) {
-    pad_left = max_ii(0, RNA_int_get(&cscene, "overscan_left"));
-    pad_right = max_ii(0, RNA_int_get(&cscene, "overscan_right"));
-    pad_bottom = max_ii(0, RNA_int_get(&cscene, "overscan_bottom"));
-    pad_top = max_ii(0, RNA_int_get(&cscene, "overscan_top"));
-  }
-  else {
-    const float overscan = max_ff(0.0f, RNA_float_get(&cscene, "overscan_size")) / 100.0f;
-    const int pad = max_ii(0, int(ceilf(overscan * max_ff(reference_width, reference_height))));
-    pad_left = pad;
-    pad_right = pad;
-    pad_bottom = pad;
-    pad_top = pad;
-  }
+  const RenderOverscanPadding padding = RE_overscan_padding_resolve(
+      view3d_cycles_overscan_mode_is_pixels(&cscene),
+      RNA_float_get(&cscene, "overscan_size"),
+      RNA_int_get(&cscene, "overscan_left"),
+      RNA_int_get(&cscene, "overscan_right"),
+      RNA_int_get(&cscene, "overscan_bottom"),
+      RNA_int_get(&cscene, "overscan_top"),
+      reference_width,
+      reference_height);
 
-  if (pad_left == 0 && pad_right == 0 && pad_bottom == 0 && pad_top == 0) {
+  if (!padding.any()) {
     return false;
   }
 
   const float scale_x = rect_width / float(max_ii(reference_width, 1));
   const float scale_y = rect_height / float(max_ii(reference_height, 1));
-  r_pixels->left = int(ceilf(float(pad_left) * scale_x));
-  r_pixels->right = int(ceilf(float(pad_right) * scale_x));
-  r_pixels->bottom = int(ceilf(float(pad_bottom) * scale_y));
-  r_pixels->top = int(ceilf(float(pad_top) * scale_y));
+  r_pixels->left = int(ceilf(float(padding.left) * scale_x));
+  r_pixels->right = int(ceilf(float(padding.right) * scale_x));
+  r_pixels->bottom = int(ceilf(float(padding.bottom) * scale_y));
+  r_pixels->top = int(ceilf(float(padding.top) * scale_y));
   return r_pixels->any();
 }
 
@@ -830,60 +741,9 @@ static void drawviewborder(Scene *scene, Depsgraph *depsgraph, ARegion *region, 
   /* safety border */
   if (ca && (v3d->flag2 & V3D_SHOW_CAMERA_GUIDES)) {
     GPU_blend(GPU_BLEND_ALPHA);
-    immUniformColor4fv(ca->composition_guide_color);
 
-    if (ca->dtx & CAM_DTX_CENTER) {
-      float x3, y3;
-
-      x3 = x1 + 0.5f * (x2 - x1);
-      y3 = y1 + 0.5f * (y2 - y1);
-
-      immBegin(GPU_PRIM_LINES, 4);
-
-      immVertex2f(shdr_pos, x1, y3);
-      immVertex2f(shdr_pos, x2, y3);
-
-      immVertex2f(shdr_pos, x3, y1);
-      immVertex2f(shdr_pos, x3, y2);
-
-      immEnd();
-    }
-
-    if (ca->dtx & CAM_DTX_CENTER_DIAG) {
-      immBegin(GPU_PRIM_LINES, 4);
-
-      immVertex2f(shdr_pos, x1, y1);
-      immVertex2f(shdr_pos, x2, y2);
-
-      immVertex2f(shdr_pos, x1, y2);
-      immVertex2f(shdr_pos, x2, y1);
-
-      immEnd();
-    }
-
-    if (ca->dtx & CAM_DTX_THIRDS) {
-      drawviewborder_grid3(shdr_pos, x1, x2, y1, y2, 1.0f / 3.0f);
-    }
-
-    if (ca->dtx & CAM_DTX_GOLDEN) {
-      drawviewborder_grid3(shdr_pos, x1, x2, y1, y2, 1.0f - M_GOLDEN_RATIO_CONJUGATE);
-    }
-
-    if (ca->dtx & CAM_DTX_GOLDEN_TRI_A) {
-      drawviewborder_triangle(shdr_pos, x1, x2, y1, y2, 0, 'A');
-    }
-
-    if (ca->dtx & CAM_DTX_GOLDEN_TRI_B) {
-      drawviewborder_triangle(shdr_pos, x1, x2, y1, y2, 0, 'B');
-    }
-
-    if (ca->dtx & CAM_DTX_HARMONY_TRI_A) {
-      drawviewborder_triangle(shdr_pos, x1, x2, y1, y2, 1, 'A');
-    }
-
-    if (ca->dtx & CAM_DTX_HARMONY_TRI_B) {
-      drawviewborder_triangle(shdr_pos, x1, x2, y1, y2, 1, 'B');
-    }
+    ED_draw_composition_guides(
+        shdr_pos, ca->composition_guide_flags, &viewborder, ca->composition_guide_color);
 
     if (ca->flag & CAM_SHOW_SAFE_MARGINS) {
       rctf margins_rect{};
@@ -1061,6 +921,7 @@ static void view3d_grid_steps_ex(const Scene *scene,
     }
   }
   else {
+    len = STEPS_LEN;
     if (rv3d->view != RV3D_VIEW_USER) {
       /* Allow 3 more subdivisions. */
       grid_scale /= powf(v3d->gridsubdiv, 3);
@@ -1666,7 +1527,7 @@ static void draw_selected_name(const Main &bmain,
   }
 
   if (v3d->flag2 & V3D_SHOW_VIEWER) {
-    if (!BLI_listbase_is_empty(&v3d->viewer_path.path)) {
+    if (!v3d->viewer_path.path.is_empty()) {
       info_array[i++] = IFACE_(" (Viewer)");
     }
   }
@@ -2033,8 +1894,6 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
 
     /* #View3D */
     eDrawType v3d_shading_type;
-    Object *v3d_camera;
-    short v3d_flag;
 
     /* #Region */
     int region_winx, region_winy;
@@ -2046,11 +1905,9 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
      * Without this the #wmPaintCursor can't use the pixel size & view matrices for drawing.
      */
     RV3DMatrixStore *rv3d_mats;
-    char rv3d_persp;
+    eRegionView3D_Persp rv3d_persp;
   } orig{};
   orig.v3d_shading_type = eDrawType(v3d->shading.type);
-  orig.v3d_camera = v3d->camera;
-  orig.v3d_flag = v3d->flag;
   orig.region_winx = region->winx;
   orig.region_winy = region->winy;
   orig.region_winrct = region->winrct;
@@ -2095,15 +1952,6 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
     view3d_main_region_setup_offscreen(depsgraph, scene, v3d, region, viewmat, winmat);
   }
 
-  if (viewmat || winmat) {
-    /* Now that rv3d data has been updated taking into account viewmat and winmat,
-     * we can remove the camera and flag the view as using custom matrices,
-     * to ensure engines don't recompute them. */
-    v3d->camera = nullptr;
-    v3d->flag |= V3D_CUSTOM_MATRIX;
-    rv3d->persp = (winmat[3][3] == 0.0f) ? RV3D_PERSP : RV3D_ORTHO;
-  }
-
   if (viewport) {
     GPU_viewport_tag_update(viewport);
   }
@@ -2129,7 +1977,7 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
   region->winrct = orig.region_winrct;
 
   /* Optionally do _not_ restore rv3d matrices (e.g. they are used/stored in the ImBuff for
-   * reprojection, see texture_paint_image_from_view_exec(). */
+   * reprojection, see texture_paint_image_from_view_exec()). */
   if (restore_rv3d_mats) {
     ED_view3d_mats_rv3d_restore(static_cast<RegionView3D *>(region->regiondata), orig.rv3d_mats);
   }
@@ -2139,8 +1987,6 @@ void ED_view3d_draw_offscreen(Depsgraph *depsgraph,
   ui::theme::theme_restore(&orig.theme_state);
 
   v3d->shading.type = orig.v3d_shading_type;
-  v3d->camera = orig.v3d_camera;
-  v3d->flag = orig.v3d_flag;
 
   G.f &= ~G_FLAG_RENDER_VIEWPORT;
 }
@@ -2165,6 +2011,7 @@ void ED_view3d_draw_offscreen_simple(Depsgraph *depsgraph,
                                      bool draw_background,
                                      const char *viewname,
                                      const bool do_color_management,
+                                     Object *camera_override,
                                      GPUOffScreen *ofs,
                                      GPUViewport *viewport)
 {
@@ -2236,17 +2083,19 @@ void ED_view3d_draw_offscreen_simple(Depsgraph *depsgraph,
   v3d.object_type_exclude_viewport = object_type_exclude_viewport_override;
   v3d.object_type_exclude_select = object_type_exclude_select_override;
 
-  rv3d.persp = RV3D_PERSP;
+  if (camera_override != nullptr) {
+    /* Override the active View3D camera and force camera perspective. */
+    rv3d.persp = RV3D_CAMOB;
+    v3d.camera = camera_override;
+  }
+  else {
+    rv3d.persp = RV3D_PERSP;
+  }
   v3d.clip_start = clip_start;
   v3d.clip_end = clip_end;
   /* Actually not used since we pass in the projection matrix. */
   v3d.lens = 0;
   v3d.xr_vignette_aperture = xr_vignette_aperture;
-
-  /* WORKAROUND: Disable overscan because it is not supported for arbitrary input matrices.
-   * The proper fix to this would be to support arbitrary matrices in `eevee::Camera::sync()`. */
-  float overscan = scene->eevee.overscan;
-  scene->eevee.overscan = 0.0f;
 
   ED_view3d_draw_offscreen(depsgraph,
                            scene,
@@ -2265,9 +2114,6 @@ void ED_view3d_draw_offscreen_simple(Depsgraph *depsgraph,
                            true,
                            ofs,
                            viewport);
-
-  /* Restore overscan. */
-  scene->eevee.overscan = overscan;
 }
 
 ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
@@ -2277,7 +2123,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
                                       ARegion *region,
                                       int sizex,
                                       int sizey,
-                                      eImBufFlags imbuf_flag,
+                                      ImBufFlags imbuf_flag,
                                       int alpha_mode,
                                       const char *viewname,
                                       const bool restore_rv3d_mats,
@@ -2295,7 +2141,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
   float winmat[4][4];
 
   /* Guess format based on output buffer. */
-  gpu::TextureFormat desired_format = (imbuf_flag & IB_float_data) ?
+  gpu::TextureFormat desired_format = flag_is_set(imbuf_flag, ImBufFlags::FloatData) ?
                                           gpu::TextureFormat::SFLOAT_16_16_16_16 :
                                           gpu::TextureFormat::UNORM_8_8_8_8;
 
@@ -2333,7 +2179,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf(Depsgraph *depsgraph,
   GPU_offscreen_bind(ofs, true);
 
   /* read in pixels & stamp */
-  ImBuf *ibuf = IMB_allocImBuf(sizex, sizey, 32, imbuf_flag);
+  ImBuf *ibuf = IMB_allocImBuf(sizex, sizey, imbuf_flag);
 
   /* render 3d view */
   if (use_camera_view_bounds && rv3d->persp == RV3D_CAMOB && v3d->camera) {
@@ -2443,7 +2289,7 @@ ImBuf *ED_view3d_draw_offscreen_imbuf_simple(Depsgraph *depsgraph,
                                              Object *camera,
                                              int width,
                                              int height,
-                                             eImBufFlags imbuf_flag,
+                                             ImBufFlags imbuf_flag,
                                              eV3DOffscreenDrawFlag draw_flags,
                                              int alpha_mode,
                                              const char *viewname,
@@ -2800,8 +2646,8 @@ void ED_view3d_depth_override(Depsgraph *depsgraph,
   Scene *scene = DEG_get_evaluated_scene(depsgraph);
   RegionView3D *rv3d = static_cast<RegionView3D *>(region->regiondata);
 
-  short flag = v3d->flag;
-  int flag2 = v3d->flag2;
+  eView3D_Flag flag = v3d->flag;
+  eView3D_Flag2 flag2 = v3d->flag2;
   /* Setting these temporarily is not nice */
   v3d->flag &= ~V3D_SELECT_OUTLINE;
 
@@ -2957,9 +2803,13 @@ void ED_view3d_datamask(const Main &bmain,
             }
             break;
           }
+          default:
+            break;
         }
         break;
       }
+      default:
+        break;
     }
   }
 }

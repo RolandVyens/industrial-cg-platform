@@ -13,22 +13,23 @@ namespace blender::nodes::node_geo_curve_topology_points_of_curve_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_input<decl::Int>("Curve Index"_ustr)
-      .implicit_field(NODE_DEFAULT_INPUT_INDEX_FIELD)
+      .default_input_type(NODE_DEFAULT_INPUT_INDEX_FIELD)
       .description("The curve to retrieve data from. Defaults to the curve from the context")
       .structure_type(StructureType::Field);
   b.add_input<decl::Float>("Weights"_ustr)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .hide_value()
       .description("Values used to sort the curve's points. Uses indices by default");
   b.add_input<decl::Int>("Sort Index"_ustr)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .description("Which of the sorted points to output. Negative indexing is supported");
   b.add_output<decl::Int>("Point Index"_ustr)
-      .field_source_reference_all()
+      .structure_type(StructureType::Field)
+      .propagate_references()
       .description("A point of the curve, chosen by the sort index");
   b.add_output<decl::Int>("Total"_ustr)
-      .field_source()
-      .reference_pass({0})
+      .structure_type(StructureType::Field)
+      .propagate_references({0})
       .description("The number of points in the curve");
 }
 
@@ -145,18 +146,13 @@ class PointsOfCurveInput final : public bke::GeometryFieldInput {
     fn(sort_weight_);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
   {
-    return 26978695677882;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const auto *typed = dynamic_cast<const PointsOfCurveInput *>(&other)) {
-      return typed->curve_index_ == curve_index_ && typed->sort_index_ == sort_index_ &&
-             typed->sort_weight_ == sort_weight_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(deep_hash_cache.ensure(curve_index_));
+    hash.add(deep_hash_cache.ensure(sort_index_));
+    hash.add(deep_hash_cache.ensure(sort_weight_));
   }
 
   std::optional<AttrDomain> preferred_domain(const GeometryComponent & /*component*/) const final
@@ -182,14 +178,10 @@ class CurvePointCountInput final : public bke::CurvesFieldInput {
     });
   }
 
-  uint64_t hash() const final
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return 903847569873762;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const final
-  {
-    return dynamic_cast<const CurvePointCountInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const bke::CurvesGeometry & /*curves*/) const final

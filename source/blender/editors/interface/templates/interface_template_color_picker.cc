@@ -76,6 +76,9 @@ void template_color_picker(Layout *layout,
         case USER_CP_SQUARE_HV:
           hsv_but->gradient_type = GRAD_HV;
           break;
+        case USER_CP_CIRCLE_HSV:
+        case USER_CP_CIRCLE_HSL:
+          break;
       }
       but = hsv_but;
       break;
@@ -226,10 +229,7 @@ static void template_palette_menu(bContext * /*C*/, Layout *layout, void * /*but
   RNA_enum_set(&op_ptr, "type", 4);
 }
 
-void template_palette(Layout *layout,
-                      PointerRNA *ptr,
-                      const StringRefNull propname,
-                      bool /*colors*/)
+void template_palette(Layout *layout, PointerRNA *ptr, const StringRefNull propname)
 {
   PropertyRNA *prop = RNA_struct_find_property(ptr, propname.c_str());
   Button *but = nullptr;

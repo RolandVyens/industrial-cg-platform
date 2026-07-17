@@ -27,6 +27,7 @@ struct ScrVert;
 struct WorkSpaceLayout;
 struct wmOperatorType;
 struct wmWindow;
+struct wmWindowManager;
 
 /* internal exports only */
 
@@ -68,6 +69,9 @@ enum class AreaDockTarget {
 /* Edges must be within these to allow joining. */
 #define AREAJOINTOLERANCEX (AREAMINX * UI_SCALE_FAC)
 #define AREAJOINTOLERANCEY (HEADERY * UI_SCALE_FAC)
+
+/* Edges must be within this amount to allow aligned edge merging and moving. */
+#define EDGE_ALIGN_TOLERANCE (7 * UI_SCALE_FAC)
 
 /**
  * Expanded interaction influence of area borders.
@@ -151,12 +155,8 @@ void screen_change_update(bContext *C, wmWindow *win, bScreen *screen);
  */
 void screen_change_prepare(
     bScreen *screen_old, bScreen *screen_new, Main *bmain, bContext *C, wmWindow *win);
-ScrArea *area_split(const wmWindow *win,
-                    bScreen *screen,
-                    ScrArea *area,
-                    eScreenAxis dir_axis,
-                    float fac,
-                    bool merge);
+ScrArea *area_split(
+    const wmWindow *win, bScreen *screen, ScrArea *area, eScreenAxis dir_axis, float fac);
 /**
  * Join any two neighboring areas. Might involve complex changes.
  */
@@ -232,6 +232,21 @@ short screen_geom_find_area_split_point(const ScrArea *area,
  */
 void screen_geom_select_connected_edge(const wmWindow *win, ScrEdge *edge);
 
+/**
+ * Select all edges that are aligned with \a edge.
+ */
+void screen_geom_select_extended_edge(const wmWindow *win, ScrEdge *edge);
+
+/**
+ * True if the edge can be extended.
+ */
+bool screen_geom_edge_can_extend(const wmWindow *win, ScrEdge *edge);
+
+/**
+ * Merge aligned edges into a single edge.
+ */
+void screen_geom_edge_aligned_merge(const wmWindow *win, ScrEdge *edge);
+
 /* `screen_context.cc` */
 
 /**
@@ -240,6 +255,14 @@ void screen_geom_select_connected_edge(const wmWindow *win, ScrEdge *edge);
 int ed_screen_context(const bContext *C, const char *member, bContextDataResult *result);
 
 extern "C" const char *screen_context_dir[]; /* doc access */
+
+/* `screen_ops.cc` */
+
+/**
+ * Stop animation playback in the given screen.
+ * If there is no animation playing back in that screen, this is a no-op.
+ */
+void screen_stop_playback(Main *bmain, wmWindowManager *wm, wmWindow *win, bScreen *screen);
 
 /* `screendump.cc` */
 

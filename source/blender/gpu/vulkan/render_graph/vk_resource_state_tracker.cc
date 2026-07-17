@@ -47,10 +47,12 @@ void VKResourceStateTracker::add_image(VkImage vk_image,
   Resource &resource = resources_[handle];
   image_resources_.add_new(vk_image, handle);
 
-  resource.type = VKResourceType::IMAGE;
-  resource.image.vk_image = vk_image;
-  resource.image.use_subresource_tracking = use_subresource_tracking;
-  resource.barrier_state = barrier_state;
+  resource = {
+      .type = VKResourceType::IMAGE,
+      .image = {.vk_image = vk_image, .use_subresource_tracking = use_subresource_tracking},
+      .stamp = 0,
+      .barrier_state = barrier_state,
+  };
 
 #ifndef NDEBUG
   if (name) {
@@ -76,7 +78,9 @@ void VKResourceStateTracker::add_aliased_image(VkImage vk_image,
 {
   add_image(vk_image,
             use_subresource_tracking,
-            {VK_ACCESS_NONE, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_IMAGE_LAYOUT_UNDEFINED},
+            {VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+             VK_IMAGE_LAYOUT_UNDEFINED},
             name);
 }
 
@@ -101,9 +105,12 @@ void VKResourceStateTracker::add_buffer(VkBuffer vk_buffer, const char *name)
   Resource &resource = resources_[handle];
   buffer_resources_.add_new(vk_buffer, handle);
 
-  resource.type = VKResourceType::BUFFER;
-  resource.buffer.vk_buffer = vk_buffer;
-  resource.stamp = 0;
+  resource = {
+      .type = VKResourceType::BUFFER,
+      .buffer = {.vk_buffer = vk_buffer},
+      .stamp = 0,
+      .barrier_state = {},
+  };
 
 #ifndef NDEBUG
   if (name) {

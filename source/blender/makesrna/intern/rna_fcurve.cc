@@ -475,7 +475,7 @@ static void rna_DriverVariable_type_set(PointerRNA *ptr, int value)
   DriverVar *dvar = static_cast<DriverVar *>(ptr->data);
 
   /* call the API function for this */
-  driver_change_variable_type(dvar, value);
+  driver_change_variable_type(dvar, eDriverVar_Types(value));
 }
 
 void rna_DriverVariable_name_set(PointerRNA *ptr, const char *value)
@@ -1369,7 +1369,7 @@ static void rna_def_fmodifier_function_generator(BlenderRNA *brna)
   prop = RNA_def_property(srna, "phase_multiplier", PROP_FLOAT, PROP_NONE);
   RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_ui_text(
-      prop, "Phase Multiple", "Scale factor determining the 'speed' of the function");
+      prop, "Phase Multiplier", "Scale factor determining the 'speed' of the function");
   RNA_def_property_update(prop, NC_ANIMATION | ND_KEYFRAME | NA_EDITED, "rna_FModifier_update");
   RNA_def_property_float_default(prop, 1.0);
 

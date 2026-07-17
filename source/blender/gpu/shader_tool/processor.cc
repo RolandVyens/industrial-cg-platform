@@ -24,14 +24,70 @@ using namespace std;
 using namespace shader::parser;
 using namespace metadata;
 
-SourceProcessor::Result SourceProcessor::convert(metadata::Source external_sources_symbols)
+SourceProcessor::Result SourceProcessor::convert_glsl()
 {
   metadata_ = {};
 
-  if (language_ == Language::UNKNOWN) {
-    report_error(0, 0, "", "Unknown file type");
-    return {"", metadata_, error_handler.err};
+  const string filename = filepath_.substr(filepath_.find_last_of('/') + 1);
+
+  string str = this->source_;
+
+  str = remove_comments(str);
+
+  {
+    IntermediateForm<SimpleLexer, DummyParser> parser(str, error_handler);
+    /* Remove trailing white space as they make the subsequent transformation much slower. */
+    cleanup_whitespace(parser);
+    str = parser.result_get();
+    str = threadgroup_variables_parse_and_remove(str);
   }
+
+  parse_builtins(str, filename, true);
+#ifdef __APPLE__ /* Limiting to Apple hardware since GLSL compilers might have issues. */
+  str = matrix_constructor_mutation(str);
+#endif
+  str = argument_decorator_macro_injection(str);
+  str = array_constructor_macro_injection(str);
+  str = line_directive_prefix(filename) + str;
+  return {str, metadata_, error_handler.err};
+}
+
+SourceProcessor::Result SourceProcessor::convert_msl()
+{
+  metadata_ = {};
+  const string filename = filepath_.substr(filepath_.find_last_of('/') + 1);
+
+  string str = this->source_;
+
+  str = remove_comments(str);
+
+  {
+    IntermediateForm<SimpleLexer, DummyParser> parser(str, error_handler);
+    /* Remove trailing white space as they make the subsequent regex much slower. */
+    cleanup_whitespace(parser);
+    str = parser.result_get();
+  }
+
+  str = threadgroup_variables_parse_and_remove(str);
+
+  {
+    Parser parser(str, error_handler);
+    parse_pragma_runtime_generated(parser);
+    parse_includes(parser);
+    lower_preprocessor(parser);
+    str = parser.result_get();
+  }
+
+  str = argument_decorator_macro_injection(str);
+  str = array_constructor_macro_injection(str);
+  str = line_directive_prefix(filename) + str;
+  return {str, metadata_, error_handler.err};
+}
+
+SourceProcessor::Result SourceProcessor::convert_bsl(metadata::Source external_sources_symbols)
+{
+  metadata_ = {};
+
   /* Only use symbols and templates from external sources. */
   metadata_.symbol_table.insert(metadata_.symbol_table.end(),
                                 external_sources_symbols.symbol_table.begin(),
@@ -50,145 +106,138 @@ SourceProcessor::Result SourceProcessor::convert(metadata::Source external_sourc
   string str = this->source_;
 
   str = remove_comments(str);
-  if (language_ == Language::BLENDER_GLSL || language_ == Language::CPP) {
-    str = disabled_code_mutation(str);
-  }
-  else {
-    IntermediateForm<SimpleLexer, DummyParser> parser(str, error_handler);
-    /* Remove trailing white space as they make the subsequent regex much slower. */
-    cleanup_whitespace(parser);
-    str = parser.result_get();
-  }
+  str = disabled_code_mutation(str);
   str = threadgroup_variables_parse_and_remove(str);
-  if (language_ == Language::BLENDER_GLSL || language_ == Language::CPP) {
-    {
-      parse_builtins(str, filename);
-      Parser parser(str, error_handler);
 
-      /* Preprocessor directive parsing & linting. */
-      if (language_ == Language::BLENDER_GLSL) { /* TODO(fclem): Enforce in C++ header too. */
-        lint_pragma_once(parser, filename);
-      }
-      parse_pragma_runtime_generated(parser);
-      parse_includes(parser);
-      parse_defines(parser);
-      parse_legacy_create_info(parser);
-      parse_library_functions(parser);
+  parse_builtins(str, filename);
+  Parser parser(str, error_handler);
 
-      lower_preprocessor(parser);
+  /* Preprocessor directive parsing & linting. */
+  lint_pragma_once(parser, filename);
+  parse_pragma_runtime_generated(parser);
+  parse_includes(parser);
+  parse_defines(parser);
+  parse_legacy_create_info(parser);
+  parse_library_functions(parser);
 
-      parser.apply_mutations();
+  lower_preprocessor(parser);
 
-      /* Early out for certain files. */
-      if (parser.str().find("\n#pragma no_processing") != string::npos) {
-        cleanup_whitespace(parser);
-        return {
-            line_directive_prefix(filename) + parser.result_get(), metadata_, error_handler.err};
-      }
+  parser.apply_mutations();
 
-      /* Lower high level parsing complexity.
-       * Merge tokens that can be combined together,
-       * remove the token that are unsupported or that are noop.
-       * All these steps should be independent. */
-      lower_namesless_parameters(parser);
-      lower_attribute_sequences(parser);
-      lower_strings_sequences(parser);
-      lower_swizzle_methods(parser);
-      lower_classes(parser);
-      lower_noop_keywords(parser);
-      lower_trailing_comma_in_list(parser);
-      lower_comma_separated_declarations(parser);
-      lower_assert(parser, filename);
-      /* Lower implicit members before we remove SRT member from their struct. */
-      lower_implicit_member(parser);
-
-      parser.apply_mutations();
-
-      parse_local_symbols(parser);
-
-      /* Linting phase. Detect valid syntax with invalid usage. */
-      lint_unbraced_statements(parser);
-      lint_reserved_tokens(parser);
-      lint_attributes(parser);
-      lint_global_scope_constants(parser);
-      lint_constructors(parser);
-      lint_forward_declared_structs(parser);
-
-      /* All mutations that needs to also be applied on template definitions. */
-      lower_pre_template(parser);
-      /* Lower templates. */
-      lower_templates(parser);
-      /* Lower unions and then lint shared structures. */
-      lower_unions(parser);
-      lower_host_shared_structures(parser);
-      /* Lower enums. */
-      lower_enums(parser);
-      /* Lower SRT and Interfaces. */
-      lower_entry_points(parser);
-      lower_pipeline_definition(parser, filename);
-      lower_resource_table(parser);
-      lower_resource_access_functions(parser);
-      /* Lower class methods. */
-      lower_default_constructors(parser);
-      lower_function_default_arguments(parser);
-      lower_method_definitions(parser);
-      lower_method_calls(parser);
-      lower_empty_struct(parser);
-      /* Lower SRT accesses. */
-      lower_srt_member_access(parser);
-      lower_srt_arguments(parser);
-      lower_entry_points_signature(parser);
-      lower_stage_function(parser);
-      /* Lower string, assert, printf. */
-      lower_strings(parser);
-      lower_printf(parser);
-      /* Lower other C++ constructs. */
-      lower_implicit_return_types(parser);
-      lower_initializer_implicit_types(parser);
-      lower_designated_initializers(parser);
-      lower_aggregate_initializers(parser);
-      lower_array_initializations(parser);
-      lower_scope_resolution_operators(parser);
-      /* Lower references. */
-      lower_reference_arguments(parser);
-      lower_reference_variables(parser);
-      /* Lower control flow. */
-      lower_static_branch(parser);
-      /* Unroll last to avoid processing more tokens in other phases. */
-      lower_loop_unroll(parser);
-
-      /* GLSL syntax compatibility.
-       * TODO(fclem): Remove. */
-      lower_argument_qualifiers(parser);
-
-      /* Cleanup to make output more human readable and smaller for runtime. */
-      cleanup_whitespace(parser);
-      cleanup_empty_lines(parser);
-      cleanup_line_directives(parser);
-      str = parser.result_get();
-    }
-
-    str = line_directive_prefix(filename) + str;
-    return {str, metadata_, error_handler.err};
+  /* Early out for certain files. */
+  if (parser.str().find("\n#pragma no_processing") != string::npos) {
+    cleanup_whitespace(parser);
+    return {line_directive_prefix(filename) + parser.result_get(), metadata_, error_handler.err};
   }
 
-  if (language_ == Language::MSL) {
-    Parser parser(str, error_handler);
-    parse_pragma_runtime_generated(parser);
-    parse_includes(parser);
-    lower_preprocessor(parser);
-    str = parser.result_get();
-  }
-  if (language_ == Language::GLSL) {
-    parse_builtins(str, filename, true);
-#ifdef __APPLE__ /* Limiting to Apple hardware since GLSL compilers might have issues. */
-    str = matrix_constructor_mutation(str);
-#endif
-  }
-  str = argument_decorator_macro_injection(str);
-  str = array_constructor_macro_injection(str);
+  /* Lower high level parsing complexity.
+   * Merge tokens that can be combined together,
+   * remove the token that are unsupported or that are noop.
+   * All these steps should be independent. */
+  lower_namesless_parameters(parser);
+  lower_attribute_sequences(parser);
+  lower_strings_sequences(parser);
+  lower_swizzle_methods(parser);
+  lower_binary_literals(parser);
+  lower_classes(parser);
+  lower_noop_keywords(parser);
+  lower_trailing_comma_in_list(parser);
+  lower_comma_separated_declarations(parser);
+  lower_assert(parser, filename);
+  /* Lower implicit members before we remove SRT member from their struct. */
+  lower_implicit_member(parser);
+
+  parser.apply_mutations();
+
+  parse_local_symbols(parser);
+
+  /* Linting phase. Detect valid syntax with invalid usage. */
+  lint_unbraced_statements(parser);
+  lint_reserved_tokens(parser);
+  lint_attributes(parser);
+  lint_global_scope_constants(parser);
+  lint_constructors(parser);
+  lint_forward_declared_structs(parser);
+
+  /* All mutations that needs to also be applied on template definitions. */
+  lower_pre_template(parser);
+  /* Lower templates. */
+  lower_templates(parser);
+  /* Lower unions and then lint shared structures. */
+  lower_unions(parser);
+  lower_host_shared_structures(parser);
+  /* Lower enums. */
+  lower_enums(parser);
+  /* Lower SRT and Interfaces. */
+  lower_entry_points(parser);
+  lower_pipeline_definition(parser, filename);
+  lower_resource_table(parser);
+  lower_resource_access_functions(parser);
+  /* Lower class methods. */
+  lower_default_constructors(parser);
+  lower_function_default_arguments(parser);
+  lower_method_definitions(parser);
+  lower_method_calls(parser);
+  lower_empty_struct(parser);
+  /* Lower SRT accesses. */
+  lower_srt_member_access(parser);
+  lower_srt_arguments(parser);
+  lower_entry_points_signature(parser);
+  lower_stage_function(parser);
+  /* Lower string, assert, printf. */
+  lower_strings(parser);
+  lower_printf(parser);
+  /* Lower other C++ constructs. */
+  lower_implicit_return_types(parser);
+  lower_initializer_implicit_types(parser);
+  lower_designated_initializers(parser);
+  lower_aggregate_initializers(parser);
+  lower_array_initializations(parser);
+  lower_scope_resolution_operators(parser);
+  lower_structured_bindings(parser);
+  lower_tests(parser);
+  /* Lower references. */
+  lower_reference_arguments(parser);
+  lower_reference_variables(parser);
+  /* Lower control flow. */
+  lower_static_branch(parser);
+  /* Unroll last to avoid processing more tokens in other phases. */
+  lower_loop_unroll(parser);
+
+  /* GLSL syntax compatibility.
+   * TODO(fclem): Remove. */
+  lower_argument_qualifiers(parser);
+  lower_gather_component(parser);
+
+  /* Cleanup to make output more human readable and smaller for runtime. */
+  cleanup_whitespace(parser);
+  cleanup_empty_lines(parser);
+  cleanup_line_directives(parser);
+  str = parser.result_get();
+
   str = line_directive_prefix(filename) + str;
   return {str, metadata_, error_handler.err};
+}
+
+SourceProcessor::Result SourceProcessor::convert(metadata::Source external_sources_symbols)
+{
+  switch (language_) {
+    case Language::CPP:
+    case Language::BSL:
+    case Language::BLENDER_GLSL:
+      return convert_bsl(external_sources_symbols);
+    case Language::MSL:
+      return convert_msl();
+    case Language::GLSL:
+      return convert_glsl();
+    case Language::UNKNOWN:
+    default:
+      break;
+  }
+
+  metadata_ = {};
+  report_error(0, 0, "", "Unknown file type");
+  return {"", metadata_, error_handler.err};
 }
 
 metadata::Source SourceProcessor::parse_include_and_symbols()
@@ -298,6 +347,19 @@ void SourceProcessor::parse_defines(Parser &parser)
 {
   parser().foreach_match<true>("#A", [&](const vector<Token> &tokens) {
     if (tokens[1].str() == "define") {
+      if (tokens[1].next().str().starts_with("LIGHT_STACK_SIZE_")) {
+        /* WORKAROUND: Avoid warning caused by EEVEE macro setup. */
+        return;
+      }
+      if (tokens[1].next().str() == "GBUFFER_LAYER_MAX") {
+        /* WORKAROUND: Avoid warning caused by EEVEE macro setup. */
+        return;
+      }
+      if (tokens[1].next().str().starts_with("gather_")) {
+        /* WORKAROUND: Avoid warning caused by EEVEE macro setup. */
+        return;
+      }
+
       metadata_.create_infos_defines.emplace_back(tokens[1].next().scope().str_with_whitespace());
     }
     if (tokens[1].str() == "undef") {
@@ -426,6 +488,7 @@ static std::string_view str_view_exclusive(Token tok)
 
 void SourceProcessor::parse_includes(Parser &parser)
 {
+  const string filename = filepath_.substr(filepath_.find_last_of('/') + 1);
   parser().foreach_match<true>("#A\"", [&](const vector<Token> &tokens) {
     if (tokens[1].str() != "include") {
       return;
@@ -458,6 +521,9 @@ void SourceProcessor::parse_includes(Parser &parser)
       dependency_name = dependency_name.substr(6);
     }
 
+    if (dependency_name == filename) {
+      report_error(tokens[2], "Recursive include");
+    }
     metadata_.dependencies.emplace_back(dependency_name);
   });
 }
@@ -602,9 +668,23 @@ void SourceProcessor::lower_swizzle_methods(Parser &parser)
   });
 }
 
+/* Support for C++ binary literal syntax for integers. */
+void SourceProcessor::lower_binary_literals(Parser &parser)
+{
+  parser().foreach_token(Number, [&](const Token tok) {
+    string_view str = tok.str();
+    if (str.starts_with("0b") || str.starts_with("0B")) {
+      int64_t value = std::stoll(string(str.substr(2)), nullptr, 2);
+      parser.replace(tok.str_index_start(),
+                     tok.str_index_last_no_whitespace(),
+                     std::to_string(value) + (str.ends_with("u") ? "u" : ""));
+    }
+  });
+}
+
 string SourceProcessor::threadgroup_variables_parse_and_remove(const string &str)
 {
-  Parser parser(str, error_handler);
+  IntermediateForm<FullLexer, DummyParser> parser(str, error_handler);
 
   auto process_shared_var = [&](Token shared_tok, Token type, Token name, Token decl_end) {
     if (shared_tok.str() == "shared") {
@@ -614,19 +694,10 @@ string SourceProcessor::threadgroup_variables_parse_and_remove(const string &str
       parser.erase(shared_tok, decl_end);
     }
   };
-  parser().foreach_match("AAA;", [&](const vector<Token> &tokens) {
-    process_shared_var(tokens[0], tokens[1], tokens[2], tokens.back());
+  parser().foreach_match("AAA", [&](const vector<Token> &tokens) {
+    Token end = tokens[2].find_next(lexit::SemiColon);
+    process_shared_var(tokens[0], tokens[1], tokens[2], end);
   });
-  parser().foreach_match("AAA[..];", [&](const vector<Token> &tokens) {
-    process_shared_var(tokens[0], tokens[1], tokens[2], tokens.back());
-  });
-  parser().foreach_match("AAA[..][..];", [&](const vector<Token> &tokens) {
-    process_shared_var(tokens[0], tokens[1], tokens[2], tokens.back());
-  });
-  parser().foreach_match("AAA[..][..][..];", [&](const vector<Token> &tokens) {
-    process_shared_var(tokens[0], tokens[1], tokens[2], tokens.back());
-  });
-  /* If more array depth is needed, find a less dumb solution. */
 
   return parser.result_get();
 }
@@ -733,8 +804,16 @@ void SourceProcessor::parse_builtins(const string &str, const string &filename, 
  * Empty structs are useful for templating. */
 void SourceProcessor::lower_empty_struct(Parser &parser)
 {
-  parser().foreach_match(
-      "sA{};", [&](const vector<Token> &tokens) { parser.insert_after(tokens[2], "int _pad;"); });
+  parser().foreach_struct([&](Token, Scope, Token, Scope body) {
+    int decl_count = 0;
+    body.foreach_declaration(
+        [&](Scope, Token, Token, Scope, Token, Scope, Token) { decl_count += 1; });
+
+    if (decl_count == 0) {
+      parser.insert_before(body.back(), "int _pad;");
+    }
+  });
+
   parser.apply_mutations();
 }
 
@@ -1106,11 +1185,40 @@ void SourceProcessor::lint_reserved_tokens(Parser &parser)
   };
 
   parser().foreach_token(Word, [&](Token tok) {
-    if (reserved_symbols.find(string(tok.str())) != reserved_symbols.end()) {
+    if (reserved_symbols.contains(string(tok.str()))) {
       string err = string(tok.str()) + " is a reserved token";
       report_error(tok, err.c_str());
     }
   });
+}
+
+void SourceProcessor::lower_tests(Parser &parser)
+{
+  parser().foreach_function([&](bool, Token type, Token, Scope, bool, Scope fn_body) {
+    if (type.str() != "void") {
+      return;
+    }
+    /* Note: Assume any function containing tests are entry points. */
+    int test_id = 0;
+    fn_body.foreach_match("A(A,A){..}", [&](Tokens toks) {
+      if (toks[0].str() != "TEST") {
+        return;
+      }
+      Scope test_body = toks[6].scope();
+      test_body.foreach_match("A(..)", [&](Tokens toks) {
+        if (toks[0].str().starts_with("EXPECT_")) {
+          int id = test_id;
+          parser.insert_before(toks[0], "out_test[" + to_string(id) + "] = ");
+          parser.insert_after(toks[4],
+                              "; out_test[" + to_string(id) +
+                                  "].line = " + to_string(toks[0].line_number()));
+          test_id++;
+        }
+      });
+    });
+  });
+
+  parser.apply_mutations();
 }
 
 void SourceProcessor::lower_noop_keywords(Parser &parser)
@@ -1267,7 +1375,7 @@ void SourceProcessor::lower_aggregate_initializers(Parser &parser)
       if (t[0].prev() == Struct) {
         return;
       }
-      if (builtin_types.find(string(t[0].str())) != builtin_types.end()) {
+      if (builtin_types.contains(string(t[0].str()))) {
         report_error(t[0],
                      "Aggregate is error prone for built-in vector and matrix types, use "
                      "constructors instead");
@@ -1594,9 +1702,9 @@ void SourceProcessor::lower_reference_variables(Parser &parser)
       assignment.foreach_token(ParOpen, [&](const Token token) {
         string_view fn_name = token.prev().str();
         if ((fn_name != "specialization_constant_get") && (fn_name != "push_constant_get") &&
-            (fn_name != "interface_get") && (fn_name != "attribute_get") &&
-            (fn_name != "buffer_get") && (fn_name != "srt_access") && (fn_name != "sampler_get") &&
-            (fn_name != "image_get"))
+            (fn_name != "interface_get") && (fn_name != "resource_table_get") &&
+            (fn_name != "attribute_get") && (fn_name != "buffer_get") &&
+            (fn_name != "srt_access") && (fn_name != "sampler_get") && (fn_name != "image_get"))
         {
           report_error(token, "Reference definitions cannot contain function calls.");
         }
@@ -1652,16 +1760,23 @@ void SourceProcessor::lower_reference_variables(Parser &parser)
 
       string definition = parser.substr_range_inclusive(assignment[1], assignment.back());
 
+      bool error = false;
       /* Replace declaration. */
       parser.erase(decl_start, decl_end);
       /* Replace all occurrences with definition. */
       name.scope().foreach_token(Word, [&](const Token token) {
         /* Do not match member access or function calls. */
-        if (token.prev() == '.' || token.next() == '(') {
+        if (error || token.prev() == '.' || token.next() == '(') {
           return;
         }
         if (token.str_index_start() > decl_end.str_index_last() && token.str() == name.str()) {
-          parser.replace(token, definition);
+          if (token.prev() == '&' && token.next() == '=') {
+            report_error(token, "Local reference shadowing is not allowed.");
+            error = true;
+          }
+          else {
+            parser.replace(token, definition);
+          }
         }
       });
     });
@@ -1684,6 +1799,23 @@ void SourceProcessor::lower_argument_qualifiers(Parser &parser)
       parser.replace(toks[0], "_ref(");
       parser.insert_after(toks[1], ",");
       parser.insert_after(toks[2], ")");
+    }
+  });
+  parser.apply_mutations();
+}
+
+void SourceProcessor::lower_gather_component(Parser &parser)
+{
+  parser().foreach_match("A(..)", [&](const Tokens &toks) {
+    if (toks[0].scope().type() == ScopeType::Preprocessor) {
+      /* Don't mutate the actual implementation. */
+      return;
+    }
+    Token component = toks.back().prev();
+    /* Assume that if there is a number at the end of argument list, it is the component id. */
+    if (toks[0].str() == "textureGather" && component == Number && component.prev() == Comma) {
+      parser.insert_after(toks[0], string(component.str()));
+      parser.erase(component.prev(), component);
     }
   });
   parser.apply_mutations();

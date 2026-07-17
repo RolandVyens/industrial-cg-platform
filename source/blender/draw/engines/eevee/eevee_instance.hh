@@ -24,7 +24,6 @@
 
 #include "DNA_lightprobe_types.h"
 
-#include "DNA_view3d_types.h"
 #include "DRW_render.hh"
 
 #include "eevee_ambient_occlusion.hh"
@@ -58,19 +57,27 @@
 namespace blender::eevee {
 
 using UniformDataBuf = draw::UniformBuffer<UniformData>;
+using PipelineInfoBuf = draw::UniformBuffer<PipelineInfoData>;
+using RaytraceDataBuf = draw::UniformBuffer<RayTraceData>;
 
 /* Combines data from several modules to avoid wasting binding slots. */
 struct UniformDataModule {
-  UniformDataBuf data = {"UniformDataBuf"};
+  UniformDataBuf data{"UniformDataBuf"};
+  PipelineInfoBuf pipeline{"PipelineInfoBuf"};
+  RaytraceDataBuf raytrace{"RaytraceDataBuf"};
 
   void push_update()
   {
     data.push_update();
+    pipeline.push_update();
+    raytrace.push_update();
   }
 
   template<typename PassType> void bind_resources(PassType &pass)
   {
     pass.bind_ubo(UNIFORM_BUF_SLOT, &data);
+    pass.bind_ubo(PIPELINE_BUF_SLOT, &pipeline);
+    pass.bind_ubo(RAYTRACE_BUF_SLOT, &raytrace);
   }
 };
 
@@ -185,12 +192,12 @@ class Instance : public DrawEngine {
       : shaders(*ShaderModule::module_get()),
         sync(*this),
         materials(*this),
-        subsurface(*this, uniform_data.data.subsurface),
-        pipelines(*this, uniform_data.data.pipeline),
+        subsurface(*this),
+        pipelines(*this, uniform_data.pipeline),
         shadows(*this, uniform_data.data.shadow),
         lights(*this),
         ambient_occlusion(*this, uniform_data.data.ao),
-        raytracing(*this, uniform_data.data.raytrace),
+        raytracing(*this, uniform_data.raytrace),
         velocity(*this),
         motion_blur(*this),
         depth_of_field(*this),
@@ -210,7 +217,7 @@ class Instance : public DrawEngine {
         volume_probes(*this),
         light_probes(*this),
         volume(*this, uniform_data.data.volumes) {};
-  ~Instance() {};
+  ~Instance() override {};
 
   StringRefNull name_get() final
   {
@@ -315,12 +322,6 @@ class Instance : public DrawEngine {
     return is_light_bake;
   }
 
-  bool is_custom_matrix() const
-  {
-    return (v3d && v3d->flag & V3D_CUSTOM_MATRIX) ||
-           (draw_ctx && draw_ctx->mode == DRWContext::VIEWPORT_XR);
-  }
-
   bool overlays_enabled() const
   {
     return overlays_enabled_;
@@ -356,14 +357,14 @@ class Instance : public DrawEngine {
            ((v3d->shading.type == OB_MATERIAL) && (v3d->overlay.flag & V3D_OVERLAY_LOOK_DEV));
   }
 
-  int get_recalc_flags(const ObjectRef &ob_ref)
+  uint get_recalc_flags(const ObjectRef &ob_ref)
   {
     return ob_ref.recalc_flags(depsgraph_last_update_);
   }
 
-  int get_recalc_flags(const blender::World &world)
+  uint get_recalc_flags(const blender::World &world)
   {
-    return world.last_update > depsgraph_last_update_ ? int(ID_RECALC_SHADING) : 0;
+    return world.last_update > depsgraph_last_update_ ? uint(ID_RECALC_SHADING) : 0;
   }
 
  private:
@@ -373,8 +374,6 @@ class Instance : public DrawEngine {
    */
   void render_sample();
   void render_read_result(RenderLayer *render_layer, const char *view_name);
-
-  void mesh_sync(Object *ob, ObjectHandle &ob_handle);
 
   void update_eval_members();
 

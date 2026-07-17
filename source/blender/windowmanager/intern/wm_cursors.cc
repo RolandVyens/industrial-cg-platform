@@ -174,15 +174,10 @@ static int wm_cursor_size(const wmWindow *win)
     return std::lround(21.0f * UI_SCALE_FAC);
   }
 
-  if (OS_MAC) {
-    /* MacOS always scales up this type of cursor for high-dpi displays. */
-    return 21;
-  }
-
   /* The DPI as a scale without the UI scale preference. */
   const float system_scale = WM_window_dpi_get_scale(win);
 
-  return std::lround(WM_cursor_preferred_logical_size() * system_scale);
+  return std::lround(WM_cursor_preferred_logical_size(true) * system_scale);
 }
 
 /**
@@ -803,10 +798,10 @@ static uint8_t *cursor_bitmap_from_text(const char *text,
   if (text_to_draw) {
     const float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     BLF_buffer_col(font_id, color);
-    BLF_buffer(font_id, nullptr, bitmap_rgba, dest_size[0], dest_size[1], nullptr);
+    BLF_buffer(font_id, nullptr, bitmap_rgba, dest_size[0], dest_size[1], 4, nullptr);
     BLF_position(font_id, font_padding, font_padding + font_descender, 0.0f);
     BLF_draw_buffer(font_id, text, text_len);
-    BLF_buffer(font_id, nullptr, nullptr, 0, 0, nullptr);
+    BLF_buffer(font_id, nullptr, nullptr, 0, 0, 4, nullptr);
 
     cursor_bitmap_rgba_flip_y(bitmap_rgba, dest_size);
   }

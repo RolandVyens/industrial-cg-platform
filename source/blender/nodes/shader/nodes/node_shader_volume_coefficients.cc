@@ -17,11 +17,14 @@ namespace nodes::node_shader_volume_coefficients_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
+  const bNodeTree *ntree = b.tree_or_null();
+  const bool is_gpu_internal = ntree && (ntree->flag & NTREE_IS_GPU_SHADER_INTERNAL);
+
   b.use_custom_socket_order();
 
   b.add_output<decl::Shader>("Volume"_ustr).translation_context(BLT_I18NCONTEXT_ID_ID);
 
-  b.add_input<decl::Float>("Weight"_ustr).available(false);
+  b.add_input<decl::Float>("Weight"_ustr).available(is_gpu_internal);
 #define SOCK_WEIGHT_ID 0
 
   PanelDeclarationBuilder &abs = b.add_panel("Absorption"_ustr).default_closed(false);
@@ -162,7 +165,7 @@ void register_node_type_sh_volume_coefficients()
   ntype.declare = file_ns::node_declare;
   ntype.gather_link_search_ops = search_link_ops_for_shader_bsdf_node;
   ntype.add_ui_poll = object_shader_nodes_poll;
-  bke::node_type_size_preset(ntype, bke::eNodeSizePreset::Large);
+  ntype.default_width = bke::NodeWidth::_240;
   ntype.initfunc = file_ns::node_shader_init_coefficients;
   ntype.gpu_fn = file_ns::node_shader_gpu_volume_coefficients;
   ntype.updatefunc = file_ns::node_shader_update_coefficients;

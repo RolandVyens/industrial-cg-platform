@@ -696,11 +696,27 @@ void funcTA() { A_fn(); }
 template<typename T>
 void func(T a) {a;}
 template void func<float>(float a);
+template<typename T>
+void foo(T &a) {a;}
+template void foo<float>(float &a);
+
+void f(float a)
+{
+  func(a);
+  foo(a);
+}
 )";
     string expect = R"(
 #line 3
 void func(float a) {a;}
-#line 5
+#line 6
+void foo(_ref(float ,a)) {a;}
+#line 9
+void f(float a)
+{
+  func(a);
+  foo(a);
+}
 )";
     string error;
     string output = process_test_string(input, error);
@@ -1424,6 +1440,12 @@ void func([[resource_table]] Resources &srt)
   } else {
     test;
   }
+
+  if (srt.use_color_band) [[static_branch]] {
+    if (srt.use_color_band) [[static_branch]] {
+      test;
+    }
+  }
 }
 )";
     string expect = R"(
@@ -1528,13 +1550,28 @@ void func(Resources  srt)
          {
     test;
   }
+#endif
+
+#if SRT_CONSTANT_use_color_band
+#line 38
+                                                               {
+
+#if SRT_CONSTANT_use_color_band
+#line 39
+                                                                 {
+      test;
+    }
 
 #endif
-#line 37
+#line 42
+  }
+
+#endif
+#line 43
 }
 
 #endif
-#line 38
+#line 44
 )";
     string error;
     string output = process_test_string(input, error);
@@ -2018,6 +2055,22 @@ static void test_preprocess_swizzle()
 }
 GPU_TEST(preprocess_swizzle);
 
+static void test_preprocess_binary_literals()
+{
+  using namespace shader;
+  using namespace std;
+
+  {
+    string input = R"(0b1 0b10u 0b10001000100010001000100010001000)";
+    string expect = R"(1 2u 2290649224)";
+    string error;
+    string output = process_test_local(input, error);
+    EXPECT_EQ(output, expect);
+    EXPECT_EQ(error, "");
+  }
+}
+GPU_TEST(preprocess_binary_literals);
+
 static void test_preprocess_enum()
 {
   using namespace shader;
@@ -2322,6 +2375,76 @@ void U_fn();
   }
 }
 GPU_TEST(preprocess_empty_struct);
+
+static void test_preprocess_structured_bindings()
+{
+  using namespace shader;
+  using namespace std;
+
+  {
+    string input = R"(
+struct S {
+  int i;
+  float b;
+};
+
+S test()
+{
+  return S{};
+}
+
+void fn(S u, S &v)
+{
+  S t;
+  S &r = t;
+  {
+    int u;
+    int t;
+  }
+  auto [a, b] = S{};
+  auto [c, d] = test();
+  auto [e, f] = t;
+  auto [g, h] = u;
+  auto [i, j] = r;
+  auto [k, l] = v;
+}
+)";
+    string expect = R"(
+struct S {
+  int i;
+  float b;
+};
+#line 2
+                 S S_ctor_() {S r;r.i=0;r.b=0.0f;return r;}
+#line 7
+S test()
+{
+  return S_ctor_();
+}
+
+void fn(S u, _ref(S ,v))
+{
+  S t;
+
+  {
+    int u;
+    int t;
+  }
+  S _u0= S_ctor_();int a=_u0.i;float b=_u0.b;
+  S _u1= test();int c=_u1.i;float d=_u1.b;
+  S _u2= t;int e=_u2.i;float f=_u2.b;
+  S _u3= u;int g=_u3.i;float h=_u3.b;
+  S _u4= t;int i=_u4.i;float j=_u4.b;
+  S _u5= v;int k=_u5.i;float l=_u5.b;
+}
+)";
+    string error;
+    string output = process_test_string(input, error);
+    EXPECT_EQ(output, expect);
+    EXPECT_EQ(error, "");
+  }
+}
+GPU_TEST(preprocess_structured_bindings);
 
 static void test_preprocess_struct_methods()
 {
@@ -2683,11 +2806,11 @@ struct ns_VertInTfloat {
 #if defined(GPU_VERTEX_SHADER)
 #line 29
   Resources srt = Resources_ctor_();
-  gl_BaseInstance;
+  gpu_BaseInstance;
   gl_PointSize;
   gl_ClipDistance;
   gl_Layer;
-  gl_ViewportIndex;
+  gpu_ViewportIndex;
   gl_Position;
 
 #endif
@@ -2710,7 +2833,7 @@ struct ns_VertInTfloat {
 #line 48
   Resources srt = Resources_ctor_();
   gl_Layer;
-  gl_ViewportIndex;
+  gpu_ViewportIndex;
   gl_FragDepth;
   gl_FragStencilRefARB;
   gl_FragCoord;
@@ -2773,6 +2896,7 @@ GPU_SHADER_CREATE_INFO(ns_vertex_function_infos_)
 ADDITIONAL_INFO(Resources)
 ADDITIONAL_INFO(ns_VertInTfloat)
 VERTEX_OUT(ns_VertOut_t)
+BUILTINS(BuiltinBits::INSTANCE_ID)
 BUILTINS(BuiltinBits::POINT_SIZE)
 BUILTINS(BuiltinBits::LAYER)
 BUILTINS(BuiltinBits::VIEWPORT_INDEX)
@@ -2780,7 +2904,7 @@ BUILTINS(BuiltinBits::CLIP_DISTANCES)
 GPU_SHADER_CREATE_END()
 
 GPU_SHADER_CREATE_INFO(ns_fragment_function_infos_)
-DEPTH_WRITE(GREATER)
+DEPTH_WRITE(DepthWrite::GREATER)
 BUILTINS(BuiltinBits::STENCIL_REF)
 BUILTINS(BuiltinBits::POINT_COORD)
 BUILTINS(BuiltinBits::FRONT_FACING)

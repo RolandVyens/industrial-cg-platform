@@ -11,6 +11,14 @@ from blender_vfx_qt import ensure_runtime, qt_window_is_alive, show_unique_windo
 
 _window_cache = {"value": None}
 
+
+def shutdown_manager() -> None:
+    window = _window_cache.get("value")
+    _window_cache["value"] = None
+    if qt_window_is_alive(window):
+        window.shutdown()
+
+
 def show_manager():
     bqt = ensure_runtime()
     cached_window = _window_cache.get("value")

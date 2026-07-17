@@ -19,6 +19,7 @@
 #include "DNA_camera_types.h"
 #include "DNA_light_types.h"
 #include "RE_engine.h"
+#include "RE_pipeline.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -148,39 +149,29 @@ static CyclesOverscanSettings blender_overscan_settings_get(blender::PointerRNA 
         reference_border->bottom, reference_border->top, height);
   }
 
-  int pad_left = 0;
-  int pad_right = 0;
-  int pad_bottom = 0;
-  int pad_top = 0;
+  const blender::RenderOverscanPadding padding = blender::RE_overscan_padding_resolve(
+      blender_overscan_mode_is_pixels(cscene),
+      RNA_float_get(cscene, "overscan_size"),
+      RNA_int_get(cscene, "overscan_left"),
+      RNA_int_get(cscene, "overscan_right"),
+      RNA_int_get(cscene, "overscan_bottom"),
+      RNA_int_get(cscene, "overscan_top"),
+      reference_width,
+      reference_height);
 
-  if (blender_overscan_mode_is_pixels(cscene)) {
-    pad_left = max(0, RNA_int_get(cscene, "overscan_left"));
-    pad_right = max(0, RNA_int_get(cscene, "overscan_right"));
-    pad_bottom = max(0, RNA_int_get(cscene, "overscan_bottom"));
-    pad_top = max(0, RNA_int_get(cscene, "overscan_top"));
-  }
-  else {
-    const float overscan = max(0.0f, RNA_float_get(cscene, "overscan_size")) / 100.0f;
-    const int pad = max(0, int(ceilf(overscan * max(reference_width, reference_height))));
-    pad_left = pad;
-    pad_right = pad;
-    pad_bottom = pad;
-    pad_top = pad;
-  }
-
-  if (pad_left == 0 && pad_right == 0 && pad_bottom == 0 && pad_top == 0) {
+  if (!padding.any()) {
     return overscan_settings;
   }
 
   overscan_settings.enabled = true;
-  overscan_settings.pad_left = pad_left;
-  overscan_settings.pad_right = pad_right;
-  overscan_settings.pad_bottom = pad_bottom;
-  overscan_settings.pad_top = pad_top;
+  overscan_settings.pad_left = padding.left;
+  overscan_settings.pad_right = padding.right;
+  overscan_settings.pad_bottom = padding.bottom;
+  overscan_settings.pad_top = padding.top;
   overscan_settings.reference_width = reference_width;
   overscan_settings.reference_height = reference_height;
-  overscan_settings.data_width = reference_width + pad_left + pad_right;
-  overscan_settings.data_height = reference_height + pad_bottom + pad_top;
+  overscan_settings.data_width = reference_width + padding.left + padding.right;
+  overscan_settings.data_height = reference_height + padding.bottom + padding.top;
   return overscan_settings;
 }
 
@@ -893,8 +884,11 @@ static void blender_camera_sync(Camera *cam,
   /* transform */
   cam->set_matrix(blender_camera_matrix(bcam->matrix, bcam->type, bcam->panorama_type));
 
-  array<Transform> motion;
+  array<Transform> motion = cam->get_motion();
   motion.resize(bcam->motion_steps, cam->get_matrix());
+  if (bcam->motion_steps != 0) {
+    motion[bcam->motion_steps / 2] = cam->get_matrix();
+  }
   cam->set_motion(motion);
   cam->set_use_perspective_motion(false);
 
@@ -1032,7 +1026,7 @@ blender::Object *BlenderSync::get_camera_object(blender::View3D *b_v3d,
     return b_camera_override;
   }
 
-  if (b_v3d && b_rv3d && b_rv3d->persp == blender::RV3D_CAMOB && b_v3d->scenelock) {
+  if (b_v3d && b_rv3d && b_rv3d->persp == blender::RV3D_CAMOB && !b_v3d->scenelock) {
     return b_v3d->camera;
   }
 
@@ -1151,7 +1145,7 @@ static void blender_camera_from_view(BlenderCamera *bcam,
 
   if (b_rv3d->persp == blender::RV3D_CAMOB) {
     /* camera view */
-    blender::Object *b_ob = (b_v3d->scenelock) ? b_v3d->camera : b_scene.camera;
+    blender::Object *b_ob = (b_v3d->scenelock) ? b_scene.camera : b_v3d->camera;
 
     if (b_ob) {
       blender_camera_from_object(
@@ -1322,7 +1316,7 @@ static void blender_camera_border(BlenderCamera *bcam,
     return;
   }
 
-  blender::Object *b_ob = (b_v3d->scenelock) ? b_v3d->camera : b_scene.camera;
+  blender::Object *b_ob = (b_v3d->scenelock) ? b_scene.camera : b_v3d->camera;
 
   if (!b_ob) {
     return;
@@ -1382,6 +1376,7 @@ void BlenderSync::sync_view(blender::View3D *b_v3d,
       &bcam, *b_engine, b_render_settings, *b_scene, *b_data, b_v3d, b_rv3d, width, height);
   blender_camera_border(
       &bcam, *b_engine, b_render_settings, *b_scene, *b_data, b_v3d, b_rv3d, width, height);
+  bcam.motion_steps = scene->need_motion() == Scene::MOTION_PASS_INTERACTIVE ? 2 : 0;
   blender::PointerRNA scene_rna_ptr = RNA_id_pointer_create(&b_scene->id);
   blender::PointerRNA cscene = RNA_pointer_get(&scene_rna_ptr, "cycles");
   blender_camera_sync(scene->camera, scene, &bcam, width, height, "", &cscene, use_overscan);

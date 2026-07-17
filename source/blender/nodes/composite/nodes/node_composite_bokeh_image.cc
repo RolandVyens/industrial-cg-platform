@@ -73,7 +73,7 @@ class BokehImageOperation : public NodeOperation {
         this->get_color_shift());
 
     Result &output = this->get_result("Image");
-    output.wrap_external(bokeh_kernel);
+    output.share_data(bokeh_kernel);
   }
 
   Domain compute_domain() override
@@ -127,7 +127,7 @@ static void node_register()
   ntype.initfunc = node_init;
   ntype.flag |= NODE_PREVIEW;
   ntype.get_compositor_operation = get_compositor_operation;
-  bke::node_type_size(ntype, 160, 140, NODE_DEFAULT_MAX_WIDTH);
+  ntype.default_width = bke::NodeWidth::_160;
 
   bke::node_register_type(ntype);
 }

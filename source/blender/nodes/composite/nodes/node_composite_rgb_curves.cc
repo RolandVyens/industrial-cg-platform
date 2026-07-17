@@ -18,7 +18,6 @@
 #include "GPU_material.hh"
 
 #include "COM_result.hh"
-#include "COM_utilities_gpu_material.hh"
 
 #include "node_composite_util.hh"
 
@@ -98,10 +97,10 @@ static int node_gpu_material(GPUMaterial *material,
   const float max = 1.0f;
   GPU_link(material,
            "clamp_value",
-           get_shader_node_input_link(*node, inputs, "Fac"),
+           GPU_node_get_input_link(*node, inputs, "Fac"),
            GPU_constant(&min),
            GPU_constant(&max),
-           &get_shader_node_input(*node, inputs, "Fac").link);
+           &GPU_node_get_input(*node, inputs, "Fac").link);
 
   /* If the RGB curves do nothing, use a function that skips RGB computations. */
   if (BKE_curvemapping_is_map_identity(curve_mapping, 0) &&
@@ -181,7 +180,7 @@ static void node_register()
   ntype.enum_name_legacy = "CURVE_RGB";
   ntype.nclass = NODE_CLASS_OP_COLOR;
   ntype.declare = node_declare;
-  bke::node_type_size(ntype, 200, 140, 320);
+  ntype.default_width = bke::NodeWidth::_200;
   ntype.initfunc = node_init;
   bke::node_type_storage(ntype, "CurveMapping", node_free_curves, node_copy_curves);
   ntype.gpu_fn = node_gpu_material;

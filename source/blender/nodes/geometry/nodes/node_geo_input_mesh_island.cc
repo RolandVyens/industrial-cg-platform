@@ -14,12 +14,12 @@ namespace blender::nodes::node_geo_input_mesh_island_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_output<decl::Int>("Island Index"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description(
           "The index of the each vertex's island. Indices are based on the "
           "lowest vertex index contained in each island");
   b.add_output<decl::Int>("Island Count"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The total number of mesh islands");
 }
 
@@ -47,20 +47,21 @@ class IslandFieldInput final : public bke::MeshFieldInput {
         VArray<int>::from_container(std::move(output)), AttrDomain::Point, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random constant hash. */
-    return 635467354;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const IslandFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
   {
     return AttrDomain::Point;
+  }
+
+  bke::NativeFieldDomain native_domain_info(const Mesh & /*mesh*/) const override
+  {
+    /* Domain interpolation will not mix values for separate islands. */
+    return bke::NativeFieldDomain::Constant();
   }
 };
 
@@ -85,20 +86,20 @@ class IslandCountFieldInput final : public bke::MeshFieldInput {
     return VArray<int>::from_single(islands_num, mesh.attributes().domain_size(domain));
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random hash. */
-    return 45634572457;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const IslandCountFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override
   {
     return AttrDomain::Point;
+  }
+
+  bke::NativeFieldDomain native_domain_info(const Mesh & /*mesh*/) const override
+  {
+    return bke::NativeFieldDomain::Constant();
   }
 };
 

@@ -55,6 +55,7 @@ void main_signal_setup_fpe(void);
 struct ApplicationState {
   struct {
     bool use_crash_handler;
+    bool use_console_crash_handler;
     bool use_abort_handler;
   } signal;
 
@@ -91,12 +92,6 @@ enum {
    */
   ARG_PASS_FINAL = 5,
 };
-
-/* for the callbacks: */
-#ifndef WITH_PYTHON_MODULE
-#  define BLEND_VERSION_FMT "Blender %d.%d.%d " BLENDER_VERSION_BRAND_SUFFIX
-#  define BLEND_VERSION_ARG (BLENDER_VERSION / 100), (BLENDER_VERSION % 100), BLENDER_VERSION_PATCH
-#endif
 
 #ifdef WITH_BUILDINFO_HEADER
 #  define BUILD_DATE

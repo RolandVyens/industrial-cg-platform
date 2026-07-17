@@ -31,6 +31,8 @@ set(SRC
   image_sky.cpp
   image_vdb.cpp
   integrator.cpp
+  lightgroup_pass.cpp
+  scene_attributes.cpp
   light.cpp
   light_tree.cpp
   light_tree_debug.cpp
@@ -72,6 +74,7 @@ set(SRC_HEADERS
   image_sky.h
   image_vdb.h
   integrator.h
+  lightgroup_pass.h
   light.h
   light_tree.h
   light_tree_debug.h

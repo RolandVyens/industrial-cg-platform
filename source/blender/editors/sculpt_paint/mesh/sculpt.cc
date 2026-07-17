@@ -26,6 +26,8 @@
 #include "BLI_math_matrix.h"
 #include "BLI_math_matrix.hh"
 #include "BLI_math_rotation.h"
+#include "BLI_math_rotation_legacy.hh"
+#include "BLI_math_vector.hh"
 #include "BLI_rect.h"
 #include "BLI_set.hh"
 #include "BLI_span.hh"
@@ -63,12 +65,12 @@
 #include "BKE_paint_types.hh"
 #include "BKE_report.hh"
 #include "BKE_subdiv_ccg.hh"
-#include "BLI_math_rotation_legacy.hh"
-#include "BLI_math_vector.hh"
 
 #include "BLT_translation.hh"
 
 #include "NOD_texture.h"
+
+#include "PRF_profile.hh"
 
 #include "DEG_depsgraph.hh"
 #include "DEG_depsgraph_query.hh"
@@ -109,6 +111,10 @@ namespace blender {
 static CLG_LogRef LOG = {"sculpt"};
 
 namespace ed::sculpt_paint {
+
+/* -------------------------------------------------------------------- */
+/** \name Sculpt Brush Utilities
+ * \{ */
 
 /* TODO: This should be moved to either BKE_paint.hh or BKE_brush.hh */
 float object_space_radius_get(const ViewContext &vc,
@@ -222,9 +228,9 @@ int active_face_set_get(const Object &object)
   return face_set_none_id;
 }
 
-int vert_face_set_get(const GroupedSpan<int> vert_to_face_map,
-                      const Span<int> face_sets,
-                      const int vert)
+int vert_face_set_max_get(const GroupedSpan<int> vert_to_face_map,
+                          const Span<int> face_sets,
+                          const int vert)
 {
   int face_set = face_set_none_id;
   for (const int face : vert_to_face_map[vert]) {
@@ -239,9 +245,23 @@ int vert_face_set_get(const SubdivCCG &subdiv_ccg, const Span<int> face_sets, co
   return face_sets[face];
 }
 
-int vert_face_set_get(const int /*face_set_offset*/, const BMVert & /*vert*/)
+int vert_face_set_max_get(const int /*face_set_offset*/, const BMVert & /*vert*/)
 {
   return face_set_none_id;
+}
+
+Set<int> vert_face_sets_get(const GroupedSpan<int> vert_to_face_map,
+                            const Span<int> face_sets,
+                            const int vert)
+{
+  Set<int> result;
+  for (const int face : vert_to_face_map[vert]) {
+    result.add(face_sets[face]);
+  }
+  if (result.is_empty()) {
+    result.add(face_set_none_id);
+  }
+  return result;
 }
 
 bool vert_has_face_set(const GroupedSpan<int> vert_to_face_map,
@@ -278,6 +298,22 @@ bool vert_has_face_set(const int face_set_offset, const BMVert &vert, const int 
   BMFace *face;
   BM_ITER_ELEM (face, &iter, &const_cast<BMVert &>(vert), BM_FACES_OF_VERT) {
     if (BM_ELEM_CD_GET_INT(face, face_set_offset) == face_set) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool vert_has_any_face_set(const GroupedSpan<int> vert_to_face_map,
+                           const Span<int> face_sets,
+                           int vert,
+                           const Set<int> &allowed_face_sets)
+{
+  if (face_sets.is_empty()) {
+    return allowed_face_sets.contains(face_set_none_id);
+  }
+  for (const int face : vert_to_face_map[vert]) {
+    if (allowed_face_sets.contains(face_sets[face])) {
       return true;
     }
   }
@@ -368,6 +404,77 @@ bool vert_has_unique_face_set(const OffsetIndices<int> faces,
   }
   BLI_assert_unreachable();
   return true;
+}
+
+bool coord_has_face_set(const OffsetIndices<int> faces,
+                        const Span<int> corner_verts,
+                        const GroupedSpan<int> vert_to_face_map,
+                        const Span<int> face_sets,
+                        const SubdivCCG &subdiv_ccg,
+                        const SubdivCCGCoord coord,
+                        const int face_set)
+{
+  if (face_sets.is_empty()) {
+    return face_set == face_set_none_id;
+  }
+
+  if (face_set == face_set_none_id) {
+    return false;
+  }
+
+  Set<int> allowed_face_sets;
+  allowed_face_sets.add(face_set);
+  return coord_has_any_face_set(
+      faces, corner_verts, vert_to_face_map, face_sets, subdiv_ccg, coord, allowed_face_sets);
+}
+
+bool coord_has_any_face_set(const OffsetIndices<int> faces,
+                            const Span<int> corner_verts,
+                            const GroupedSpan<int> vert_to_face_map,
+                            const Span<int> face_sets,
+                            const SubdivCCG &subdiv_ccg,
+                            const SubdivCCGCoord coord,
+                            const Set<int> &allowed_face_sets)
+{
+  if (face_sets.is_empty()) {
+    return allowed_face_sets.contains(face_set_none_id);
+  }
+
+  if (allowed_face_sets.is_empty()) {
+    return false;
+  }
+
+  int v1, v2;
+  const SubdivCCGAdjacencyType adjacency = BKE_subdiv_ccg_coarse_mesh_adjacency_info_get(
+      subdiv_ccg, coord, corner_verts, faces, v1, v2);
+  switch (adjacency) {
+    case SubdivCCGAdjacencyType::Vertex: {
+      for (const int face : vert_to_face_map[v1]) {
+        if (allowed_face_sets.contains(face_sets[face])) {
+          return true;
+        }
+      }
+      return false;
+    }
+    case SubdivCCGAdjacencyType::Edge:
+      for (const int face : vert_to_face_map[v1]) {
+        const Span<int> face_verts = corner_verts.slice(faces[face]);
+        if (!face_verts.contains(v2)) {
+          continue;
+        }
+        if (allowed_face_sets.contains(face_sets[face])) {
+          return true;
+        }
+      }
+      return false;
+    case SubdivCCGAdjacencyType::None: {
+      const int face = BKE_subdiv_ccg_grid_to_face_index(subdiv_ccg, coord.grid_index);
+      return allowed_face_sets.contains(face_sets[face]);
+    }
+  }
+
+  BLI_assert_unreachable();
+  return false;
 }
 
 bool vert_has_unique_face_set(const int /*face_set_offset*/, const BMVert & /*vert*/)
@@ -490,6 +597,7 @@ void ensure_boundary_info(Object &object)
 
 SculptBoundaryInfoCache create_boundary_info(const Mesh &mesh)
 {
+  PRF_scope(ProfileCategory::Editor);
   SculptBoundaryInfoCache boundary_info;
   boundary_info.verts.resize(mesh.verts_num);
   Array<int> adjacent_faces_edge_count(mesh.edges_num, 0);
@@ -2549,6 +2657,7 @@ IndexMask gather_nodes(const bke::pbvh::Tree &pbvh,
                        const std::optional<float3> &ray_direction,
                        IndexMaskMemory &memory)
 {
+  PRF_scope(ProfileCategory::Editor);
   switch (falloff_shape) {
     case PAINT_FALLOFF_SHAPE_SPHERE: {
       return bke::pbvh::search_nodes(pbvh, memory, [&](const bke::pbvh::Node &node) {
@@ -2613,6 +2722,7 @@ static void update_sculpt_normal(const Depsgraph &depsgraph,
                                  Object &ob,
                                  const brushes::CursorSampleResult &cursor_sample_result)
 {
+  PRF_scope(ProfileCategory::Editor);
   const Brush &brush = *BKE_paint_brush_for_read(&sd.paint);
   StrokeCache &cache = *ob.runtime->sculpt_session->cache;
   /* Grab brush does not update the sculpt normal during a stroke. */
@@ -2765,6 +2875,7 @@ float3 tilt_effective_normal_get(const SculptSession &ss, const Brush &brush)
 
 static void update_brush_local_mat(const Sculpt &sd, Object &ob)
 {
+  PRF_scope(ProfileCategory::Editor);
   StrokeCache *cache = ob.runtime->sculpt_session->cache;
 
   if (cache->mirror_symmetry_pass == 0 && cache->radial_symmetry_pass == 0) {
@@ -3148,6 +3259,7 @@ static brushes::CursorSampleResult calc_brush_node_mask(const Depsgraph &depsgra
                                                         const Brush &brush,
                                                         IndexMaskMemory &memory)
 {
+  PRF_scope(ProfileCategory::Editor);
   const SculptSession &ss = *ob.runtime->sculpt_session;
   const bke::pbvh::Tree &pbvh = *bke::object::pbvh_get(ob);
 
@@ -3190,6 +3302,7 @@ static void push_undo_nodes(const Depsgraph &depsgraph,
                             const Brush &brush,
                             const IndexMask &node_mask)
 {
+  PRF_scope(ProfileCategory::Editor);
   SculptSession &ss = *ob.runtime->sculpt_session;
   bool need_coords = ss.cache->supports_gravity;
 
@@ -3217,6 +3330,78 @@ static void push_undo_nodes(const Depsgraph &depsgraph,
   }
 }
 
+static const char *sculpt_brush_type_name(const Brush &brush)
+{
+  switch (eBrushSculptType(brush.sculpt_brush_type)) {
+    case SCULPT_BRUSH_TYPE_DRAW:
+      return "Draw Brush";
+    case SCULPT_BRUSH_TYPE_SMOOTH:
+      return "Smooth Brush";
+    case SCULPT_BRUSH_TYPE_CREASE:
+      return "Crease Brush";
+    case SCULPT_BRUSH_TYPE_BLOB:
+      return "Blob Brush";
+    case SCULPT_BRUSH_TYPE_PINCH:
+      return "Pinch Brush";
+    case SCULPT_BRUSH_TYPE_INFLATE:
+      return "Inflate Brush";
+    case SCULPT_BRUSH_TYPE_GRAB:
+      return "Grab Brush";
+    case SCULPT_BRUSH_TYPE_NUDGE:
+      return "Nudge Brush";
+    case SCULPT_BRUSH_TYPE_THUMB:
+      return "Thumb Brush";
+    case SCULPT_BRUSH_TYPE_LAYER:
+      return "Layer Brush";
+    case SCULPT_BRUSH_TYPE_CLAY:
+      return "Clay Brush";
+    case SCULPT_BRUSH_TYPE_CLAY_STRIPS:
+      return "Clay Strips Brush";
+    case SCULPT_BRUSH_TYPE_CLAY_THUMB:
+      return "Clay Thumb Brush";
+    case SCULPT_BRUSH_TYPE_SNAKE_HOOK:
+      return "Snake Hook Brush";
+    case SCULPT_BRUSH_TYPE_ROTATE:
+      return "Rotate Brush";
+    case SCULPT_BRUSH_TYPE_MASK:
+      return "Mask Brush";
+    case SCULPT_BRUSH_TYPE_SIMPLIFY:
+      return "Simplify Brush";
+    case SCULPT_BRUSH_TYPE_DRAW_SHARP:
+      return "Draw Sharp Brush";
+    case SCULPT_BRUSH_TYPE_ELASTIC_DEFORM:
+      return "Elastic Deform Brush";
+    case SCULPT_BRUSH_TYPE_POSE:
+      return "Pose Brush";
+    case SCULPT_BRUSH_TYPE_MULTIPLANE_SCRAPE:
+      return "Multi-plane Scrape Brush";
+    case SCULPT_BRUSH_TYPE_SLIDE_RELAX:
+      return "Slide/Relax Brush";
+    case SCULPT_BRUSH_TYPE_BOUNDARY:
+      return "Boundary Brush";
+    case SCULPT_BRUSH_TYPE_CLOTH:
+      return "Cloth Brush";
+    case SCULPT_BRUSH_TYPE_DRAW_FACE_SETS:
+      return "Draw Face Sets";
+    case SCULPT_BRUSH_TYPE_DISPLACEMENT_ERASER:
+      return "Multires Displacement Eraser";
+    case SCULPT_BRUSH_TYPE_DISPLACEMENT_SMEAR:
+      return "Multires Displacement Smear";
+    case SCULPT_BRUSH_TYPE_PAINT:
+      return "Paint Brush";
+    case SCULPT_BRUSH_TYPE_SMEAR:
+      return "Smear Brush";
+    case SCULPT_BRUSH_TYPE_PLANE:
+      return "Plane Brush";
+    case SCULPT_BRUSH_TYPE_BLUR:
+      return "Blur Brush";
+    case SCULPT_BRUSH_TYPE_SCENE_PROJECT:
+      return "Scene Project Brush";
+  }
+
+  return "Sculpting";
+}
+
 static void do_brush_action(const Depsgraph &depsgraph,
                             const Scene & /*scene*/,
                             Sculpt &sd,
@@ -3224,6 +3409,8 @@ static void do_brush_action(const Depsgraph &depsgraph,
                             const Brush &brush,
                             PaintModeSettings &paint_mode_settings)
 {
+  PRF_scope(ProfileCategory::Editor);
+  PRF_scope_set_dynamic_name("%s", sculpt_brush_type_name(brush));
   SculptSession &ss = *ob.runtime->sculpt_session;
   IndexMaskMemory memory;
   IndexMask texnode_mask;
@@ -3310,7 +3497,7 @@ static void do_brush_action(const Depsgraph &depsgraph,
       if (brush.smooth_deform_type == BRUSH_SMOOTH_DEFORM_LAPLACIAN) {
         /* NOTE: The enhance brush needs to initialize its state on the first brush step. The
          * stroke strength can become 0 during the stroke, but it can not change sign (the sign is
-         * determined in the beginning of the stroke. So here it is important to not switch to
+         * determined in the beginning of the stroke). So here it is important to not switch to
          * enhance brush in the middle of the stroke. */
         if (ss.cache->initial_direction_flipped) {
           /* Invert mode, intensify details. */
@@ -3440,6 +3627,8 @@ static void do_brush_action(const Depsgraph &depsgraph,
       break;
     case SCULPT_BRUSH_TYPE_SCENE_PROJECT:
       brushes::do_scene_project_brush(depsgraph, sd, ob, node_mask);
+      break;
+    case SCULPT_BRUSH_TYPE_SIMPLIFY:
       break;
   }
 
@@ -3749,78 +3938,6 @@ static bool is_brush_related_tool(bContext *C)
 bool brush_cursor_poll(bContext *C)
 {
   return sculpt_mode_poll(C) && (paint_brush_cursor_poll(C) || is_brush_related_tool(C));
-}
-
-static const char *sculpt_brush_type_name(const Brush &brush)
-{
-  switch (eBrushSculptType(brush.sculpt_brush_type)) {
-    case SCULPT_BRUSH_TYPE_DRAW:
-      return "Draw Brush";
-    case SCULPT_BRUSH_TYPE_SMOOTH:
-      return "Smooth Brush";
-    case SCULPT_BRUSH_TYPE_CREASE:
-      return "Crease Brush";
-    case SCULPT_BRUSH_TYPE_BLOB:
-      return "Blob Brush";
-    case SCULPT_BRUSH_TYPE_PINCH:
-      return "Pinch Brush";
-    case SCULPT_BRUSH_TYPE_INFLATE:
-      return "Inflate Brush";
-    case SCULPT_BRUSH_TYPE_GRAB:
-      return "Grab Brush";
-    case SCULPT_BRUSH_TYPE_NUDGE:
-      return "Nudge Brush";
-    case SCULPT_BRUSH_TYPE_THUMB:
-      return "Thumb Brush";
-    case SCULPT_BRUSH_TYPE_LAYER:
-      return "Layer Brush";
-    case SCULPT_BRUSH_TYPE_CLAY:
-      return "Clay Brush";
-    case SCULPT_BRUSH_TYPE_CLAY_STRIPS:
-      return "Clay Strips Brush";
-    case SCULPT_BRUSH_TYPE_CLAY_THUMB:
-      return "Clay Thumb Brush";
-    case SCULPT_BRUSH_TYPE_SNAKE_HOOK:
-      return "Snake Hook Brush";
-    case SCULPT_BRUSH_TYPE_ROTATE:
-      return "Rotate Brush";
-    case SCULPT_BRUSH_TYPE_MASK:
-      return "Mask Brush";
-    case SCULPT_BRUSH_TYPE_SIMPLIFY:
-      return "Simplify Brush";
-    case SCULPT_BRUSH_TYPE_DRAW_SHARP:
-      return "Draw Sharp Brush";
-    case SCULPT_BRUSH_TYPE_ELASTIC_DEFORM:
-      return "Elastic Deform Brush";
-    case SCULPT_BRUSH_TYPE_POSE:
-      return "Pose Brush";
-    case SCULPT_BRUSH_TYPE_MULTIPLANE_SCRAPE:
-      return "Multi-plane Scrape Brush";
-    case SCULPT_BRUSH_TYPE_SLIDE_RELAX:
-      return "Slide/Relax Brush";
-    case SCULPT_BRUSH_TYPE_BOUNDARY:
-      return "Boundary Brush";
-    case SCULPT_BRUSH_TYPE_CLOTH:
-      return "Cloth Brush";
-    case SCULPT_BRUSH_TYPE_DRAW_FACE_SETS:
-      return "Draw Face Sets";
-    case SCULPT_BRUSH_TYPE_DISPLACEMENT_ERASER:
-      return "Multires Displacement Eraser";
-    case SCULPT_BRUSH_TYPE_DISPLACEMENT_SMEAR:
-      return "Multires Displacement Smear";
-    case SCULPT_BRUSH_TYPE_PAINT:
-      return "Paint Brush";
-    case SCULPT_BRUSH_TYPE_SMEAR:
-      return "Smear Brush";
-    case SCULPT_BRUSH_TYPE_PLANE:
-      return "Plane Brush";
-    case SCULPT_BRUSH_TYPE_BLUR:
-      return "Blur Brush";
-    case SCULPT_BRUSH_TYPE_SCENE_PROJECT:
-      return "Scene Project Brush";
-  }
-
-  return "Sculpting";
 }
 
 StrokeCache::StrokeCache() = default;
@@ -4618,10 +4735,9 @@ std::optional<ActiveElementInfo> active_element_info_get(ViewContext &vc, const 
   return info;
 }
 
-bool cursor_geometry_info_update(bContext *C,
-                                 CursorGeometryInfo *out,
-                                 const float2 &mval,
-                                 const bool use_sampled_normal)
+std::optional<CursorGeometryInfo> cursor_geometry_info_update(bContext *C,
+                                                              const float2 &mval,
+                                                              const bool use_sampled_normal)
 {
   Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
   const Sculpt &sd = *CTX_data_tool_settings(C)->sculpt;
@@ -4629,20 +4745,20 @@ bool cursor_geometry_info_update(bContext *C,
   const Base *base = CTX_data_active_base(C);
 
   return cursor_geometry_info_update(
-      *depsgraph, sd.paint, &sd, vc, base, out, mval, use_sampled_normal);
+      *depsgraph, sd.paint, &sd, vc, base, mval, use_sampled_normal);
 }
 
-bool cursor_geometry_info_update(Depsgraph &depsgraph,
-                                 const Paint &paint,
-                                 const Sculpt *sd,
-                                 ViewContext &vc,
-                                 const Base *base,
-                                 CursorGeometryInfo *out,
-                                 const float2 &mval,
-                                 const bool use_sampled_normal)
+std::optional<CursorGeometryInfo> cursor_geometry_info_update(Depsgraph &depsgraph,
+                                                              const Paint &paint,
+                                                              const Sculpt *sd,
+                                                              ViewContext &vc,
+                                                              const Base *base,
+                                                              const float2 &mval,
+                                                              const bool use_sampled_normal)
 {
   const Brush &brush = *BKE_paint_brush_for_read(&paint);
   bool original = false;
+  CursorGeometryInfo out;
 
   Object &ob = *vc.obact;
   SculptSession &ss = *ob.runtime->sculpt_session;
@@ -4650,10 +4766,8 @@ bool cursor_geometry_info_update(Depsgraph &depsgraph,
   bke::pbvh::Tree *pbvh = bke::object::pbvh_get(ob);
 
   if (!pbvh || !vc.rv3d || !BKE_base_is_visible(vc.v3d, base)) {
-    out->location = float3(0.0f);
-    out->normal = float3(0.0f);
     ss.clear_active_elements(false);
-    return false;
+    return std::nullopt;
   }
 
   /* bke::pbvh::Tree raycast to get active vertex and face normal. */
@@ -4697,10 +4811,8 @@ bool cursor_geometry_info_update(Depsgraph &depsgraph,
 
   /* Cursor is not over the mesh, return default values. */
   if (!srd.hit) {
-    out->location = float3(0.0f);
-    out->normal = float3(0.0f);
     ss.clear_active_elements(true);
-    return false;
+    return std::nullopt;
   }
 
   /* Update the active vertex of the SculptSession. */
@@ -4721,12 +4833,12 @@ bool cursor_geometry_info_update(Depsgraph &depsgraph,
       break;
   }
 
-  out->location = ray_start + ray_normal * srd.depth;
+  out.location = ray_start + ray_normal * srd.depth;
 
   /* Option to return the face normal directly for performance o accuracy reasons. */
   if (!use_sampled_normal) {
-    out->normal = srd.face_normal;
-    return srd.hit;
+    out.normal = srd.face_normal;
+    return srd.hit ? std::make_optional(out) : std::nullopt;
   }
 
   /* Sampled normal calculation. */
@@ -4737,19 +4849,19 @@ bool cursor_geometry_info_update(Depsgraph &depsgraph,
   ss.cursor_view_normal = math::normalize(
       math::transform_direction(ob.world_to_object() * float4x4(vc.rv3d->viewinv), z_axis));
   ss.cursor_normal = srd.face_normal;
-  ss.cursor_location = out->location;
+  ss.cursor_location = out.location;
   ss.rv3d = vc.rv3d;
   ss.v3d = vc.v3d;
 
-  ss.cursor_radius = object_space_radius_get(vc, paint, brush, out->location);
+  ss.cursor_radius = object_space_radius_get(vc, paint, brush, out.location);
 
   IndexMaskMemory memory;
   const IndexMask node_mask = pbvh_gather_cursor_update(ob, original, memory);
 
   /* In case there are no nodes under the cursor, return the face normal. */
   if (node_mask.is_empty()) {
-    out->normal = srd.face_normal;
-    return true;
+    out.normal = srd.face_normal;
+    return std::make_optional(out);
   }
 
   bke::pbvh::update_normals(depsgraph, ob, *pbvh);
@@ -4758,14 +4870,14 @@ bool cursor_geometry_info_update(Depsgraph &depsgraph,
   if (const std::optional<float3> sampled_normal = calc_area_normal(
           depsgraph, brush, ob, node_mask))
   {
-    out->normal = *sampled_normal;
+    out.normal = *sampled_normal;
     ss.cursor_sampled_normal = *sampled_normal;
   }
   else {
     /* Use face normal when there are no vertices to sample inside the cursor radius. */
-    out->normal = srd.face_normal;
+    out.normal = srd.face_normal;
   }
-  return true;
+  return std::make_optional(out);
 }
 
 /**
@@ -4971,7 +5083,7 @@ struct SculptPaintStroke final : public PaintStroke {
   void redraw(bool final) override;
   bool test_cancel() override;
   void update_step(wmOperator *op, PointerRNA *itemptr) override;
-  void done(bool is_cancel) override;
+  void done(bool is_cancel, bool stroke_started) override;
 };
 
 bool SculptPaintStroke::get_location(float out[3], const float mouse[2], bool force_original)
@@ -5058,6 +5170,7 @@ static void restore_from_undo_step_if_necessary(const Depsgraph &depsgraph,
                                                 const Sculpt &sd,
                                                 Object &ob)
 {
+  PRF_scope(ProfileCategory::Editor);
   SculptSession &ss = *ob.runtime->sculpt_session;
   const Brush *brush = BKE_paint_brush_for_read(&sd.paint);
 
@@ -5153,6 +5266,7 @@ void flush_update_step(bContext *C, const UpdateType update_type)
 
 void flush_update_step(ViewContext &vc, Object &object, const UpdateType update_type)
 {
+  PRF_scope(ProfileCategory::Editor);
   if (vc.rv3d) {
     /* Mark for faster 3D viewport redraws. */
     vc.rv3d->rflag |= RV3D_PAINTING;
@@ -5703,9 +5817,7 @@ bool SculptPaintStroke::test_start(wmOperator *op, const float mval[2])
       BKE_curvemapping_init(brush->curve_rand_value);
     }
 
-    CursorGeometryInfo cgi;
-    cursor_geometry_info_update(
-        *this->depsgraph, *paint, sculpt_, this->vc, base_, &cgi, mval, false);
+    cursor_geometry_info_update(*this->depsgraph, *paint, sculpt_, this->vc, base_, mval, false);
 
     stroke_undo_begin(*this->scene, this->brush, *this->paint_mode_settings_, *this->object, op);
 
@@ -5717,6 +5829,7 @@ bool SculptPaintStroke::test_start(wmOperator *op, const float mval[2])
 /* Initialize the stroke cache variants from operator properties. */
 void SculptPaintStroke::stroke_cache_update(PointerRNA *ptr)
 {
+  PRF_scope(ProfileCategory::Editor);
   const Depsgraph &depsgraph = *this->depsgraph;
   Paint &paint = *this->paint;
   bke::PaintRuntime &paint_runtime = *paint.runtime;
@@ -5875,7 +5988,7 @@ static void brush_exit_tex(Sculpt &sd)
   }
 }
 
-void SculptPaintStroke::done(bool is_cancel)
+void SculptPaintStroke::done(bool is_cancel, bool stroke_started)
 {
   Object &ob = *this->object;
   SculptSession &ss = *ob.runtime->sculpt_session;
@@ -5908,7 +6021,7 @@ void SculptPaintStroke::done(bool is_cancel)
   MEM_delete(ss.cache);
   ss.cache = nullptr;
 
-  if (!is_cancel) {
+  if (!is_cancel && stroke_started) {
     stroke_undo_end(*paint_mode_settings_, *this->object, brush);
   }
 
@@ -6245,6 +6358,7 @@ static void fake_neighbor_search(const Depsgraph &depsgraph,
                                  const float max_distance_sq,
                                  MutableSpan<int> fake_neighbors)
 {
+  PRF_scope(ProfileCategory::Editor);
   /* NOTE: This algorithm is extremely slow, it has O(n^2) runtime for the entire mesh. This looks
    * like the "closest pair of points" problem which should have far better solutions. */
   SculptSession &ss = *ob.runtime->sculpt_session;
@@ -6591,6 +6705,7 @@ static SculptTopologyIslandCache calc_topology_islands_bmesh(const Object &objec
 
 static SculptTopologyIslandCache calculate_cache(const Object &object)
 {
+  PRF_scope(ProfileCategory::Editor);
   switch (bke::object::pbvh_get(object)->type()) {
     case bke::pbvh::Type::Mesh:
       return calc_topology_islands_mesh(*id_cast<const Mesh *>(object.data));
@@ -6649,6 +6764,7 @@ MeshAttributeData::MeshAttributeData(const Mesh &mesh)
 
 void gather_bmesh_positions(const Set<BMVert *, 0> &verts, const MutableSpan<float3> positions)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == positions.size());
 
   int i = 0;
@@ -6662,11 +6778,13 @@ void gather_grids_normals(const SubdivCCG &subdiv_ccg,
                           const Span<int> grids,
                           const MutableSpan<float3> normals)
 {
+  PRF_scope(ProfileCategory::Editor);
   gather_data_grids(subdiv_ccg, subdiv_ccg.normals.as_span(), grids, normals);
 }
 
 void gather_bmesh_normals(const Set<BMVert *, 0> &verts, const MutableSpan<float3> normals)
 {
+  PRF_scope(ProfileCategory::Editor);
   int i = 0;
   for (const BMVert *vert : verts) {
     normals[i] = vert->no;
@@ -6680,6 +6798,7 @@ void gather_data_grids(const SubdivCCG &subdiv_ccg,
                        const Span<int> grids,
                        const MutableSpan<T> node_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   BLI_assert(grids.size() * key.grid_area == node_data.size());
 
@@ -6695,6 +6814,7 @@ void gather_data_bmesh(const Span<T> src,
                        const Set<BMVert *, 0> &verts,
                        const MutableSpan<T> node_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == node_data.size());
 
   int i = 0;
@@ -6710,6 +6830,7 @@ void scatter_data_grids(const SubdivCCG &subdiv_ccg,
                         const Span<int> grids,
                         const MutableSpan<T> dst)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   BLI_assert(grids.size() * key.grid_area == node_data.size());
 
@@ -6725,6 +6846,7 @@ void scatter_data_bmesh(const Span<T> node_data,
                         const Set<BMVert *, 0> &verts,
                         const MutableSpan<T> dst)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == node_data.size());
 
   int i = 0;
@@ -6828,6 +6950,7 @@ void calc_factors_common_mesh(const Depsgraph &depsgraph,
                               Vector<float> &r_factors,
                               Vector<float> &r_distances)
 {
+  PRF_scope(ProfileCategory::Editor);
   const SculptSession &ss = *object.runtime->sculpt_session;
   const StrokeCache &cache = *ss.cache;
 
@@ -7029,6 +7152,7 @@ void fill_factor_from_hide(const Span<bool> hide_vert,
                            const Span<int> verts,
                            const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == r_factors.size());
 
   if (!hide_vert.is_empty()) {
@@ -7045,6 +7169,7 @@ void fill_factor_from_hide(const SubdivCCG &subdiv_ccg,
                            const Span<int> grids,
                            const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   BLI_assert(grids.size() * key.grid_area == r_factors.size());
 
@@ -7064,6 +7189,7 @@ void fill_factor_from_hide(const SubdivCCG &subdiv_ccg,
 
 void fill_factor_from_hide(const Set<BMVert *, 0> &verts, const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == r_factors.size());
 
   int i = 0;
@@ -7078,6 +7204,7 @@ void fill_factor_from_hide_and_mask(const Span<bool> hide_vert,
                                     const Span<int> verts,
                                     const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == r_factors.size());
 
   if (!mask.is_empty()) {
@@ -7102,6 +7229,7 @@ void fill_factor_from_hide_and_mask(const BMesh &bm,
                                     const Set<BMVert *, 0> &verts,
                                     const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == r_factors.size());
 
   /* TODO: Avoid overhead of accessing attributes for every bke::pbvh::Tree node. */
@@ -7120,6 +7248,7 @@ void fill_factor_from_hide_and_mask(const SubdivCCG &subdiv_ccg,
                                     const Span<int> grids,
                                     const MutableSpan<float> r_factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   BLI_assert(grids.size() * key.grid_area == r_factors.size());
 
@@ -7156,6 +7285,7 @@ void calc_front_face(const float3 &view_normal,
                      const Span<int> verts,
                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
   for (const int i : verts.index_range()) {
@@ -7168,6 +7298,7 @@ void calc_front_face(const float3 &view_normal,
                      const Span<float3> normals,
                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(normals.size() == factors.size());
 
   for (const int i : normals.index_range()) {
@@ -7180,6 +7311,7 @@ void calc_front_face(const float3 &view_normal,
                      const Span<int> grids,
                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   const Span<float3> normals = subdiv_ccg.normals;
   BLI_assert(grids.size() * key.grid_area == factors.size());
@@ -7198,6 +7330,7 @@ void calc_front_face(const float3 &view_normal,
                      const Set<BMVert *, 0> &verts,
                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
   int i = 0;
@@ -7212,6 +7345,7 @@ void calc_front_face(const float3 &view_normal,
                      const Set<BMFace *, 0> &faces,
                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(faces.size() == factors.size());
 
   int i = 0;
@@ -7227,6 +7361,7 @@ void filter_region_clip_factors(const SculptSession &ss,
                                 const Span<int> verts,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
   const RegionView3D *rv3d = ss.cache ? ss.cache->vc->rv3d : ss.rv3d;
@@ -7254,6 +7389,7 @@ void filter_region_clip_factors(const SculptSession &ss,
                                 const Span<float3> positions,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(positions.size() == factors.size());
 
   const RegionView3D *rv3d = ss.cache ? ss.cache->vc->rv3d : ss.rv3d;
@@ -7311,6 +7447,7 @@ void calc_brush_distances(const SculptSession &ss,
                           const eBrushFalloffShape falloff_shape,
                           const MutableSpan<float> r_distances)
 {
+  PRF_scope(ProfileCategory::Editor);
   calc_brush_distances_squared(ss, positions, verts, falloff_shape, r_distances);
   for (float &value : r_distances) {
     value = std::sqrt(value);
@@ -7349,6 +7486,7 @@ void calc_brush_distances(const SculptSession &ss,
                           const eBrushFalloffShape falloff_shape,
                           const MutableSpan<float> r_distances)
 {
+  PRF_scope(ProfileCategory::Editor);
   calc_brush_distances_squared(ss, positions, falloff_shape, r_distances);
   for (float &value : r_distances) {
     value = std::sqrt(value);
@@ -7359,6 +7497,7 @@ void filter_distances_with_radius(const float radius,
                                   const Span<float> distances,
                                   const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : distances.index_range()) {
     if (distances[i] >= radius) {
       factors[i] = 0.0f;
@@ -7371,6 +7510,7 @@ void calc_brush_cube_distances(const Brush &brush,
                                const Span<T> positions,
                                const MutableSpan<float> r_distances)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(r_distances.size() == positions.size());
 
   const float roundness = brush.tip_roundness;
@@ -7410,6 +7550,7 @@ void apply_hardness_to_distances(const float radius,
                                  const float hardness,
                                  const MutableSpan<float> distances)
 {
+  PRF_scope(ProfileCategory::Editor);
   if (hardness == 0.0f) {
     return;
   }
@@ -7451,13 +7592,14 @@ void calc_brush_texture_factors(const SculptSession &ss,
                                 const Span<int> verts,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
-  const int thread_id = BLI_task_parallel_thread_id(nullptr);
   const MTex *mtex = BKE_brush_mask_texture_get(&brush, OB_MODE_SCULPT);
   if (!mtex->tex) {
     return;
   }
+  const int thread_id = BLI_task_parallel_thread_id(nullptr);
 
   for (const int i : verts.index_range()) {
     if (factors[i] == 0.0f) {
@@ -7478,13 +7620,14 @@ void calc_brush_texture_factors(const SculptSession &ss,
                                 const Span<float3> positions,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(positions.size() == factors.size());
 
-  const int thread_id = BLI_task_parallel_thread_id(nullptr);
   const MTex *mtex = BKE_brush_mask_texture_get(&brush, OB_MODE_SCULPT);
   if (!mtex->tex) {
     return;
   }
+  const int thread_id = BLI_task_parallel_thread_id(nullptr);
 
   for (const int i : positions.index_range()) {
     if (factors[i] == 0.0f) {
@@ -7503,6 +7646,7 @@ void reset_translations_to_original(const MutableSpan<float3> translations,
                                     const Span<float3> positions,
                                     const Span<float3> orig_positions)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(translations.size() == orig_positions.size());
   BLI_assert(translations.size() == positions.size());
   for (const int i : translations.index_range()) {
@@ -7522,6 +7666,7 @@ void apply_translations(const Span<float3> translations,
                         const Span<int> verts,
                         const MutableSpan<float3> positions)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == translations.size());
   BLI_assert(!contains_nan(translations.cast<float>()));
 
@@ -7535,6 +7680,7 @@ void apply_translations(const Span<float3> translations,
                         const Span<int> grids,
                         SubdivCCG &subdiv_ccg)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   MutableSpan<float3> positions = subdiv_ccg.positions;
   BLI_assert(grids.size() * key.grid_area == translations.size());
@@ -7551,6 +7697,7 @@ void apply_translations(const Span<float3> translations,
 
 void apply_translations(const Span<float3> translations, const Set<BMVert *, 0> &verts)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == translations.size());
   BLI_assert(!contains_nan(translations.cast<float>()));
 
@@ -7563,6 +7710,7 @@ void apply_translations(const Span<float3> translations, const Set<BMVert *, 0> 
 
 void project_translations(const MutableSpan<float3> translations, const float3 &plane)
 {
+  PRF_scope(ProfileCategory::Editor);
   /* Equivalent to #project_plane_v3_v3v3. */
   const float len_sq = math::length_squared(plane);
   if (len_sq < std::numeric_limits<float>::epsilon()) {
@@ -7578,6 +7726,7 @@ void apply_crazyspace_to_translations(const Span<float3x3> deform_imats,
                                       const Span<int> verts,
                                       const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == translations.size());
 
   for (const int i : verts.index_range()) {
@@ -7591,6 +7740,7 @@ void clip_and_lock_translations(const Sculpt &sd,
                                 const Span<int> verts,
                                 const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == translations.size());
 
   const StrokeCache *cache = ss.cache;
@@ -7632,6 +7782,7 @@ void clip_and_lock_translations(const Sculpt &sd,
                                 const Span<float3> positions,
                                 const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(positions.size() == translations.size());
 
   const StrokeCache *cache = ss.cache;
@@ -7714,6 +7865,7 @@ PositionDeformData::PositionDeformData(const Depsgraph &depsgraph, Object &objec
 
 void PositionDeformData::deform(MutableSpan<float3> translations, const Span<int> verts) const
 {
+  PRF_scope(ProfileCategory::Editor);
   if (eval_mut_) {
     /* Apply translations to the evaluated mesh. This is necessary because multiple brush
      * evaluations can happen in between object reevaluations (otherwise just deforming the
@@ -7747,6 +7899,7 @@ void PositionDeformData::deform(MutableSpan<float3> translations, const Span<int
 
 void filter_translations(const MutableSpan<float3> translations, const Span<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : translations.index_range()) {
     if (factors[i] == 0.0f) {
       translations[i] = float3(0.0f);
@@ -7756,6 +7909,7 @@ void filter_translations(const MutableSpan<float3> translations, const Span<floa
 
 void scale_translations(const MutableSpan<float3> translations, const Span<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : translations.index_range()) {
     translations[i] *= factors[i];
   }
@@ -7763,6 +7917,7 @@ void scale_translations(const MutableSpan<float3> translations, const Span<float
 
 void scale_translations(const MutableSpan<float3> translations, const float factor)
 {
+  PRF_scope(ProfileCategory::Editor);
   if (factor == 1.0f) {
     return;
   }
@@ -7773,6 +7928,7 @@ void scale_translations(const MutableSpan<float3> translations, const float fact
 
 void scale_factors(const MutableSpan<float> factors, const float strength)
 {
+  PRF_scope(ProfileCategory::Editor);
   if (strength == 1.0f) {
     return;
   }
@@ -7783,6 +7939,7 @@ void scale_factors(const MutableSpan<float> factors, const float strength)
 
 void scale_factors(const MutableSpan<float> factors, const Span<float> strengths)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(factors.size() == strengths.size());
 
   for (const int i : factors.index_range()) {
@@ -7794,6 +7951,7 @@ void translations_from_offset_and_factors(const float3 &offset,
                                           const Span<float> factors,
                                           const MutableSpan<float3> r_translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(r_translations.size() == factors.size());
 
   for (const int i : factors.index_range()) {
@@ -7806,6 +7964,7 @@ void translations_from_new_positions(const Span<float3> new_positions,
                                      const Span<float3> old_positions,
                                      const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(new_positions.size() == verts.size());
   for (const int i : verts.index_range()) {
     translations[i] = new_positions[i] - old_positions[verts[i]];
@@ -7816,6 +7975,7 @@ void translations_from_new_positions(const Span<float3> new_positions,
                                      const Span<float3> old_positions,
                                      const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(new_positions.size() == old_positions.size());
   for (const int i : new_positions.index_range()) {
     translations[i] = new_positions[i] - old_positions[i];
@@ -7826,6 +7986,7 @@ OffsetIndices<int> create_node_vert_offsets(const Span<bke::pbvh::MeshNode> node
                                             const IndexMask &node_mask,
                                             Array<int> &node_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   node_data.reinitialize(node_mask.size() + 1);
   node_mask.foreach_index_optimized<int>(
       [&](const int i, const int pos) { node_data[pos] = nodes[i].verts().size(); });
@@ -7837,6 +7998,7 @@ OffsetIndices<int> create_node_vert_offsets(const CCGKey &key,
                                             const IndexMask &node_mask,
                                             Array<int> &node_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   node_data.reinitialize(node_mask.size() + 1);
   node_mask.foreach_index_optimized<int>([&](const int i, const int pos) {
     node_data[pos] = nodes[i].grids().size() * key.grid_area;
@@ -7848,6 +8010,7 @@ OffsetIndices<int> create_node_vert_offsets_bmesh(const Span<bke::pbvh::BMeshNod
                                                   const IndexMask &node_mask,
                                                   Array<int> &node_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   node_data.reinitialize(node_mask.size() + 1);
   node_mask.foreach_index([&](const int i, const int pos) {
     node_data[pos] =
@@ -7864,6 +8027,7 @@ GroupedSpan<int> calc_vert_neighbors(const OffsetIndices<int> faces,
                                      Vector<int> &r_offset_data,
                                      Vector<int> &r_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(corner_verts.size() == faces.total_size());
   r_offset_data.resize(verts.size() + 1);
   r_data.clear();
@@ -7880,6 +8044,7 @@ GroupedSpan<int> calc_vert_neighbors(const SubdivCCG &subdiv_ccg,
                                      Vector<int> &r_offset_data,
                                      Vector<int> &r_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   SubdivCCGNeighbors neighbors;
 
@@ -7914,6 +8079,7 @@ GroupedSpan<BMVert *> calc_vert_neighbors(Set<BMVert *, 0> verts,
                                           Vector<int> &r_offset_data,
                                           Vector<BMVert *> &r_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   r_offset_data.resize(verts.size() + 1);
   r_data.clear();
 
@@ -7940,6 +8106,7 @@ static GroupedSpan<int> calc_vert_neighbors_interior_impl(const OffsetIndices<in
                                                           Vector<int> &r_offset_data,
                                                           Vector<int> &r_data)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(corner_verts.size() == faces.total_size());
   if constexpr (use_factors) {
     BLI_assert(verts.size() == factors.size());
@@ -8032,6 +8199,7 @@ void calc_vert_neighbors_interior(const OffsetIndices<int> faces,
                                   const Span<int> grids,
                                   const MutableSpan<Vector<SubdivCCGCoord>> result)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
 
   BLI_assert(grids.size() * key.grid_area == result.size());
@@ -8079,6 +8247,7 @@ void calc_vert_neighbors_interior(const OffsetIndices<int> faces,
 void calc_vert_neighbors_interior(const Set<BMVert *, 0> &verts,
                                   MutableSpan<Vector<BMVert *>> result)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == result.size());
   BMeshNeighborVerts neighbor_data;
 
@@ -8095,6 +8264,7 @@ void calc_translations_to_plane(const Span<float3> vert_positions,
                                 const float4 &plane,
                                 const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : verts.index_range()) {
     const float3 &position = vert_positions[verts[i]];
     float3 closest;
@@ -8107,6 +8277,7 @@ void calc_translations_to_plane(const Span<float3> positions,
                                 const float4 &plane,
                                 const MutableSpan<float3> translations)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : positions.index_range()) {
     const float3 &position = positions[i];
     float3 closest;
@@ -8120,6 +8291,7 @@ void filter_verts_outside_symmetry_area(const Span<float3> positions,
                                         const ePaintSymmetryFlags symm,
                                         const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(positions.size() == factors.size());
 
   for (const int i : positions.index_range()) {
@@ -8134,6 +8306,7 @@ void filter_plane_trim_limit_factors(const Brush &brush,
                                      const Span<float3> translations,
                                      const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   if (!(brush.flag & BRUSH_PLANE_TRIM)) {
     return;
   }
@@ -8150,6 +8323,7 @@ void filter_below_plane_factors(const Span<float3> vert_positions,
                                 const float4 &plane,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : verts.index_range()) {
     if (plane_point_side_v3(plane, vert_positions[verts[i]]) <= 0.0f) {
       factors[i] = 0.0f;
@@ -8161,6 +8335,7 @@ void filter_below_plane_factors(const Span<float3> positions,
                                 const float4 &plane,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : positions.index_range()) {
     if (plane_point_side_v3(plane, positions[i]) <= 0.0f) {
       factors[i] = 0.0f;
@@ -8173,6 +8348,7 @@ void filter_above_plane_factors(const Span<float3> vert_positions,
                                 const float4 &plane,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : verts.index_range()) {
     if (plane_point_side_v3(plane, vert_positions[verts[i]]) > 0.0f) {
       factors[i] = 0.0f;
@@ -8184,6 +8360,7 @@ void filter_above_plane_factors(const Span<float3> positions,
                                 const float4 &plane,
                                 const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   for (const int i : positions.index_range()) {
     if (plane_point_side_v3(plane, positions[i]) > 0.0f) {
       factors[i] = 0.0f;

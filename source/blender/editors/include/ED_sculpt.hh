@@ -88,6 +88,7 @@ size_t step_memory_size_get(UndoStep *step);
 
 namespace face_set {
 
+int find_next_available_id(const Mesh &object);
 int find_next_available_id(Object &object);
 void initialize_none_to_id(Mesh *mesh, int new_id);
 int active_update_and_get(bContext *C, Object &ob, const float mval_fl[2]);
@@ -95,13 +96,11 @@ int active_update_and_get(bContext *C, Object &ob, const float mval_fl[2]);
 }  // namespace face_set
 
 /**
- * Fills the object's active color attribute layer with the fill color.
- *
- * \param only_selected: Limit the fill to selected faces or vertices.
+ * Fills the entire object's active color attribute layer with the fill color.
  *
  * \return #true if successful.
  */
-bool object_active_color_fill(Object &ob, const float fill_color[4], bool only_selected);
+bool object_active_color_init(Object &ob, const float fill_color[4]);
 
 /**
  * Fully replace the sculpt mesh with a mesh outside of #Main. This implements various checks to

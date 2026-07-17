@@ -356,7 +356,7 @@ size_t BLI_path_append_dir(char *__restrict dst, size_t dst_maxncpy, const char 
  * \{ */
 
 /**
- * See #BLI_path_join doc-string.
+ * See #BLI_path_join docstring.
  */
 size_t BLI_path_join_array(char *__restrict dst,
                            const size_t dst_maxncpy,
@@ -367,7 +367,7 @@ size_t BLI_path_join_array(char *__restrict dst,
  * Join multiple strings into a path, ensuring only a single path separator between each,
  * and trailing slash is kept.
  *
- * \param path: The first patch which has special treatment,
+ * The first path which has special treatment,
  * allowing `//` prefix which is kept intact unlike double-slashes which are stripped
  * from the bounds of all other paths passed in.
  * Passing in the following paths all result in the same output (`//a/b/c`):
@@ -629,7 +629,9 @@ bool BLI_path_frame(char *path, size_t path_maxncpy, int frame, int digits) ATTR
 bool BLI_path_frame_range(char *path, size_t path_maxncpy, int sta, int end, int digits)
     ATTR_NONNULL(1);
 /**
- * Get the frame from a filename formatted by blender's frame scheme
+ * Get the frame from a filename formatted by blender's frame scheme.
+ * \return true if a frame in the valid range was found.
+ * \note Only frames that can be represented in the integer range are considered.
  */
 bool BLI_path_frame_get(const char *path, int *r_frame, int *r_digits_len) ATTR_NONNULL(1, 2, 3);
 /**
@@ -637,6 +639,7 @@ bool BLI_path_frame_get(const char *path, int *r_frame, int *r_digits_len) ATTR_
  * character and extract the extension.
  * So:      `/some/path_123.jpeg`
  * Becomes: `/some/path_###` with `r_ext` set to `.jpeg`.
+ * \note Only frames that can be represented in the integer range are considered.
  */
 void BLI_path_frame_strip(char *path, char *r_ext, size_t ext_maxncpy) ATTR_NONNULL(1, 2);
 /**

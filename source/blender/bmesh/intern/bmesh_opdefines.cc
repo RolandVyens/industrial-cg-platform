@@ -545,6 +545,39 @@ static BMOpDefine bmo_circularize_def = {
 };
 
 /*
+ * Flatten.
+ *
+ * Flatten vertices on a best-fitting plane.
+ */
+static BMOpDefine bmo_flatten_def = {
+    /*opname*/ "flatten",
+    /*slot_types_in*/
+    {
+        /* Input geometry. */
+        {"geom", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BM_EDGE | BM_FACE}},
+        /* Influence factor: spans from 0.0 to 1.0. */
+        {"factor", BMO_OP_SLOT_FLT},
+        /* Plane on which vertices are flattened. */
+        {"method", BMO_OP_SLOT_INT},
+        /* View direction in object local space. */
+        {"view_normal", BMO_OP_SLOT_VEC},
+        /* Lock X axis editing. */
+        {"lock_x", BMO_OP_SLOT_BOOL},
+        /* Lock Y axis editing. */
+        {"lock_y", BMO_OP_SLOT_BOOL},
+        /* Lock Z axis editing. */
+        {"lock_z", BMO_OP_SLOT_BOOL},
+        {{'\0'}},
+    },
+    /*slot_types_out*/
+    {{{'\0'}}},
+    /*init*/ nullptr,
+    /*exec*/ bmo_flatten_exec,
+    /*type_flag*/
+    (BMO_OPTYPE_FLAG_NORMALS_CALC),
+};
+
+/*
  * Collapse Connected.
  *
  * Collapses connected vertices
@@ -579,8 +612,8 @@ static BMOpDefine bmo_pointmerge_facedata_def = {
     {
         /* Input vertices. */
         {"verts", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT}},
-        /* Snap vertex. */
-        {"vert_snap", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BMO_OP_SLOT_SUBTYPE_ELEM_IS_SINGLE}},
+        /* Target vertex to merge into. */
+        {"vert_target", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BMO_OP_SLOT_SUBTYPE_ELEM_IS_SINGLE}},
         {{'\0'}},
     },
     /*slot_types_out*/
@@ -624,6 +657,9 @@ static BMOpDefine bmo_pointmerge_def = {
         {"verts", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT}},
         /* Position to merge at. */
         {"merge_co", BMO_OP_SLOT_VEC},
+        /* Optional target vertex to merge into. Does not override merge_co.
+         * Set this to preserve the custom data of the target vertex. */
+        {"vert_target", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BMO_OP_SLOT_SUBTYPE_ELEM_IS_SINGLE}},
         {{'\0'}},
     },
     /*slot_types_out*/
@@ -671,6 +707,8 @@ static BMOpDefine bmo_weld_verts_def = {
         /* Merge vertices to their centroid position,
          * otherwise use the position of the target vertex. */
         {"use_centroid", BMO_OP_SLOT_BOOL},
+        /* Whether to average custom data of merged vertices. */
+        {"average_vert_data", BMO_OP_SLOT_BOOL},
         {{'\0'}},
     },
     /*slot_types_out*/
@@ -2787,6 +2825,46 @@ static BMOpDefine bmo_convex_hull_def = {
 };
 #endif
 
+static BMO_FlagSet bmo_enum_space_edge_loops_evenly_interpolation_method[] = {
+    {SPACE_EDGE_LOOPS_EVENLY_INTERP_CUBIC, "CUBIC"},
+    {SPACE_EDGE_LOOPS_EVENLY_INTERP_LINEAR, "LINEAR"},
+    {0, nullptr},
+};
+
+/*
+ * Space Evenly.
+ *
+ * Space the vertices in a regular distribution on the loop.
+ */
+static BMOpDefine bmo_space_edge_loops_evenly_def = {
+    /*opname*/ "space_edge_loops_evenly",
+    /*slot_types_in*/
+    {
+        /* Input geometry. */
+        {"geom", BMO_OP_SLOT_ELEMENT_BUF, {BM_EDGE}},
+        /* Method used for interpolation. */
+        {"interpolation",
+         BMO_OP_SLOT_INT,
+         to_subtype_union(BMO_OP_SLOT_SUBTYPE_INT_ENUM),
+         bmo_enum_space_edge_loops_evenly_interpolation_method},
+        /* Influence factor: spans from 0.0 to 1.0. */
+        {"factor", BMO_OP_SLOT_FLT},
+        /* Lock X-axis editing. */
+        {"lock_x", BMO_OP_SLOT_BOOL},
+        /* Lock Y-axis editing. */
+        {"lock_y", BMO_OP_SLOT_BOOL},
+        /* Lock Z-axis editing. */
+        {"lock_z", BMO_OP_SLOT_BOOL},
+        {{'\0'}},
+    },
+    /*slot_types_out*/
+    {{{'\0'}}},
+    /*init*/ nullptr,
+    /*exec*/ bmo_space_edge_loops_evenly_exec,
+    /*type_flag*/
+    (BMO_OPTYPE_FLAG_NORMALS_CALC),
+};
+
 /*
  * Symmetrize.
  *
@@ -2838,6 +2916,7 @@ const BMOpDefine *bmo_opdefines[] = {
     &bmo_bmesh_to_mesh_def,
     &bmo_bridge_loops_def,
     &bmo_circularize_def,
+    &bmo_flatten_def,
     &bmo_collapse_def,
     &bmo_collapse_uvs_def,
     &bmo_connect_verts_def,
@@ -2906,6 +2985,7 @@ const BMOpDefine *bmo_opdefines[] = {
     &bmo_subdivide_edges_def,
     &bmo_subdivide_edgering_def,
     &bmo_bisect_plane_def,
+    &bmo_space_edge_loops_evenly_def,
     &bmo_symmetrize_def,
     &bmo_transform_def,
     &bmo_translate_def,

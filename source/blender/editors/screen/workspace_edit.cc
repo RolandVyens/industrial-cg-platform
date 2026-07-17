@@ -257,7 +257,7 @@ WorkSpace *ED_workspace_duplicate(WorkSpace *workspace_old, Main *bmain, wmWindo
 
 bool ED_workspace_delete(WorkSpace *workspace, Main *bmain, bContext *C, wmWindowManager *wm)
 {
-  if (BLI_listbase_is_single(&bmain->workspaces)) {
+  if (bmain->workspaces.is_single()) {
     return false;
   }
 
@@ -397,6 +397,11 @@ static wmOperatorStatus workspace_append_activate_exec(bContext *C, wmOperator *
   }
   RNA_string_get(op->ptr, "idname", idname);
   RNA_string_get(op->ptr, "filepath", filepath);
+  /* Not expected, but a blank filename causes an assert
+   * (trips up the "importing from self" assert as both paths are blank). */
+  if (idname[0] == '\0' || filepath[0] == '\0') {
+    return OPERATOR_CANCELLED;
+  }
 
   WorkSpace *appended_workspace = nullptr;
   /* NOTE: Need to check `filepath`, in the rare case where the usual source of work-spaces
@@ -605,7 +610,7 @@ static void workspace_add_menu_draw(ui::Layout &layout)
     layout.menu_fn_argN_free(display_name, ICON_NONE, workspace_add_menu, app_template);
   }
 
-  BLI_freelistN(&templates);
+  templates.free_no_destruct();
 
   layout.separator();
   layout.op("WORKSPACE_OT_duplicate",

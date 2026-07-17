@@ -58,22 +58,23 @@ static void calc_straight_curve_positions(const float3 &a,
 }
 
 static void find_curve_neighbors(const Span<float3> root_positions,
-                                 const KDTree_3d &old_roots_kdtree,
+                                 const KDTree<float3> &old_roots_kdtree,
                                  Vector<int> &offset_data,
                                  Vector<int> &index_data,
                                  Vector<float> &weight_data)
 {
+  PRF_scope(ProfileCategory::Default);
   const int tot_added_curves = root_positions.size();
   Array<NeighborCurves> neighbors_per_curve(tot_added_curves);
   threading::parallel_for(IndexRange(tot_added_curves), 128, [&](const IndexRange range) {
     for (const int i : range) {
       const float3 root = root_positions[i];
-      std::array<KDTreeNearest_3d, max_neighbors> nearest_n;
-      const int found_neighbors = kdtree_3d_find_nearest_n(
+      std::array<KDTreeNearest<float3>, max_neighbors> nearest_n;
+      const int found_neighbors = kdtree_find_nearest_n<float3>(
           &old_roots_kdtree, root, nearest_n.data(), max_neighbors);
       float tot_weight = 0.0f;
       for (const int neighbor_i : IndexRange(found_neighbors)) {
-        KDTreeNearest_3d &nearest = nearest_n[neighbor_i];
+        KDTreeNearest<float3> &nearest = nearest_n[neighbor_i];
         const float weight = 1.0f / std::max(nearest.dist, 0.00001f);
         tot_weight += weight;
         neighbors_per_curve[i].append({nearest.index, weight});
@@ -111,6 +112,7 @@ static void calc_position_without_interpolation(CurvesGeometry &curves,
                                                 const Span<float3> new_normals_su,
                                                 const float4x4 &surface_to_curves_normal_mat)
 {
+  PRF_scope(ProfileCategory::Default);
   const int added_curves_num = root_positions_cu.size();
   const OffsetIndices points_by_curve = curves.points_by_curve();
   MutableSpan<float3> positions_cu = curves.positions_for_write();
@@ -143,6 +145,7 @@ static void calc_position_with_interpolation(CurvesGeometry &curves,
                                              const ReverseUVSampler &reverse_uv_sampler,
                                              const Span<float3> corner_normals_su)
 {
+  PRF_scope(ProfileCategory::Default);
   MutableSpan<float3> positions_cu = curves.positions_for_write();
   const int added_curves_num = root_positions_cu.size();
 
@@ -320,6 +323,7 @@ static void calc_radius_with_interpolation(CurvesGeometry &curves,
 AddCurvesOnMeshOutputs add_curves_on_mesh(CurvesGeometry &curves,
                                           const AddCurvesOnMeshInputs &inputs)
 {
+  PRF_scope(ProfileCategory::Default);
   AddCurvesOnMeshOutputs outputs;
 
   const bool use_interpolation = inputs.interpolate_length || inputs.interpolate_point_count ||

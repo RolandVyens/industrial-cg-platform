@@ -8,57 +8,34 @@ from __future__ import annotations
 
 import importlib
 import sys
-from pathlib import Path
+import time
 
 import bpy
 from bpy.app.handlers import persistent
 from bpy.app.translations import pgettext_rpt as rpt_
 from bpy.types import Operator
 
+from blender_vfx_viewlayer_manager_startup import (
+    PrewarmFailure,
+    retry_delay,
+    select_extension,
+)
+
 
 EXTENSION_ID = "blender_vfx_viewlayer_manager"
 SYSTEM_REPOSITORY_MODULE = "system"
-_STARTUP_PREWARM_INTERVAL_SECONDS = 0.25
-_STARTUP_PREWARM_MAX_ATTEMPTS = 20
 _startup_prewarm_attempts = 0
 _startup_prewarm_complete = False
 _startup_prewarm_timer_queued = False
 
 
-def _system_extension_repos():
-    repos = []
-    prefs = bpy.context.preferences
-    for repo in prefs.extensions.repos:
-        if not repo.enabled:
-            continue
-        if repo.use_remote_url:
-            continue
-        if getattr(repo, "source", None) != 'SYSTEM':
-            continue
-        repos.append(repo)
-
-    repos.sort(key=lambda repo: repo.module != SYSTEM_REPOSITORY_MODULE)
-    return repos
-
-
-def _extension_manifest_path(repo) -> Path | None:
-    base_dir = Path(repo.directory)
-    candidates = (
-        base_dir / EXTENSION_ID / "blender_manifest.toml",
-        base_dir / repo.module / EXTENSION_ID / "blender_manifest.toml",
-    )
-    for manifest_path in candidates:
-        if manifest_path.is_file():
-            return manifest_path
-    return None
-
-
 def _extension_module_name() -> str | None:
-    for repo in _system_extension_repos():
-        manifest_path = _extension_manifest_path(repo)
-        if manifest_path is not None:
-            return f"bl_ext.{repo.module}.{EXTENSION_ID}"
-    return None
+    selection = select_extension(
+        bpy.context.preferences.extensions.repos,
+        EXTENSION_ID,
+        preferred_module=SYSTEM_REPOSITORY_MODULE,
+    )
+    return selection.module_name if selection is not None else None
 
 
 def _import_extension_module(module_name: str) -> object:
@@ -69,7 +46,7 @@ def _startup_prewarm_supported() -> bool:
     return sys.platform == "win32" and not bpy.app.background
 
 
-def _enable_extension(*, report_fn=None) -> object | None:
+def _enable_extension(*, report_fn=None, raise_on_error: bool = False) -> object | None:
     import addon_utils
 
     module_name = _extension_module_name()
@@ -97,8 +74,12 @@ def _enable_extension(*, report_fn=None) -> object | None:
         persistent=False,
         handle_error=err_cb,
     )
-    if module is None and report_fn is not None:
-        report_fn({'ERROR'}, err_str or rpt_("Failed to enable BQt ViewLayer Manager extension"))
+    if module is None:
+        message = err_str or rpt_("Failed to enable BQt ViewLayer Manager extension")
+        if report_fn is not None:
+            report_fn({'ERROR'}, message)
+        if raise_on_error:
+            raise RuntimeError(message)
     elif module is not None and report_fn is not None and not was_enabled:
         report_fn({'INFO'}, rpt_("Enabled the bundled BQt ViewLayer Manager for this session"))
     return module
@@ -132,29 +113,37 @@ def _startup_prewarm_timer() -> float | None:
         return None
 
     _startup_prewarm_attempts += 1
-    module = _enable_extension()
-    if module is None:
-        if _startup_prewarm_attempts < _STARTUP_PREWARM_MAX_ATTEMPTS:
+    started_at = time.perf_counter()
+    if _extension_module_name() is None:
+        delay = retry_delay(
+            PrewarmFailure.REPOSITORY_NOT_READY,
+            attempt=_startup_prewarm_attempts,
+        )
+        if delay is not None:
             _startup_prewarm_timer_queued = True
-            return _STARTUP_PREWARM_INTERVAL_SECONDS
+            return delay
+        print(
+            "[BQt] startup prewarm stopped: bundled extension repository "
+            f"was not ready after {_startup_prewarm_attempts} attempts"
+        )
         return None
 
     try:
+        _enable_extension(raise_on_error=True)
         from blender_vfx_qt import ensure_bqt_runtime
 
         ensure_bqt_runtime()
     except Exception as ex:
+        elapsed = time.perf_counter() - started_at
         print(
-            "[BQt] startup prewarm attempt "
-            f"{_startup_prewarm_attempts} failed: {ex}"
+            "[BQt] startup prewarm stopped after permanent failure "
+            f"({elapsed:.3f}s): {ex}"
         )
-        if _startup_prewarm_attempts < _STARTUP_PREWARM_MAX_ATTEMPTS:
-            _startup_prewarm_timer_queued = True
-            return _STARTUP_PREWARM_INTERVAL_SECONDS
         return None
 
     _startup_prewarm_complete = True
-    print("[BQt] startup prewarm ready")
+    elapsed = time.perf_counter() - started_at
+    print(f"[BQt] startup prewarm ready ({elapsed:.3f}s)")
     return None
 
 

@@ -34,10 +34,10 @@ std::optional<int> ClosureSignature::find_output_index(const StringRef key) cons
 void ClosureSignature::set_auto_structure_types()
 {
   for (const Item &item : this->inputs) {
-    const_cast<Item &>(item).structure_type = NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO;
+    const_cast<Item &>(item).structure_type = NodeSocketInterfaceStructureType::Auto;
   }
   for (const Item &item : this->outputs) {
-    const_cast<Item &>(item).structure_type = NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_AUTO;
+    const_cast<Item &>(item).structure_type = NodeSocketInterfaceStructureType::Auto;
   }
 }
 
@@ -68,9 +68,7 @@ ClosureSignature ClosureSignature::from_closure_output_node(const bNode &node,
       {
         const NodeSocketInterfaceStructureType structure_type =
             get_structure_type_for_bundle_signature(
-                socket,
-                NodeSocketInterfaceStructureType(item.structure_type),
-                allow_auto_structure_type);
+                socket, item.structure_type, allow_auto_structure_type);
         signature.inputs.add({item.name, stype, structure_type});
       }
     }
@@ -81,9 +79,7 @@ ClosureSignature ClosureSignature::from_closure_output_node(const bNode &node,
     if (const bke::bNodeSocketType *stype = bke::node_socket_type_find_static(item.socket_type)) {
       const NodeSocketInterfaceStructureType structure_type =
           get_structure_type_for_bundle_signature(
-              socket,
-              NodeSocketInterfaceStructureType(item.structure_type),
-              allow_auto_structure_type);
+              socket, item.structure_type, allow_auto_structure_type);
       signature.outputs.add({item.name, stype, structure_type});
     }
   }
@@ -102,9 +98,7 @@ ClosureSignature ClosureSignature::from_evaluate_closure_node(const bNode &node,
     if (const bke::bNodeSocketType *stype = bke::node_socket_type_find_static(item.socket_type)) {
       const NodeSocketInterfaceStructureType structure_type =
           get_structure_type_for_bundle_signature(
-              socket,
-              NodeSocketInterfaceStructureType(item.structure_type),
-              allow_auto_structure_type);
+              socket, item.structure_type, allow_auto_structure_type);
       signature.inputs.add({item.name, stype, structure_type});
     }
   }
@@ -114,11 +108,28 @@ ClosureSignature ClosureSignature::from_evaluate_closure_node(const bNode &node,
     if (const bke::bNodeSocketType *stype = bke::node_socket_type_find_static(item.socket_type)) {
       const NodeSocketInterfaceStructureType structure_type =
           get_structure_type_for_bundle_signature(
-              socket,
-              NodeSocketInterfaceStructureType(item.structure_type),
-              allow_auto_structure_type);
+              socket, item.structure_type, allow_auto_structure_type);
       signature.outputs.add({item.name, stype, structure_type});
     }
+  }
+  return signature;
+}
+
+ClosureSignature ClosureSignature::from_closure_to_list_node(const bNode &node)
+{
+  BLI_assert(node.is_type("GeometryNodeClosureToList"_ustr));
+  const auto &storage = *static_cast<const GeometryNodeClosureToList *>(node.storage);
+  ClosureSignature signature;
+  signature.inputs.add({.key = "Index",
+                        .type = bke::node_socket_type_find("NodeSocketInt"),
+                        .structure_type = NodeSocketInterfaceStructureType::Single});
+  for (const int i : IndexRange(storage.items_num)) {
+    const GeometryNodeClosureToListItem &item = storage.items[i];
+    const auto type = eNodeSocketDatatype(item.socket_type);
+    signature.outputs.add(
+        {.key = item.name,
+         .type = bke::node_socket_type_find_static(type),
+         .structure_type = NodeSocketInterfaceStructureType(item.structure_type)});
   }
   return signature;
 }
@@ -146,7 +157,7 @@ std::optional<ClosureSignature> LinkedClosureSignatures::get_merged_signature() 
         }
         if (existing_item.structure_type != item.structure_type) {
           const_cast<ClosureSignature::Item &>(existing_item).structure_type =
-              NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_DYNAMIC;
+              NodeSocketInterfaceStructureType::Dynamic;
         }
       }
     }
@@ -159,7 +170,7 @@ std::optional<ClosureSignature> LinkedClosureSignatures::get_merged_signature() 
         }
         if (existing_item.structure_type != item.structure_type) {
           const_cast<ClosureSignature::Item &>(existing_item).structure_type =
-              NODE_INTERFACE_SOCKET_STRUCTURE_TYPE_DYNAMIC;
+              NodeSocketInterfaceStructureType::Dynamic;
         }
       }
     }

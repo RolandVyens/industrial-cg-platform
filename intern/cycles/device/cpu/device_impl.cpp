@@ -136,6 +136,11 @@ void CPUDevice::mem_copy_from(
   /* no-op */
 }
 
+void CPUDevice::mem_or_from_device(device_memory & /*mem*/)
+{
+  /* Nothing to do data is already in host buffer. */
+}
+
 void CPUDevice::mem_zero(device_memory &mem)
 {
   if (!mem.device_pointer) {
@@ -264,6 +269,11 @@ void CPUDevice::image_free(device_image &mem)
 }
 
 bool CPUDevice::has_unified_memory() const
+{
+  return true;
+}
+
+bool CPUDevice::has_unified_image_memory() const
 {
   return true;
 }

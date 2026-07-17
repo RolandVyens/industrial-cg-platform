@@ -316,6 +316,11 @@ void IMB_thumb_makedirs()
   }
 }
 
+static bool thumb_cancel_requested(const ThumbCancellationToken *cancel_token)
+{
+  return cancel_token && cancel_token->is_cancelled();
+}
+
 /* create thumbnail for file and returns new imbuf for thumbnail */
 static ImBuf *thumb_create_ex(const char *file_path,
                               const char *uri,
@@ -326,8 +331,13 @@ static ImBuf *thumb_create_ex(const char *file_path,
                               const char *blen_id,
                               ThumbSize size,
                               ThumbSource source,
-                              ImBuf *img)
+                              ImBuf *img,
+                              const ThumbCancellationToken *cancel_token = nullptr)
 {
+  if (thumb_cancel_requested(cancel_token)) {
+    return nullptr;
+  }
+
   /* Just in case these folders got deleted somehow. */
   IMB_thumb_makedirs();
 
@@ -361,7 +371,7 @@ static ImBuf *thumb_create_ex(const char *file_path,
       return nullptr;
     }
     if (size == THB_FAIL) {
-      img = IMB_allocImBuf(1, 1, 32, IB_byte_data | IB_metadata);
+      img = IMB_allocImBuf(1, 1, ImBufFlags::ByteData | ImBufFlags::Metadata);
       if (!img) {
         return nullptr;
       }
@@ -403,9 +413,9 @@ static ImBuf *thumb_create_ex(const char *file_path,
         /* Image buffer is converted from float to byte and only the latter one is used, and the
          * conversion process is aware of the float color-space. So it is possible to save some
          * compute time by keeping the original color-space for movies. */
-        anim = MOV_open_file(file_path, IB_byte_data | IB_metadata, 0, true, nullptr);
+        anim = MOV_open_file(file_path, ImBufFlags::Zero, 0, true, nullptr);
         if (anim != nullptr) {
-          img = MOV_decode_frame(anim, 0, IMB_TC_NONE, IMB_PROXY_NONE);
+          img = MOV_decode_frame(anim, 0, IMB_PROXY_NONE);
           if (img == nullptr) {
             // printf("not an anim; %s\n", file_path);
           }
@@ -420,6 +430,11 @@ static ImBuf *thumb_create_ex(const char *file_path,
         }
       }
       if (!img) {
+        return nullptr;
+      }
+
+      if (thumb_cancel_requested(cancel_token)) {
+        IMB_freeImBuf(img);
         return nullptr;
       }
 
@@ -438,6 +453,12 @@ static ImBuf *thumb_create_ex(const char *file_path,
         IMB_scale(img, ex, ey, IMBScaleFilter::Box, false);
       }
     }
+
+    if (thumb_cancel_requested(cancel_token)) {
+      IMB_freeImBuf(img);
+      return nullptr;
+    }
+
     SNPRINTF_UTF8(desc, "Thumbnail for %s", uri);
     IMB_metadata_ensure(&img->metadata);
     IMB_metadata_set_field(img->metadata, "Software", "Blender");
@@ -448,13 +469,13 @@ static ImBuf *thumb_create_ex(const char *file_path,
       IMB_metadata_set_field(img->metadata, "X-Blender::Hash", hash);
     }
     img->ftype = IMB_FTYPE_PNG;
-    img->planes = 32;
+    img->color_mode = ImColorMode::RGBA;
 
     /* If we generated from a 16bit PNG e.g., we have a float rect, not a byte one - fix this. */
     IMB_byte_from_float(img);
     IMB_free_float_pixels(img);
 
-    if (IMB_save_image(img, temp, IB_byte_data | IB_metadata)) {
+    if (IMB_save_image(img, temp, ImBufFlags::ByteData | ImBufFlags::Metadata)) {
 #ifndef WIN32
       chmod(temp, S_IRUSR | S_IWUSR);
 #endif
@@ -474,12 +495,22 @@ static ImBuf *thumb_create_or_fail(const char *file_path,
                                    const char *blen_group,
                                    const char *blen_id,
                                    ThumbSize size,
-                                   ThumbSource source)
+                                   ThumbSource source,
+                                   const ThumbCancellationToken *cancel_token)
 {
-  ImBuf *img = thumb_create_ex(
-      file_path, uri, thumb, use_hash, hash, blen_group, blen_id, size, source, nullptr);
+  ImBuf *img = thumb_create_ex(file_path,
+                               uri,
+                               thumb,
+                               use_hash,
+                               hash,
+                               blen_group,
+                               blen_id,
+                               size,
+                               source,
+                               nullptr,
+                               cancel_token);
 
-  if (!img) {
+  if (!img && !thumb_cancel_requested(cancel_token)) {
     /* thumb creation failed, write fail thumb */
     img = thumb_create_ex(
         file_path, uri, thumb, use_hash, hash, blen_group, blen_id, THB_FAIL, source, nullptr);
@@ -499,6 +530,9 @@ static ImBuf *thumb_create_or_fail(const char *file_path,
  */
 static bool skip_thumbnails_for_filepath(const char *filepath)
 {
+  if (!BLI_path_extension_check(filepath, ".blend")) {
+    return false;
+  }
   char temp_dir[FILE_MAX];
   BLI_temp_directory_path_get(temp_dir, sizeof(temp_dir));
   return BLI_path_contains(temp_dir, filepath);
@@ -540,7 +574,7 @@ ImBuf *IMB_thumb_read(const char *file_or_lib_path, ThumbSize size)
     return nullptr;
   }
   if (thumbpath_from_uri(uri, thumb, sizeof(thumb), size)) {
-    img = IMB_load_image_from_filepath(thumb, IB_byte_data | IB_metadata);
+    img = IMB_load_image_from_filepath(thumb, ImBufFlags::ByteData | ImBufFlags::Metadata);
   }
 
   return img;
@@ -564,8 +598,15 @@ void IMB_thumb_delete(const char *file_or_lib_path, ThumbSize size)
   }
 }
 
-ImBuf *IMB_thumb_manage(const char *file_or_lib_path, ThumbSize size, ThumbSource source)
+ImBuf *IMB_thumb_manage(const char *file_or_lib_path,
+                        ThumbSize size,
+                        ThumbSource source,
+                        const ThumbCancellationToken *cancel_token)
 {
+  if (thumb_cancel_requested(cancel_token)) {
+    return nullptr;
+  }
+
   if (source == THB_SOURCE_DIRECT) {
     const eFileAttributes file_attributes = BLI_file_attributes(file_or_lib_path);
     /* Don't trigger download files from online drives. Maybe less of a problem for
@@ -576,7 +617,8 @@ ImBuf *IMB_thumb_manage(const char *file_or_lib_path, ThumbSize size, ThumbSourc
       return nullptr;
     }
 
-    ImBuf *thumb = IMB_load_image_from_filepath(file_or_lib_path, IB_byte_data | IB_metadata);
+    ImBuf *thumb = IMB_load_image_from_filepath(file_or_lib_path,
+                                                ImBufFlags::ByteData | ImBufFlags::Metadata);
     if (!thumb) {
       return nullptr;
     }
@@ -622,7 +664,7 @@ ImBuf *IMB_thumb_manage(const char *file_or_lib_path, ThumbSize size, ThumbSourc
   if (file_attributes & FILE_ATTR_OFFLINE) {
     char thumb_path[FILE_MAX];
     if (thumbpath_from_uri(uri, thumb_path, sizeof(thumb_path), size)) {
-      return IMB_load_image_from_filepath(thumb_path, IB_byte_data | IB_metadata);
+      return IMB_load_image_from_filepath(thumb_path, ImBufFlags::ByteData | ImBufFlags::Metadata);
     }
     return nullptr;
   }
@@ -649,10 +691,10 @@ ImBuf *IMB_thumb_manage(const char *file_or_lib_path, ThumbSize size, ThumbSourc
     /* The requested path points to a generated thumbnail already (path into the thumbnail cache
      * directory). Attempt to load that, there's nothing we can recreate. */
     if (BLI_path_ncmp(file_or_lib_path, thumb_path, sizeof(thumb_path)) == 0) {
-      img = IMB_load_image_from_filepath(file_or_lib_path, IB_byte_data);
+      img = IMB_load_image_from_filepath(file_or_lib_path, ImBufFlags::ByteData);
     }
     else {
-      img = IMB_load_image_from_filepath(thumb_path, IB_byte_data | IB_metadata);
+      img = IMB_load_image_from_filepath(thumb_path, ImBufFlags::ByteData | ImBufFlags::Metadata);
       if (img) {
         bool regenerate = false;
 
@@ -688,16 +730,32 @@ ImBuf *IMB_thumb_manage(const char *file_or_lib_path, ThumbSize size, ThumbSourc
           IMB_thumb_delete(file_or_lib_path, THB_NORMAL);
           IMB_thumb_delete(file_or_lib_path, THB_LARGE);
           IMB_thumb_delete(file_or_lib_path, THB_FAIL);
-          img = thumb_create_or_fail(
-              file_path, uri, thumb_name, use_hash, thumb_hash, blen_group, blen_id, size, source);
+          img = thumb_create_or_fail(file_path,
+                                     uri,
+                                     thumb_name,
+                                     use_hash,
+                                     thumb_hash,
+                                     blen_group,
+                                     blen_id,
+                                     size,
+                                     source,
+                                     cancel_token);
         }
       }
       else {
         char thumb_hash[33];
         const bool use_hash = thumbhash_from_path(file_path, source, thumb_hash);
 
-        img = thumb_create_or_fail(
-            file_path, uri, thumb_name, use_hash, thumb_hash, blen_group, blen_id, size, source);
+        img = thumb_create_or_fail(file_path,
+                                   uri,
+                                   thumb_name,
+                                   use_hash,
+                                   thumb_hash,
+                                   blen_group,
+                                   blen_id,
+                                   size,
+                                   source,
+                                   cancel_token);
       }
     }
   }

@@ -11,6 +11,8 @@
 #include "BLI_assert.h"
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
+#include "BLI_math_euler.hh"
+#include "BLI_math_vector_types.hh"
 #include "BLI_string_ref.hh"
 #include "BLI_ustring.hh"
 #include "BLI_vector_set.hh"
@@ -35,6 +37,7 @@
 #include "COM_context.hh"
 #include "COM_pixel_operation.hh"
 #include "COM_result.hh"
+#include "COM_scheduler.hh"
 #include "COM_shader_node.hh"
 #include "COM_shader_operation.hh"
 #include "COM_utilities.hh"
@@ -43,8 +46,9 @@ namespace blender::compositor {
 
 ShaderOperation::ShaderOperation(Context &context,
                                  PixelCompileUnit &compile_unit,
-                                 const VectorSet<const bNode *> &schedule)
-    : PixelOperation(context, compile_unit, schedule)
+                                 const Schedule &schedule,
+                                 const ComputeContext &compute_context)
+    : PixelOperation(context, compile_unit, schedule, compute_context, false)
 {
   material_ = GPU_material_from_callbacks(
       GPU_MAT_COMPOSITOR, &construct_material, &generate_code, this);
@@ -141,10 +145,15 @@ void ShaderOperation::link_node_inputs(const bNode &node)
       continue;
     }
 
+    if (schedule_.unneeded_inputs.contains(input)) {
+      this->link_node_input_unavailable(*input);
+      continue;
+    }
+
     const bNodeSocket *output = get_output_linked_to_input(*input);
     if (!output) {
       const InputDescriptor input_descriptor = input_descriptor_from_input_socket(input);
-      if (input_descriptor.implicit_input == ImplicitInput::None) {
+      if (!input_descriptor.implicit_input.has_value()) {
         /* No implicit input, so link a constant setter node for it that holds the input value. */
         this->link_node_input_constant(*input);
       }
@@ -229,6 +238,14 @@ static void initialize_input_stack_value(const bNodeSocket &input, GPUNodeStack 
       stack.vec[0] = int(value);
       break;
     }
+    case SOCK_ROTATION: {
+      const bNodeSocketValueRotation *rotation =
+          input.default_value_typed<bNodeSocketValueRotation>();
+      const math::EulerXYZ euler(float3(rotation->value_euler));
+      const math::Quaternion value = math::to_quaternion(euler);
+      copy_v4_v4(stack.vec, float4(value));
+      break;
+    }
     case SOCK_MATRIX:
       /* Matrix sockets do not have default values. */
       BLI_assert_unreachable();
@@ -272,6 +289,9 @@ static const char *get_set_function_name(const ResultType type)
     case ResultType::Int3:
       /* GPUMaterial doesn't support int3, so it is passed as a float3. */
       return "set_float3";
+    case ResultType::Int4:
+      /* GPUMaterial doesn't support int4, so it is passed as a float4. */
+      return "set_float4";
     case ResultType::Bool:
       /* GPUMaterial doesn't support bool, so it is passed as a float. */
       return "set_float";
@@ -280,6 +300,8 @@ static const char *get_set_function_name(const ResultType type)
     case ResultType::Menu:
       /* GPUMaterial doesn't support int, so it is passed as a float. */
       return "set_float";
+    case ResultType::Quaternion:
+      return "set_quaternion";
     case ResultType::String:
     case ResultType::Object:
     case ResultType::Image:
@@ -326,7 +348,7 @@ void ShaderOperation::link_node_input_implicit(const bNodeSocket &input)
   GPUNodeStack &stack = node.get_input(input.identifier);
 
   const InputDescriptor input_descriptor = input_descriptor_from_input_socket(&input);
-  const ImplicitInput implicit_input = input_descriptor.implicit_input;
+  const ImplicitInputType implicit_input = input_descriptor.implicit_input.value();
 
   /* An input was already declared for that implicit input, so no need to declare it again and we
    * just link it. */
@@ -459,9 +481,8 @@ void ShaderOperation::declare_operation_input(const bNodeSocket &input_socket,
 
 void ShaderOperation::populate_results_for_node(const bNode &node)
 {
-  const bool is_node_preview_needed = this->get_node_previews() != nullptr;
-  const bNodeSocket *preview_output = is_node_preview_needed ? find_preview_output_socket(node) :
-                                                               nullptr;
+  const bNodeSocket *preview_output = needs_node_previews_ ? find_preview_output_socket(node) :
+                                                             nullptr;
 
   for (const bNodeSocket *output : node.output_sockets()) {
     if (!is_socket_available(output)) {
@@ -470,9 +491,11 @@ void ShaderOperation::populate_results_for_node(const bNode &node)
 
     /* If any of the nodes linked to the output are not part of the shader operation but are part
      * of the execution schedule, then an output result needs to be populated for it. */
-    const bool is_operation_output = is_output_linked_to_node_conditioned(
-        *output, [&](const bNode &node) {
-          return schedule_.contains(&node) && !compile_unit_.contains(&node);
+    const bool is_operation_output = is_output_linked_to_input_conditioned(
+        *output, [&](const bNodeSocket &input) {
+          return schedule_.nodes.contains(&input.owner_node()) &&
+                 !schedule_.unneeded_inputs.contains(&input) &&
+                 !compile_unit_.contains(&input.owner_node());
         });
 
     /* If the output is used as the node preview, then an output result needs to be populated for
@@ -507,12 +530,16 @@ static const char *get_store_function_name(ResultType type)
       return "node_compositor_store_output_int2";
     case ResultType::Int3:
       return "node_compositor_store_output_int3";
+    case ResultType::Int4:
+      return "node_compositor_store_output_int4";
     case ResultType::Bool:
       return "node_compositor_store_output_bool";
     case ResultType::Float4x4:
       return "node_compositor_store_output_float4x4";
     case ResultType::Menu:
       return "node_compositor_store_output_menu";
+    case ResultType::Quaternion:
+      return "node_compositor_store_output_quaternion";
     case ResultType::String:
     case ResultType::Object:
     case ResultType::Image:
@@ -536,8 +563,7 @@ void ShaderOperation::populate_operation_result(const bNodeSocket &output_socket
   std::string output_identifier = "output" + std::to_string(output_id);
 
   const ResultType result_type = get_node_socket_result_type(&output_socket);
-  const Result result = context().create_result(result_type);
-  populate_result(output_identifier, result);
+  populate_result(output_identifier, result_type);
 
   /* Map the output socket to the identifier of the newly populated result. */
   output_sockets_to_output_identifiers_map_.add_new(&output_socket, output_identifier);
@@ -699,6 +725,10 @@ static const char *glsl_store_expression_from_result_type(ResultType type)
       /* GPUMaterial doesn't support int3, so it is passed as a float3, and we need to convert it
        * back to int3 before writing it. */
       return "ivec4(ivec3(value), 0)";
+    case ResultType::Int4:
+      /* GPUMaterial doesn't support int4, so it is passed as a float4, and we need to convert it
+       * back to int4 before writing it. */
+      return "ivec4(value)";
     case ResultType::Bool:
       /* GPUMaterial doesn't support bool, so it is passed as a float and stored as an int, and we
        * need to convert it back to bool and then to an int before writing it. */
@@ -709,6 +739,8 @@ static const char *glsl_store_expression_from_result_type(ResultType type)
       /* GPUMaterial doesn't support int, so it is passed as a float, and we need to convert it
        * back to int before writing it. */
       return "ivec4(int(value))";
+    case ResultType::Quaternion:
+      return "value";
     case ResultType::String:
     case ResultType::Object:
     case ResultType::Image:
@@ -734,10 +766,12 @@ static ImageType gpu_image_type_from_result_type(const ResultType type)
     case ResultType::Float3:
     case ResultType::Color:
     case ResultType::Float4:
+    case ResultType::Quaternion:
       return ImageType::Float2D;
     case ResultType::Int:
     case ResultType::Int2:
     case ResultType::Int3:
+    case ResultType::Int4:
     case ResultType::Bool:
     case ResultType::Menu:
       return ImageType::Int2D;
@@ -773,12 +807,16 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
   const std::string store_int2_function_header = "void store_int2(const uint id, vec2 value)";
   /* GPUMaterial doesn't support int3, so it is passed as a float3. */
   const std::string store_int3_function_header = "void store_int3(const uint id, vec3 value)";
+  /* GPUMaterial doesn't support int4, so it is passed as a float4. */
+  const std::string store_int4_function_header = "void store_int4(const uint id, vec4 value)";
   /* GPUMaterial doesn't support bool, so it is passed as a float. */
   const std::string store_bool_function_header = "void store_bool(const uint id, float value)";
   const std::string store_float4x4_function_header =
       "void store_float4x4(const uint id, float4x4 value)";
   /* GPUMaterial doesn't support int, so it is passed as a float. */
   const std::string store_menu_function_header = "void store_menu(const uint id, float value)";
+  const std::string store_quaternion_function_header =
+      "void store_quaternion(const uint id, vec4 value)";
 
   /* Each of the store functions is essentially a single switch case on the given ID, so start by
    * opening the function with a curly bracket followed by opening a switch statement in each of
@@ -791,9 +829,11 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
   std::stringstream store_int_function;
   std::stringstream store_int2_function;
   std::stringstream store_int3_function;
+  std::stringstream store_int4_function;
   std::stringstream store_bool_function;
   std::stringstream store_float4x4_function;
   std::stringstream store_menu_function;
+  std::stringstream store_quaternion_function;
   const std::string store_function_start = "\n{\n  switch (id) {\n";
   store_float_function << store_float_function_header << store_function_start;
   store_float2_function << store_float2_function_header << store_function_start;
@@ -803,9 +843,11 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
   store_int_function << store_int_function_header << store_function_start;
   store_int2_function << store_int2_function_header << store_function_start;
   store_int3_function << store_int3_function_header << store_function_start;
+  store_int4_function << store_int4_function_header << store_function_start;
   store_bool_function << store_bool_function_header << store_function_start;
   store_float4x4_function << store_float4x4_function_header << store_function_start;
   store_menu_function << store_menu_function_header << store_function_start;
+  store_quaternion_function << store_quaternion_function_header << store_function_start;
 
   shader_create_info.builtins(BuiltinBits::GLOBAL_INVOCATION_ID);
 
@@ -861,6 +903,9 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
       case ResultType::Int3:
         store_int3_function << common_case_code.str();
         break;
+      case ResultType::Int4:
+        store_int4_function << common_case_code.str();
+        break;
       case ResultType::Bool:
         store_bool_function << common_case_code.str();
         break;
@@ -875,6 +920,9 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
         break;
       case ResultType::Menu:
         store_menu_function << common_case_code.str();
+        break;
+      case ResultType::Quaternion:
+        store_quaternion_function << common_case_code.str();
         break;
       case ResultType::String:
       case ResultType::Object:
@@ -900,14 +948,17 @@ std::string ShaderOperation::generate_code_for_outputs(ShaderCreateInfo &shader_
   store_int_function << store_function_end;
   store_int2_function << store_function_end;
   store_int3_function << store_function_end;
+  store_int4_function << store_function_end;
   store_bool_function << store_function_end;
   store_float4x4_function << store_function_end;
   store_menu_function << store_function_end;
+  store_quaternion_function << store_function_end;
 
   return store_float_function.str() + store_float2_function.str() + store_float3_function.str() +
          store_float4_function.str() + store_color_function.str() + store_int_function.str() +
-         store_int2_function.str() + store_int3_function.str() + store_bool_function.str() +
-         store_float4x4_function.str() + store_menu_function.str();
+         store_int2_function.str() + store_int3_function.str() + store_int4_function.str() +
+         store_bool_function.str() + store_float4x4_function.str() + store_menu_function.str() +
+         store_quaternion_function.str();
 }
 
 static const char *glsl_type_from_result_type(ResultType type)
@@ -932,6 +983,9 @@ static const char *glsl_type_from_result_type(ResultType type)
     case ResultType::Int3:
       /* GPUMaterial doesn't support int3, so it is passed as a float3. */
       return "vec3";
+    case ResultType::Int4:
+      /* GPUMaterial doesn't support int4, so it is passed as a float4. */
+      return "vec4";
     case ResultType::Bool:
       /* GPUMaterial doesn't support bool, so it is passed as a float. */
       return "float";
@@ -940,6 +994,8 @@ static const char *glsl_type_from_result_type(ResultType type)
     case ResultType::Menu:
       /* GPUMaterial doesn't support int, so it is passed as a float. */
       return "float";
+    case ResultType::Quaternion:
+      return "vec4";
     case ResultType::String:
     case ResultType::Object:
     case ResultType::Image:
@@ -978,12 +1034,16 @@ static const char *glsl_swizzle_from_result_type(ResultType type)
       return "xy";
     case ResultType::Int3:
       return "xyz";
+    case ResultType::Int4:
+      return "xyzw";
     case ResultType::Bool:
       return "x";
     case ResultType::Float4x4:
       return "xyzw";
     case ResultType::Menu:
       return "x";
+    case ResultType::Quaternion:
+      return "xyzw";
     case ResultType::String:
     case ResultType::Object:
     case ResultType::Image:
@@ -1007,7 +1067,7 @@ std::string ShaderOperation::generate_code_for_inputs(GPUMaterial *material,
   /* The attributes of the GPU material represents the inputs of the operation. */
   ListBaseT<GPUMaterialAttribute> attributes = GPU_material_attributes(material);
 
-  if (BLI_listbase_is_empty(&attributes)) {
+  if (attributes.is_empty()) {
     return "";
   }
 
@@ -1017,7 +1077,7 @@ std::string ShaderOperation::generate_code_for_inputs(GPUMaterial *material,
    * counting the sampler slot location from the number of textures in the material, since some
    * sampler slots may be reserved for things like color band textures. */
   const ListBaseT<GPUMaterialTexture> textures = GPU_material_textures(material);
-  int input_slot_location = BLI_listbase_count(&textures);
+  int input_slot_location = textures.count();
   for (GPUMaterialAttribute &attribute : attributes) {
     const InputDescriptor &input_descriptor = get_input_descriptor(attribute.name);
     shader_create_info.sampler(input_slot_location,

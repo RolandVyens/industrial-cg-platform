@@ -184,6 +184,8 @@ class BackgroundLight : public Light {
   NODE_SOCKET_API(float, average_radiance)
 };
 
+bool light_uses_shadow_color(const Light *light);
+
 class LightManager {
  public:
   enum : uint32_t {

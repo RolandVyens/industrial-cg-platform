@@ -25,11 +25,20 @@ void SubsurfaceModule::end_sync()
     return;
   }
 
+  /* Process direct / indirect radiance separately for correct ligthpath intensity. */
+  /* Note that we do not branch on clamp.surface_indirect since it is applied on the spherical
+   * harmonics or rays before SSS evaluation. */
+  use_split_radiance_ = inst_.uniform_data.data.clamp.direct_scale != 1.0f ||
+                        inst_.uniform_data.data.clamp.indirect_scale != 1.0f ||
+                        inst_.scene->eevee.clamp_surface_direct != 0.0f;
+
   {
+    gpu::Shader *sh = inst_.shaders.static_shader_get(SUBSURFACE_SETUP);
     PassSimple &pass = setup_ps_;
     pass.init();
     pass.state_set(DRW_STATE_NO_DRAW);
-    pass.shader_set(inst_.shaders.static_shader_get(SUBSURFACE_SETUP));
+    pass.specialize_constant(sh, "use_split_radiance", use_split_radiance_);
+    pass.shader_set(sh);
     pass.bind_resources(inst_.gbuffer);
     pass.bind_texture("depth_tx", &inst_.render_buffers.depth_tx);
     pass.bind_image("direct_light_img", &direct_light_tx_);
@@ -51,11 +60,15 @@ void SubsurfaceModule::end_sync()
                                GPU_SAMPLER_CUSTOM_COMPARE,
                                GPU_SAMPLER_STATE_TYPE_PARAMETERS};
 
+    gpu::Shader *sh = inst_.shaders.static_shader_get(SUBSURFACE_CONVOLVE);
+
     PassSimple &pass = convolve_ps_;
     pass.init();
     pass.state_set(DRW_STATE_NO_DRAW);
-    pass.shader_set(inst_.shaders.static_shader_get(SUBSURFACE_CONVOLVE));
+    pass.specialize_constant(sh, "use_split_radiance", use_split_radiance_);
+    pass.shader_set(sh);
     pass.bind_resources(inst_.uniform_data);
+    pass.bind_ubo(SUBSURFACE_BUF_SLOT, data_);
     pass.bind_resources(inst_.gbuffer);
     pass.bind_texture("radiance_tx", &radiance_tx_, sampler);
     pass.bind_texture("depth_tx", &inst_.render_buffers.depth_tx, sampler);
@@ -77,7 +90,9 @@ void SubsurfaceModule::render(gpu::Texture *direct_diffuse_light_tx,
     return;
   }
 
+  /* TODO: This only needs to be update once per render sample. */
   precompute_samples_location();
+  data_.push_update();
 
   int2 render_extent = inst_.film.render_extent_get();
   setup_dispatch_size_ = int3(math::divide_ceil(render_extent, int2(SUBSURFACE_GROUP_SIZE)), 1);
@@ -89,8 +104,11 @@ void SubsurfaceModule::render(gpu::Texture *direct_diffuse_light_tx,
   indirect_light_tx_ = indirect_diffuse_light_tx;
 
   eGPUTextureUsage usage = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_SHADER_WRITE;
-  object_id_tx_.acquire(render_extent, gpu::TextureFormat::SUBSURFACE_OBJECT_ID_FORMAT, usage);
-  radiance_tx_.acquire(render_extent, gpu::TextureFormat::SUBSURFACE_RADIANCE_FORMAT, usage);
+  object_id_tx_.acquire_2d(render_extent, gpu::TextureFormat::SUBSURFACE_OBJECT_ID_FORMAT, usage);
+  radiance_tx_.acquire_2d_array(render_extent,
+                                use_split_radiance_ ? 2 : 1,
+                                gpu::TextureFormat::SUBSURFACE_RADIANCE_FORMAT,
+                                usage);
 
   convolve_dispatch_buf_.clear_to_zero();
 
@@ -124,8 +142,6 @@ void SubsurfaceModule::precompute_samples_location()
   }
   /* Avoid float imprecision. */
   data_.min_radius = max_ff(data_.min_radius, 1e-4f);
-
-  inst_.uniform_data.push_update();
 }
 
 /** \} */

@@ -32,6 +32,8 @@ struct Scene;
 struct View3D;
 struct ViewLayer;
 
+enum eObject_Flag : short;
+
 enum eViewLayerCopyMethod {
   VIEWLAYER_ADD_NEW = 0,
   VIEWLAYER_ADD_EMPTY = 1,
@@ -54,7 +56,7 @@ ViewLayer *BKE_view_layer_find(const Scene *scene, const char *layer_name);
 /**
  * Add a new view layer by default, a view layer has the master collection.
  *
- * \params bmain Main data-base containing the affect scene. May be null, in which case no
+ * \param bmain: Main data-base containing the affect scene. May be null, in which case no
  * view-layer/collection re-synchronize will happen.
  */
 ViewLayer *BKE_view_layer_add(
@@ -86,7 +88,7 @@ void BKE_view_layer_free_object_content(ViewLayer *view_layer);
 void BKE_view_layer_selected_objects_tag(const Main &bmain,
                                          const Scene *scene,
                                          ViewLayer *view_layer,
-                                         int tag);
+                                         eObject_Flag tag);
 
 /**
  * Fallback for when a Scene has no camera to use.
@@ -292,7 +294,7 @@ void BKE_layer_collection_set_visible(const Main &bmain,
                                       LayerCollection *lc,
                                       bool visible,
                                       bool hierarchy);
-void BKE_layer_collection_set_flag(LayerCollection *lc, int flag, bool value);
+void BKE_layer_collection_set_flag(LayerCollection *lc, eLayerCollection_Flag flag, bool value);
 
 /* Evaluation. */
 
@@ -414,7 +416,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
                                              ViewLayer *view_layer);
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_BASE_IN_MODE_BEGIN( \
     _bmain, _scene, _view_layer, _v3d, _object_type, _object_mode, _instance) \
@@ -440,7 +442,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
   ((void)0)
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_BASE_IN_EDIT_MODE_BEGIN(_bmain, _scene, _view_layer, _v3d, _instance) \
   FOREACH_BASE_IN_MODE_BEGIN ((_bmain), _scene, _view_layer, _v3d, -1, OB_MODE_EDIT, _instance)
@@ -448,7 +450,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
 #define FOREACH_BASE_IN_EDIT_MODE_END FOREACH_BASE_IN_MODE_END
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_OBJECT_IN_MODE_BEGIN( \
     _bmain, _scene, _view_layer, _v3d, _object_type, _object_mode, _instance) \
@@ -462,7 +464,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
   FOREACH_BASE_IN_MODE_END
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_OBJECT_IN_EDIT_MODE_BEGIN(_bmain, _scene, _view_layer, _v3d, _instance) \
   FOREACH_BASE_IN_EDIT_MODE_BEGIN ((_bmain), _scene, _view_layer, _v3d, _base) { \
@@ -483,7 +485,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
 #define FOREACH_SELECTED_BASE_END ITER_END
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_VISIBLE_BASE_BEGIN(_bmain, _scene, _view_layer, _v3d, _instance) \
   { \
@@ -519,7 +521,7 @@ void _BKE_view_layer_synced_ensure_or_assert(const Main *bmain,
   ((void)0)
 
 /**
- * \param _bmain a pointer to Main, may be null, in which case the view layer is assumed in sync.
+ * \param _bmain: a pointer to Main, may be null, in which case the view layer is assumed in sync.
  */
 #define FOREACH_OBJECT_FLAG_BEGIN(_bmain, _scene, _view_layer, _v3d, _flag, _instance) \
   { \

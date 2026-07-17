@@ -72,9 +72,7 @@ static void node_build_multi_function(NodeMultiFunctionBuilder &builder)
 static void node_gather_link_searches(GatherLinkSearchOpParams &params)
 {
   if (params.in_out() == SOCK_IN) {
-    if (params.node_tree().typeinfo->validate_link(eNodeSocketDatatype(params.other_socket().type),
-                                                   SOCK_STRING))
-    {
+    if (params.node_tree().typeinfo->validate_link(params.other_socket().type, SOCK_STRING)) {
       for (const EnumPropertyItem *item = rna_enum_node_match_string_items;
            item->identifier != nullptr;
            item++)
@@ -84,7 +82,7 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
           params.add_item(IFACE_(item->name), [operation](LinkSearchOpParams &params) {
             bNode &node = params.add_node("FunctionNodeMatchString"_ustr);
             params.update_and_connect_available_socket(node, "String"_ustr);
-            bke::node_find_socket(node, SOCK_IN, "Operation")
+            bke::node_find_socket(node, SOCK_IN, "Operation"_ustr)
                 ->default_value_typed<bNodeSocketValueMenu>()
                 ->value = int(operation);
           });
@@ -118,7 +116,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeMatchString"_ustr);
+  fn_cmp_node_type_base(&ntype, "FunctionNodeMatchString"_ustr);
   ntype.ui_name = "Match String";
   ntype.ui_description = "Check if a given string exists within another string";
   ntype.nclass = NODE_CLASS_CONVERTER;

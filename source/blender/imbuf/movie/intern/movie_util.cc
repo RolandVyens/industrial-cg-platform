@@ -68,7 +68,8 @@ static void ffmpeg_log_callback(void * /*ptr*/, int level, const char *format, v
   switch (level) {
     case AV_LOG_PANIC:
     case AV_LOG_FATAL:
-      clg_level = CLG_LEVEL_FATAL;
+      /* ffmpeg "fatal" should not quit whole Blender; report as error. */
+      clg_level = CLG_LEVEL_ERROR;
       break;
     case AV_LOG_ERROR:
     case AV_LOG_WARNING:
@@ -503,9 +504,9 @@ static void ffmpeg_preset_set(RenderData *rd, int preset)
   }
 }
 
-int MOV_codec_valid_bit_depths(AVCodecID av_codec_id)
+eImageFormatDepth MOV_codec_valid_bit_depths(AVCodecID av_codec_id)
 {
-  int bit_depths = R_IMF_CHAN_DEPTH_8;
+  eImageFormatDepth bit_depths = R_IMF_CHAN_DEPTH_8;
   /* Note: update properties_output.py `use_bpp` when changing this function. */
   if (ELEM(av_codec_id,
            AV_CODEC_ID_H264,
@@ -622,7 +623,7 @@ void MOV_validate_output_settings(RenderData *rd, const ImageFormatData *imf)
 #endif
 }
 
-int MOV_codec_valid_bit_depths(IMB_Ffmpeg_Codec_ID codec_id)
+eImageFormatDepth MOV_codec_valid_bit_depths(IMB_Ffmpeg_Codec_ID codec_id)
 {
 #ifdef WITH_FFMPEG
   return MOV_codec_valid_bit_depths(mov_av_codec_id_get(codec_id));

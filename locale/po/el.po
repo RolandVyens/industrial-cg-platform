@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
+"Project-Id-Version: Blender 5.2.0 LTS Release Candidate (b'3d8c46ac31f4')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-06 09:15+0000\n"
+"POT-Creation-Date: 2026-07-13 07:34+0000\n"
 "PO-Revision-Date: 2025-07-23 15:19+0000\n"
 "Last-Translator: Anonymous <noreply@weblate.org>\n"
 "Language-Team: Greek <https://translate.blender.org/projects/blender-ui/ui/el/>\n"
@@ -85,6 +85,14 @@ msgstr "Κενό"
 
 msgid "Active Bone"
 msgstr "Ενεργό Οστό"
+
+
+msgid "Link"
+msgstr "Σύνδεση"
+
+
+msgid "Append"
+msgstr "Συγχώνευση"
 
 
 msgid "Point"
@@ -311,14 +319,6 @@ msgid "Save"
 msgstr "Αποθήκευση"
 
 
-msgid "Link"
-msgstr "Σύνδεση"
-
-
-msgid "Append"
-msgstr "Συγχώνευση"
-
-
 msgid "End"
 msgstr "Τέλος"
 
@@ -351,6 +351,10 @@ msgid "Grid"
 msgstr "Πλέγμα"
 
 
+msgid "Dynamic"
+msgstr "Δυναμικό"
+
+
 msgid "Repeat"
 msgstr "Repeat"
 
@@ -365,10 +369,6 @@ msgstr "Μπλε"
 
 msgid "Library"
 msgstr "Βιβλιοθήκη"
-
-
-msgid "Dynamic"
-msgstr "Δυναμικό"
 
 
 msgid "Draw"
@@ -523,24 +523,28 @@ msgid "Screen"
 msgstr "Οθόνη"
 
 
-msgid "Mirror"
-msgstr "Καθρέφτισμα"
-
-
-msgid "Snap"
-msgstr "Προσκόλληση"
-
-
-msgid "Select Linked"
-msgstr "Επιλογή Συνδεδεμένων"
+msgid "Merge"
+msgstr "Συγχώνευση"
 
 
 msgid "Metaball"
 msgstr "Μετα-σφαίρα"
 
 
+msgid "Snap"
+msgstr "Προσκόλληση"
+
+
 msgid "Import"
 msgstr "Εισαγωγή"
+
+
+msgid "Mirror"
+msgstr "Καθρέφτισμα"
+
+
+msgid "Select Linked"
+msgstr "Επιλογή Συνδεδεμένων"
 
 
 msgid "Light"
@@ -559,12 +563,12 @@ msgid "Track"
 msgstr "Ανίχνευση"
 
 
+msgid "Linked"
+msgstr "Συνδεδεμένο/α"
+
+
 msgid "Make Single User"
 msgstr "Ορισμός Ενός Χρήστη"
-
-
-msgid "Merge"
-msgstr "Συγχώνευση"
 
 
 msgid "Cache"
@@ -654,10 +658,6 @@ msgstr "Nor"
 
 msgid "Bake"
 msgstr "Φτιάξε"
-
-
-msgid "Linked"
-msgstr "Συνδεδεμένο/α"
 
 
 msgid "Shadow"
@@ -981,12 +981,8 @@ msgid "Viewport Shading"
 msgstr "Σκίαση Παραθύρου Οπτικής"
 
 
-msgid "Torus"
-msgstr "Δαχτυλίδι"
-
-
-msgid "Assign"
-msgstr "Ανάθεση"
+msgid "Cancel"
+msgstr "Ακύρωση"
 
 
 msgctxt "Operator"
@@ -994,8 +990,12 @@ msgid "Clear"
 msgstr "Καθαρισμός"
 
 
-msgid "Cancel"
-msgstr "Ακύρωση"
+msgid "Torus"
+msgstr "Δαχτυλίδι"
+
+
+msgid "Assign"
+msgstr "Ανάθεση"
 
 
 msgid "Esc"

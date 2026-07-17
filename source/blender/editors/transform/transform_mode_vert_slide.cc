@@ -11,6 +11,7 @@
 #include "BLI_math_matrix.hh"
 #include "BLI_string_utf8.h"
 
+#include "BKE_report.hh"
 #include "BKE_unit.hh"
 
 #include "GPU_immediate.hh"
@@ -54,7 +55,7 @@ struct VertSlideData {
   {
     ARegion *region = t->region;
 
-    if (UNLIKELY(region == nullptr)) {
+    if (region == nullptr) [[unlikely]] {
       this->win_half = {1.0f, 1.0f};
       this->proj_mat = float4x4::identity();
       return;
@@ -283,7 +284,9 @@ static eRedrawFlag handleEventVertSlide(TransInfo *t, const wmEvent *event)
             /* Update the slide direction for every selected object. */
             FOREACH_TRANS_DATA_CONTAINER (t, tc) {
               VertSlideData *sld = static_cast<VertSlideData *>(tc->custom.mode.data);
-              sld->update_active_edges(t, tc, dir_unit);
+              if (sld) {
+                sld->update_active_edges(t, tc, dir_unit);
+              }
             }
             if (slp->op) {
               if (PropertyRNA *prop = RNA_struct_find_property(slp->op->ptr, "direction")) {
@@ -619,6 +622,11 @@ static void vert_slide_transform_matrix_fn(TransInfo *t, float mat_xform[4][4])
 static void initVertSlide_ex(
     TransInfo *t, wmOperator *op, bool use_even, bool flipped, bool use_clamp)
 {
+  if ((t->flag & T_EDIT) == 0 || (t->obedit_type != OB_MESH)) {
+    BKE_report(t->reports, RPT_ERROR, "'Vertex Slide' is only supported in mesh edit mode");
+    t->state = TRANS_CANCEL;
+    return;
+  }
 
   t->mode = TFM_VERT_SLIDE;
 

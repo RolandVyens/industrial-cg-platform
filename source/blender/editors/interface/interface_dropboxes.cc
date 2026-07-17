@@ -159,25 +159,6 @@ static std::string drop_material_tooltip(bContext *C,
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name Asset Prefetch Callbacks
- * \{ */
-
-static void prefetch_assets(bContext &C, wmDrag &drag)
-{
-  BLI_assert(drag.type == WM_DRAG_ASSET);
-  wmDragAsset *asset_drag = static_cast<wmDragAsset *>(drag.poin);
-
-  if (!asset_drag->asset->is_online()) {
-    return;
-  }
-
-  blender::asset_system::remote_library_request_asset_download(
-      C, *asset_drag->asset, CTX_wm_reports(&C));
-}
-
-/** \} */
-
-/* -------------------------------------------------------------------- */
 /** \name Add User Interface Drop Boxes
  * \{ */
 
@@ -185,7 +166,10 @@ void dropboxes_ui()
 {
   ListBaseT<wmDropBox> *lb = WM_dropboxmap_find("User Interface", SPACE_EMPTY, RGN_TYPE_WINDOW);
 
-  WM_dropbox_add(lb, "UI_OT_view_drop", view_drop_poll, nullptr, nullptr, view_drop_tooltip);
+  wmDropBox *dropbox = WM_dropbox_add(
+      lb, "UI_OT_view_drop", view_drop_poll, nullptr, nullptr, view_drop_tooltip);
+  dropbox->on_event_while_hover = region_view_scroll_at_borders;
+
   WM_dropbox_add(lb,
                  "UI_OT_drop_name",
                  drop_name_poll,
@@ -198,8 +182,6 @@ void dropboxes_ui()
                  drop_material_copy,
                  WM_drag_free_imported_drag_ID,
                  drop_material_tooltip);
-
-  WM_drag_global_prefetch_handler_add(WM_DRAG_ASSET, prefetch_assets);
 }
 
 /** \} */

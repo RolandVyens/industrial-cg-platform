@@ -33,13 +33,14 @@ using namespace draw;
 
 class Instance;
 
+using SubsurfaceDataBuf = draw::UniformBuffer<SubsurfaceData>;
 using SubsurfaceTileBuf = draw::StorageArrayBuffer<uint, 1024, true>;
 
 struct SubsurfaceModule {
  private:
   Instance &inst_;
   /** Contains samples locations. */
-  SubsurfaceData &data_;
+  SubsurfaceDataBuf data_;
   /** Scene diffuse irradiance. Pointer bound at sync time, set at render time. */
   gpu::Texture *direct_light_tx_;
   gpu::Texture *indirect_light_tx_;
@@ -55,8 +56,11 @@ struct SubsurfaceModule {
   SubsurfaceTileBuf convolve_tile_buf_;
   DispatchIndirectBuf convolve_dispatch_buf_;
 
+  /* Process direct and indirect radiance separately. */
+  bool use_split_radiance_ = false;
+
  public:
-  SubsurfaceModule(Instance &inst, SubsurfaceData &data) : inst_(inst), data_(data)
+  SubsurfaceModule(Instance &inst) : inst_(inst)
   {
     /* Force first update. */
     data_.sample_len = -1;

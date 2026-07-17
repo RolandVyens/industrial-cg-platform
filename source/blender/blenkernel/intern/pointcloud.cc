@@ -32,6 +32,7 @@
 #include "BKE_idtype.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_lib_query.hh"
+#include "BKE_material.hh"
 #include "BKE_modifier.hh"
 #include "BKE_object.hh"
 #include "BKE_object_types.hh"
@@ -153,7 +154,7 @@ static void pointcloud_blend_read_data(BlendDataReader *reader, ID *id)
   pointcloud->attribute_storage.wrap().blend_read(*reader);
 
   /* Materials */
-  BLO_read_pointer_array(reader, pointcloud->totcol, reinterpret_cast<void **>(&pointcloud->mat));
+  BLO_read_pointer_array_and_validate_size(reader, &pointcloud->mat, &pointcloud->totcol);
 
   pointcloud->runtime = new bke::PointCloudRuntime();
 }
@@ -308,6 +309,11 @@ bool BKE_pointcloud_attribute_required(const PointCloud * /*pointcloud*/, const 
   return name == ATTR_POSITION;
 }
 
+void BKE_pointcloud_material_remap(PointCloud *pointcloud, const uint *remap, const int remap_num)
+{
+  BKE_material_attr_indices_remap(pointcloud->attributes_for_write(), remap, remap_num);
+}
+
 void pointcloud_copy_parameters(const PointCloud &src, PointCloud &dst)
 {
   dst.flag = src.flag;
@@ -340,7 +346,7 @@ void pointcloud_resize(PointCloud &pointcloud, const int size)
   if (size > old_totpoint) {
     /* Initialize new points. */
     fill_attribute_range_default(
-        attributes, bke::AttrDomain::Point, {}, IndexRange(old_totpoint, size));
+        attributes, bke::AttrDomain::Point, {}, IndexRange::from_begin_end(old_totpoint, size));
   }
 }
 
@@ -372,7 +378,7 @@ static void pointcloud_evaluate_modifiers(Depsgraph *depsgraph,
 
   /* Evaluate modifiers. */
   for (; md; md = md->next) {
-    const ModifierTypeInfo *mti = BKE_modifier_get_info(ModifierType(md->type));
+    const ModifierTypeInfo *mti = BKE_modifier_get_info(md->type);
 
     if (!BKE_modifier_is_enabled(scene, md, required_mode)) {
       continue;

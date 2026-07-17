@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
+"Project-Id-Version: Blender 5.2.0 LTS Release Candidate (b'3d8c46ac31f4')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-06 09:15+0000\n"
+"POT-Creation-Date: 2026-07-13 07:34+0000\n"
 "PO-Revision-Date: 2025-07-31 16:24+0000\n"
 "Last-Translator: leif larsen <linuxdk1978@gmail.com>\n"
 "Language-Team: Danish <https://translate.blender.org/projects/blender-ui/ui/da/>\n"
@@ -1447,6 +1447,38 @@ msgid "Armatures active edit bone"
 msgstr "Armaturer aktive redigere knogle"
 
 
+msgid "Asset Library"
+msgstr "aktiv bibliotek"
+
+
+msgid "All Libraries"
+msgstr "Alle biblioteker"
+
+
+msgid "Show assets from all of the listed asset libraries"
+msgstr "Vis aktiver fra alle de listede aktivbiblioteker"
+
+
+msgid "Current File"
+msgstr "Nuværende fil"
+
+
+msgid "Show the assets currently available in this Blender session"
+msgstr "Vis de aktiver, der i øjeblikket er tilgængelige i denne Blender-session"
+
+
+msgid "Essentials"
+msgstr "Væsentlige"
+
+
+msgid "Custom"
+msgstr "Brugerdefinerede"
+
+
+msgid "Show assets from the asset libraries configured in the Preferences"
+msgstr "Vis aktiver fra de aktivbiblioteker, der er konfigureret i Indstillinger"
+
+
 msgid "User Asset Libraries"
 msgstr "Bruger Asset Libraries"
 
@@ -1584,44 +1616,8 @@ msgid "Regions for quick access to assets"
 msgstr "Regioner for hurtig adgang til aktiver"
 
 
-msgid "Asset Library"
-msgstr "aktiv bibliotek"
-
-
 msgid "Choose the asset library to display assets from"
 msgstr "Vælg det aktivbibliotek, du vil vise aktiver fra"
-
-
-msgid "All Libraries"
-msgstr "Alle biblioteker"
-
-
-msgid "Show assets from all of the listed asset libraries"
-msgstr "Vis aktiver fra alle de listede aktivbiblioteker"
-
-
-msgid "Current File"
-msgstr "Nuværende fil"
-
-
-msgid "Show the assets currently available in this Blender session"
-msgstr "Vis de aktiver, der i øjeblikket er tilgængelige i denne Blender-session"
-
-
-msgid "Essentials"
-msgstr "Væsentlige"
-
-
-msgid "Show the basic building blocks and utilities coming with Blender"
-msgstr "Vis de grundlæggende byggeklodser og hjælpeprogrammer, der følger med Blender"
-
-
-msgid "Custom"
-msgstr "Brugerdefinerede"
-
-
-msgid "Show assets from the asset libraries configured in the Preferences"
-msgstr "Vis aktiver fra de aktivbiblioteker, der er konfigureret i Indstillinger"
 
 
 msgid "Activate Operator"
@@ -3501,10 +3497,6 @@ msgid "Blur"
 msgstr "Sløring"
 
 
-msgid "Occlusion"
-msgstr "Okklusion"
-
-
 msgid "Mirror Ball"
 msgstr "Splejlkugle"
 
@@ -3620,6 +3612,10 @@ msgstr "Nøgle"
 
 msgid "File"
 msgstr "Fil"
+
+
+msgid "Occlusion"
+msgstr "Okklusion"
 
 
 msgid "New"
@@ -3828,10 +3824,6 @@ msgstr "Skærmbillede"
 
 msgid "Continue"
 msgstr "Fortsæt"
-
-
-msgid "2D Texture"
-msgstr "2D struktur"
 
 
 msgid "Legacy Compute Device Type"

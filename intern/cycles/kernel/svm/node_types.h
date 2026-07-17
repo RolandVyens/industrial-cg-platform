@@ -5,10 +5,10 @@
 /* Typed SVM node parameter structs.
  *
  * Each struct defines the named parameters for one SVM node type, with a memory
- * layout that directly matches the SVM bytecode stream. No encoding or decoding
- * is needed - the struct is read directly from the bytecode via pointer cast.
+ * layout that directly matches the SVM byte-code stream. No encoding or decoding
+ * is needed - the struct is read directly from the byte-code via pointer cast.
  *
- * Structs must be a multiple of sizeof(uint) since the bytecode stream is
+ * Structs must be a multiple of sizeof(uint) since the byte-code stream is
  * stored as an array of uint.
  *
  * - Kernel side: use svm_node_get<T>() to get a reference into the stream.
@@ -1171,6 +1171,8 @@ struct SVMNodePrincipledBsdfData {
   /* Thin film. */
   SVMInputFloat thin_film_thickness;
   SVMInputFloat thin_film_ior;
+  /* Thin wall. */
+  SVMInputInt thin_wall;
 };
 static_assert(alignof(SVMNodePrincipledBsdfData) <= alignof(uint));
 static_assert(sizeof(SVMNodePrincipledBsdfData) % sizeof(uint) == 0);
@@ -1233,12 +1235,12 @@ struct SVMNodeRaycast {
   SVMInputFloat distance;
   float bump_filter_width;
   uint8_t only_local;
+  uint16_t num_attributes;
   SVMStackOffset is_hit_offset;
   SVMStackOffset is_self_hit_offset;
   SVMStackOffset hit_distance_offset;
   SVMStackOffset hit_position_offset;
   SVMStackOffset hit_normal_offset;
-  uint8_t _pad[2];
 };
 static_assert(alignof(SVMNodeRaycast) <= alignof(uint));
 static_assert(sizeof(SVMNodeRaycast) % sizeof(uint) == 0);
@@ -1294,5 +1296,14 @@ struct SVMNodeMinMax {
 };
 static_assert(alignof(SVMNodeMinMax) <= alignof(uint));
 static_assert(sizeof(SVMNodeMinMax) % sizeof(uint) == 0);
+
+/* NODE_SCENE_TIME */
+struct SVMNodeSceneTime {
+  SVMStackOffset seconds_out;
+  SVMStackOffset frame_out;
+  uint8_t _pad[2];
+};
+static_assert(alignof(SVMNodeSceneTime) <= alignof(uint));
+static_assert(sizeof(SVMNodeSceneTime) % sizeof(uint) == 0);
 
 CCL_NAMESPACE_END

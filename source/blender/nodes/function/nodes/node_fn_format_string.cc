@@ -52,14 +52,15 @@ static void node_declare(NodeDeclarationBuilder &b)
   const NodeFunctionFormatString &storage = node_storage(*node);
   for (const int i : IndexRange(storage.items_num)) {
     const NodeFunctionFormatStringItem &item = storage.items[i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     const UString name(item.name);
     const std::string identifier = FormatStringItemsAccessor::socket_identifier_for_item(item);
     b.add_input(socket_type, name, UString(identifier))
         .socket_name_ptr(&ntree->id, *FormatStringItemsAccessor::item_srna, &item, "name");
   }
 
-  b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr);
+  b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr)
+      .custom_draw(socket_items::ui::draw_extend_socket_fn<FormatStringItemsAccessor>());
 }
 
 static void node_init(bNodeTree * /*tree*/, bNode *node)
@@ -195,18 +196,19 @@ static FormatPatternInfo get_pattern_by_type_impl(const CPPType &type)
     /* Sign-aware zero padding. */
     pattern += "0?";
   }
-  const std::string integer_or_identifier = "(\\d+|(\\{.*\\}))";
-  /* Width. */
-  pattern += integer_or_identifier;
+  /* A width cannot start with 0, as 0 is parsed as the padding flag. */
+  const std::string width_integer_or_identifier = "([1-9]\\d*|(\\{.*\\}))";
+  pattern += width_integer_or_identifier;
   pattern += "?";
   groups_num += 2;
   const int width_group = groups_num;
 
   std::optional<int> precision_group;
   if (type.is<float>() || type.is<std::string>()) {
-    /* Precision. */
+    /* Precision is allowed to be 0. */
+    const std::string precision_integer_or_identifier = "(\\d+|(\\{.*\\}))";
     pattern += "(\\.";
-    pattern += integer_or_identifier;
+    pattern += precision_integer_or_identifier;
     pattern += ")?";
     groups_num += 3;
     precision_group = groups_num;
@@ -721,7 +723,7 @@ class FormatStringMultiFunction : public mf::MultiFunction {
     builder.single_input<std::string>("Format");
     for (const int i : IndexRange(storage.items_num)) {
       const NodeFunctionFormatStringItem &item = storage.items[i];
-      const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+      const eNodeSocketDatatype socket_type = item.socket_type;
       const CPPType &type = *bke::socket_type_to_geo_nodes_base_cpp_type(socket_type);
       builder.single_input(item.name, type);
       input_names_.add_new(StringRef(item.name));
@@ -755,7 +757,7 @@ class FormatStringMultiFunction : public mf::MultiFunction {
     else {
       mask.foreach_index(
           [&](const int64_t i) {
-            const StringRef format = formats[i];
+            const std::string format = formats[i];
             if (!format_strings(format,
                                 inputs,
                                 input_names_,
@@ -785,7 +787,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeFormatString"_ustr);
+  fn_cmp_node_type_base(&ntype, "FunctionNodeFormatString"_ustr);
   ntype.ui_name = "Format String";
   ntype.ui_description =
       "Insert values into a string using a Python and path template compatible formatting syntax";

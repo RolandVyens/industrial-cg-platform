@@ -75,6 +75,7 @@ class BlenderSync {
   void sync_integrator(blender::ViewLayer &b_view_layer,
                        bool background,
                        const DeviceInfo &denoise_device_info);
+  void sync_scene_attributes();
   void sync_camera(const blender::RenderData &b_render,
                    const int width,
                    const int height,
@@ -124,20 +125,20 @@ class BlenderSync {
 
  private:
   /* sync */
-  void sync_lights(blender::Depsgraph &b_depsgraph, bool update_all);
-  void sync_materials(blender::Depsgraph &b_depsgraph, bool update_all);
+  void sync_lights(blender::Depsgraph &b_depsgraph, bool update_all, bool update_time);
+  void sync_materials(blender::Depsgraph &b_depsgraph, bool update_all, bool update_time);
   void sync_objects(blender::Depsgraph &b_depsgraph,
                     blender::bScreen *b_screen,
                     blender::View3D *b_v3d,
                     const float motion_time = 0.0f);
-  void sync_motion(blender::RenderData &b_render,
-                   blender::Depsgraph &b_depsgraph,
-                   blender::bScreen *b_screen,
-                   blender::View3D *b_v3d,
-                   blender::RegionView3D *b_rv3d,
-                   const int width,
-                   const int height,
-                   void **python_thread_state);
+  void sync_objects_and_motion(blender::RenderData &b_render,
+                               blender::Depsgraph &b_depsgraph,
+                               blender::bScreen *b_screen,
+                               blender::View3D *b_v3d,
+                               blender::RegionView3D *b_rv3d,
+                               const int width,
+                               const int height,
+                               void **python_thread_state);
   void sync_film(blender::ViewLayer &b_view_layer,
                  blender::bScreen *b_screen,
                  blender::View3D *b_v3d);
@@ -148,11 +149,13 @@ class BlenderSync {
   void sync_world(blender::Depsgraph &b_depsgraph,
                   blender::bScreen *b_screen,
                   blender::View3D *b_v3d,
-                  bool update_all);
+                  bool update_all,
+                  bool update_time);
   void sync_shaders(blender::Depsgraph &b_depsgraph,
                     blender::bScreen *b_screen,
                     blender::View3D *b_v3d,
-                    bool update_all);
+                    bool update_all,
+                    bool update_time);
   void sync_nodes(Shader *shader, blender::bNodeTree &b_ntree);
 
   bool scene_attr_needs_recalc(Shader *shader, blender::Depsgraph &b_depsgraph);
@@ -256,6 +259,9 @@ class BlenderSync {
   enum ShaderFlags { SHADER_WITH_LAYER_ATTRS };
 
   id_map<const void *, Shader, ShaderFlags> shader_map;
+  /* To keep track of the AOVs in consecutive view layers that are rendered, this is the old data
+   * for comparing. */
+  blender::Vector<std::pair<std::string, int>> shader_view_layer_aovs;
   id_map<ObjectKey, Object> object_map;
   id_map<void *, Procedural> procedural_map;
   id_map<GeometryKey, Geometry> geometry_map;
@@ -299,6 +305,8 @@ class BlenderSync {
    * If this flag is false then the data is considered to be up-to-date and will not be
    * synchronized at all. */
   bool has_updates_ = true;
+
+  float frame_last_synced = 0;
 };
 
 CCL_NAMESPACE_END

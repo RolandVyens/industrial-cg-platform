@@ -20,7 +20,7 @@ ccl_device_forceinline bool shadow_linking_scene_need_shadow_ray(KernelGlobals k
   }
 
   /* The distant lights might be using shadow linking, and they are not counted as
-   * kernel_data.integrator.use_light_mis.
+   * kernel_data.integrator.light_flags.
    * So there is a potential to avoid extra rays from being traced, but it requires more granular
    * flags set in the integrator. */
 

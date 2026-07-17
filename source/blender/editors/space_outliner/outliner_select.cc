@@ -163,7 +163,7 @@ static void do_outliner_item_mode_toggle_generic(bContext *C,
                                                  const TreeViewContext &tvc,
                                                  Base *base)
 {
-  const eObjectMode active_mode = eObjectMode(tvc.obact->mode);
+  const eObjectMode active_mode = tvc.obact->mode;
   ED_undo_group_begin(C);
 
   if (object::mode_set(C, OB_MODE_OBJECT)) {
@@ -207,7 +207,10 @@ void outliner_item_mode_toggle(bContext *C,
       do_outliner_item_mode_toggle_generic(C, tvc, base);
     }
     else if (tvc.ob_edit && OB_TYPE_SUPPORT_EDITMODE(ob->type)) {
-      do_outliner_item_editmode_toggle(C, tvc.scene, base);
+      /* Grease Pencil does not support multi-object editing yet. */
+      if (ob->type != OB_GREASE_PENCIL) {
+        do_outliner_item_editmode_toggle(C, tvc.scene, base);
+      }
     }
     else if (tvc.ob_pose && ob->type == OB_ARMATURE) {
       do_outliner_item_posemode_toggle(C, tvc.scene, base);
@@ -333,7 +336,7 @@ static void tree_element_object_activate(bContext *C,
   if (scene->toolsettings->object_flag & SCE_OBJECT_MODE_LOCK) {
     if (base != nullptr) {
       Object *obact = BKE_view_layer_active_object_get(view_layer);
-      const eObjectMode object_mode = obact ? eObjectMode(obact->mode) : OB_MODE_OBJECT;
+      const eObjectMode object_mode = obact ? obact->mode : OB_MODE_OBJECT;
       if (base && !BKE_object_is_mode_compat(base->object, object_mode)) {
         if (object_mode == OB_MODE_OBJECT) {
           Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
@@ -578,19 +581,20 @@ static void tree_element_posechannel_activate(bContext *C,
     }
   }
 
+  Bone *bone = pchan->bone_get(*ob);
   if ((set == OL_SETSEL_EXTEND) && (pchan->flag & POSE_SELECTED)) {
     animrig::bone_deselect(pchan);
   }
   else {
-    if (animrig::bone_is_visible(arm, pchan)) {
+    if (animrig::bone_is_visible(arm, {pchan, bone})) {
       animrig::bone_select(pchan);
     }
-    arm->act_bone = pchan->bone;
+    arm->act_bone = bone;
   }
 
   if (recursive) {
     /* Recursive select/deselect */
-    do_outliner_bone_select_recursive(arm, pchan->bone, (pchan->flag & POSE_SELECTED) != 0);
+    do_outliner_bone_select_recursive(arm, bone, (pchan->flag & POSE_SELECTED) != 0);
   }
 
   WM_event_add_notifier(C, NC_OBJECT | ND_BONE_ACTIVE, ob);
@@ -854,6 +858,21 @@ void tree_element_activate(bContext *C,
   }
 }
 
+static void tree_elemment_shapekey_active_set(bContext *C, TreeElement *te)
+{
+  if (TreeElement *parent_te = outliner_search_back_te(te, ID_OB)) {
+    TreeStoreElem *parent_tselem = TREESTORE(parent_te);
+    Object *ob = id_cast<Object *>(parent_tselem->id);
+
+    if (ob) {
+      PointerRNA object_ptr = RNA_pointer_create_discrete(&ob->id, RNA_Object, ob);
+      PropertyRNA *prop = RNA_struct_find_property(&object_ptr, "active_shape_key_index");
+      RNA_property_int_set(&object_ptr, prop, te->index);
+      RNA_property_update(C, &object_ptr, prop);
+    }
+  }
+}
+
 void tree_element_type_active_set(bContext *C,
                                   const TreeViewContext &tvc,
                                   TreeElement *te,
@@ -914,6 +933,10 @@ void tree_element_type_active_set(bContext *C,
       break;
     case TSE_LAYER_COLLECTION:
       tree_element_layer_collection_activate(C, te);
+      break;
+    case TSE_SHAPE_KEY_BLOCK:
+      tree_elemment_shapekey_active_set(C, te);
+    default:
       break;
   }
 }
@@ -1028,7 +1051,7 @@ static eOLDrawState tree_element_bone_collection_state_get(const TreeElement *te
   const bArmature *arm = reinterpret_cast<const bArmature *>(tselem->id);
   const BoneCollection *bcoll = reinterpret_cast<const BoneCollection *>(te->directdata);
 
-  if (arm->runtime.active_collection == bcoll) {
+  if (arm->runtime->active_collection == bcoll) {
     return OL_DRAWSEL_ACTIVE;
   }
   return OL_DRAWSEL_NONE;
@@ -1187,6 +1210,18 @@ eOLDrawState tree_element_active_state_get(const TreeViewContext &tvc,
   return OL_DRAWSEL_NONE;
 }
 
+static eOLDrawState tree_element_shapekey_state_get(const TreeElement *te)
+{
+  if (const Object *ob = id_cast<Object *>(
+          outliner_search_back(const_cast<TreeElement *>(te), ID_OB)))
+  {
+    if (ob->shapenr == te->index + 1) {
+      return OL_DRAWSEL_NORMAL;
+    }
+  }
+  return OL_DRAWSEL_NONE;
+}
+
 eOLDrawState tree_element_type_active_state_get(const TreeViewContext &tvc,
                                                 const TreeElement *te,
                                                 const TreeStoreElem *tselem)
@@ -1229,6 +1264,10 @@ eOLDrawState tree_element_type_active_state_get(const TreeViewContext &tvc,
       return tree_element_layer_collection_state_get(tvc.layer_collection, te);
     case TSE_BONE_COLLECTION:
       return tree_element_bone_collection_state_get(te, tselem);
+    case TSE_SHAPE_KEY_BLOCK:
+      return tree_element_shapekey_state_get(te);
+    default:
+      break;
   }
   return OL_DRAWSEL_NONE;
 }
@@ -1252,7 +1291,7 @@ bPoseChannel *outliner_find_parent_bone(TreeElement *te, TreeElement **r_bone_te
 
 static void outliner_sync_to_properties_editors(const bContext *C,
                                                 PointerRNA *ptr,
-                                                const int context)
+                                                const eSpaceButtons_Context context)
 {
   bScreen *screen = CTX_wm_screen(C);
 
@@ -1271,7 +1310,7 @@ static void outliner_sync_to_properties_editors(const bContext *C,
 static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreElem *tselem)
 {
   PointerRNA ptr = {};
-  int context = 0;
+  eSpaceButtons_Context context = eSpaceButtons_Context(0);
 
   /* ID Types */
   if (tselem->type == TSE_SOME_ID) {
@@ -1307,14 +1346,19 @@ static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreE
       case ID_WO:
         context = BCONTEXT_WORLD;
         break;
-      case ID_KE:
-        context = BCONTEXT_DATA;
-        ptr = RNA_id_pointer_create(te->parent->store_elem->id);
-        break;
     }
   }
   else {
     switch (tselem->type) {
+      case TSE_SHAPE_KEY_BASE:
+      case TSE_SHAPE_KEY_BLOCK:
+        if (TreeElement *parent_te = outliner_search_back_te(te, ID_OB)) {
+          TreeStoreElem *parent_tselem = TREESTORE(parent_te);
+          Object *ob = id_cast<Object *>(parent_tselem->id);
+          ptr = RNA_id_pointer_create(static_cast<ID *>(ob->data));
+          context = BCONTEXT_DATA;
+        }
+        break;
       case TSE_DEFGROUP_BASE:
       case TSE_DEFGROUP:
         ptr = RNA_id_pointer_create(tselem->id);
@@ -1348,7 +1392,7 @@ static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreE
         if (tselem->type != TSE_MODIFIER_BASE) {
           ModifierData *md = static_cast<ModifierData *>(te->directdata);
 
-          switch (ModifierType(md->type)) {
+          switch (md->type) {
             case eModifierType_ParticleSystem:
               context = BCONTEXT_PARTICLE;
               break;
@@ -1444,6 +1488,8 @@ static void outliner_set_properties_tab(bContext *C, TreeElement *te, TreeStoreE
       case TSE_LAYER_COLLECTION:
         ptr = RNA_pointer_create_discrete(tselem->id, RNA_Collection, te->directdata);
         context = BCONTEXT_COLLECTION;
+        break;
+      default:
         break;
     }
   }
@@ -1575,7 +1621,8 @@ void outliner_item_select(bContext *C,
   const bool recursive = select_flag & OL_ITEM_RECURSIVE;
 
   /* Clear previous active when activating and clear selection when not extending selection */
-  const short clear_flag = (activate ? TSE_ACTIVE : 0) | (extend ? 0 : TSE_SELECTED);
+  const eTreeStoreElem_Flag clear_flag = (activate ? TSE_ACTIVE : eTreeStoreElem_Flag{}) |
+                                         (extend ? eTreeStoreElem_Flag{} : TSE_SELECTED);
 
   /* Do not clear the active and select flag when selecting hierarchies. */
   if (clear_flag && !recursive) {
@@ -1721,7 +1768,8 @@ static void do_outliner_range_select(bContext *C,
                                      const bool recurse,
                                      Collection *in_collection)
 {
-  TreeElement *active = outliner_find_element_with_flag(&space_outliner->tree, TSE_ACTIVE);
+  TreeElement *active = outliner_find_element_with_flag(&space_outliner->runtime->tree,
+                                                        TSE_ACTIVE);
 
   /* If no active element exists, activate the element under the cursor */
   if (!active) {
@@ -1752,7 +1800,7 @@ static void do_outliner_range_select(bContext *C,
   }
 
   do_outliner_range_select_recursive(
-      &space_outliner->tree, active, cursor, false, recurse, in_collection);
+      &space_outliner->runtime->tree, active, cursor, false, recurse, in_collection);
 
   if (recurse) {
     do_outliner_select_recursive(&cursor->subtree, true, in_collection);
@@ -1820,7 +1868,9 @@ static wmOperatorStatus outliner_item_do_activate_from_cursor(bContext *C,
     return OPERATOR_CANCELLED;
   }
 
-  if (!(te = outliner_find_item_at_y(space_outliner, &space_outliner->tree, view_mval[1]))) {
+  if (!(te = outliner_find_item_at_y(
+            space_outliner, &space_outliner->runtime->tree, view_mval[1])))
+  {
     if (deselect_all) {
       changed |= outliner_flag_set(*space_outliner, TSE_SELECTED, false);
     }
@@ -2030,7 +2080,8 @@ static wmOperatorStatus outliner_box_select_invoke(bContext *C,
   ui::view2d_region_to_view(&region->v2d, mval[0], mval[1], &view_mval[0], &view_mval[1]);
 
   /* Find element clicked on */
-  TreeElement *te = outliner_find_item_at_y(space_outliner, &space_outliner->tree, view_mval[1]);
+  TreeElement *te = outliner_find_item_at_y(
+      space_outliner, &space_outliner->runtime->tree, view_mval[1]);
 
   /* Pass through if click is over name or icons, or not tweak event */
   if (te && tweak && outliner_item_is_co_over_name_icons(te, view_mval[0])) {
@@ -2165,7 +2216,7 @@ static TreeElement *outliner_walk_right(SpaceOutliner *space_outliner,
   TreeStoreElem *tselem = TREESTORE(te);
 
   /* Only walk down a level if the element is open and not toggling expand */
-  if (!toggle_all && TSELEM_OPEN(tselem, space_outliner) && !BLI_listbase_is_empty(&te->subtree)) {
+  if (!toggle_all && TSELEM_OPEN(tselem, space_outliner) && !te->subtree.is_empty()) {
     te = static_cast<TreeElement *>(te->subtree.first);
   }
   else {
@@ -2212,12 +2263,13 @@ static TreeElement *do_outliner_select_walk(SpaceOutliner *space_outliner,
  * Changed is set to true if the active element is found, or false if it was set */
 static TreeElement *find_walk_select_start_element(SpaceOutliner *space_outliner, bool *r_changed)
 {
-  TreeElement *active_te = outliner_find_element_with_flag(&space_outliner->tree, TSE_ACTIVE);
+  TreeElement *active_te = outliner_find_element_with_flag(&space_outliner->runtime->tree,
+                                                           TSE_ACTIVE);
   *r_changed = false;
 
   /* If no active element exists, use the first element in the tree */
   if (!active_te) {
-    active_te = static_cast<TreeElement *>(space_outliner->tree.first);
+    active_te = static_cast<TreeElement *>(space_outliner->runtime->tree.first);
     *r_changed = true;
   }
 

@@ -14,7 +14,12 @@ import bpy
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
-from modules.exr_overscan_utils import WINDOW_FIELDS, render_case
+from modules.exr_overscan_utils import (
+    WINDOW_FIELDS,
+    render_case,
+    render_item_override_case,
+    render_primary_png_case,
+)
 
 
 class ExrOverscanTests(unittest.TestCase):
@@ -85,6 +90,37 @@ class ExrOverscanTests(unittest.TestCase):
         self.assertEqual(on_spec["full_y"], 0)
         self.assertEqual(on_spec["full_width"], off_spec["width"])
         self.assertEqual(on_spec["full_height"], off_spec["height"])
+
+    def test_item_format_override_to_exr_activates_overscan(self):
+        summary = render_item_override_case("item_override_exr", self.outdir)
+        self.assertFalse(summary["mismatches"], summary)
+
+    def test_asymmetric_vertical_overscan_crops_non_exr_from_correct_side(self):
+        pads = (0, 0, 4, 20)
+        reference = render_primary_png_case(
+            "asymmetric_reference", self.outdir, overscan=False, overscan_pixels=pads
+        )
+        overscanned = render_primary_png_case(
+            "asymmetric_overscan", self.outdir, overscan=True, overscan_pixels=pads
+        )
+        self.assertEqual(reference.shape, overscanned.shape)
+        zero_shift_error = float(abs(reference[..., :3] - overscanned[..., :3]).mean())
+        vertical_mismatch = pads[3] - pads[2]
+        shifted_up_error = float(
+            abs(
+                reference[vertical_mismatch:, ..., :3]
+                - overscanned[:-vertical_mismatch, ..., :3]
+            ).mean()
+        )
+        shifted_down_error = float(
+            abs(
+                reference[:-vertical_mismatch, ..., :3]
+                - overscanned[vertical_mismatch:, ..., :3]
+            ).mean()
+        )
+        self.assertLess(zero_shift_error, 0.1)
+        self.assertLess(zero_shift_error, shifted_up_error)
+        self.assertLess(zero_shift_error, shifted_down_error)
 
 
 if __name__ == "__main__":

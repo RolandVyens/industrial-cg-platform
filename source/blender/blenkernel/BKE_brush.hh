@@ -76,6 +76,8 @@ Brush *BKE_brush_duplicate(Main *bmain,
  */
 void BKE_brush_init_gpencil_settings(Brush *brush);
 
+void BKE_brush_init_mesh_automasking_settings(Brush *brush);
+
 void BKE_brush_init_curves_sculpt_settings(Brush *brush);
 
 /**

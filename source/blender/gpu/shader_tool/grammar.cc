@@ -664,6 +664,8 @@ struct ScopeParser {
 
   void condition(int arg_needed, ScopeType type)
   {
+    match_if(Constexpr);
+
     open_scope(curr, type);
     match('(');
 
@@ -976,6 +978,7 @@ struct ScopeParser {
           close_scope(curr, ScopeType::Subscript);
           match(']');
           return;
+        case Comma: /* For structure binding. */
         case Number:
         case Word:
         case This:
@@ -1119,7 +1122,9 @@ struct ScopeParser {
   {
     if (curr_node.type() == type) {
       IndexRange &range = parser.scope_ranges[curr_node.index_];
-      range.size = tok.index_ - range.start + 1;
+      if (tok.is_valid()) {
+        range.size = tok.index_ - range.start + 1;
+      }
       curr_node = curr_node.parent();
     }
   }

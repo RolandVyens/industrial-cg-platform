@@ -796,9 +796,9 @@ static void lineart_triangle_cull_single(LineartData *ld,
 
   LineartVert *vt = &(static_cast<LineartVert *>(v_eln->pointer))[v_count];
   LineartTriangle *tri1 = static_cast<LineartTriangle *>(static_cast<void *>(
-      (static_cast<uchar *>(t_eln->pointer)) + (size_t)ld->sizeof_triangle * t_count));
+      (static_cast<uchar *>(t_eln->pointer)) + size_t(ld->sizeof_triangle) * t_count));
   LineartTriangle *tri2 = static_cast<LineartTriangle *>(static_cast<void *>(
-      (static_cast<uchar *>(t_eln->pointer)) + (size_t)ld->sizeof_triangle * (t_count + 1)));
+      (static_cast<uchar *>(t_eln->pointer)) + size_t(ld->sizeof_triangle) * (t_count + 1)));
 
   new_e = &(static_cast<LineartEdge *>(e_eln->pointer))[e_count];
   /* Init `edge` to the last `edge` entry. */
@@ -1316,7 +1316,7 @@ void lineart_main_cull_triangles(LineartData *ld, bool clip_far)
     for (i = 0; i < eln.element_count; i++) {
       /* Select the triangle in the array. */
       tri = static_cast<LineartTriangle *>(static_cast<void *>(
-          (static_cast<uchar *>(eln.pointer)) + (size_t)ld->sizeof_triangle * i));
+          (static_cast<uchar *>(eln.pointer)) + size_t(ld->sizeof_triangle) * i));
 
       if (tri->flags & LRT_CULL_DISCARD) {
         continue;
@@ -1480,7 +1480,7 @@ static LineartTriangle *lineart_triangle_from_index(LineartData *ld,
                                                     int index)
 {
   int8_t *b = reinterpret_cast<int8_t *>(rt_array);
-  b += ((size_t)index * ld->sizeof_triangle);
+  b += (size_t(index) * ld->sizeof_triangle);
   return reinterpret_cast<LineartTriangle *>(b);
 }
 
@@ -1836,7 +1836,7 @@ static void lineart_load_tri_task(void *__restrict userdata,
   LineartTriangle *tri = tri_task_data->tri_arr;
 
   tri = reinterpret_cast<LineartTriangle *>((reinterpret_cast<size_t>(tri)) +
-                                            (size_t)tri_task_data->lineart_triangle_size * i);
+                                            size_t(tri_task_data->lineart_triangle_size) * i);
 
   int v1 = corner_verts[corner_tri[0]];
   int v2 = corner_verts[corner_tri[1]];
@@ -2382,6 +2382,8 @@ static int lineart_usage_check(Collection *c, Object *ob, bool is_render)
             return OBJECT_LRT_NO_INTERSECTION;
           case COLLECTION_LRT_FORCE_INTERSECTION:
             return OBJECT_LRT_FORCE_INTERSECTION;
+          case COLLECTION_LRT_INCLUDE:
+            break;
         }
         return OBJECT_LRT_INHERIT;
       }
@@ -2586,8 +2588,8 @@ void lineart_main_load_geometries(Depsgraph *depsgraph,
     copy_m4_m4_db(ld->conf.view, view);
   }
 
-  BLI_listbase_clear(&ld->geom.triangle_buffer_pointers);
-  BLI_listbase_clear(&ld->geom.vertex_buffer_pointers);
+  ld->geom.triangle_buffer_pointers.clear_no_delete();
+  ld->geom.vertex_buffer_pointers.clear_no_delete();
 
   double t_start;
   if (G.debug_value == 4000) {
@@ -3530,12 +3532,12 @@ void lineart_destroy_render_data_keep_init(LineartData *ld)
     return;
   }
 
-  BLI_listbase_clear(&ld->chains);
-  BLI_listbase_clear(&ld->wasted_cuts);
+  ld->chains.clear_no_delete();
+  ld->wasted_cuts.clear_no_delete();
 
-  BLI_listbase_clear(&ld->geom.vertex_buffer_pointers);
-  BLI_listbase_clear(&ld->geom.line_buffer_pointers);
-  BLI_listbase_clear(&ld->geom.triangle_buffer_pointers);
+  ld->geom.vertex_buffer_pointers.clear_no_delete();
+  ld->geom.line_buffer_pointers.clear_no_delete();
+  ld->geom.triangle_buffer_pointers.clear_no_delete();
 
   if (ld->pending_edges.array) {
     MEM_delete(ld->pending_edges.array);
@@ -3966,10 +3968,10 @@ static void lineart_bounding_areas_connect_new(LineartData *ld, LineartBoundingA
   }
 
   /* Finally clear parent's adjacent list. */
-  BLI_listbase_clear(&root->lp);
-  BLI_listbase_clear(&root->rp);
-  BLI_listbase_clear(&root->up);
-  BLI_listbase_clear(&root->bp);
+  root->lp.clear_no_delete();
+  root->rp.clear_no_delete();
+  root->up.clear_no_delete();
+  root->bp.clear_no_delete();
 }
 
 static void lineart_bounding_areas_connect_recursive(LineartData *ld, LineartBoundingArea *root)
@@ -4600,7 +4602,7 @@ static void lineart_add_triangles_worker(TaskPool *__restrict /*pool*/, LineartI
       int index_start = eln == th->pending_from ? th->index_from : 0;
       int index_end = eln == th->pending_to ? th->index_to : eln->element_count;
       LineartTriangle *tri = static_cast<LineartTriangle *>(static_cast<void *>(
-          (static_cast<uchar *>(eln->pointer)) + (size_t)ld->sizeof_triangle * index_start));
+          (static_cast<uchar *>(eln->pointer)) + size_t(ld->sizeof_triangle) * index_start));
       for (int ei = index_start; ei < index_end; ei++) {
         int x1, x2, y1, y2;
         int r, co;
@@ -5059,6 +5061,10 @@ bool MOD_lineart_compute_feature_lines_v3(Depsgraph *depsgraph,
     }
   }
 
+  if (lineart_camera->type != OB_CAMERA) {
+    return false;
+  }
+
   LineartCache *lc = *cached_result;
   if (!lc) {
     lc = MOD_lineart_init_cache();
@@ -5191,7 +5197,7 @@ bool MOD_lineart_compute_feature_lines_v3(Depsgraph *depsgraph,
 
     if (enable_stroke_depth_offset && lmd.stroke_depth_offset > FLT_EPSILON) {
       MOD_lineart_chain_offset_towards_camera(
-          ld, lmd.stroke_depth_offset, lmd.flags & MOD_LINEART_OFFSET_TOWARDS_CUSTOM_CAMERA);
+          ld, lmd.stroke_depth_offset, lmd.flags & LINEART_GPENCIL_OFFSET_TOWARDS_CUSTOM_CAMERA);
     }
 
     if (ld->conf.shadow_use_silhouette) {
@@ -5290,7 +5296,7 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
 
   bool invert_input = modifier_calculation_flags & MOD_LINEART_INVERT_SOURCE_VGROUP;
 
-  bool inverse_silhouette = modifier_flags & MOD_LINEART_INVERT_SILHOUETTE_FILTER;
+  bool inverse_silhouette = modifier_flags & LINEART_GPENCIL_INVERT_SILHOUETTE_FILTER;
 
   Vector<LineartChainWriteInfo> writer;
   writer.reserve(128);
@@ -5312,12 +5318,12 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
     }
     if (orig_col && ec.object_ref) {
       if (BKE_collection_has_object_recursive_instanced(orig_col, ec.object_ref)) {
-        if (modifier_flags & MOD_LINEART_INVERT_COLLECTION) {
+        if (modifier_flags & LINEART_GPENCIL_INVERT_COLLECTION) {
           continue;
         }
       }
       else {
-        if (!(modifier_flags & MOD_LINEART_INVERT_COLLECTION)) {
+        if (!(modifier_flags & LINEART_GPENCIL_INVERT_COLLECTION)) {
           continue;
         }
       }
@@ -5456,7 +5462,7 @@ void MOD_lineart_gpencil_generate_v3(const LineartCache *cache,
     return -1;
   };
 
-  const bool skip_weight_transfer = BLI_listbase_is_empty(&drawing.geometry.vertex_group_names);
+  const bool skip_weight_transfer = drawing.geometry.vertex_group_names.is_empty();
 
   int up_to_point = 0;
   for (int chain_i : writer.index_range()) {

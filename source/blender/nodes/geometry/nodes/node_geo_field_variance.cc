@@ -29,22 +29,24 @@ static void node_declare(NodeDeclarationBuilder &b)
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
     b.add_input(data_type, "Value"_ustr)
-        .supports_field()
+        .structure_type(StructureType::Field)
         .description("The values the standard deviation and variance will be calculated from");
   }
 
   b.add_input<decl::Int>("Group ID"_ustr, "Group Index"_ustr)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .hide_value()
       .description("An index used to group values together for multiple separate operations");
 
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
     b.add_output(data_type, "Standard Deviation"_ustr)
-        .field_source_reference_all()
+        .structure_type(StructureType::Field)
+        .propagate_references()
         .description("The square root of the variance for each group");
     b.add_output(data_type, "Variance"_ustr)
-        .field_source_reference_all()
+        .structure_type(StructureType::Field)
+        .propagate_references()
         .description("The expected squared deviation from the mean for each group");
   }
 }
@@ -162,7 +164,7 @@ class FieldVarianceInput final : public bke::GeometryFieldInput {
       if (operation_ == Operation::StdDev) {
         if (group_indices.is_single()) {
           const T mean = std::reduce(values.begin(), values.end(), T()) / domain_size;
-          const T sum_of_squared_diffs = std::reduce(
+          const T sum_of_squared_diffs = std::accumulate(
               values.begin(), values.end(), T(), [mean](T accumulator, const T &value) {
                 T difference = mean - value;
                 return accumulator + difference * difference;
@@ -201,7 +203,7 @@ class FieldVarianceInput final : public bke::GeometryFieldInput {
       else {
         if (group_indices.is_single()) {
           const T mean = std::reduce(values.begin(), values.end(), T()) / domain_size;
-          const T sum_of_squared_diffs = std::reduce(
+          const T sum_of_squared_diffs = std::accumulate(
               values.begin(), values.end(), T(), [mean](T accumulator, const T &value) {
                 T difference = mean - value;
                 return accumulator + difference * difference;
@@ -247,19 +249,14 @@ class FieldVarianceInput final : public bke::GeometryFieldInput {
     fn(group_index_);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
   {
-    return get_default_hash(input_, group_index_, source_domain_, operation_);
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const FieldVarianceInput *other_field = dynamic_cast<const FieldVarianceInput *>(&other)) {
-      return input_ == other_field->input_ && group_index_ == other_field->group_index_ &&
-             source_domain_ == other_field->source_domain_ &&
-             operation_ == other_field->operation_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(deep_hash_cache.ensure(input_));
+    hash.add(deep_hash_cache.ensure(group_index_));
+    hash.add(source_domain_);
+    hash.add(operation_);
   }
 
   std::optional<AttrDomain> preferred_domain(

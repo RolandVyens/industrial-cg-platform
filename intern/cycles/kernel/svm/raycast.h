@@ -21,42 +21,31 @@ CCL_NAMESPACE_BEGIN
 
 #ifdef __SHADER_RAYTRACE__
 
-struct RaycastResult {
-  float distance;
-  float3 normal;
-  bool self_hit;
-};
-
-ccl_device RaycastResult svm_raycast(KernelGlobals kg,
-                                     ConstIntegratorState /*state*/,
-                                     ccl_private ShaderData *sd,
-                                     float3 position,
-                                     float3 direction,
-                                     float distance,
-                                     bool only_local,
-                                     float bump_filter_width)
+ccl_device bool svm_raycast(KernelGlobals kg,
+                            ConstIntegratorState /*state*/,
+                            ccl_private ShaderData *sd,
+                            const float3 position,
+                            const float3 direction,
+                            const float distance,
+                            const bool only_local,
+                            const float bump_filter_width,
+                            ccl_private ShaderData &hit_sd)
 {
-  RaycastResult result;
-  result.distance = -1.0f;
-  result.normal = make_float3(0.0f);
-  result.self_hit = false;
-
   /* Early out if no sampling needed. */
   if (distance <= 0.0f || sd->object == OBJECT_NONE) {
-    return result;
+    return false;
   }
 
   /* Can't ray-trace from shaders like displacement, before BVH exists. */
   if (kernel_data.bvh.bvh_layout == BVH_LAYOUT_NONE) {
-    return result;
+    return false;
   }
 
   float tmin = 0.0f;
   bool avoid_self_intersection = false;
   if (bump_filter_width > 0.0f) {
-    /* If evaluating for bump mapping at a shifted position, increase min
-     * distance by slightly more than the shift distance to avoid self
-     * intersections. */
+    /* If evaluating for bump mapping at a shifted position, increase min distance by slightly more
+     * than the shift distance to avoid self intersections. */
     tmin = bump_filter_width * sd->dP * 1.1f;
   }
   else {
@@ -82,27 +71,35 @@ ccl_device RaycastResult svm_raycast(KernelGlobals kg,
     LocalIntersection local_isect;
     scene_intersect_local(kg, &ray, &local_isect, sd->object, nullptr, 1);
     if (local_isect.num_hits == 0) {
-      return result;
+      return false;
     }
     isect = local_isect.hits[0];
   }
   else {
     /* Ray-trace, leaving out shadow opaque to avoid early exit. */
-    const uint visibility = PATH_RAY_ALL_VISIBILITY - PATH_RAY_SHADOW_OPAQUE;
+    const PathRayVisibility visibility = PATH_RAY_VISIBILITY_ALL &
+                                         ~PATH_RAY_VISIBILITY_SHADOW_OPAQUE;
     if (!scene_intersect(kg, &ray, visibility, &isect)) {
-      return result;
+      return false;
     }
   }
 
-  result.distance = isect.t;
-  result.self_hit = isect.object == sd->object;
+  shader_setup_from_ray(kg, &hit_sd, &ray, &isect);
 
-  ShaderDataTinyStorage hit_sd_storage;
-  ccl_private ShaderData *hit_sd = AS_SHADER_DATA(&hit_sd_storage);
-  shader_setup_from_ray(kg, hit_sd, &ray, &isect);
-  result.normal = hit_sd->N;
+  return true;
+}
 
-  return result;
+ccl_device_inline void svm_raycast_attr_eval_and_store(
+    KernelGlobals kg,
+    ccl_private float *stack,
+    ccl_global const SVMNodeAttr &attribute_node,
+    ccl_private ShaderData &hit_sd)
+{
+  NodeAttributeOutputType type = NODE_ATTR_OUTPUT_FLOAT;
+  const AttributeDescriptor desc = svm_node_attr_init(kg, &hit_sd, attribute_node, &type);
+
+  const float3 data = svm_node_attr_surface_eval<float3>(kg, &hit_sd, attribute_node, type, desc);
+  svm_node_attr_store(type, stack, attribute_node.out_offset, data);
 }
 
 template<uint node_feature_mask, typename ConstIntegratorGenericState>
@@ -111,14 +108,15 @@ ccl_device_inline
 #  else
 ccl_device_noinline
 #  endif
-    void
+    int
     svm_node_raycast(KernelGlobals kg,
                      ConstIntegratorGenericState state,
                      ccl_private ShaderData *sd,
                      ccl_private float *ccl_restrict stack,
-                     const ccl_global SVMNodeRaycast &ccl_restrict node)
+                     const ccl_global SVMNodeRaycast &ccl_restrict node,
+                     int offset)
 {
-  float distance = stack_load(stack, node.distance);
+  const float distance = stack_load(stack, node.distance);
 
   float is_hit = 0.0f;
   float is_self_hit = 0.0f;
@@ -128,17 +126,48 @@ ccl_device_noinline
 
   IF_KERNEL_NODES_FEATURE(RAYTRACE)
   {
-    float3 position = stack_load(stack, node.position);
-    float3 direction = stack_load(stack, node.direction);
-    RaycastResult result = svm_raycast(
-        kg, state, sd, position, direction, distance, node.only_local, node.bump_filter_width);
+    const float3 position = stack_load(stack, node.position);
+    const float3 direction = stack_load(stack, node.direction);
 
-    if (result.distance >= 0.0f) {
+    ShaderDataTinyStorage hit_sd_storage;
+    ccl_private ShaderData &hit_sd = *AS_SHADER_DATA(&hit_sd_storage);
+
+    if (svm_raycast(kg,
+                    state,
+                    sd,
+                    position,
+                    direction,
+                    distance,
+                    node.only_local,
+                    node.bump_filter_width,
+                    hit_sd))
+    {
       is_hit = 1.0f;
-      is_self_hit = result.self_hit ? 1.0f : 0.0f;
-      hit_distance = result.distance;
+      is_self_hit = (sd->object == hit_sd.object) ? 1.0f : 0.0f;
+      hit_distance = hit_sd.ray_length;
       hit_position = position + direction * hit_distance;
-      hit_normal = result.normal;
+      hit_normal = hit_sd.N;
+
+      for (uint16_t i = 0; i < node.num_attributes; i++) {
+        const uint node_type = kernel_data_fetch(svm_nodes, offset++);
+        (void)node_type;
+        kernel_assert(node_type == NODE_ATTR);
+
+        const ccl_global auto &attribute_node = svm_node_get<SVMNodeAttr>(kg, &offset);
+        svm_raycast_attr_eval_and_store(kg, stack, attribute_node, hit_sd);
+      }
+    }
+  }
+
+  if (is_hit == 0.0f) {
+    for (uint16_t i = 0; i < node.num_attributes; i++) {
+      const uint node_type = kernel_data_fetch(svm_nodes, offset++);
+      (void)node_type;
+      kernel_assert(node_type == NODE_ATTR);
+
+      const ccl_global auto &attribute_node = svm_node_get<SVMNodeAttr>(kg, &offset);
+      svm_node_attr_store(
+          attribute_node.output_type, stack, attribute_node.out_offset, make_zero<float3>());
     }
   }
 
@@ -157,6 +186,8 @@ ccl_device_noinline
   if (stack_valid(node.hit_normal_offset)) {
     stack_store_float3(stack, node.hit_normal_offset, hit_normal);
   }
+
+  return offset;
 }
 
 #endif /* __SHADER_RAYTRACE__ */

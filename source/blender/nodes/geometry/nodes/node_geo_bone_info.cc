@@ -37,6 +37,7 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.add_output<decl::Matrix>("Rest Pose"_ustr)
       .description("Original transform of the bone in armature space, defined in edit mode");
   b.add_output<decl::Float>("Rest Length"_ustr).description("Original length of the bone");
+  b.add_output<decl::Bool>("Exists"_ustr).description("Whether the bone exists in the armature");
 }
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -46,7 +47,7 @@ static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
 
 static void node_gather_link_search_ops(GatherLinkSearchOpParams &params)
 {
-  const eNodeSocketDatatype other_type = eNodeSocketDatatype(params.other_socket().type);
+  const eNodeSocketDatatype other_type = params.other_socket().type;
 
   if (params.in_out() == SOCK_OUT) {
     if (ELEM(other_type, SOCK_MATRIX, SOCK_ROTATION)) {
@@ -136,13 +137,17 @@ static void node_geo_exec(GeoNodeExecParams params)
     geometry_transform = self_object->world_to_object() * object->object_to_world();
   }
 
-  bPoseChannel *pchan = BKE_pose_channel_find_name(object->pose, bone_name.c_str());
+  const bPoseChannel *pchan = BKE_pose_channel_find_name(object->pose, bone_name.c_str());
   if (!pchan) {
     params.set_default_remaining_outputs();
-    params.error_message_add(NodeWarningType::Error, TIP_("Bone not found"));
+    if (!params.output_is_required("Exists"_ustr)) {
+      params.error_message_add(
+          NodeWarningType::Error,
+          fmt::format(fmt::runtime(TIP_("Bone \"{}\" not found")), bone_name));
+    }
     return;
   }
-  Bone *bone = pchan->bone;
+  const Bone *bone = pchan->bone_get(*object);
   const float4x4 pose = geometry_transform * float4x4(pchan->pose_mat);
   const float4x4 rest_pose = geometry_transform * float4x4(bone->arm_mat);
 
@@ -154,13 +159,14 @@ static void node_geo_exec(GeoNodeExecParams params)
                               math::invert(parent_pose) * pose;
 
   float4x4 transform_pose;
-  BKE_pchan_to_mat4(pchan, transform_pose.ptr());
+  BKE_pchan_to_mat4({pchan, bone}, transform_pose.ptr());
 
   params.set_output("Pose"_ustr, pose);
   params.set_output("Local Pose"_ustr, local_pose);
   params.set_output("Transform Pose"_ustr, transform_pose);
   params.set_output("Rest Pose"_ustr, rest_pose);
   params.set_output("Rest Length"_ustr, bone->length);
+  params.set_output("Exists"_ustr, true);
 }
 
 static void node_rna(StructRNA *srna)

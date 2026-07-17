@@ -9,6 +9,8 @@
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
 
+#include "PRF_profile.hh"
+
 #include "SEQ_channels.hh"
 #include "SEQ_render.hh"
 #include "SEQ_utils.hh"
@@ -23,34 +25,33 @@ static StripEarlyOut early_out_multicam(const Strip * /*strip*/, float /*fac*/)
   return StripEarlyOut::NoInput;
 }
 
-static ImBuf *do_multicam(const RenderData *context,
-                          SeqRenderState *state,
-                          Strip *strip,
-                          float timeline_frame,
-                          float /*fac*/,
-                          ImBuf * /*ibuf1*/,
-                          ImBuf * /*ibuf2*/)
+static SeqResult do_multicam(const RenderData *context,
+                             SeqRenderState *state,
+                             Strip *strip,
+                             float timeline_frame,
+                             float /*fac*/,
+                             const SeqResult & /*ibuf1*/,
+                             const SeqResult & /*ibuf2*/)
 {
-  ImBuf *out;
-  Editing *ed;
-
+  PRF_scope_with_name("SeqFxMultiCam", ProfileCategory::Draw);
   if (strip->multicam_source == 0 || strip->multicam_source >= strip->channel) {
-    return nullptr;
+    return {};
   }
 
-  ed = context->scene->ed;
-  if (!ed || state->strips_rendering_seqbase.contains(strip)) {
-    return nullptr;
+  Editing *ed = context->scene->ed;
+  if (!ed || state->strips_in_progress.contains(strip)) {
+    return {};
   }
   ListBaseT<Strip> *seqbasep = get_seqbase_by_strip(context->scene, strip);
   ListBaseT<SeqTimelineChannel> *channels = get_channels_by_strip(ed, strip);
   if (!seqbasep) {
-    return nullptr;
+    return {};
   }
 
-  state->strips_rendering_seqbase.add(strip);
-  out = seq_render_give_ibuf_seqbase(
+  state->strips_in_progress.add(strip);
+  SeqResult out = seq_render_give_ibuf_seqbase(
       context, state, timeline_frame, strip->multicam_source, channels, seqbasep);
+  state->strips_in_progress.remove(strip);
 
   return out;
 }

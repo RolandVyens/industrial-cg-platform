@@ -28,6 +28,7 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
   const float3 ray_P = INTEGRATOR_STATE(state, ray, P);
   const float3 ray_D = INTEGRATOR_STATE(state, ray, D);
   const float ray_time = INTEGRATOR_STATE(state, ray, time);
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
   const float3 N = INTEGRATOR_STATE(state, path, mis_origin_n);
 
@@ -44,7 +45,7 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
 #ifdef __PASSES__
   {
     const ccl_global KernelLight *klight = &kernel_data_fetch(lights, isect.prim);
-    if (!is_light_shader_visible_to_path(klight->shader_id, path_flag)) {
+    if (!is_light_shader_visible_to_path(klight->shader_id, path_visibility, path_flag)) {
       return SHADER_EVAL_EMPTY;
     }
   }
@@ -64,7 +65,7 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
 
   /* MIS weighting. */
   const float mis_weight = light_sample_mis_weight_forward_lamp(
-      kg, state, path_flag, isect.object, light_eval.pdf, ray_P);
+      kg, state, path_visibility, path_flag, isect.object, light_eval.pdf, ray_P);
 
   /* Write to render buffer. */
   guiding_record_surface_emission(kg, state, eval, mis_weight);
@@ -149,7 +150,7 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
     if (light_type == LIGHT_BACKGROUND) {
       /* Background light. */
 #ifdef __RAY_DIFFERENTIALS__
-      const float ray_dD = ray.dD;
+      const float ray_dD = background_light_clamp_dD(kg, ray.dD);
 #else
       const float ray_dD = 0.0f;
 #endif
@@ -197,7 +198,7 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
   /* No proper path flag, we're evaluating this for all closures. that's
    * weak but we'd have to do multiple evaluations otherwise. */
   surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_LIGHT>(
-      kg, state, emission_sd, nullptr, PATH_RAY_EMISSION);
+      kg, state, emission_sd, nullptr, PATH_RAY_VISIBILITY_NONE, PATH_RAY_EMISSION);
 
   if (emission_sd->flag & SD_CACHE_MISS) {
     return SHADER_EVAL_CACHE_MISS;
@@ -245,10 +246,12 @@ ccl_device void integrator_shade_light_nee(KernelGlobals kg,
     integrator_shadow_path_terminate(state, DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE);
   }
   else {
-    /* The full light evaluation is now part of the throughput. Store it as the unshadowed value
-     * so shadow color only affects occlusion, not light intensity. */
-    INTEGRATOR_STATE_WRITE(state, shadow_path, unshadowed_throughput) = INTEGRATOR_STATE(
-        state, shadow_path, throughput);
+    if (kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR) {
+      /* The full light evaluation is now part of the throughput. Store it as the unshadowed value
+       * so shadow color only affects occlusion, not light intensity. */
+      INTEGRATOR_STATE_WRITE(state, shadow_path, unshadowed_throughput) = INTEGRATOR_STATE(
+          state, shadow_path, throughput);
+    }
     integrator_shadow_path_next(state,
                                 DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE,
                                 DEVICE_KERNEL_INTEGRATOR_INTERSECT_SHADOW);

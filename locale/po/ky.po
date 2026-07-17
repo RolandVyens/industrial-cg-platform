@@ -1,9 +1,9 @@
 
 msgid ""
 msgstr ""
-"Project-Id-Version: Blender 5.2.0 Alpha (b'a0888131c6dd')\n"
+"Project-Id-Version: Blender 5.2.0 LTS Release Candidate (b'3d8c46ac31f4')\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-06 09:15+0000\n"
+"POT-Creation-Date: 2026-07-13 07:34+0000\n"
 "PO-Revision-Date: 2025-07-23 15:20+0000\n"
 "Last-Translator: Anonymous <noreply@weblate.org>\n"
 "Language-Team: Kyrgyz <https://translate.blender.org/projects/blender-ui/ui/ky/>\n"
@@ -1298,12 +1298,12 @@ msgid "Mask Layers"
 msgstr "Маска каттары"
 
 
-msgid "Mirror"
-msgstr "Чагылтуу"
-
-
 msgid "Import"
 msgstr "Импорттоо"
+
+
+msgid "Mirror"
+msgstr "Чагылтуу"
 
 
 msgid "UV"
@@ -1634,6 +1634,10 @@ msgstr "Каналдарды ташуу"
 
 msgid "Move"
 msgstr "Ташуу"
+
+
+msgid "Search"
+msgstr "Издөө"
 
 
 msgctxt "Operator"
@@ -2601,10 +2605,6 @@ msgid "Development"
 msgstr "Иштетүү"
 
 
-msgid "Styles"
-msgstr "Стилдер"
-
-
 msgctxt "Operator"
 msgid "Draw"
 msgstr "Тартуу"
@@ -2618,6 +2618,10 @@ msgstr "Тегерек"
 msgctxt "Operator"
 msgid "Line"
 msgstr "Түз сызык"
+
+
+msgid "Styles"
+msgstr "Стилдер"
 
 
 msgid "Add/Replace"
@@ -2889,8 +2893,8 @@ msgid "Radians"
 msgstr "Радиандар"
 
 
-msgid "Search"
-msgstr "Издөө"
+msgid "Cancel"
+msgstr "Жокко чыгаруу"
 
 
 msgctxt "WindowManager"
@@ -3003,6 +3007,11 @@ msgid "Report a Bug"
 msgstr "Ката жөнүндө маалымдоо"
 
 
+msgctxt "Operator"
+msgid "Clear"
+msgstr "Тазалоо"
+
+
 msgid "Description:"
 msgstr "Баяндамасы:"
 
@@ -3072,11 +3081,6 @@ msgstr "Тартуу:"
 
 msgid "Transform:"
 msgstr "Өзгөртүү:"
-
-
-msgctxt "Operator"
-msgid "Clear"
-msgstr "Тазалоо"
 
 
 msgctxt "Operator"
@@ -3302,8 +3306,9 @@ msgid "Untitled"
 msgstr "Аты жок"
 
 
-msgid "Cancel"
-msgstr "Жокко чыгаруу"
+msgctxt "Key"
+msgid "Key"
+msgstr "Ачкыч"
 
 
 msgctxt "Curve"
@@ -3626,11 +3631,6 @@ msgstr "FPS: %i"
 
 msgid "(Smooth)"
 msgstr "(тегиз)"
-
-
-msgctxt "Key"
-msgid "Key"
-msgstr "Ачкыч"
 
 
 msgid "Modify"

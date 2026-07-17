@@ -13,8 +13,12 @@
 
 #include <fmt/format.h>
 
+#include "BLI_rect.h"
+#include "DNA_space_enums.h"
+#include "ED_asset_menu_utils.hh"
 #include "MEM_guardedalloc.h"
 
+#include "AS_asset_library.hh"
 #include "AS_asset_representation.hh"
 #include "AS_remote_library.hh"
 
@@ -43,6 +47,8 @@
 
 #include "BLO_readfile.hh"
 
+#include "BLT_date_string.hh"
+#include "BLT_lang.hh"
 #include "BLT_translation.hh"
 
 #include "BLF_api.hh"
@@ -65,6 +71,7 @@
 #include "UI_interface.hh"
 #include "UI_interface_c.hh"
 #include "UI_interface_icons.hh"
+#include "UI_interface_layout.hh"
 #include "UI_resources.hh"
 #include "UI_view2d.hh"
 
@@ -75,6 +82,7 @@
 #include "GPU_immediate_util.hh"
 #include "GPU_state.hh"
 
+#include "file_banner.hh"
 #include "filelist.hh"
 
 #include "file_intern.hh" /* own include */
@@ -84,7 +92,7 @@ namespace blender {
 using RemoteLibraryLoadingStatus = asset_system::RemoteLibraryLoadingStatus;
 
 void ED_file_path_button(bScreen *screen,
-                         const SpaceFile *sfile,
+                         SpaceFile *sfile,
                          FileSelectParams *params,
                          ui::Block *block)
 {
@@ -92,9 +100,11 @@ void ED_file_path_button(bScreen *screen,
 
   BLI_assert_msg(params != nullptr,
                  "File select parameters not set. The caller is expected to check this.");
+  BLI_assert(params == sfile->params || params == &sfile->asset_params->base_params);
 
-  PointerRNA params_rna_ptr = RNA_pointer_create_discrete(
-      &screen->id, RNA_FileSelectParams, params);
+  PointerRNA space_ptr = RNA_pointer_create_discrete(&screen->id, RNA_SpaceFileBrowser, sfile);
+  PointerRNA params_rna_ptr = RNA_pointer_create_with_parent(
+      space_ptr, RNA_FileSelectParams, params);
 
   /* callbacks for operator check functions */
   block_func_set(block, file_draw_check_cb, nullptr, nullptr);
@@ -303,19 +313,20 @@ static void file_draw_tooltip_custom_func(bContext & /*C*/,
       free_imbuf = true;
     }
 
-    char date_str[FILELIST_DIRENTRY_DATE_LEN], time_str[FILELIST_DIRENTRY_TIME_LEN];
-    bool is_today, is_yesterday;
-    std::string day_string;
-    BLI_filelist_entry_datetime_to_string(
-        nullptr, file->time, false, time_str, date_str, &is_today, &is_yesterday);
-    if (is_today || is_yesterday) {
-      day_string = (is_today ? TIP_("Today") : TIP_("Yesterday")) + std::string(" ");
-    }
+    const time_t file_time = (time_t)file->time;
+    const std::tm mod_time = *std::localtime(&file_time);
+    const time_t ts_now = time(nullptr);
+    const std::tm now = *std::localtime(&ts_now);
+    const char *lang = BLT_lang_get();
+    std::string modified_s = blender::date_string::datetime(mod_time,
+                                                            lang,
+                                                            date_string::DateFormat(U.date_format),
+                                                            date_string::TimeFormat(U.time_format),
+                                                            &now,
+                                                            TIP_("Today"),
+                                                            TIP_("Yesterday"));
     tooltip_text_field_add(tip,
-                           fmt::format(fmt::runtime(TIP_("Modified: {}{}{}")),
-                                       day_string,
-                                       (is_today || is_yesterday) ? "" : date_str,
-                                       (is_today || is_yesterday) ? time_str : ""),
+                           fmt::format(fmt::runtime(TIP_("Modified: {}")), modified_s),
                            {},
                            ui::TIP_STYLE_NORMAL,
                            ui::TIP_LC_NORMAL);
@@ -593,8 +604,7 @@ static rcti file_measure_string_multiline(const StringRef string, const int wrap
   rcti textbox;
   BLF_wordwrap(font_id,
                wrap_width,
-               BLFWrapMode(int(BLFWrapMode::Typographical) | int(BLFWrapMode::Path) |
-                           int(BLFWrapMode::HardLimit)));
+               BLFWrapMode::Typographical | BLFWrapMode::Path | BLFWrapMode::HardLimit);
   BLF_enable(font_id, BLF_WORD_WRAP);
   BLF_boundbox(font_id, string.data(), string.size(), &textbox);
   BLF_disable(font_id, BLF_WORD_WRAP);
@@ -726,6 +736,34 @@ static void file_add_preview_drag_but(const SpaceFile *sfile,
   file_but_tooltip_func_set(sfile, file, but);
 }
 
+static void file_add_asset_download_but(ui::Block *block,
+                                        const FileLayout *layout,
+                                        const FileDirEntry *file,
+                                        const rcti *tile_draw_rect)
+{
+  const int preview_center_x = BLI_rcti_cent_x(tile_draw_rect);
+  const int preview_center_y = tile_draw_rect->ymax - layout->tile_border_y - layout->prv_h * 0.5f;
+  const int icon_width = ICON_DEFAULT_WIDTH_SCALE * 2.0f;
+  const int icon_height = ICON_DEFAULT_HEIGHT_SCALE * 2.0f;
+  const int icon_x = preview_center_x - icon_width * 0.5f;
+  const int icon_y = preview_center_y - icon_height * 0.5f;
+
+  ui::Button *but = uiDefIconButO(block,
+                                  ui::ButtonType::But,
+                                  "ASSET_OT_asset_download",
+                                  wm::OpCallContext::ExecDefault,
+                                  ICON_DOWNLOAD,
+                                  icon_x,
+                                  icon_y,
+                                  icon_width,
+                                  icon_height,
+                                  std::nullopt);
+  PointerRNA *opptr = ui::button_operator_ptr_ensure(but);
+  ed::asset::operator_asset_reference_props_set(*file->asset, *opptr);
+  ui::button_icon_scale_set(but, 1.5f);
+  ui::button_pushbutton_draw_as_overlay_set(but, true);
+}
+
 static void file_draw_preview(const FileDirEntry *file,
                               const rcti *tile_draw_rect,
                               const IconBufferRef &preview,
@@ -766,20 +804,17 @@ static void file_draw_preview(const FileDirEntry *file,
   const gpu::TextureFormat format = gpu::TextureFormat::UNORM_8_8_8_8;
   BLI_assert_msg(preview.channels == 4, "preview images are expected to be 4 channels");
 
-  IMMDrawPixelsTexState state = immDrawPixelsTexSetup(GPU_SHADER_3D_IMAGE_COLOR);
-  immDrawPixelsTexTiled_scaling(&state,
-                                float(xmin),
-                                float(ymin),
-                                preview.width,
-                                preview.height,
-                                format,
-                                true,
-                                preview.buffer.data(),
-                                scale,
-                                scale,
-                                1.0f,
-                                1.0f,
-                                document_img_col);
+  PixelBitmapDrawer drawer(GPU_SHADER_3D_IMAGE_COLOR);
+  drawer.draw(float(xmin),
+              float(ymin),
+              preview.width,
+              preview.height,
+              format,
+              true,
+              preview.buffer.data(),
+              scale,
+              scale,
+              document_img_col);
 
   const bool show_outline = (file->typeflag & (FILE_TYPE_IMAGE | FILE_TYPE_OBJECT_IO |
                                                FILE_TYPE_MOVIE | FILE_TYPE_BLENDER));
@@ -914,7 +949,7 @@ static void file_draw_indicator_icons(const FileList *files,
                                       const float preview_icon_aspect,
                                       const int file_type_icon,
                                       const bool has_special_file_image,
-                                      const eDirEntry_SelectFlag selflag)
+                                      const eDirEntry_SelectFlag /*selflag*/)
 {
   const bool is_offline = (file->attributes & FILE_ATTR_OFFLINE);
   const bool is_link = (file->attributes & FILE_ATTR_ANY_LINK);
@@ -992,33 +1027,45 @@ static void file_draw_indicator_icons(const FileList *files,
                        UI_NO_ICON_OVERLAY_TEXT);
     }
     else if ((file->typeflag & FILE_TYPE_ASSET_ONLINE) != 0) {
-      if (selflag & (FILE_SEL_HIGHLIGHTED | FILE_SEL_SELECTED)) {
-        ui::icon_draw_ex(icon_x,
-                         icon_y,
-                         ICON_INTERNET,
-                         1.0f / UI_SCALE_FAC,
-                         0.6f,
-                         0.0f,
-                         light,
-                         true,
-                         UI_NO_ICON_OVERLAY_TEXT);
-      }
+      ui::icon_draw_ex(icon_x,
+                       icon_y,
+                       ICON_INTERNET,
+                       1.0f / UI_SCALE_FAC,
+                       0.6f,
+                       0.0f,
+                       light,
+                       true,
+                       UI_NO_ICON_OVERLAY_TEXT);
+    }
+    else if (file->asset &&
+             file->asset->remote_file_status() == asset_system::RemoteAssetFileStatus::NO_MATCH)
+    {
+      /* This on-disk asset no longer matches the asset listing it was downloaded from. */
+      ui::icon_draw_ex(icon_x,
+                       icon_y,
+                       ICON_ERROR,
+                       1.0f / UI_SCALE_FAC,
+                       0.6f,
+                       0.0f,
+                       light,
+                       true,
+                       UI_NO_ICON_OVERLAY_TEXT);
     }
   }
 }
 
-static void renamebutton_cb(bContext *C, void * /*arg1*/, char *oldname)
+static void renamebutton_cb(bContext &C, StringRefNull oldname)
 {
   char newname[FILE_MAX + 12];
   char orgname[FILE_MAX + 12];
   char filename[FILE_MAX + 12];
-  wmWindowManager *wm = CTX_wm_manager(C);
-  wmWindow *win = CTX_wm_window(C);
-  SpaceFile *sfile = reinterpret_cast<SpaceFile *>(CTX_wm_space_data(C));
-  ARegion *region = CTX_wm_region(C);
+  wmWindowManager *wm = CTX_wm_manager(&C);
+  wmWindow *win = CTX_wm_window(&C);
+  SpaceFile *sfile = reinterpret_cast<SpaceFile *>(CTX_wm_space_data(&C));
+  ARegion *region = CTX_wm_region(&C);
   FileSelectParams *params = ED_fileselect_get_active_params(sfile);
 
-  BLI_path_join(orgname, sizeof(orgname), params->dir, oldname);
+  BLI_path_join(orgname, sizeof(orgname), params->dir, oldname.c_str());
   STRNCPY(filename, params->renamefile);
   BLI_path_make_safe_filename(filename);
   BLI_path_join(newname, sizeof(newname), params->dir, filename);
@@ -1030,7 +1077,7 @@ static void renamebutton_cb(bContext *C, void * /*arg1*/, char *oldname)
           RPT_ERROR, "Could not rename: %s", errno ? strerror(errno) : "unknown error");
       WM_report_banner_show(wm, win);
       /* Renaming failed, reset the name for further renaming handling. */
-      STRNCPY(params->renamefile, oldname);
+      STRNCPY(params->renamefile, oldname.c_str());
     }
     else {
       /* If rename is successful, set renamefile to newly renamed entry.
@@ -1042,7 +1089,7 @@ static void renamebutton_cb(bContext *C, void * /*arg1*/, char *oldname)
     /* Ensure we select and scroll to the renamed file.
      * This is done even if the rename fails as we want to make sure that the file we tried to
      * rename is still selected and in view. (it can move if something added files/folders to the
-     * directory while we were renaming.
+     * directory while we were renaming).
      */
     file_params_invoke_rename_postscroll(wm, win, sfile);
     /* to make sure we show what is on disk */
@@ -1132,18 +1179,14 @@ static void draw_dividers(FileLayout *layout, View2D *v2d)
   }
 }
 
-static void draw_columnheader_background(const FileLayout *layout, const View2D *v2d)
+static void draw_fixed_header_background(const View2D *v2d, const float height)
 {
   uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", gpu::VertAttrType::SFLOAT_32_32);
 
   immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
   immUniformThemeColorShade(TH_BACK, 11);
 
-  immRectf(pos,
-           v2d->cur.xmin,
-           v2d->cur.ymax - layout->attribute_column_header_h,
-           v2d->cur.xmax,
-           v2d->cur.ymax);
+  immRectf(pos, v2d->cur.xmin, v2d->cur.ymax - height, v2d->cur.xmax, v2d->cur.ymax);
 
   immUnbindProgram();
 }
@@ -1229,18 +1272,22 @@ static const char *filelist_get_details_column_string(
     case COLUMN_DATETIME:
       if (!(file->typeflag & FILE_TYPE_BLENDERLIB) && !FILENAME_IS_CURRPAR(file->relpath)) {
         if (file->draw_data.datetime_str[0] == '\0' || update_stat_strings) {
-          char date[FILELIST_DIRENTRY_DATE_LEN], time[FILELIST_DIRENTRY_TIME_LEN];
-          bool is_today, is_yesterday;
-
-          BLI_filelist_entry_datetime_to_string(
-              nullptr, file->time, compact, time, date, &is_today, &is_yesterday);
-
-          if (!compact && (is_today || is_yesterday)) {
-            STRNCPY_UTF8(date, is_today ? IFACE_("Today") : IFACE_("Yesterday"));
-          }
-          SNPRINTF_UTF8(file->draw_data.datetime_str, compact ? "%s" : "%s %s", date, time);
+          const time_t file_time = (time_t)file->time;
+          const std::tm mod_time = *std::localtime(&file_time);
+          const time_t ts_now = time(nullptr);
+          const std::tm now = *std::localtime(&ts_now);
+          const char *lang = BLT_lang_get();
+          std::string modified_s =
+              compact ? date_string::date(mod_time, lang, date_string::DateFormat(U.date_format)) :
+                        date_string::datetime(mod_time,
+                                              lang,
+                                              date_string::DateFormat(U.date_format),
+                                              date_string::TimeFormat(U.time_format),
+                                              &now,
+                                              TIP_("Today"),
+                                              TIP_("Yesterday"));
+          STRNCPY_UTF8(file->draw_data.datetime_str, modified_s.c_str());
         }
-
         return file->draw_data.datetime_str;
       }
       break;
@@ -1462,8 +1509,9 @@ void file_draw_list(const bContext *C, ARegion *region)
         /* Trigger the preview loader to wait until the download is done and load the preview from
          * disk. Has to be done explicitly here because the preview isn't attached to a button. */
         if (!file->asset->is_local_id()) {
-          ui::icon_render_id_ex(
-              C, nullptr, nullptr, ICON_SIZE_PREVIEW, true, file->asset->get_preview());
+          if (PreviewImage *preview = file->asset->get_preview()) {
+            ui::icon_render_id_ex(C, nullptr, nullptr, ICON_SIZE_PREVIEW, true, preview);
+          }
         }
       }
 
@@ -1501,6 +1549,11 @@ void file_draw_list(const bContext *C, ARegion *region)
       if (do_drag) {
         file_add_preview_drag_but(
             sfile, block, layout, file, path, &tile_draw_rect, file_type_icon);
+      }
+
+      const bool is_highlighted = file_selflag & (FILE_SEL_HIGHLIGHTED | FILE_SEL_HIGHLIGHTED);
+      if (is_highlighted && file->asset && file->asset->needs_download()) {
+        file_add_asset_download_but(block, layout, file, &tile_draw_rect);
       }
     }
     else {
@@ -1595,7 +1648,7 @@ void file_draw_list(const bContext *C, ARegion *region)
                                  float(sizeof(params->renamefile)),
                                  "");
       button_retval_set(but, 1);
-      button_func_rename_set(but, renamebutton_cb, file);
+      text_button_func_rename_set(but, renamebutton_cb);
       button_flag_enable(but, ui::BUT_NO_UTF8); /* Allow non UTF8 names. */
       button_flag_disable(but, ui::BUT_UNDO);
       if (false == button_active_only(C, region, block, but)) {
@@ -1655,6 +1708,13 @@ void file_draw_list(const bContext *C, ARegion *region)
       if (is_filtered) {
         return IFACE_("No results match the search filter");
       }
+      FileAssetSelectParams *asset_params = ED_fileselect_get_asset_params(sfile);
+      if (asset_params && (asset_params->asset_access == AssetAccess::OnlyOnline)) {
+        return IFACE_("No items. Note: The \"Only Online\" filter option is enabled.");
+      }
+      if (asset_params && (asset_params->asset_access == AssetAccess::OnlyOffline)) {
+        return IFACE_("No items. Note: The \"Only Offline\" filter option is enabled.");
+      }
       return IFACE_("No items");
     }();
 
@@ -1672,7 +1732,7 @@ void file_draw_list(const bContext *C, ARegion *region)
 
   /* Draw last, on top of file list. */
   if (draw_columnheader) {
-    draw_columnheader_background(layout, v2d);
+    draw_fixed_header_background(v2d, layout->attribute_column_header_h);
     draw_columnheader_columns(params, layout, v2d, text_col);
   }
 
@@ -1680,6 +1740,34 @@ void file_draw_list(const bContext *C, ARegion *region)
     /* Only save current size if there is something to show. */
     layout->curr_size = layout->width;
   }
+}
+
+void file_draw_banner(const bContext *C, const SpaceFile *sfile, ARegion *region)
+{
+  /* Passed into lambda as block idname. */
+  static const char *funcname = __func__;
+
+  file_banners_for_first_visible(*sfile, [&](const BannerType &banner) {
+    draw_fixed_header_background(&region->v2d, sfile->layout->offset_top);
+
+    ui::Block *block = block_begin(C, region, funcname, ui::EmbossType::Emboss);
+    ui::Layout &layout = ui::block_layout(
+        block,
+        ui::LayoutDirection::Vertical,
+        ui::LayoutType::Panel,
+        sfile->layout->tile_border_x,
+        -sfile->layout->tile_border_y + region->v2d.cur.ymax,
+        std::max(0, region->winx - 2 * sfile->layout->tile_border_x),
+        0,
+        0,
+        ui::style_get_dpi());
+
+    banner.layout(*sfile, layout.row(false));
+
+    block_layout_resolve(block);
+    block_end(C, block);
+    block_draw(C, block);
+  });
 }
 
 static void file_draw_invalid_asset_library_hint(const bContext *C,
@@ -2028,6 +2116,13 @@ bool file_draw_hint_if_invalid(const bContext *C, const SpaceFile *sfile, ARegio
     const bool is_remote_library = remote_library != nullptr;
 
     if (is_remote_library) {
+      /* With remote libraries, there may be already-downloaded assets available that should be
+       * displayed. Don't show the "internet access required" hint until done loading, and only if
+       * there are no already-downloaded assets to display. */
+      if (!filelist_is_ready(sfile->files) || !filelist_files_num_entries(sfile->files)) {
+        return false;
+      }
+
       const bool is_online_allowed = G.f & G_FLAG_INTERNET_ALLOW;
       const bool was_choice_made = U.extension_flag & USER_EXTENSION_FLAG_ONLINE_ACCESS_HANDLED;
       if (!is_online_allowed && !was_choice_made) {

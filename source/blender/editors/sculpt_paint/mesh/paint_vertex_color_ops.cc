@@ -157,17 +157,22 @@ static IndexMask get_selected_indices(const Mesh &mesh,
 {
   const bke::AttributeAccessor attributes = mesh.attributes();
 
+  /* Hidden should never count as selected. */
+  IndexMask visible = IndexMask::from_bools_inverse(
+      *attributes.lookup_or_default<bool>(".hide_poly", domain, false), memory);
+
   if (mesh.editflag & ME_EDIT_PAINT_FACE_SEL) {
     const VArray<bool> selection = *attributes.lookup_or_default<bool>(
         ".select_poly", domain, false);
-    return IndexMask::from_bools(selection, memory);
+    return IndexMask::from_bools(visible, selection, memory);
   }
   if (mesh.editflag & ME_EDIT_PAINT_VERT_SEL) {
     const VArray<bool> selection = *attributes.lookup_or_default<bool>(
         ".select_vert", domain, false);
-    return IndexMask::from_bools(selection, memory);
+    return IndexMask::from_bools(visible, selection, memory);
   }
-  return IndexMask(attributes.domain_size(domain));
+
+  return visible;
 }
 
 static void face_corner_color_equalize_verts(Mesh &mesh, const IndexMask selection)
@@ -179,14 +184,12 @@ static void face_corner_color_equalize_verts(Mesh &mesh, const IndexMask selecti
     BLI_assert_unreachable();
     return;
   }
-  if (attribute.domain == bke::AttrDomain::Point) {
-    return;
+  if (attribute.domain != bke::AttrDomain::Point) {
+    GVArray color_attribute_point = *attributes.lookup(name, bke::AttrDomain::Point);
+    GVArray color_attribute_corner = attributes.adapt_domain(
+        color_attribute_point, bke::AttrDomain::Point, bke::AttrDomain::Corner);
+    color_attribute_corner.materialize(selection, attribute.span.data());
   }
-
-  GVArray color_attribute_point = *attributes.lookup(name, bke::AttrDomain::Point);
-  GVArray color_attribute_corner = attributes.adapt_domain(
-      color_attribute_point, bke::AttrDomain::Point, bke::AttrDomain::Corner);
-  color_attribute_corner.materialize(selection, attribute.span.data());
   attribute.finish();
 }
 

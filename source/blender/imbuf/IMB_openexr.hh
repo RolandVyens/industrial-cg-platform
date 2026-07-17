@@ -35,6 +35,8 @@ ExrHandle *IMB_exr_get_handle(bool write_multipart = false);
  * The number of channels is determined by channelnames.size() with
  * each character a channel name.
  * Layer and pass name, view name and colorspace are all optional.
+ *
+ * Used only for writing files.
  */
 void IMB_exr_add_channels(ExrHandle *handle,
                           StringRefNull layerpassname,
@@ -43,7 +45,7 @@ void IMB_exr_add_channels(ExrHandle *handle,
                           StringRefNull colorspace,
                           size_t xstride,
                           size_t ystride,
-                          float *rect,
+                          const float *rect,
                           bool use_half_float);
 
 /**
@@ -65,7 +67,7 @@ bool IMB_exr_begin_write(ExrHandle *handle,
 
 /**
  * For reading, set the rect buffer to write into.
- * \param passname: Full channel name including layer, pass, view and channel.
+ * \param full_name: Full channel name including layer, pass, view and channel.
  */
 bool IMB_exr_set_channel(
     ExrHandle *handle, StringRefNull full_name, int xstride, int ystride, float *rect);
@@ -132,5 +134,23 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
                        int display_offset_y = 0,
                        int data_offset_x = 0,
                        int data_offset_y = 0);
+
+/* Merge samples in reusable per-pixel writer storage instead of copying the full frame. */
+bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
+                       int width,
+                       int height,
+                       const char *filepath,
+                       int compression,
+                       bool use_half_float,
+                       bool alpha_only,
+                       bool has_display_window,
+                       int display_width,
+                       int display_height,
+                       int display_offset_x,
+                       int display_offset_y,
+                       int data_offset_x,
+                       int data_offset_y,
+                       float deep_merge_tolerance,
+                       float deep_alpha_merge_tolerance);
 
 }  // namespace blender

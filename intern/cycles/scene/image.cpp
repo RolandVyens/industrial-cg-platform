@@ -14,6 +14,7 @@
 #include "scene/stats.h"
 
 #include "util/colorspace.h"
+#include "util/debug.h"
 #include "util/log.h"
 #include "util/progress.h"
 #include "util/task.h"
@@ -264,7 +265,9 @@ void ImageManager::load_image_metadata(ImageSingle *img, Progress &progress)
                                       .auto_texture_cache = auto_texture_cache,
                                       .texture_cache_path = texture_cache_path,
                                       .colorspace = img->params.colorspace,
-                                      .alpha_type = img->params.alpha_type};
+                                      .alpha_type = img->params.alpha_type,
+                                      .load_failure_num = load_failure_num,
+                                      .tx_failure_num = tx_failure_num};
 
     ImageMetaData &metadata = img->metadata;
     metadata = ImageMetaData();
@@ -485,12 +488,29 @@ void ImageManager::device_load_image(Device *device,
   tex.transform_3d = img->metadata.transform_3d;
   tex.average_color = img->metadata.average_color;
 
+  int max_dim = std::max(img->metadata.width, img->metadata.height);
+
   if (use_texture_cache && img->metadata.has_tiles_and_mipmaps && img->metadata.tile_size) {
+    /* Apply texture size limit by skipping the highest mip levels. */
+    const int texture_limit = scene->params.texture_limit;
+    img->miplevel_offset = 0;
+    while (texture_limit > 0 && max_dim > texture_limit) {
+      img->miplevel_offset++;
+      tex.width = std::max(1, tex.width / 2);
+      tex.height = std::max(1, tex.height / 2);
+      max_dim /= 2;
+    }
     image_cache.load_image_tiled(scene->dscene, img->metadata, tex);
   }
   else {
+    /* Compute texture resolution scale factor from texture size limit. */
+    float texture_resolution = scene->params.texture_resolution;
+    const int texture_limit = scene->params.texture_limit;
+    if (texture_limit > 0 && max_dim > texture_limit) {
+      texture_resolution = std::min(texture_resolution, float(texture_limit) / float(max_dim));
+    }
     img->vdb_memory = image_cache.load_image_full(
-        *device, *img->loader, img->metadata, scene->params.texture_resolution, tex);
+        *device, *img->loader, img->metadata, texture_resolution, tex);
   }
 
   /* Update image texture device data. */
@@ -532,29 +552,42 @@ void ImageManager::device_cpu_load_requested(Device *device,
   /* Load the tile. */
   const ImageSingle *img = images[image_texture_id];
   const KernelImageTexture &tex = scene->dscene.image_textures[image_texture_id];
-  image_cache.load_requested_tile(
-      *device, scene->dscene, tex, tile_descriptor, miplevel, x, y, *img->loader, img->metadata);
+  image_cache.load_requested_tile(*device,
+                                  scene->dscene,
+                                  tex,
+                                  tile_descriptor,
+                                  miplevel,
+                                  x,
+                                  y,
+                                  *img->loader,
+                                  img->metadata,
+                                  img->miplevel_offset);
 }
 
 void ImageManager::device_gpu_load_requested(Device *device, DeviceQueue &queue, Scene *scene)
 {
-  /* TODO: Check if this works correctly if mask or tile descriptors get moved to host memory,
-   * or prevent it from happening. */
+  /* TODO: Check if this works correctly if access state or tile descriptors get moved to host
+   * memory, or prevent it from happening. */
   DeviceScene &dscene = scene->dscene;
 
-  /* Copy request mask from the device, using either the storage or just a pointer to
+  /* Copy tile access state from the device, using either the storage or just a pointer to
    * existing allocation for unified memory. */
   vector<uint8_t> local_storage;
-  const uint8_t *request_mask = reinterpret_cast<const uint8_t *>(
-      queue.copy_from_device_synchronized(dscene.image_texture_tile_request_mask, local_storage));
+  const uint8_t *access_state = reinterpret_cast<const uint8_t *>(
+      queue.copy_from_device_synchronized(dscene.image_texture_tile_access_state, local_storage));
 
   /* Load tiles requested by this device in parallel. */
   parallel_for(blocked_range<size_t>(0, images.size(), 1), [&](const blocked_range<size_t> &r) {
     for (size_t i = r.begin(); i != r.end(); i++) {
       if (images[i] && dscene.image_textures[i].tile_descriptor_offset != KERNEL_TILE_LOAD_NONE) {
         ImageSingle *img = images[i];
-        image_cache.load_requested_tiles(
-            *device, dscene, dscene.image_textures[i], *img->loader, img->metadata, request_mask);
+        image_cache.load_requested_tiles(*device,
+                                         dscene,
+                                         dscene.image_textures[i],
+                                         *img->loader,
+                                         img->metadata,
+                                         img->miplevel_offset,
+                                         access_state);
       }
     }
   });
@@ -635,6 +668,7 @@ void ImageManager::device_update(Device *device, Scene *scene, Progress &progres
   }
 
   pool.wait_work();
+  report_failures();
 
   /* Copy device arrays. */
   device_copy_image_textures(device, scene);
@@ -673,6 +707,7 @@ void ImageManager::device_load_images(Device *device,
     });
   }
   pool.wait_work();
+  report_failures();
 
   /* Copy device arrays. */
   device_copy_image_textures(device, scene);
@@ -698,6 +733,7 @@ void ImageManager::device_load_builtin(Device *device, Scene *scene, Progress &p
   }
 
   pool.wait_work();
+  report_failures();
 }
 
 void ImageManager::device_free_builtin(Scene *scene)
@@ -720,6 +756,35 @@ void ImageManager::device_free(Scene *scene)
   image_cache.device_free(scene->dscene);
   scene->dscene.image_textures.free();
   scene->dscene.image_texture_udims.free();
+}
+
+void ImageManager::evict_unused(Device *device, Scene *scene)
+{
+  if (!DebugFlags().texture_cache.use_eviction) {
+    return;
+  }
+
+  DeviceScene &dscene = scene->dscene;
+  device_vector<uint8_t> &tile_access = dscene.image_texture_tile_access_state;
+
+  if (tile_access.size() == 0) {
+    return;
+  }
+
+  /* Read back tile access state from all devices and OR together. */
+  device->mem_or_from_device(tile_access);
+
+  image_cache.evict_unused(*device,
+                           dscene,
+                           {dscene.image_textures.data(), dscene.image_textures.size()},
+                           tile_access.data());
+
+  /* Reset access state on both host and device, so no more tiles are marked as used.
+   * Any tile not marked as used before the next eviction cycle will be evicted. */
+  memset(tile_access.data(), KERNEL_TILE_ACCESS_NONE, tile_access.size() * sizeof(uint8_t));
+  tile_access.zero_to_device();
+  tile_access.clear_modified();
+  device_copy_image_textures(device, scene);
 }
 
 void ImageManager::collect_statistics(RenderStats *stats, Scene *scene)
@@ -755,6 +820,14 @@ void ImageManager::collect_statistics(RenderStats *stats, Scene *scene)
   stats->image.overhead_size = dscene.image_textures.memory_size() +
                                dscene.image_texture_udims.memory_size() +
                                image_cache.memory_size(dscene);
+
+  /* Map image cache stats to eviction statistics. */
+  const ImageCacheStats &cache_stats = image_cache.get_stats();
+  stats->image.eviction.tiles_loaded = cache_stats.total_loaded;
+  stats->image.eviction.tiles_evicted = cache_stats.total_evicted;
+  stats->image.eviction.tiles_reloaded = cache_stats.total_reloaded;
+  stats->image.eviction.peak_loaded = cache_stats.peak_loaded;
+  stats->image.tiled_images_peak_size = size_t(cache_stats.peak_tiled_bytes);
 }
 
 void ImageManager::tag_update()
@@ -775,6 +848,22 @@ bool ImageManager::get_use_texture_cache() const
 bool ImageManager::get_auto_texture_cache() const
 {
   return auto_texture_cache;
+}
+
+void ImageManager::report_failures()
+{
+  /* Report failure once after the full update. If we report an error immediately then
+   * exit-on-error will abort the process without waiting for other threads to cleanly finish
+   * generating their tx files. */
+  const int load_num = load_failure_num.exchange(0);
+  if (load_num > 0) {
+    LOG_ERROR << "Failed to load " << load_num << " image files";
+  }
+
+  const int tx_num = tx_failure_num.exchange(0);
+  if (tx_num > 0) {
+    LOG_ERROR << "Failed to generate " << tx_num << " tx files";
+  }
 }
 
 CCL_NAMESPACE_END

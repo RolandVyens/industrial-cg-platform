@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import importlib
 import importlib.machinery
+from importlib import metadata
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
+import tomllib
 
 
 _RUNTIME_EXTENSION_ID = "blender_vfx_qt_runtime"
 _SYSTEM_REPOSITORY_MODULE = "system"
 _RUNTIME_DLL_DIR_HANDLES: list[object] = []
+_RUNTIME_PROVENANCE: tuple[str, Path, tuple[Path, ...]] | None = None
 _RUNTIME_IMPORT_PREFIXES = (
     "bqt",
     "PySide6",
@@ -29,6 +33,12 @@ _BQT_SAFE_ENV = {
     "BQT_AUTO_ADD": "0",
     "BQT_DOCKABLE_WRAP": "0",
     "BQT_MANAGE_FOREGROUND": "1",
+}
+
+_RUNTIME_PACKAGE_WHEEL_PREFIXES = {
+    "bqt": "bqt-",
+    "PySide6": "pyside6-",
+    "shiboken6": "shiboken6-",
 }
 
 
@@ -91,7 +101,7 @@ def _extension_manifest_path(repo, extension_id: str) -> Path | None:
     return None
 
 
-def _runtime_extension_module_name() -> str | None:
+def _runtime_extension_info() -> tuple[str, Path] | None:
     try:
         import bpy
     except Exception:
@@ -101,7 +111,7 @@ def _runtime_extension_module_name() -> str | None:
     for repo in _system_extension_repos(prefs):
         manifest_path = _extension_manifest_path(repo, _RUNTIME_EXTENSION_ID)
         if manifest_path is not None:
-            return f"bl_ext.{repo.module}.{_RUNTIME_EXTENSION_ID}"
+            return f"bl_ext.{repo.module}.{_RUNTIME_EXTENSION_ID}", manifest_path
 
     return None
 
@@ -110,10 +120,11 @@ def _import_extension_module(module_name: str) -> object:
     return importlib.import_module(module_name)
 
 
-def _enable_runtime_extension() -> None:
-    module_name = _runtime_extension_module_name()
-    if module_name is None:
+def _enable_runtime_extension() -> tuple[str, Path, tuple[Path, ...]]:
+    runtime_info = _runtime_extension_info()
+    if runtime_info is None:
         raise RuntimeError("BQt runtime extension is not available in this build")
+    module_name, manifest_path = runtime_info
 
     import addon_utils
 
@@ -132,6 +143,31 @@ def _enable_runtime_extension() -> None:
     if module is None:
         raise RuntimeError(err_str or "Failed to enable the bundled BQt runtime extension")
 
+    package_paths = _runtime_extension_package_paths(module_name)
+    return module_name, manifest_path, package_paths
+
+
+def _runtime_extension_package_paths(module_name: str) -> tuple[Path, ...]:
+    try:
+        import bpy
+    except Exception:
+        return ()
+
+    try:
+        user_path = Path(bpy.utils.extension_path_user(module_name, path="", create=False))
+        extension_store_root = user_path.parents[2]
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return ()
+
+    local_root = (extension_store_root / ".local").resolve()
+    return tuple(
+        path.resolve()
+        for entry in sys.path
+        if entry
+        and (path := Path(entry)).is_dir()
+        and path.resolve().is_relative_to(local_root)
+    )
+
 
 def _module_name_matches_prefix(module_name: str, prefixes: tuple[str, ...]) -> bool:
     return any(
@@ -141,10 +177,68 @@ def _module_name_matches_prefix(module_name: str, prefixes: tuple[str, ...]) -> 
 
 
 def _clear_runtime_import_state() -> None:
-    importlib.invalidate_caches()
-    for module_name in tuple(sys.modules):
-        if _module_name_matches_prefix(module_name, _RUNTIME_IMPORT_PREFIXES):
-            sys.modules.pop(module_name, None)
+    raise RuntimeError(
+        "In-process BQt runtime recovery is disabled because Qt modules and "
+        "objects are process-global. Restart Blender before changing Qt runtimes."
+    )
+
+
+def _runtime_modules_already_loaded() -> tuple[str, ...]:
+    return tuple(
+        module_name
+        for module_name in sys.modules
+        if _module_name_matches_prefix(module_name, _RUNTIME_IMPORT_PREFIXES)
+    )
+
+
+def _runtime_package_versions(manifest_path: Path) -> dict[str, str]:
+    with manifest_path.open("rb") as handle:
+        manifest = tomllib.load(handle)
+
+    versions: dict[str, str] = {}
+    for wheel_path in manifest.get("wheels", ()):
+        wheel_name = Path(str(wheel_path)).name.lower()
+        for package_name, prefix in _RUNTIME_PACKAGE_WHEEL_PREFIXES.items():
+            if not wheel_name.startswith(prefix):
+                continue
+            match = re.match(rf"^{re.escape(prefix)}([0-9][^-]*)-", wheel_name)
+            if match is not None:
+                versions[package_name] = match.group(1)
+    missing = set(_RUNTIME_PACKAGE_WHEEL_PREFIXES) - set(versions)
+    if missing:
+        raise RuntimeError(f"Bundled BQt runtime manifest lacks versions for: {sorted(missing)}")
+    return versions
+
+
+def _module_is_within_roots(module, roots: tuple[Path, ...]) -> bool:
+    module_file = getattr(module, "__file__", "")
+    if not module_file:
+        return False
+    module_path = Path(module_file).resolve()
+    return any(module_path.is_relative_to(root) for root in roots)
+
+
+def _verify_runtime_package_provenance(
+    runtime_info: tuple[str, Path, tuple[Path, ...]],
+) -> None:
+    _module_name, manifest_path, added_paths = runtime_info
+    if not added_paths:
+        raise RuntimeError("Bundled BQt runtime did not add a trusted package path")
+
+    bqt = importlib.import_module("bqt")
+    pyside6 = importlib.import_module("PySide6")
+    shiboken6 = importlib.import_module("shiboken6")
+    modules = {"bqt": bqt, "PySide6": pyside6, "shiboken6": shiboken6}
+    versions = _runtime_package_versions(manifest_path)
+
+    for package_name, module in modules.items():
+        if not _module_is_within_roots(module, added_paths):
+            raise RuntimeError(f"{package_name} was not loaded from the bundled BQt runtime")
+        version = metadata.version(package_name)
+        if version != versions[package_name]:
+            raise RuntimeError(
+                f"Bundled {package_name} version mismatch: expected {versions[package_name]}, got {version}"
+            )
 
 
 def _required_bqt_modules() -> tuple[str, ...]:
@@ -230,23 +324,32 @@ def _ensure_debug_extension_aliases() -> None:
 
 
 def ensure_bqt_runtime():
+    global _RUNTIME_PROVENANCE
+
     configure_bqt_environment()
 
-    bqt, qapplication, import_error = _import_runtime_packages()
-    if bqt is None:
-        _clear_runtime_import_state()
-        _enable_runtime_extension()
+    preloaded_modules = _runtime_modules_already_loaded()
+    if preloaded_modules:
+        if _RUNTIME_PROVENANCE is None:
+            raise RuntimeError(
+                "BQt runtime modules are already loaded outside the bundled runtime: "
+                + ", ".join(preloaded_modules)
+            )
+        runtime_info = _RUNTIME_PROVENANCE
+    else:
+        runtime_info = _enable_runtime_extension()
         _ensure_runtime_dll_directories()
         _ensure_debug_extension_aliases()
-        _clear_runtime_import_state()
-        bqt, qapplication, import_error = _import_runtime_packages()
-        if bqt is None:
-            error_suffix = f" ({import_error})" if import_error is not None else ""
-            raise RuntimeError(
-                "BQt runtime is not available. Ensure blender_vfx_qt_runtime is "
-                "installed and bundled with the current build."
-                f"{error_suffix}"
-            )
+    bqt, qapplication, import_error = _import_runtime_packages()
+    if bqt is None:
+        error_suffix = f" ({import_error})" if import_error is not None else ""
+        raise RuntimeError(
+            "BQt runtime is not available. Ensure blender_vfx_qt_runtime is "
+            "installed and bundled with the current build."
+            f"{error_suffix}"
+        )
+    _verify_runtime_package_provenance(runtime_info)
+    _RUNTIME_PROVENANCE = runtime_info
 
     try:
         bqt.register()

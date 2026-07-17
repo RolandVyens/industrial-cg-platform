@@ -24,6 +24,10 @@ struct bNode;
 struct bNodeTree;
 struct MaterialGPencilStyle;
 
+namespace bke {
+class MutableAttributeAccessor;
+}
+
 /* -------------------------------------------------------------------- */
 /** \name Module
  * \{ */
@@ -44,7 +48,27 @@ void BKE_object_materials_sync_length(Main *bmain, Object *ob, ID *id);
 void BKE_objects_materials_sync_length_all(Main *bmain, ID *id);
 
 void BKE_object_material_resize(Main *bmain, Object *ob, short totcol, bool do_id_user);
+
+/**
+ * Remap object and object-data material indices.
+ * Objects that don't have materials are skipped.
+ *
+ * \param remap: An array sizes by `ob->totcol`.
+ *
+ * \note Object data may reference materials outside the range of `remap`:
+ * these are left as-is.
+ */
 void BKE_object_material_remap(Object *ob, const unsigned int *remap);
+
+/**
+ * Remap the "material_index" attribute (when present).
+ *
+ * See #BKE_object_material_remap for details.
+ */
+void BKE_material_attr_indices_remap(bke::MutableAttributeAccessor attributes,
+                                     const unsigned int *remap,
+                                     int remap_num);
+
 /**
  * Calculate a material remapping from \a ob_src to \a ob_dst.
  *
@@ -112,6 +136,14 @@ short BKE_object_material_slot_find_index(Object *ob, Material *ma);
 bool BKE_object_material_slot_add(Main *bmain, Object *ob, bool set_active = true);
 bool BKE_object_material_slot_remove(Main *bmain, Object *ob);
 bool BKE_object_material_slot_used(Object *object, short actcol);
+
+/* Ensure the active material index is within the valid range. */
+void BKE_object_material_active_index_sanitize(Object *ob);
+
+/* Remove unused material slots and keep the active material index valid. */
+int BKE_object_material_remove_unused(Main *bmain, Object *ob);
+/* Remove all material slots and keep the active material index valid. */
+int BKE_object_material_remove_all(Main *bmain, Object *ob);
 
 int BKE_object_material_index_get(Object *ob, const Material *ma);
 /**
@@ -211,8 +243,8 @@ void BKE_id_material_eval_ensure_default_slot(ID *id);
 
 /**
  * \param r_col: current value.
- * \param col: new value.
  * \param fac: Zero for is no change.
+ * \param col: new value.
  */
 void ramp_blend(int type, float r_col[4], float fac, const float col[4]);
 

@@ -30,6 +30,10 @@
 #  define early_fragment_tests maybe_unused
 /* Metal specific hints. To be used on entry point functions. */
 #  define metal_max_total_threads_per_threadgroup(count) maybe_unused
+/* Enable shader patching on GL to remap clip range to 0..1. */
+#  define clip_control maybe_unused
+/* Enable texture atomics on older versions of metal. */
+#  define texture_atomic maybe_unused
 
 /* In a compute function, specify an input variable containing the 3-dimensional index of the local
  * work invocation within the work group that the current shader is executing in. */
@@ -80,6 +84,11 @@
 #  define point_coord maybe_unused
 #  define front_facing maybe_unused
 
+/* Fragment shader color input index for subpass input.
+ * `sampler_type` is the type of image to bind to this (e.g. usampler2DArray).
+ * It must be compatible with the frame-buffer attachment type. */
+#  define subpass_input(index, sampler_type) maybe_unused
+
 /* Fragment shader output. */
 #  define frag_color(slot) maybe_unused
 /* Fragment shader output. */
@@ -89,10 +98,13 @@
 #  define frag_stencil_ref maybe_unused
 /* Fragment shader color output index for dual source blending. */
 #  define index(i) maybe_unused
+/* Fragment shader color output index for raster order group on Metal. */
+#  define raster_order_group(i) maybe_unused
 
 /* Graphic pipeline stage in/out. */
 #  define in maybe_unused
 #  define out maybe_unused
+#  define subpass_in maybe_unused
 
 /* Declare a dependency to a legacy create info whose name is the struct member name. */
 #  define legacy_info maybe_unused
@@ -130,4 +142,14 @@
  * IMPORTANT: Will discard any iteration above N.
  */
 #  define unroll_n(N) likely
+#else
+/* This path checks for unused variables. Disable warning about unknown attributes. */
+#  if defined(__GNUC__) || defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wattributes"
+#  elif defined(_MSC_VER)
+#    pragma warning(push)
+#    pragma warning(disable : 5030)
+#    pragma warning(disable : 5222)
+#  endif
 #endif

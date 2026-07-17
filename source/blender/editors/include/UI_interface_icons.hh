@@ -38,8 +38,8 @@ struct IconTextOverlay {
 
 #define ICON_DEFAULT_HEIGHT_TOOLBAR 32
 
-#define ICON_DEFAULT_HEIGHT_SCALE ((int)(UI_UNIT_Y * 0.8f))
-#define ICON_DEFAULT_WIDTH_SCALE ((int)(UI_UNIT_X * 0.8f))
+#define ICON_DEFAULT_HEIGHT_SCALE int(UI_UNIT_Y * 0.8f)
+#define ICON_DEFAULT_WIDTH_SCALE int(UI_UNIT_X * 0.8f)
 
 #define PREVIEW_DEFAULT_HEIGHT 128
 
@@ -101,7 +101,8 @@ void icon_draw_ex(float x,
                   const uchar mono_color[4],
                   bool mono_border,
                   const IconTextOverlay *text_overlay,
-                  const bool inverted = false);
+                  const bool inverted = false,
+                  float scale = 1.0f);
 
 ImBuf *svg_icon_bitmap(uint icon_id, float size, bool multicolor = false);
 

@@ -12,12 +12,16 @@ static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_input<decl::Bool>("Relative"_ustr)
       .default_value(false)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .description(
           "Output the handle positions relative to the corresponding control point "
           "instead of in the local space of the geometry");
-  b.add_output<decl::Vector>("Left"_ustr).field_source_reference_all();
-  b.add_output<decl::Vector>("Right"_ustr).field_source_reference_all();
+  b.add_output<decl::Vector>("Left"_ustr)
+      .structure_type(StructureType::Field)
+      .propagate_references();
+  b.add_output<decl::Vector>("Right"_ustr)
+      .structure_type(StructureType::Field)
+      .propagate_references();
 }
 
 class HandlePositionFieldInput final : public bke::GeometryFieldInput {
@@ -83,19 +87,12 @@ class HandlePositionFieldInput final : public bke::GeometryFieldInput {
     fn(relative_);
   }
 
-  uint64_t hash() const final
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const final
   {
-    return get_default_hash(relative_, left_);
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const final
-  {
-    if (const HandlePositionFieldInput *other_handle =
-            dynamic_cast<const HandlePositionFieldInput *>(&other))
-    {
-      return relative_ == other_handle->relative_ && left_ == other_handle->left_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(deep_hash_cache.ensure(relative_));
+    hash.add(left_);
   }
 
   std::optional<AttrDomain> preferred_domain(
@@ -124,7 +121,7 @@ static void node_register()
   ntype.ui_description = "Retrieve the position of each Bézier control point's handles";
   ntype.enum_name_legacy = "INPUT_CURVE_HANDLES";
   ntype.nclass = NODE_CLASS_INPUT;
-  bke::node_type_size_preset(ntype, bke::eNodeSizePreset::Middle);
+  ntype.default_width = bke::NodeWidth::_160;
   ntype.geometry_node_execute = node_geo_exec;
   ntype.declare = node_declare;
   bke::node_register_type(ntype);

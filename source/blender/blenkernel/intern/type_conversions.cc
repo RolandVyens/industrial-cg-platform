@@ -7,6 +7,7 @@
 #include "FN_multi_function_builder.hh"
 
 #include "BLI_color.hh"
+#include "BLI_cpp_type.hh"
 #include "BLI_math_euler.hh"
 #include "BLI_math_quaternion.hh"
 #include "BLI_math_vector.hh"
@@ -135,6 +136,10 @@ static ColorGeometry4f float2_to_color(const float2 &a)
 static ColorGeometry4b float2_to_byte_color(const float2 &a)
 {
   return color::encode(float2_to_color(a));
+}
+static math::Quaternion float2_to_quaternion(const float2 &a)
+{
+  return math::to_quaternion(math::EulerXYZ(float3(a.x, a.y, 0.0f)));
 }
 
 static bool float3_to_bool(const float3 &a)
@@ -601,6 +606,10 @@ static math::Quaternion float4x4_to_quaternion(const float4x4 &a)
   return math::normalized_to_quaternion_safe(math::normalize(float3x3(a)));
 }
 
+static float2 quaternion_to_float2(const math::Quaternion &a)
+{
+  return float2(math::to_euler(a).xyz().xy());
+}
 static float3 quaternion_to_float3(const math::Quaternion &a)
 {
   return float3(math::to_euler(a).xyz());
@@ -642,6 +651,7 @@ static DataTypeConversions create_implicit_conversions()
   add_implicit_conversion<float2, int8_t, float2_to_int8>(conversions);
   add_implicit_conversion<float2, ColorGeometry4f, float2_to_color>(conversions);
   add_implicit_conversion<float2, ColorGeometry4b, float2_to_byte_color>(conversions);
+  add_implicit_conversion<float2, math::Quaternion, float2_to_quaternion>(conversions);
 
   add_implicit_conversion<float3, bool, float3_to_bool>(conversions);
   add_implicit_conversion<float3, int8_t, float3_to_int8>(conversions);
@@ -767,6 +777,7 @@ static DataTypeConversions create_implicit_conversions()
 
   add_implicit_conversion<float4x4, math::Quaternion, float4x4_to_quaternion>(conversions);
 
+  add_implicit_conversion<math::Quaternion, float2, quaternion_to_float2>(conversions);
   add_implicit_conversion<math::Quaternion, float3, quaternion_to_float3>(conversions);
   add_implicit_conversion<math::Quaternion, float4, quaternion_to_float4>(conversions);
   add_implicit_conversion<math::Quaternion, float4x4, quaternion_to_float4x4>(conversions);
@@ -874,6 +885,23 @@ class GVArray_For_ConvertedGVArray : public GVArrayImpl {
                                      *old_to_new_conversions_.multi_function,
                                      mask,
                                      {this->type(), dst, mask.min_array_size()});
+  }
+
+  void materialize_compressed(const IndexMask &mask,
+                              void *dst,
+                              const bool dst_is_uninitialized) const override
+  {
+    const CPPType &dst_type = this->type();
+    mask.foreach_range([&](const IndexRange range, const int64_t segment_pos) {
+      void *segment_dst = POINTER_OFFSET(dst, dst_type.size * segment_pos);
+      if (!dst_is_uninitialized) {
+        type_->destruct_n(segment_dst, range.size());
+      }
+      call_convert_to_uninitialized_fn(varray_.slice(range),
+                                       *old_to_new_conversions_.multi_function,
+                                       range.index_range(),
+                                       {dst_type, segment_dst, range.size()});
+    });
   }
 };
 

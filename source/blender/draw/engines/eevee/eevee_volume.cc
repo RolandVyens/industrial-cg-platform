@@ -88,7 +88,9 @@ void VolumeModule::world_sync(const WorldHandle &world_handle)
 
 void VolumeModule::object_sync(const ObjectHandle &ob_handle)
 {
-  current_objects_.add(ob_handle.object_key);
+  for (int i : IndexRange(ob_handle.instances_count())) {
+    current_objects_.add(ObjectKey(ob_handle, i));
+  }
 
   if (!use_reprojection_) {
     return;
@@ -108,6 +110,8 @@ bool VolumeModule::will_enable() const
 void VolumeModule::end_sync()
 {
   enabled_ = will_enable();
+  /* Save reset state. */
+  viewport_sampling_is_reset_ = inst_.is_viewport() && inst_.sampling.is_reset();
 
   const Scene *scene_eval = inst_.scene;
 
@@ -279,6 +283,7 @@ void VolumeModule::end_sync()
   scatter_ps_.init();
   scatter_ps_.shader_set(
       inst_.shaders.static_shader_get(use_lights_ ? VOLUME_SCATTER_WITH_LIGHTS : VOLUME_SCATTER));
+  scatter_ps_.bind_resources(inst_.hiz_buffer.front);
   scatter_ps_.bind_resources(inst_.lights);
   scatter_ps_.bind_resources(inst_.sphere_probes);
   scatter_ps_.bind_resources(inst_.volume_probes);
@@ -326,12 +331,8 @@ void VolumeModule::end_sync()
   resolve_ps_.draw_procedural(GPU_PRIM_TRIS, 1, 3);
 }
 
-void VolumeModule::draw_prepass(View &main_view)
+void VolumeModule::set_view(View &main_view)
 {
-  if (!enabled_) {
-    return;
-  }
-
   /* Number of frame to consider for blending with exponential (infinite) average. */
   int exponential_frame_count = 16;
   if (inst_.is_image_render) {
@@ -360,7 +361,7 @@ void VolumeModule::draw_prepass(View &main_view)
      * artifacts on lights because of voxels stretched in Z or anisotropy. */
     exponential_frame_count = 8;
   }
-  else if (inst_.is_viewport() && inst_.sampling.is_reset()) {
+  else if (viewport_sampling_is_reset_) {
     /* If we are not falling in any cases above, this usually means there is a scene or object
      * parameter update. Reset accumulation completely. */
     exponential_frame_count = 0;
@@ -425,13 +426,19 @@ void VolumeModule::draw_prepass(View &main_view)
   /* Compute re-projection matrix. */
   data_.curr_view_to_past_view = history_viewmat_ * main_view.viewinv();
 
-  inst_.uniform_data.push_update();
+  volume_view.sync(main_view.viewmat(), winmat_infinite);
+}
+
+void VolumeModule::draw_prepass(View &main_view)
+{
+  if (!enabled_) {
+    return;
+  }
 
   GPU_debug_group_begin("Volumes");
   occupancy_fb_.bind();
   inst_.pipelines.world_volume.render(main_view);
 
-  volume_view.sync(main_view.viewmat(), winmat_infinite);
   /* TODO(fclem): The infinite projection matrix makes the culling test unreliable (see #115595).
    * We need custom culling for these but that's not implemented yet. */
   volume_view.visibility_test(false);
@@ -455,7 +462,7 @@ void VolumeModule::draw_compute(View &main_view, int2 extent)
     inst_.hiz_buffer.update();
     inst_.volume_probes.set_view(main_view);
     inst_.sphere_probes.set_view(main_view);
-    inst_.shadows.set_view(main_view, extent);
+    inst_.shadows.render(main_view, extent);
   }
 
   scatter_tx_.swap();

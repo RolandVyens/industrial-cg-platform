@@ -1111,6 +1111,8 @@ static void grease_pencil_edit_batch_ensure(Object &object,
               object, info.drawing, info.layer_index, memory);
       const IndexMask nurbs_curves = grease_pencil_get_editable_selected_nurbs_curves(
           object, info.drawing, info.layer_index, memory);
+      const IndexMask selected_editable_fill_strokes = bke::greasepencil::selected_mask_to_fills(
+          selected_editable_strokes, info.drawing.strokes(), bke::AttrDomain::Curve, memory);
 
       index_buf_add_nurbs_lines(
           info.drawing, nurbs_curves, lines_data, &lines_ibo_index, &drawing_line_start_offset);
@@ -1120,7 +1122,7 @@ static void grease_pencil_edit_batch_ensure(Object &object,
                                         &handle_lines_id,
                                         &drawing_start_offset);
       index_buf_add_points(info.drawing,
-                           selected_editable_strokes,
+                           selected_editable_fill_strokes,
                            points_data,
                            &points_ibo_index,
                            &drawing_start_offset);
@@ -1717,10 +1719,10 @@ static void grease_pencil_geom_batch_ensure(Object &object,
       });
     }
     else {
-      visible_strokes.foreach_index([&](const int curve_i, const int pos) {
+      visible_strokes.foreach_index([&](const int curve_i) {
         const IndexRange points = points_by_curve[curve_i];
         const bool is_cyclic = cyclic[curve_i] && (points.size() > 2);
-        const int verts_start_offset = verts_start_offsets[pos];
+        const int verts_start_offset = verts_start_offsets[curve_i];
         const int num_verts = 1 + points.size() + (is_cyclic ? 1 : 0) + 1;
         const IndexRange verts_range = IndexRange(verts_start_offset, num_verts);
 

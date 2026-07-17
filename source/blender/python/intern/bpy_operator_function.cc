@@ -335,7 +335,7 @@ static std::optional<wmOperatorStatus> bpy_op_fn_call_impl(const char *opname,
       error_val = BPy_reports_to_error(reports, PyExc_RuntimeError, false);
 
       /* operator output is nice to have in the terminal/console too */
-      if (!BLI_listbase_is_empty(&reports->list)) {
+      if (!reports->list.is_empty()) {
         /* Restore the print level as this is owned by the operator now. */
         eReportType level = eReportType(reports->printlevel);
         BKE_report_print_level_set(reports, CLG_quiet_get() ? RPT_WARNING : RPT_DEBUG);
@@ -556,7 +556,9 @@ static PyObject *bpy_op_fn_get_bl_options_impl(const char *opname)
 PyDoc_STRVAR(
     /* Wrap. */
     bpy_op_fn_get_bl_options_doc,
-    "Set of option flags for this operator (e.g. 'REGISTER', 'UNDO')");
+    "Set of option flags for this operator (e.g. 'REGISTER', 'UNDO').\n"
+    "\n"
+    ":type: set[str]\n");
 static PyObject *bpy_op_fn_get_bl_options(BPyOpFunction *self, void * /*closure*/)
 {
   return bpy_op_fn_get_bl_options_impl(self->idname);
@@ -658,7 +660,7 @@ static PyObject *bpy_op_fn_idname_py(BPyOpFunction *self, PyObject * /*args*/)
 static PyObject *bpy_op_fn_get_doc_impl(BPyOpFunction *self)
 {
   /* Get operator signature using Blender format idname:
-   * `_op_as_string(self.idname())` where `idname()` returns Blender format). */
+   * `_op_as_string(self.idname())` where `idname()` returns Blender format. */
   PyObject *sig_result = bpy_op_fn_as_string(self);
 
   if (!sig_result) {
@@ -731,7 +733,7 @@ static PyGetSetDef bpy_op_fn_getsetters[] = {
      nullptr,
      bpy_op_fn_get_bl_options_doc,
      nullptr},
-    /* No doc-string, as this is standard part of the Python spec. */
+    /* No docstring, as this is standard part of the Python spec. */
     {"__doc__", reinterpret_cast<getter>(bpy_op_fn_get_doc), nullptr, nullptr, nullptr},
     {nullptr, nullptr, nullptr, nullptr, nullptr}};
 

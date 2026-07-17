@@ -95,6 +95,7 @@ set(SRC_KERNEL_SVM_HEADERS
   svm/radial_tiling.h
   svm/radial_tiling_shared.h
   svm/raycast.h
+  svm/scene_time.h
   svm/sepcomb_color.h
   svm/sepcomb_vector.h
   svm/sky.h
@@ -184,6 +185,7 @@ set(SRC_KERNEL_INTEGRATOR_HEADERS
   integrator/init_from_camera.h
   integrator/intersect_dedicated_light.h
   integrator/intersect_closest.h
+  integrator/intersect_mnee.h
   integrator/intersect_shadow.h
   integrator/intersect_subsurface.h
   integrator/intersect_volume_stack.h
@@ -198,7 +200,9 @@ set(SRC_KERNEL_INTEGRATOR_HEADERS
   integrator/shade_volume.h
   integrator/shade_dedicated_light.h
   integrator/shadow_catcher.h
+  integrator/shadow_color.h
   integrator/shadow_linking.h
+  integrator/shadow_state.h
   integrator/shadow_state_template.h
   integrator/state_flow.h
   integrator/state.h

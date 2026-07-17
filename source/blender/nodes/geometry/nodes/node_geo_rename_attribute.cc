@@ -19,13 +19,13 @@ const EnumPropertyItem rename_mode_items[] = {
     {int(RenameMode::Single),
      "SINGLE",
      0,
-     "Single",
-     "Rename a single attribute with the provided attribute name"},
+     N_("Single"),
+     N_("Rename a single attribute with the provided attribute name")},
     {int(RenameMode::Prefix),
      "PREFIX",
      0,
-     "Prefix",
-     "Rename all attributes with the provided prefix"},
+     N_("Prefix"),
+     N_("Rename all attributes with the provided prefix")},
     {},
 };
 
@@ -35,7 +35,7 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.allow_any_socket_order();
 
   b.add_input<decl::Geometry>("Geometry"_ustr);
-  b.add_output<decl::Geometry>("Geometry"_ustr).align_with_previous().propagate_all();
+  b.add_output<decl::Geometry>("Geometry"_ustr).align_with_previous().propagate_all_geometry();
 
   b.add_input<decl::Menu>("Mode"_ustr).static_items(rename_mode_items).optional_label();
 

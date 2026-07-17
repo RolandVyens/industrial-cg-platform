@@ -170,9 +170,6 @@ static void mix_socket_values_same_type(bke::SocketValueVariant &a,
     if (!a_ptr || !b_ptr) {
       return;
     }
-    if (a_ptr.is_type<std::string>()) {
-      return;
-    }
     if (a_ptr.is_type<bke::GeometrySet>()) {
       mix_geometries(*a_ptr.get<bke::GeometrySet>(), *b_ptr.get<bke::GeometrySet>(), factor);
     }
@@ -191,14 +188,14 @@ static void mix_socket_values_same_type(bke::SocketValueVariant &a,
     }
   }
   else if (a.is_list() && b.is_list()) {
-    nodes::ListPtr a_list_ptr = a.extract<nodes::ListPtr>();
-    const nodes::ListPtr b_list = b.get<nodes::ListPtr>();
+    nodes::GListPtr a_list_ptr = a.extract<nodes::GListPtr>();
+    const nodes::GListPtr b_list = b.get<nodes::GListPtr>();
     if (a_list_ptr->cpp_type() != b_list->cpp_type()) {
       /* Lists with the same socket type can still have different CPPTypes, e.g. for fields and
        * grids and single values. For now just don't try to support those combinations. */
       return;
     }
-    nodes::List &a_list = a_list_ptr.ensure_mutable_inplace();
+    nodes::GList &a_list = a_list_ptr.get_for_write();
     std::variant<GMutableSpan, GMutablePointer> a_values = a_list.values_for_write();
     if (auto *a_span = std::get_if<GMutableSpan>(&a_values)) {
       const GVArray b_varray = b_list->varray();
@@ -219,6 +216,9 @@ void mix_socket_values(bke::SocketValueVariant &a,
                        const bke::SocketValueVariant &b,
                        const float factor)
 {
+  if (a.socket_type() == SOCK_STRING) {
+    return;
+  }
   std::optional<bke::SocketValueVariant> b_converted = nodes::implicitly_convert_socket_value(
       *bke::node_socket_type_find_static(b.socket_type(), 0),
       b,

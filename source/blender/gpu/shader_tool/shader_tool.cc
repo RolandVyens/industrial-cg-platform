@@ -169,7 +169,7 @@ int main(int argc, char **argv)
   std::stringstream buffer;
   buffer << input_file.rdbuf();
 
-  std::string filename(output_file_name);
+  std::string filename(input_file_name);
   const bool is_info = filename.ends_with("infos.hh") || filename.ends_with(".bsl.hh");
 
   using namespace gpu::shader;
@@ -213,7 +213,7 @@ int main(int argc, char **argv)
   size_t last_slash = filename.find_last_of('/');
   std::string name = (last_slash == std::string::npos) ? filename :
                                                          filename.substr(last_slash + 1);
-  std::string metadata_function_name = "metadata_" + name;
+  std::string metadata_function_name = "metadata_" + name + "_tmp";
   std::ranges::replace(metadata_function_name, '.', '_');
 
   metadata_file << metadata.serialize(metadata_function_name);

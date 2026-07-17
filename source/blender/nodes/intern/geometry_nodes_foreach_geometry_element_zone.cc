@@ -331,7 +331,7 @@ class LazyFunctionForForeachGeometryElementZone : public LazyFunction {
     const auto &node_storage = *static_cast<const NodeGeometryForeachGeometryElementOutput *>(
         output_bnode_.storage);
     auto &eval_storage = *static_cast<ForeachGeometryElementEvalStorage *>(context.storage);
-    geo_eval_log::GeoTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
+    eval_log::NodeTreeLogger *tree_logger = local_user_data.try_get_tree_logger(user_data);
 
     if (!eval_storage.graph_executor) {
       /* Create the execution graph in the first evaluation. */
@@ -519,7 +519,7 @@ class LazyFunctionForForeachGeometryElementZone : public LazyFunction {
       component_info.item_input_values.reinitialize(node_storage.input_items.items_num);
       for (const int item_i : IndexRange(node_storage.input_items.items_num)) {
         const NodeForeachGeometryElementInputItem &item = node_storage.input_items.items[item_i];
-        const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+        const eNodeSocketDatatype socket_type = item.socket_type;
         component_info.item_input_values[item_i].reinitialize(mask.size());
         const GVArray &values = component_info.field_evaluator->get_evaluated(item_i);
         mask.foreach_index(
@@ -875,7 +875,7 @@ void LazyFunctionForReduceForeachGeometryElement::handle_main_items_and_geometry
 
   for (const int item_i : IndexRange(node_storage.main_items.items_num)) {
     const NodeForeachGeometryElementMainItem &item = node_storage.main_items.items[item_i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     const CPPType *base_cpp_type = bke::socket_type_to_geo_nodes_base_cpp_type(socket_type);
     if (!base_cpp_type) {
       continue;
@@ -954,7 +954,7 @@ int LazyFunctionForReduceForeachGeometryElement::handle_invalid_generation_items
   for (; item_i < node_storage.generation_items.items_num; item_i++) {
     const NodeForeachGeometryElementGenerationItem &item =
         node_storage.generation_items.items[item_i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     if (socket_type == SOCK_GEOMETRY) {
       break;
     }
@@ -981,7 +981,7 @@ void LazyFunctionForReduceForeachGeometryElement::handle_generation_item_groups(
   {
     const NodeForeachGeometryElementGenerationItem &item =
         node_storage.generation_items.items[item_i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     if (socket_type == SOCK_GEOMETRY) {
       this->handle_generation_items_group(
           params,
@@ -1182,7 +1182,7 @@ void LazyFunctionForReduceForeachGeometryElement::handle_generation_items_group(
     const int item_i = generation_items_range[local_item_i];
     const NodeForeachGeometryElementGenerationItem &item =
         node_storage.generation_items.items[item_i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     const CPPType &base_cpp_type = *bke::socket_type_to_geo_nodes_base_cpp_type(socket_type);
     const StringRef attribute_name = attribute_names[local_item_i];
     auto attribute_field = bke::AttributeFieldInput::from(

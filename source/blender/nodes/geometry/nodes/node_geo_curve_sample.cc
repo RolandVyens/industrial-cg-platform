@@ -31,14 +31,15 @@ static void node_declare(NodeDeclarationBuilder &b)
 
   if (const bNode *node = b.node_or_null()) {
     const NodeGeometryCurveSample &storage = node_storage(*node);
-    b.add_input(eCustomDataType(storage.data_type), "Value"_ustr).hide_value().field_on_all();
+    b.add_input(eCustomDataType(storage.data_type), "Value"_ustr)
+        .hide_value()
+        .evaluated_geometry_field();
   }
 
   auto &factor = b.add_input<decl::Float>("Factor"_ustr)
                      .min(0.0f)
                      .max(1.0f)
                      .subtype(PROP_FACTOR)
-                     .supports_field()
                      .structure_type(StructureType::Dynamic)
                      .make_available([](bNode &node) {
                        node_storage(node).mode = GEO_NODE_CURVE_SAMPLE_FACTOR;
@@ -46,30 +47,38 @@ static void node_declare(NodeDeclarationBuilder &b)
   auto &length = b.add_input<decl::Float>("Length"_ustr)
                      .min(0.0f)
                      .subtype(PROP_DISTANCE)
-                     .supports_field()
                      .structure_type(StructureType::Dynamic)
                      .make_available([](bNode &node) {
                        node_storage(node).mode = GEO_NODE_CURVE_SAMPLE_LENGTH;
                      });
   auto &index = b.add_input<decl::Int>("Curve Index"_ustr)
-                    .supports_field()
                     .structure_type(StructureType::Dynamic)
                     .make_available(
                         [](bNode &node) { node_storage(node).use_all_curves = false; });
 
+  const std::array<int, 3> dynamic_inputs = {factor.index(), length.index(), index.index()};
+
   if (const bNode *node = b.node_or_null()) {
     const NodeGeometryCurveSample &storage = node_storage(*node);
     const GeometryNodeCurveSampleMode mode = GeometryNodeCurveSampleMode(storage.mode);
-    b.add_output(eCustomDataType(storage.data_type), "Value"_ustr).dependent_field({2, 3, 4});
+    b.add_output(eCustomDataType(storage.data_type), "Value"_ustr)
+        .propagate_references(dynamic_inputs)
+        .inferred_structure_type(dynamic_inputs);
 
     factor.available(mode == GEO_NODE_CURVE_SAMPLE_FACTOR);
     length.available(mode == GEO_NODE_CURVE_SAMPLE_LENGTH);
     index.available(!storage.use_all_curves);
   }
 
-  b.add_output<decl::Vector>("Position"_ustr).dependent_field({2, 3, 4});
-  b.add_output<decl::Vector>("Tangent"_ustr).dependent_field({2, 3, 4});
-  b.add_output<decl::Vector>("Normal"_ustr).dependent_field({2, 3, 4});
+  b.add_output<decl::Vector>("Position"_ustr)
+      .propagate_references(dynamic_inputs)
+      .inferred_structure_type(dynamic_inputs);
+  b.add_output<decl::Vector>("Tangent"_ustr)
+      .propagate_references(dynamic_inputs)
+      .inferred_structure_type(dynamic_inputs);
+  b.add_output<decl::Vector>("Normal"_ustr)
+      .propagate_references(dynamic_inputs)
+      .inferred_structure_type(dynamic_inputs);
 }
 
 static void node_layout(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
@@ -96,7 +105,7 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
   search_link_ops_for_declarations(params, declaration.outputs.as_span().take_back(3));
 
   const std::optional<eCustomDataType> type = bke::socket_type_to_custom_data_type(
-      eNodeSocketDatatype(params.other_socket().type));
+      params.other_socket().type);
   if (type && *type != CD_PROP_STRING) {
     /* The input and output sockets have the same name. */
     params.add_item(IFACE_("Value"), [type](LinkSearchOpParams &params) {
@@ -222,15 +231,18 @@ class SampleCurveFunction : public mf::MultiFunction {
 
   mf::Signature signature_;
 
-  std::optional<bke::CurvesFieldContext> source_context_;
-  std::unique_ptr<FieldEvaluator> source_evaluator_;
-  const GVArray *source_data_;
+  mutable CacheMutex mutex_;
+  mutable std::optional<bke::CurvesFieldContext> source_context_;
+  mutable std::unique_ptr<FieldEvaluator> source_evaluator_;
+  mutable const GVArray *source_data_;
 
  public:
   SampleCurveFunction(GeometrySet geometry_set,
                       const GeometryNodeCurveSampleMode length_mode,
-                      const GField &src_field)
-      : geometry_set_(std::move(geometry_set)), src_field_(src_field), length_mode_(length_mode)
+                      GField src_field)
+      : geometry_set_(std::move(geometry_set)),
+        src_field_(std::move(src_field)),
+        length_mode_(length_mode)
   {
     mf::SignatureBuilder builder{"Sample Curve", signature_};
     builder.single_input<int>("Curve Index");
@@ -240,8 +252,6 @@ class SampleCurveFunction : public mf::MultiFunction {
     builder.single_output<float3>("Normal", mf::ParamFlag::SupportsUnusedOutput);
     builder.single_output("Value", src_field_.cpp_type(), mf::ParamFlag::SupportsUnusedOutput);
     this->set_signature(&signature_);
-
-    this->evaluate_source();
   }
 
   void call(const IndexMask &mask, mf::Params params, mf::Context /*context*/) const override
@@ -434,16 +444,27 @@ class SampleCurveFunction : public mf::MultiFunction {
     }
   }
 
- private:
-  void evaluate_source()
+  void prepare_for_execution() const override
   {
-    const Curves &curves_id = *geometry_set_.get_curves();
-    const bke::CurvesGeometry &curves = curves_id.geometry.wrap();
-    source_context_.emplace(bke::CurvesFieldContext{curves_id, AttrDomain::Point});
-    source_evaluator_ = std::make_unique<FieldEvaluator>(*source_context_, curves.points_num());
-    source_evaluator_->add(src_field_);
-    source_evaluator_->evaluate();
-    source_data_ = &source_evaluator_->get_evaluated(0);
+    mutex_.ensure([&]() {
+      const Curves &curves_id = *geometry_set_.get_curves();
+      const bke::CurvesGeometry &curves = curves_id.geometry.wrap();
+      source_context_.emplace(bke::CurvesFieldContext{curves_id, AttrDomain::Point});
+      source_evaluator_ = std::make_unique<FieldEvaluator>(*source_context_, curves.points_num());
+      source_evaluator_->add(src_field_);
+      source_evaluator_->evaluate();
+      source_data_ = &source_evaluator_->get_evaluated(0);
+    });
+  }
+
+  void hash_unique(UniqueHashBytes &hash) const override
+  {
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(geometry_set_.get_curves());
+    hash.add(length_mode_);
+    fn::FieldHashDeep field_hash;
+    hash.add(field_hash.ensure(src_field_));
   }
 };
 

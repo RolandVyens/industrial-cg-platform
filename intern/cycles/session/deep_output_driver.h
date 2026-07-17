@@ -33,6 +33,8 @@ using DeepExrWriteCallback = std::function<bool(
     const std::string &filepath,
     int compression,
     bool use_half_float,
+    float deep_merge_tolerance,
+    float deep_alpha_merge_tolerance,
     bool has_display_window,
     int display_width,
     int display_height,
@@ -126,11 +128,12 @@ class DeepOutputDriver {
                        int tile_offset_x,
                        int tile_offset_y);
 
-  /* Get processed deep data for compositor storage.
+  /* Get unmerged processed deep data for compositor storage.
    * Uses std::vector to match Blender render/imbuf API expectations.
    * Returns a newly allocated vector that becomes owned by the caller.
-   * Must call set_beauty_buffer first for Deep Recolor. */
-  std::vector<std::vector<blender::DeepSample>> *get_processed_deep_data();
+   * Must call set_beauty_buffer first for Deep Recolor. Compositor File Output nodes own their
+   * local merge settings, so scene-output merge thresholds must not be applied here. */
+  std::vector<std::vector<blender::DeepSample>> *get_unmerged_processed_deep_data();
 
   /* Release large temporary host-side caches after final deep output has been written or copied
    * into Blender-owned RenderResult structures. Keeps the driver object and device buffers alive

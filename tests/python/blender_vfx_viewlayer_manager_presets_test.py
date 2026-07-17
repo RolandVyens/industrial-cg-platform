@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import sys
+import tempfile
 import types
 import unittest
 from typing import Any
@@ -18,7 +19,6 @@ _PRESETS_PATH = (
     pathlib.Path(__file__).resolve().parents[2]
     / "release"
     / "extensions"
-    / "system"
     / "system"
     / "blender_vfx_viewlayer_manager"
     / "presets.py"
@@ -40,10 +40,17 @@ def _build_bpy_stub(engine: str = "CYCLES") -> types.ModuleType:
 
 
 def _load_presets_module():
+    package_name = "blender_vfx_viewlayer_manager_presets_test_package"
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(_PRESETS_PATH.parent)]
     previous_bpy = sys.modules.get("bpy")
     try:
         sys.modules["bpy"] = _build_bpy_stub()
-        spec = importlib.util.spec_from_file_location("blender_vfx_viewlayer_manager_presets_under_test", _PRESETS_PATH)
+        sys.modules[package_name] = package
+        spec = importlib.util.spec_from_file_location(
+            f"{package_name}.presets",
+            _PRESETS_PATH,
+        )
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Unable to import presets module from {_PRESETS_PATH}")
         module = importlib.util.module_from_spec(spec)
@@ -54,6 +61,9 @@ def _load_presets_module():
             sys.modules.pop("bpy", None)
         else:
             sys.modules["bpy"] = previous_bpy
+        for loaded_name in tuple(sys.modules):
+            if loaded_name == package_name or loaded_name.startswith(f"{package_name}."):
+                sys.modules.pop(loaded_name, None)
 
 
 presets = _load_presets_module()
@@ -62,6 +72,17 @@ presets = _load_presets_module()
 class _AttrObject:
     def __init__(self, **kwargs: Any):
         self.__dict__.update(kwargs)
+
+
+class _FailOnWriteObject(_AttrObject):
+    def __init__(self, fail_prop: str, **kwargs: Any):
+        self.__dict__["_fail_prop"] = fail_prop
+        super().__init__(**kwargs)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == self.__dict__.get("_fail_prop") and value:
+            raise RuntimeError(f"Refusing write to {name}")
+        super().__setattr__(name, value)
 
 
 def _make_view_layer() -> _AttrObject:
@@ -94,6 +115,58 @@ def _make_view_layer() -> _AttrObject:
 
 
 class PresetsSchemaTests(unittest.TestCase):
+    def test_cycles_apply_updates_visible_cycles_light_pass_settings(self):
+        light_prop = presets.CYCLES_LIGHT_PASS_AOV_PROPS[0]
+        view_layer = _make_view_layer()
+
+        changed = presets.apply_live_pass_state(
+            view_layer,
+            engine=presets.ENGINE_CYCLES,
+            pass_states=(("view_layer", "use_pass_uv", True),),
+            use_lightgroup_light_pass_aovs=True,
+            cycles_light_pass_states=((light_prop, True),),
+        )
+
+        self.assertTrue(changed)
+        self.assertTrue(view_layer.use_pass_uv)
+        self.assertTrue(
+            getattr(view_layer.cycles, presets.CYCLES_LIGHT_PASS_AOV_MASTER_PROP)
+        )
+        self.assertTrue(getattr(view_layer.cycles, light_prop))
+
+    def test_eevee_apply_preserves_hidden_cycles_light_pass_settings(self):
+        view_layer = _make_view_layer()
+        setattr(view_layer.cycles, presets.CYCLES_LIGHT_PASS_AOV_MASTER_PROP, True)
+        expected_cycles_state = {
+            prop_name: bool(index % 2)
+            for index, prop_name in enumerate(presets.CYCLES_LIGHT_PASS_AOV_PROPS)
+        }
+        for prop_name, value in expected_cycles_state.items():
+            setattr(view_layer.cycles, prop_name, value)
+
+        changed = presets.apply_live_pass_state(
+            view_layer,
+            engine=presets.ENGINE_BLENDER_EEVEE,
+            pass_states=(("view_layer", "use_pass_shadow", True),),
+            use_lightgroup_light_pass_aovs=False,
+            cycles_light_pass_states=tuple(
+                (prop_name, not value) for prop_name, value in expected_cycles_state.items()
+            ),
+        )
+
+        self.assertTrue(changed)
+        self.assertTrue(view_layer.use_pass_shadow)
+        self.assertTrue(
+            getattr(view_layer.cycles, presets.CYCLES_LIGHT_PASS_AOV_MASTER_PROP)
+        )
+        self.assertEqual(
+            {
+                prop_name: getattr(view_layer.cycles, prop_name)
+                for prop_name in presets.CYCLES_LIGHT_PASS_AOV_PROPS
+            },
+            expected_cycles_state,
+        )
+
     def test_normalize_legacy_schema_payload_is_backward_compatible(self):
         light_prop = presets.CYCLES_LIGHT_PASS_AOV_PROPS[0]
         legacy_preset = {
@@ -299,6 +372,62 @@ class PresetsSchemaTests(unittest.TestCase):
         self.assertFalse(eevee_view_layer.use_pass_uv)
         self.assertFalse(getattr(eevee_view_layer.cycles, presets.CYCLES_LIGHT_PASS_AOV_MASTER_PROP))
         self.assertFalse(getattr(eevee_view_layer.cycles, current_light_prop))
+
+    def test_save_new_rejects_normalized_filename_collision(self):
+        view_layer = _make_view_layer()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_get_directory = presets.get_preset_directory
+            presets.get_preset_directory = lambda create=False: temp_dir
+            try:
+                filepath = presets.save_pass_preset(
+                    view_layer,
+                    "A B",
+                    overwrite=False,
+                )
+                original_contents = pathlib.Path(filepath).read_text(encoding="utf-8")
+                view_layer.use_deep = True
+
+                with self.assertRaises(FileExistsError):
+                    presets.save_pass_preset(view_layer, "A_B", overwrite=False)
+                self.assertEqual(
+                    pathlib.Path(filepath).read_text(encoding="utf-8"),
+                    original_contents,
+                )
+            finally:
+                presets.get_preset_directory = original_get_directory
+
+    def test_multi_layer_apply_rolls_back_when_later_target_write_fails(self):
+        first_view_layer = _make_view_layer()
+        second_view_layer = _make_view_layer()
+        second_view_layer.eevee = _FailOnWriteObject(
+            "use_pass_transparent",
+            use_pass_volume_direct=False,
+            use_pass_transparent=False,
+        )
+        preset_data = {
+            "schema_version": presets.PRESET_SCHEMA_VERSION,
+            "kind": presets.PRESET_KIND,
+            "name": "AtomicApply",
+            "shared": {"view_layer": {"use_deep": True}},
+            "engines": {
+                presets.ENGINE_BLENDER_EEVEE: {
+                    "view_layer.eevee": {"use_pass_transparent": True},
+                },
+                presets.ENGINE_CYCLES: {},
+            },
+        }
+        presets.bpy.context.scene.render.engine = presets.ENGINE_BLENDER_EEVEE
+
+        with self.assertRaisesRegex(RuntimeError, "Refusing write"):
+            presets.apply_pass_preset_to_view_layers(
+                (first_view_layer, second_view_layer),
+                preset_data,
+            )
+
+        self.assertFalse(first_view_layer.use_deep)
+        self.assertFalse(first_view_layer.eevee.use_pass_transparent)
+        self.assertFalse(second_view_layer.use_deep)
+        self.assertFalse(second_view_layer.eevee.use_pass_transparent)
 
 
 if __name__ == "__main__":

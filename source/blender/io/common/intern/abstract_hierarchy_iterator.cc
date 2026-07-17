@@ -518,7 +518,7 @@ void AbstractHierarchyIterator::context_update_for_graph_index(
 
   /* If the parent type is such that it cannot be exported (at least not currently to USD or
    * Alembic), always check the parent for animation. */
-  const short partype = context->object->partype & PARTYPE;
+  const eObject_Partype partype = context->object->partype & PARTYPE;
   context->animation_check_include_parent |= ELEM(partype, PARBONE, PARVERT1, PARVERT3, PARSKEL);
 
   if (context->export_parent != context->object->parent) {
@@ -771,6 +771,8 @@ void AbstractHierarchyIterator::make_writers_particle_systems(
       case PART_FLUID_SPRAYFOAMBUBBLE:
         writer = ensure_writer(&hair_context, &AbstractHierarchyIterator::create_particle_writer);
         break;
+      default:
+        break;
     }
     if (!writer) {
       continue;
@@ -836,8 +838,8 @@ bool AbstractHierarchyIterator::mark_as_weak_export(const Object * /*object*/) c
 bool AbstractHierarchyIterator::should_visit_dupli_object(const DupliObject *dupli_object) const
 {
   /* Do not visit dupli objects if their `no_draw` flag is set (things like custom bone shapes) or
-   * if they are meta-balls / text objects. */
-  if (dupli_object->no_draw || ELEM(dupli_object->ob->type, OB_MBALL, OB_FONT)) {
+   * if they are meta-balls / text objects / NURBS surfaces. */
+  if (dupli_object->no_draw || ELEM(dupli_object->ob->type, OB_MBALL, OB_FONT, OB_SURF)) {
     return false;
   }
 

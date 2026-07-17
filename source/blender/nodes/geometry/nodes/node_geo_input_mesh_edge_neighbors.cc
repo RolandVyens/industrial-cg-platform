@@ -13,7 +13,7 @@ namespace blender::nodes::node_geo_input_mesh_edge_neighbors_cc {
 static void node_declare(NodeDeclarationBuilder &b)
 {
   b.add_output<decl::Int>("Face Count"_ustr)
-      .field_source()
+      .structure_type(StructureType::Field)
       .description("The number of faces that use each edge as one of their sides");
 }
 
@@ -34,15 +34,10 @@ class EdgeNeighborCountFieldInput final : public bke::MeshFieldInput {
         VArray<int>::from_container(std::move(counts)), AttrDomain::Edge, domain);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    /* Some random constant hash. */
-    return 985671075;
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    return dynamic_cast<const EdgeNeighborCountFieldInput *>(&other) != nullptr;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
   }
 
   std::optional<AttrDomain> preferred_domain(const Mesh & /*mesh*/) const override

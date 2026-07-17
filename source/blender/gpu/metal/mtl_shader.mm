@@ -60,6 +60,25 @@ const char *to_string(ShaderStage stage)
   return "Unknown Shader Stage";
 }
 
+std::string shader_stage_define(const ShaderStage stage)
+{
+  std::string define = "#define ";
+  switch (stage) {
+    case ShaderStage::VERTEX:
+      define += "GPU_VERTEX_SHADER";
+      break;
+    case ShaderStage::FRAGMENT:
+      define += "GPU_FRAGMENT_SHADER";
+      break;
+    case ShaderStage::COMPUTE:
+      define += "GPU_COMPUTE_SHADER";
+      break;
+    default:
+      BLI_assert_unreachable();
+  }
+  return define;
+}
+
 /* -------------------------------------------------------------------- */
 /** \name Creation / Destruction.
  * \{ */
@@ -222,6 +241,8 @@ id<MTLLibrary> MTLShader::create_shader_library(const shader::ShaderCreateInfo &
   std::string shader_compat;
   {
     std::stringstream ss;
+    /* Shader stage needs to be defined before the compat part. */
+    ss << shader_stage_define(stage) << "\n";
     ss << "#define MTL_WORKGROUP_SIZE_X " << info.compute_layout_.local_size_x << "\n";
     ss << "#define MTL_WORKGROUP_SIZE_Y " << info.compute_layout_.local_size_y << "\n";
     ss << "#define MTL_WORKGROUP_SIZE_Z " << info.compute_layout_.local_size_z << "\n";
@@ -642,6 +663,7 @@ MTLRenderPipelineStateInstance *MTLShader::bake_current_pipeline_state(
   MTLRenderPipelineStateDescriptor &pipeline_descriptor = state_manager->get_pipeline_descriptor();
 
   pipeline_descriptor.num_color_attachments = 0;
+  pipeline_descriptor.color_attachment_mask = 0xFFu;
   for (int attachment = 0; attachment < GPU_FB_MAX_COLOR_ATTACHMENT; attachment++) {
     MTLAttachment color_attachment = framebuffer->get_color_attachment(attachment);
 
@@ -660,6 +682,10 @@ MTLRenderPipelineStateInstance *MTLShader::bake_current_pipeline_state(
     }
 
     pipeline_descriptor.num_color_attachments += (color_attachment.used) ? 1 : 0;
+
+    if (color_attachment.ignored) {
+      pipeline_descriptor.color_attachment_mask &= ~(1 << attachment);
+    }
   }
   MTLAttachment depth_attachment = framebuffer->get_depth_attachment();
   MTLAttachment stencil_attachment = framebuffer->get_stencil_attachment();
@@ -882,7 +908,13 @@ MTLRenderPipelineStateInstance *MTLShader::bake_graphic_pipeline_state(
     if (pixel_format != MTLPixelFormatInvalid) {
       bool format_supports_blending = mtl_format_supports_blending(pixel_format);
 
-      col_attachment.writeMask = pipeline_descriptor.color_write_mask;
+      if ((pipeline_descriptor.color_attachment_mask >> color_attachment) & 1) {
+        col_attachment.writeMask = pipeline_descriptor.color_write_mask;
+      }
+      else {
+        /* Attachment was transitioned to ignored. */
+        col_attachment.writeMask = MTLColorWriteMaskNone;
+      }
       col_attachment.blendingEnabled = pipeline_descriptor.blending_enabled &&
                                        format_supports_blending;
       if (format_supports_blending && pipeline_descriptor.blending_enabled) {

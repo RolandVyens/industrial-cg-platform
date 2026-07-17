@@ -53,16 +53,6 @@
 
 namespace blender {
 
-struct NodeInsertOfsData {
-  bNodeTree *ntree;
-  bNode *insert;      /* Inserted node. */
-  bNode *prev, *next; /* Previous/next node in the chain. */
-
-  wmTimer *anim_timer;
-
-  float offset_x; /* Offset to apply to node chain. */
-};
-
 namespace ed::space_node {
 
 static void clear_picking_highlight(ListBaseT<bNodeLink> *links)
@@ -99,6 +89,13 @@ static void pick_link(bNodeLinkDrag &nldrag,
   clear_picking_highlight(&snode.edittree->links);
 
   bNodeLink link = create_drag_link(*link_to_pick.fromnode, *link_to_pick.fromsock);
+
+  bke::node_link_set_mute(*snode.edittree, link, (link_to_pick.flag & NODE_LINK_MUTED));
+
+  /* So we can restore order on cancel. */
+  if (link_to_pick.tosock->is_multi_input()) {
+    link.multi_input_sort_id = link_to_pick.multi_input_sort_id;
+  }
 
   nldrag.links.append(link);
   bke::node_remove_link(snode.edittree, link_to_pick);
@@ -383,7 +380,7 @@ static void snode_autoconnect(bContext &C,
     bNode *node_fr = sorted_nodes[i];
     bNode *node_to = sorted_nodes[i + 1];
     /* Corner case: input/output node aligned the wrong way around (#47729). */
-    if (BLI_listbase_is_empty(&node_to->inputs) || BLI_listbase_is_empty(&node_fr->outputs)) {
+    if (node_to->inputs.is_empty() || node_fr->outputs.is_empty()) {
       std::swap(node_fr, node_to);
     }
 
@@ -528,7 +525,7 @@ static std::string get_viewer_source_name(const bNodeSocket &socket)
     }
     return reroute_input.logically_linked_sockets()[0]->name;
   }
-  return socket.name;
+  return blender::bke::node_socket_label(socket);
 }
 /**
  * Find the socket to link to in a viewer node.
@@ -1372,12 +1369,80 @@ static void add_dragged_links_to_tree(bContext &C, bNodeLinkDrag &nldrag)
 static void node_link_cancel(bContext *C, wmOperator *op)
 {
   SpaceNode *snode = CTX_wm_space_node(C);
+  bNodeTree &ntree = *snode->edittree;
   bNodeLinkDrag *nldrag = static_cast<bNodeLinkDrag *>(op->customdata);
+
+  /* Restore pre-existing links. */
+  for (bNodeLink &link : nldrag->links) {
+    if (nldrag->start_socket->is_output() && nldrag->in_out == SOCK_OUT) {
+      /* Dragged from output socket (to create a new link), nothing to restore. */
+      continue;
+    }
+
+    bNode *fromnode = nullptr, *tonode = nullptr;
+    bNodeSocket *fromsock = nullptr, *tosock = nullptr;
+
+    if (nldrag->start_socket->is_output() && nldrag->in_out == SOCK_IN) {
+      /* Existing, disconnected (from output socket) link, fixed on an input socket. */
+      fromnode = nldrag->start_node;
+      fromsock = nldrag->start_socket;
+      tonode = link.tonode;
+      tosock = link.tosock;
+    }
+    else if (nldrag->start_socket->is_input() && nldrag->in_out == SOCK_OUT) {
+      /* Existing, disconnected (from input socket) link, fixed on an output socket. */
+      fromnode = link.fromnode;
+      fromsock = link.fromsock;
+      tonode = nldrag->start_node;
+      tosock = nldrag->start_socket;
+    }
+
+    if (ELEM(nullptr, fromnode, fromsock, tonode, tosock)) {
+      continue;
+    }
+
+    bNodeLink &link_restored = bke::node_add_link(ntree, *fromnode, *fromsock, *tonode, *tosock);
+
+    bke::node_link_set_mute(ntree, link_restored, (link.flag & NODE_LINK_MUTED));
+
+    if ((tosock->flag & SOCK_MULTI_INPUT)) {
+      ntree.ensure_topology_cache();
+      link_restored.multi_input_sort_id = link.multi_input_sort_id;
+      /* When drag-disconnected from input socket, order from other links will
+       * have changed, so update sort IDs to prevent invalid cases later on. */
+      if (nldrag->start_socket->is_input()) {
+        for (bNodeLink *other_link : tosock->directly_linked_links()) {
+          if (other_link == &link_restored) {
+            continue;
+          }
+          if (other_link->multi_input_sort_id >= link_restored.multi_input_sort_id) {
+            other_link->multi_input_sort_id += 1;
+          }
+        }
+      }
+    }
+
+    if (link_restored.fromnode->typeinfo->insert_link) {
+      bke::NodeInsertLinkParams params{ntree, *link_restored.fromnode, link_restored, C};
+      if (!link_restored.fromnode->typeinfo->insert_link(params)) {
+        bke::node_remove_link(&ntree, link_restored);
+        continue;
+      }
+    }
+    if (link_restored.tonode->typeinfo->insert_link) {
+      bke::NodeInsertLinkParams params{ntree, *link_restored.tonode, link_restored, C};
+      if (!link_restored.tonode->typeinfo->insert_link(params)) {
+        bke::node_remove_link(&ntree, link_restored);
+        continue;
+      }
+    }
+  }
+
   draw_draglink_tooltip_deactivate(*CTX_wm_region(C), *nldrag);
   view2d_edge_pan_cancel(C, &nldrag->pan_data);
   snode->runtime->linkdrag.reset();
   clear_picking_highlight(&snode->edittree->links);
-  BKE_ntree_update_tag_link_removed(snode->edittree);
+  BKE_ntree_update_tag_link_changed(snode->edittree);
   BKE_main_ensure_invariants(*CTX_data_main(C), snode->edittree->id);
 }
 
@@ -2538,14 +2603,10 @@ static bool node_can_be_inserted_on_link(bNodeTree &tree, bNode &node, const bNo
   if (!tree.typeinfo->validate_link) {
     return true;
   }
-  if (!tree.typeinfo->validate_link(eNodeSocketDatatype(link.fromsock->type),
-                                    eNodeSocketDatatype(main_input->type)))
-  {
+  if (!tree.typeinfo->validate_link(link.fromsock->type, main_input->type)) {
     return false;
   }
-  if (!tree.typeinfo->validate_link(eNodeSocketDatatype(main_output->type),
-                                    eNodeSocketDatatype(link.tosock->type)))
-  {
+  if (!tree.typeinfo->validate_link(main_output->type, link.tosock->type)) {
     return false;
   }
   return true;
@@ -2637,11 +2698,9 @@ void node_insert_on_link_flags_set(SpaceNode &snode,
   }
 }
 
-void node_insert_on_frame_flag_set(bContext &C, SpaceNode &snode, const int2 &cursor)
+void node_insert_on_frame_flag_set(SpaceNode &snode, ARegion &region, const int2 &cursor)
 {
   snode.runtime->frame_identifier_to_highlight.reset();
-
-  ARegion &region = *CTX_wm_region(&C);
 
   snode.edittree->ensure_topology_cache();
   const bNode *frame = node_find_frame_to_attach(region, *snode.edittree, cursor);
@@ -2726,14 +2785,12 @@ void node_insert_on_link_flags(Main &bmain, SpaceNode &snode, bool is_new_node)
   if (!node_to_insert->is_reroute()) {
     /* Ignore main sockets when the types don't match. */
     if (best_input != nullptr && ntree.typeinfo->validate_link != nullptr &&
-        !ntree.typeinfo->validate_link(eNodeSocketDatatype(old_link->fromsock->type),
-                                       eNodeSocketDatatype(best_input->type)))
+        !ntree.typeinfo->validate_link(old_link->fromsock->type, best_input->type))
     {
       best_input = nullptr;
     }
     if (best_output != nullptr && ntree.typeinfo->validate_link != nullptr &&
-        !ntree.typeinfo->validate_link(eNodeSocketDatatype(best_output->type),
-                                       eNodeSocketDatatype(old_link->tosock->type)))
+        !ntree.typeinfo->validate_link(best_output->type, old_link->tosock->type))
     {
       best_output = nullptr;
     }
@@ -2744,6 +2801,7 @@ void node_insert_on_link_flags(Main &bmain, SpaceNode &snode, bool is_new_node)
   bNode *to_node = old_link->tonode;
 
   const bool best_input_is_linked = best_input && best_input->is_directly_linked();
+  const bool old_link_muted = old_link->is_muted();
 
   if (best_output != nullptr) {
     /* Relink the "start" of the existing link to the newly inserted node. */
@@ -2759,20 +2817,22 @@ void node_insert_on_link_flags(Main &bmain, SpaceNode &snode, bool is_new_node)
     /* Don't change an existing link. */
     if (!best_input_is_linked) {
       /* Add a new link that connects the node on the left to the newly inserted node. */
-      bke::node_add_link(ntree, *from_node, *from_socket, *node_to_insert, *best_input);
+      bNodeLink &link_from = bke::node_add_link(
+          ntree, *from_node, *from_socket, *node_to_insert, *best_input);
+      bke::node_link_set_mute(ntree, link_from, old_link_muted);
     }
   }
 
   /* Set up insert offset data, it needs stuff from here. */
   if (U.uiflag & USER_NODE_AUTO_OFFSET) {
     BLI_assert(snode.runtime->iofsd == nullptr);
-    NodeInsertOfsData *iofsd = MEM_new_zeroed<NodeInsertOfsData>(__func__);
+    auto iofsd = std::make_unique<NodeInsertOfsData>();
 
     iofsd->insert = node_to_insert;
     iofsd->prev = from_node;
     iofsd->next = to_node;
 
-    snode.runtime->iofsd = iofsd;
+    snode.runtime->iofsd = std::move(iofsd);
   }
 
   BKE_main_ensure_invariants(bmain, ntree.id);
@@ -2786,7 +2846,7 @@ void node_insert_on_link_flags(Main &bmain, SpaceNode &snode, bool is_new_node)
 
 static int get_main_socket_priority(const bNodeSocket *socket)
 {
-  switch (eNodeSocketDatatype(socket->type)) {
+  switch (socket->type) {
     case SOCK_CUSTOM:
       return 0;
     case SOCK_MENU:
@@ -3066,7 +3126,7 @@ static wmOperatorStatus node_insert_offset_modal(bContext *C, wmOperator *op, co
       node->runtime->anim_ofsx = 0.0f;
     }
 
-    MEM_delete(iofsd);
+    delete iofsd;
 
     return (OPERATOR_FINISHED | OPERATOR_PASS_THROUGH);
   }
@@ -3081,9 +3141,8 @@ static wmOperatorStatus node_insert_offset_invoke(bContext *C,
                                                   const wmEvent *event)
 {
   const SpaceNode *snode = CTX_wm_space_node(C);
-  NodeInsertOfsData *iofsd = snode->runtime->iofsd;
-  snode->runtime->iofsd = nullptr;
-  op->customdata = iofsd;
+  NodeInsertOfsData *iofsd = snode->runtime->iofsd.get();
+  op->customdata = snode->runtime->iofsd.release();
 
   if (!iofsd || !iofsd->insert) {
     return OPERATOR_CANCELLED;
@@ -3096,7 +3155,7 @@ static wmOperatorStatus node_insert_offset_invoke(bContext *C,
   const bool offset_applied = node_link_insert_offset_ntree(
       iofsd, CTX_wm_region(C), event->mval, (snode->insert_ofs_dir == SNODE_INSERTOFS_DIR_RIGHT));
   if (!offset_applied) {
-    MEM_delete(iofsd);
+    delete iofsd;
     op->customdata = nullptr;
     return OPERATOR_CANCELLED;
   }

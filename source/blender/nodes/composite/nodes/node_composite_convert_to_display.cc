@@ -80,10 +80,6 @@ static void node_blend_read(bNodeTree & /*tree*/, bNode &node, BlendDataReader &
 
 static void node_draw_buttons(ui::Layout &layout, bContext * /*C*/, PointerRNA *ptr)
 {
-#ifndef WITH_OPENCOLORIO
-  layout.label(RPT_("Disabled, built without OpenColorIO"), ICON_ERROR);
-#endif
-
   PointerRNA display_ptr = RNA_pointer_get(ptr, "display_settings");
   PointerRNA view_ptr = RNA_pointer_get(ptr, "view_settings");
 
@@ -166,7 +162,7 @@ class ConvertToDisplayOperation : public NodeOperation {
       output_image.store_pixel(texel, input_image.load_pixel<Color>(texel));
     });
 
-    color_processor.apply(static_cast<float *>(output_image.cpu_data().data()),
+    color_processor.apply(static_cast<float *>(output_image.cpu_data_for_write().data()),
                           domain.data_size.x,
                           domain.data_size.y,
                           input_image.channels_count(),
@@ -208,13 +204,13 @@ static void node_register()
   ntype.nclass = NODE_CLASS_CONVERTER;
   ntype.declare = node_declare;
   ntype.draw_buttons = node_draw_buttons;
-  bke::node_type_size_preset(ntype, bke::eNodeSizePreset::Middle);
+  ntype.default_width = bke::NodeWidth::_160;
   ntype.initfunc = node_init;
   bke::node_type_storage(ntype, "NodeConvertToDisplay", node_free, node_copy);
   ntype.blend_data_read_storage_content = node_blend_read;
   ntype.blend_write_storage_content = node_blend_write;
   ntype.get_compositor_operation = get_compositor_operation;
-  bke::node_type_size(ntype, 240, 150, NODE_DEFAULT_MAX_WIDTH);
+  ntype.default_width = bke::NodeWidth::_240;
 
   bke::node_register_type(ntype);
 }

@@ -23,6 +23,7 @@
 
 #include "BKE_screen.hh"
 
+#include "BLI_bounds.hh"
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
 #include "BLI_rect.h"
@@ -34,8 +35,10 @@
 #include "UI_abstract_view.hh"
 #include "UI_grid_view.hh"
 #include "UI_tree_view.hh"
+#include "WM_api.hh"
 
 namespace blender::ui {
+#define TREE_VIEW_DRAG_SCROLL_SPEED 0.1
 
 /**
  * Wrapper to store views in a #ListBase, addressable via an identifier.
@@ -194,7 +197,10 @@ void block_views_draw_overlays(const ARegion *region, const Block *block)
   }
 }
 
-AbstractView *region_view_find_at(const ARegion *region, const int xy[2], const int pad)
+AbstractView *region_view_find_at(const ARegion *region,
+                                  const int xy[2],
+                                  const int pad,
+                                  Block **r_block)
 {
   /* NOTE: Similar to #but_find_mouse_over_ex(). */
 
@@ -216,12 +222,70 @@ AbstractView *region_view_find_at(const ARegion *region, const int xy[2], const 
         BLI_rcti_pad(&padded_bounds, pad, pad);
       }
       if (BLI_rcti_isect_pt(&padded_bounds, mx, my)) {
+        if (r_block != nullptr) {
+          *r_block = &block;
+        }
         return view_link.view.get();
       }
     }
   }
 
   return nullptr;
+}
+
+void region_view_scroll_at_borders(bContext *C, wmDropBox &dropbox, const wmEvent *event)
+{
+  Block *block = nullptr;
+  ARegion *region = CTX_wm_region(C);
+  wmWindow *window = CTX_wm_window(C);
+  wmWindowManager *wm = CTX_wm_manager(C);
+  if (!ELEM(event->type, MOUSEMOVE, TIMER)) {
+    return;
+  }
+  AbstractView *view = region_view_find_at(region, event->xy, UI_UNIT_Y, &block);
+  if (view == nullptr) {
+    WM_event_timer_remove(wm, window, dropbox.timer);
+    dropbox.timer = nullptr;
+    return;
+  }
+
+  float x = event->xy[0], y = event->xy[1];
+  window_to_block_fl(region, block, &x, &y);
+
+  const std::optional<rcti> bounds = view->get_bounds();
+  if (!bounds.has_value()) {
+    WM_event_timer_remove(wm, window, dropbox.timer);
+    dropbox.timer = nullptr;
+    return;
+  }
+
+  const float margin = UI_UNIT_Y * 1 / 3;
+  const std::optional<ViewScrollDirection> scroll_dir =
+      [&]() -> std::optional<ViewScrollDirection> {
+    if (y > bounds->ymax - margin) {
+      return ViewScrollDirection::UP;
+    }
+    if (y < bounds->ymin + margin) {
+      return ViewScrollDirection::DOWN;
+    }
+    return std::nullopt;
+  }();
+
+  if (!scroll_dir.has_value()) {
+    WM_event_timer_remove(wm, window, dropbox.timer);
+    dropbox.timer = nullptr;
+    return;
+  }
+
+  if (dropbox.timer) {
+    if (event->type == TIMER) {
+      view->scroll(scroll_dir.value());
+      ED_region_tag_redraw(region);
+    }
+  }
+  else {
+    dropbox.timer = WM_event_timer_add(wm, window, TIMER, TREE_VIEW_DRAG_SCROLL_SPEED);
+  }
 }
 
 AbstractViewItem *region_views_find_item_at(const ARegion &region, const int xy[2])
@@ -234,9 +298,9 @@ AbstractViewItem *region_views_find_item_at(const ARegion &region, const int xy[
   return item_but->view_item;
 }
 
-AbstractViewItem *region_views_find_active_item(const ARegion *region)
+AbstractViewItem *region_views_find_active_item(const ARegion *region, const AbstractView *view)
 {
-  auto *item_but = static_cast<ButtonViewItem *>(view_item_find_active(region));
+  auto *item_but = static_cast<ButtonViewItem *>(view_item_find_active(region, view));
   if (!item_but) {
     return nullptr;
   }
@@ -275,20 +339,27 @@ std::unique_ptr<DropTargetInterface> region_views_find_drop_target_at(const AReg
     }
   }
 
-  if (AbstractView *view = region_view_find_at(region, xy, 0)) {
+  /* To continue scroll during drag when mouse is slightly outside the view, find the view with
+   * extra padding (UI_UNIT_Y). */
+  if (AbstractView *view = region_view_find_at(region, xy, UI_UNIT_Y)) {
     /* If we are above a tree, but not hovering any specific element, dropping something should
-     * insert it after the last item. */
+     * insert it before first or after last visible item depends on the mouse position. */
     if (AbstractTreeView *tree_view = dynamic_cast<AbstractTreeView *>(view)) {
-      /* Find the last item which we want to drop below. */
-      AbstractTreeViewItem *last_item = nullptr;
+      /* Find the first or last item which we want to drop below. */
+      AbstractTreeViewItem *first_or_last_visible = nullptr;
       tree_view->foreach_root_item([&](AbstractTreeViewItem &item) {
         if (!item.is_interactive()) {
           return;
         }
-        last_item = &item;
+        std::optional<rctf> rct = item.get_win_rect(*region);
+        if (rct.has_value()) {
+          if ((!first_or_last_visible && (xy[1] > rct->ymax)) || (xy[1] < rct->ymin)) {
+            first_or_last_visible = &item;
+          }
+        }
       });
-      if (last_item) {
-        return last_item->create_item_drop_target();
+      if (first_or_last_visible) {
+        return first_or_last_visible->create_item_drop_target();
       }
     }
   }

@@ -31,23 +31,25 @@ static void node_declare(NodeDeclarationBuilder &b)
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
     b.add_input(data_type, "Value"_ustr)
-        .supports_field()
+        .structure_type(StructureType::Field)
         .description("The values the mean and median will be calculated from");
   }
 
   b.add_input<decl::Int>("Group ID"_ustr, "Group Index"_ustr)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .hide_value()
       .description("An index used to group values together for multiple separate operations");
 
   if (node != nullptr) {
     const eCustomDataType data_type = eCustomDataType(node->custom1);
     b.add_output(data_type, "Mean"_ustr)
-        .field_source_reference_all()
+        .structure_type(StructureType::Field)
+        .propagate_references()
         .description("The sum of all values in each group divided by the size of said group");
     b.add_output(data_type, "Median"_ustr)
         .translation_context(BLT_I18NCONTEXT_ID_NODETREE)
-        .field_source_reference_all()
+        .structure_type(StructureType::Field)
+        .propagate_references()
         .description(
             "The middle value in each group when all values are sorted from lowest to highest");
   }
@@ -141,7 +143,7 @@ template<typename T> static T calculate_median(MutableSpan<T> values)
     const auto middle_itr = values.begin() + values.size() / 2;
     std::nth_element(values.begin(), middle_itr, values.end());
     if (values.size() % 2 == 0) {
-      const auto left_middle_itr = std::max_element(values.begin(), middle_itr);
+      auto *const left_middle_itr = std::max_element(values.begin(), middle_itr);
       return math::midpoint<T>(*left_middle_itr, *middle_itr);
     }
     return *middle_itr;
@@ -246,19 +248,14 @@ class FieldAverageInput final : public bke::GeometryFieldInput {
     fn(group_index_);
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const override
   {
-    return get_default_hash(input_, group_index_, source_domain_, operation_);
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const FieldAverageInput *other_field = dynamic_cast<const FieldAverageInput *>(&other)) {
-      return input_ == other_field->input_ && group_index_ == other_field->group_index_ &&
-             source_domain_ == other_field->source_domain_ &&
-             operation_ == other_field->operation_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(deep_hash_cache.ensure(input_));
+    hash.add(deep_hash_cache.ensure(group_index_));
+    hash.add(source_domain_);
+    hash.add(operation_);
   }
 
   std::optional<AttrDomain> preferred_domain(

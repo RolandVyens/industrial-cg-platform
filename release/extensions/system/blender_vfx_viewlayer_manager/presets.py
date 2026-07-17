@@ -10,9 +10,11 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import bpy
+
+from .blender_adapter import resolve_target, set_if_changed
 
 
 PRESET_SCHEMA_VERSION = 2
@@ -149,16 +151,6 @@ def _extension_module_ids() -> tuple[str, str]:
     return "system", "blender_vfx_viewlayer_manager"
 
 
-def _resolve_target(view_layer, target_path: str):
-    if target_path == "view_layer":
-        return view_layer
-    if target_path == "view_layer.eevee":
-        return getattr(view_layer, "eevee", None)
-    if target_path == "view_layer.cycles":
-        return getattr(view_layer, "cycles", None)
-    raise KeyError(target_path)
-
-
 def _as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -178,7 +170,7 @@ def _normalize_target_value(prop_name: str, value: Any) -> Any:
 def _collect_target_props(view_layer, target_specs) -> dict[str, dict[str, Any]]:
     engine_data: dict[str, dict[str, Any]] = {}
     for target_path, prop_names in target_specs:
-        owner = _resolve_target(view_layer, target_path)
+        owner = resolve_target(view_layer, target_path)
         if owner is None:
             continue
         prop_data: dict[str, Any] = {}
@@ -189,6 +181,34 @@ def _collect_target_props(view_layer, target_specs) -> dict[str, dict[str, Any]]
         if prop_data:
             engine_data[target_path] = prop_data
     return engine_data
+
+
+def apply_live_pass_state(
+    view_layer,
+    *,
+    engine: str,
+    pass_states: Iterable[tuple[str, str, Any]],
+    use_lightgroup_light_pass_aovs: bool,
+    cycles_light_pass_states: Iterable[tuple[str, Any]],
+) -> bool:
+    changed = False
+    for target_path, prop_name, value in pass_states:
+        owner = resolve_target(view_layer, target_path)
+        changed |= set_if_changed(owner, prop_name, value)
+
+    if engine != ENGINE_CYCLES:
+        return changed
+
+    cycles_owner = getattr(view_layer, "cycles", None)
+    if cycles_owner is not None:
+        changed |= set_if_changed(
+            cycles_owner,
+            CYCLES_LIGHT_PASS_AOV_MASTER_PROP,
+            use_lightgroup_light_pass_aovs,
+        )
+        for prop_name, value in cycles_light_pass_states:
+            changed |= set_if_changed(cycles_owner, prop_name, value)
+    return changed
 
 
 def _normalize_target_props(data: Any, allowed_map: Mapping[str, set[str]]) -> dict[str, dict[str, Any]]:
@@ -447,9 +467,24 @@ def collect_pass_preset(view_layer, *, preset_name: str) -> dict[str, Any]:
     return _normalize_preset_data(raw_data, fallback_name=preset_name)
 
 
-def save_pass_preset(view_layer, preset_name: str) -> str:
+def save_pass_preset(view_layer, preset_name: str, *, overwrite: bool = True) -> str:
     filepath = get_preset_filepath(preset_name, create_dir=True)
     preset_data = collect_pass_preset(view_layer, preset_name=preset_name)
+    if not overwrite:
+        try:
+            with open(filepath, "x", encoding="utf-8") as handle:
+                json.dump(preset_data, handle, indent=2, ensure_ascii=False, sort_keys=True)
+                handle.write("\n")
+        except FileExistsError as ex:
+            raise FileExistsError(
+                f"Preset already exists: {os.path.basename(filepath)}. Use Update to replace it."
+            ) from ex
+        except Exception:
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+            raise
+        return filepath
+
     temporary_path = f"{filepath}.tmp"
     with open(temporary_path, "w", encoding="utf-8") as handle:
         json.dump(preset_data, handle, indent=2, ensure_ascii=False, sort_keys=True)
@@ -475,63 +510,116 @@ def delete_pass_preset(preset_name: str) -> bool:
     return True
 
 
-def apply_pass_preset(view_layer, preset_data: Mapping[str, Any]) -> bool:
+def _build_pass_preset_change_plan(
+    view_layer,
+    normalized: Mapping[str, Any],
+) -> list[tuple[object, str, Any, Any]]:
     if view_layer is None:
         raise ValueError("ViewLayer cannot be None")
 
-    normalized = _normalize_preset_data(preset_data)
-    changed = False
+    changes: list[tuple[object, str, Any, Any]] = []
     engine = getattr(bpy.context.scene.render, "engine", "")
 
-    def _apply_target_block(block_data: Mapping[str, Any]) -> None:
-        nonlocal changed
+    def _plan_target_block(block_data: Mapping[str, Any]) -> None:
         for target_path, target_data in block_data.items():
             if target_path == "cycles_light_pass":
                 continue
-            owner = _resolve_target(view_layer, target_path)
+            owner = resolve_target(view_layer, target_path)
             if owner is None or not isinstance(target_data, Mapping):
                 continue
             for prop_name, value in target_data.items():
                 if not hasattr(owner, prop_name):
                     continue
-                if getattr(owner, prop_name) != value:
-                    setattr(owner, prop_name, value)
-                    changed = True
+                original_value = getattr(owner, prop_name)
+                if original_value != value:
+                    changes.append((owner, prop_name, original_value, value))
 
     shared_block = normalized["shared"]
     engines_block = normalized["engines"]
 
     if engine == ENGINE_BLENDER_EEVEE:
-        _apply_target_block(shared_block)
-        _apply_target_block(engines_block[ENGINE_BLENDER_EEVEE])
-        return changed
+        _plan_target_block(shared_block)
+        _plan_target_block(engines_block[ENGINE_BLENDER_EEVEE])
+        return changes
 
     if engine != ENGINE_CYCLES:
-        return changed
+        return changes
 
-    _apply_target_block(shared_block)
+    _plan_target_block(shared_block)
     cycles_engine_block = engines_block[ENGINE_CYCLES]
-    _apply_target_block(cycles_engine_block)
+    _plan_target_block(cycles_engine_block)
 
     cycles_owner = getattr(view_layer, "cycles", None)
     if cycles_owner is None:
-        return changed
+        return changes
 
     cycles_light_pass = cycles_engine_block["cycles_light_pass"]
     master_value = cycles_light_pass[CYCLES_LIGHT_PASS_AOV_MASTER_PROP]
     if hasattr(cycles_owner, CYCLES_LIGHT_PASS_AOV_MASTER_PROP):
-        if getattr(cycles_owner, CYCLES_LIGHT_PASS_AOV_MASTER_PROP) != master_value:
-            setattr(cycles_owner, CYCLES_LIGHT_PASS_AOV_MASTER_PROP, master_value)
-            changed = True
+        original_value = getattr(cycles_owner, CYCLES_LIGHT_PASS_AOV_MASTER_PROP)
+        if original_value != master_value:
+            changes.append(
+                (
+                    cycles_owner,
+                    CYCLES_LIGHT_PASS_AOV_MASTER_PROP,
+                    original_value,
+                    master_value,
+                )
+            )
 
     for prop_name, value in cycles_light_pass["aovs"].items():
         if not hasattr(cycles_owner, prop_name):
             continue
-        if getattr(cycles_owner, prop_name) != value:
-            setattr(cycles_owner, prop_name, value)
-            changed = True
+        original_value = getattr(cycles_owner, prop_name)
+        if original_value != value:
+            changes.append((cycles_owner, prop_name, original_value, value))
 
-    return changed
+    return changes
+
+
+def _apply_pass_preset_change_plan(changes: Iterable[tuple[object, str, Any, Any]]) -> bool:
+    applied_changes: list[tuple[object, str, Any, Any]] = []
+    try:
+        for change in changes:
+            owner, prop_name, _original_value, value = change
+            applied_changes.append(change)
+            setattr(owner, prop_name, value)
+    except Exception:
+        for owner, prop_name, original_value, _value in reversed(applied_changes):
+            try:
+                setattr(owner, prop_name, original_value)
+            except Exception:
+                pass
+        raise
+    return bool(applied_changes)
+
+
+def apply_pass_preset_to_view_layers(
+    view_layers: Iterable[object],
+    preset_data: Mapping[str, Any],
+) -> bool:
+    normalized = _normalize_preset_data(preset_data)
+    changes: list[tuple[object, str, Any, Any]] = []
+    planned_properties: set[tuple[int, str]] = set()
+    for view_layer in view_layers:
+        if view_layer is None:
+            continue
+        for change in _build_pass_preset_change_plan(view_layer, normalized):
+            owner, prop_name, _original_value, _value = change
+            property_key = (id(owner), prop_name)
+            if property_key in planned_properties:
+                continue
+            planned_properties.add(property_key)
+            changes.append(change)
+
+    return _apply_pass_preset_change_plan(changes)
+
+
+def apply_pass_preset(view_layer, preset_data: Mapping[str, Any]) -> bool:
+    if view_layer is None:
+        raise ValueError("ViewLayer cannot be None")
+
+    return apply_pass_preset_to_view_layers((view_layer,), preset_data)
 
 
 def apply_named_pass_preset(view_layer, preset_name: str) -> bool:
@@ -548,6 +636,7 @@ __all__ = (
     "CYCLES_PASS_TARGET_SPECS",
     "CYCLES_LIGHT_PASS_AOV_MASTER_PROP",
     "CYCLES_LIGHT_PASS_AOV_PROPS",
+    "apply_live_pass_state",
     "normalize_preset_name",
     "get_preset_directory",
     "get_preset_filepath",
@@ -556,6 +645,7 @@ __all__ = (
     "save_pass_preset",
     "load_pass_preset",
     "delete_pass_preset",
+    "apply_pass_preset_to_view_layers",
     "apply_pass_preset",
     "apply_named_pass_preset",
 )

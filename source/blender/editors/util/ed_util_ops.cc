@@ -20,6 +20,7 @@
 #include "BLT_translation.hh"
 
 #include "BKE_context.hh"
+#include "BKE_global.hh"
 #include "BKE_lib_id.hh"
 #include "BKE_lib_override.hh"
 #include "BKE_library.hh"
@@ -256,8 +257,12 @@ static bool lib_id_batch_editing_preview_poll(
 
 static bool lib_id_generate_preview_poll(bContext *C)
 {
+  /* Requires GPU for viewport off-screen drawing. */
+  if (G.background) {
+    return false;
+  }
   return lib_id_batch_editing_preview_poll(C, [](const ID *id, const char **r_disabled_hint) {
-    return ED_preview_id_is_supported(id, r_disabled_hint);
+    return ED_preview_id_render_is_supported(id, r_disabled_hint);
   });
 }
 
@@ -268,7 +273,7 @@ static wmOperatorStatus lib_id_generate_preview_exec(bContext *C, wmOperator * /
   ED_preview_kill_jobs(CTX_wm_manager(C), CTX_data_main(C));
 
   lib_id_batch_edit_previews(C, [&](ID *id) {
-    if (ED_preview_id_is_supported(id, nullptr)) {
+    if (ED_preview_id_render_is_supported(id, nullptr)) {
       PreviewImage *preview = BKE_previewimg_id_get(id);
 
       if (preview) {
@@ -301,6 +306,10 @@ static void ED_OT_lib_id_generate_preview(wmOperatorType *ot)
 
 static bool lib_id_generate_preview_from_object_poll(bContext *C)
 {
+  if (G.background) {
+    /* Unsupported as it requires GPU for off-screen viewport drawing. */
+    return false;
+  }
   /* This already checks if the IDs in context (e.g. selected in the Asset browser) can generate
    * previews... */
   if (!lib_id_batch_editing_preview_poll(C)) {
@@ -314,7 +323,7 @@ static bool lib_id_generate_preview_from_object_poll(bContext *C)
     return false;
   }
   const char *disabled_hint = nullptr;
-  if (!ED_preview_id_is_supported(&object_to_render->id, &disabled_hint)) {
+  if (!ED_preview_id_render_is_supported(&object_to_render->id, &disabled_hint)) {
     CTX_wm_operator_poll_msg_set(C, disabled_hint);
     return false;
   }

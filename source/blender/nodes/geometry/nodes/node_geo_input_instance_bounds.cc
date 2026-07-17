@@ -16,8 +16,8 @@ static void node_declare(NodeDeclarationBuilder &b)
       .description(
           "For curves, point clouds, and Grease Pencil, take the radius attribute into account "
           "when computing the bounds.");
-  b.add_output<decl::Vector>("Min"_ustr).field_source();
-  b.add_output<decl::Vector>("Max"_ustr).field_source();
+  b.add_output<decl::Vector>("Min"_ustr).structure_type(StructureType::Field);
+  b.add_output<decl::Vector>("Max"_ustr).structure_type(StructureType::Field);
 }
 
 class InstanceBoundsField final : public bke::InstancesFieldInput {
@@ -95,17 +95,12 @@ class InstanceBoundsField final : public bke::InstancesFieldInput {
     return VArray<float3>::from_container(std::move(output_bounds));
   }
 
-  uint64_t hash() const override
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep & /*deep_hash_cache*/) const override
   {
-    return get_default_hash(use_radius_, return_max_);
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const override
-  {
-    if (const auto *other_field = dynamic_cast<const InstanceBoundsField *>(&other)) {
-      return use_radius_ == other_field->use_radius_ && return_max_ == other_field->return_max_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(use_radius_);
+    hash.add(return_max_);
   }
 };
 

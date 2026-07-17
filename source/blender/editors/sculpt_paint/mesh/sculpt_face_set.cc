@@ -74,6 +74,25 @@ namespace blender::ed::sculpt_paint::face_set {
 /** \name Public API
  * \{ */
 
+int find_next_available_id(const Mesh &mesh)
+{
+  const bke::AttributeAccessor attributes = mesh.attributes();
+  const VArraySpan<int> face_sets = *attributes.lookup<int>(".sculpt_face_set",
+                                                            bke::AttrDomain::Face);
+  const int max = threading::parallel_reduce(
+      face_sets.index_range(),
+      4096,
+      1,
+      [&](const IndexRange range, int max) {
+        for (const int id : face_sets.slice(range)) {
+          max = std::max(max, id);
+        }
+        return max;
+      },
+      [](const int a, const int b) { return std::max(a, b); });
+  return max + 1;
+}
+
 int find_next_available_id(Object &object)
 {
   SculptSession &ss = *object.runtime->sculpt_session;
@@ -81,21 +100,7 @@ int find_next_available_id(Object &object)
     case bke::pbvh::Type::Mesh:
     case bke::pbvh::Type::Grids: {
       Mesh &mesh = *id_cast<Mesh *>(object.data);
-      const bke::AttributeAccessor attributes = mesh.attributes();
-      const VArraySpan<int> face_sets = *attributes.lookup<int>(".sculpt_face_set",
-                                                                bke::AttrDomain::Face);
-      const int max = threading::parallel_reduce(
-          face_sets.index_range(),
-          4096,
-          1,
-          [&](const IndexRange range, int max) {
-            for (const int id : face_sets.slice(range)) {
-              max = std::max(max, id);
-            }
-            return max;
-          },
-          [](const int a, const int b) { return std::max(a, b); });
-      return max + 1;
+      return find_next_available_id(mesh);
     }
     case bke::pbvh::Type::BMesh: {
       BMesh &bm = *ss.bm;
@@ -143,8 +148,7 @@ int active_update_and_get(bContext *C, Object &ob, const float mval[2])
     return face_set_none_id;
   }
 
-  CursorGeometryInfo gi;
-  if (!cursor_geometry_info_update(C, &gi, mval, false)) {
+  if (!cursor_geometry_info_update(C, mval, false)) {
     return face_set_none_id;
   }
 
@@ -211,6 +215,7 @@ void filter_verts_with_unique_face_sets_mesh(const GroupedSpan<int> vert_to_face
                                              const Span<int> verts,
                                              const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
   for (const int i : verts.index_range()) {
@@ -229,6 +234,7 @@ void filter_verts_with_unique_face_sets_grids(const OffsetIndices<int> faces,
                                               const Span<int> grids,
                                               const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   const CCGKey key = BKE_subdiv_ccg_key_top_level(subdiv_ccg);
   BLI_assert(grids.size() * key.grid_area == factors.size());
 
@@ -261,6 +267,7 @@ void filter_verts_with_unique_face_sets_bmesh(int face_set_offset,
                                               const Set<BMVert *, 0> &verts,
                                               const MutableSpan<float> factors)
 {
+  PRF_scope(ProfileCategory::Editor);
   BLI_assert(verts.size() == factors.size());
 
   int i = 0;
@@ -1114,10 +1121,9 @@ static wmOperatorStatus change_visibility_invoke(bContext *C, wmOperator *op, co
 
   /* Update the active vertex and face set using the cursor position to avoid relying on the paint
    * cursor updates. */
-  CursorGeometryInfo cgi;
   const float mval_fl[2] = {float(event->mval[0]), float(event->mval[1])};
   vert_random_access_ensure(ob);
-  cursor_geometry_info_update(C, &cgi, mval_fl, false);
+  cursor_geometry_info_update(C, mval_fl, false);
 
   const int active_face_set = active_face_set_get(ob);
   RNA_int_set(op->ptr, "active_face_set", active_face_set);
@@ -1592,9 +1598,8 @@ static wmOperatorStatus edit_op_invoke(bContext *C, wmOperator *op, const wmEven
 
   /* Update the current active face set and Vertex as the operator can be used directly from the
    * tool without brush cursor. */
-  CursorGeometryInfo cgi;
   const float mval_fl[2] = {float(event->mval[0]), float(event->mval[1])};
-  if (!cursor_geometry_info_update(C, &cgi, mval_fl, false)) {
+  if (!cursor_geometry_info_update(C, mval_fl, false)) {
     /* The cursor is not over the mesh. Cancel to avoid editing the last updated face set ID. */
     return OPERATOR_CANCELLED;
   }

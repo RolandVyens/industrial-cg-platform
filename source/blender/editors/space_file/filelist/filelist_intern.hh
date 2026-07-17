@@ -17,6 +17,9 @@
 #include "DNA_listBase.h"
 #include "DNA_space_enums.h"
 #include "DNA_space_types.h"
+
+#include "IMB_thumbs.hh"
+
 struct BlendHandle;
 namespace blender {
 
@@ -27,7 +30,6 @@ using FileUID = uint32_t;
 struct AssetLibraryReference;
 struct FileDirEntry;
 struct FileIndexerType;
-struct GHash;
 struct ID;
 struct PreviewImage;
 struct ThreadQueue;
@@ -144,6 +146,7 @@ struct FileListEntryCache {
   /* Previews handling. */
   TaskPool *previews_pool = nullptr;
   ThreadQueue *previews_done = nullptr;
+  ThumbCancellationToken previews_cancel_token;
   /** Counter for previews that are not fully loaded and ready to display yet. So includes all
    * previews either in `previews_pool` or `previews_done`. #filelist_cache_previews_update() makes
    * previews in `preview_done` ready for display, so the counter is decremented there. */
@@ -190,6 +193,7 @@ enum {
   FLF_HIDE_LIB_DIR = 1 << 3,
   FLF_ASSETS_ONLY = 1 << 4,
   FLF_ASSETS_HIDE_ONLINE = 1 << 5,
+  FLF_ASSETS_HIDE_OFFLINE = 1 << 6,
 };
 
 struct FileListReadJob;
@@ -332,6 +336,7 @@ void filelist_set_readjob_library(FileList *filelist);
 void filelist_set_readjob_on_disk_asset_library(FileList *filelist);
 void filelist_set_readjob_remote_asset_library(FileList *filelist);
 void filelist_set_readjob_current_file_asset_library(FileList *filelist);
+void filelist_set_readjob_essentials_asset_library(FileList *filelist);
 void filelist_set_readjob_all_asset_library(FileList *filelist);
 
 }  // namespace blender

@@ -492,17 +492,26 @@ static const MeshAutomaskingSettings *rna_MeshAutomaskingSettings_address_get(co
 
 static std::optional<std::string> rna_MeshAutomaskingSettings_path(const PointerRNA *ptr)
 {
-  const Scene *scene = reinterpret_cast<Scene *>(ptr->owner_id);
-  const ToolSettings *tool_settings = scene ? scene->toolsettings : nullptr;
-  if (tool_settings == nullptr) {
-    return std::nullopt;
+  switch (GS(ptr->owner_id->name)) {
+    case ID_SCE: {
+      const Scene *scene = reinterpret_cast<Scene *>(ptr->owner_id);
+      const ToolSettings *tool_settings = scene ? scene->toolsettings : nullptr;
+      if (tool_settings == nullptr) {
+        return std::nullopt;
+      }
+      if (rna_MeshAutomaskingSettings_address_get(
+              reinterpret_cast<Paint *>(tool_settings->sculpt)) == ptr->data)
+      {
+        return "tool_settings.sculpt.mesh_automasking_settings";
+      }
+      return std::nullopt;
+    }
+    case ID_BR:
+      return "mesh_automasking_settings";
+    default:
+      BLI_assert_unreachable();
+      return std::nullopt;
   }
-  if (rna_MeshAutomaskingSettings_address_get(reinterpret_cast<Paint *>(tool_settings->sculpt)) ==
-      ptr->data)
-  {
-    return "tool_settings.sculpt.mesh_automasking_settings";
-  }
-  return std::nullopt;
 }
 
 static void rna_MeshAutomaskingSettings_invert_cavity_set(PointerRNA *ptr, bool val)
@@ -530,6 +539,25 @@ static void rna_MeshAutomaskingSettings_cavity_set(PointerRNA *ptr, bool val)
   }
   else {
     automasking_settings->flags &= ~BRUSH_AUTOMASKING_CAVITY_NORMAL;
+  }
+}
+
+static void rna_MeshAutomaskingSettings_update(bContext *C, PointerRNA *ptr)
+{
+  const Main *bmain = CTX_data_main(C);
+  Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  Brush *brush = BKE_paint_brush(BKE_paint_get_active(*bmain, scene, view_layer));
+
+  switch (GS(ptr->owner_id->name)) {
+    case ID_BR:
+      WM_main_add_notifier(NC_BRUSH | NA_EDITED, brush);
+      break;
+    case ID_SCE:
+      WM_main_add_notifier(NC_SCENE | ND_TOOLSETTINGS, scene);
+      break;
+    default:
+      BLI_assert_unreachable();
   }
 }
 
@@ -1015,6 +1043,7 @@ static void rna_def_mesh_automasking_settings(BlenderRNA *brna)
   const EnumPropertyItem *entry = rna_enum_shared_automasking_flag_items;
   do {
     prop = RNA_def_property(srna, entry->identifier, PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
     RNA_def_property_boolean_sdna(prop, nullptr, "flags", entry->value);
     RNA_def_property_ui_text(prop, entry->name, entry->description);
 
@@ -1026,10 +1055,11 @@ static void rna_def_mesh_automasking_settings(BlenderRNA *brna)
           prop, nullptr, "rna_MeshAutomaskingSettings_invert_cavity_set");
     }
 
-    RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+    RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
   } while ((++entry)->identifier);
 
   prop = RNA_def_property(srna, "boundary_edges_propagation_steps", PROP_INT, PROP_UNSIGNED);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_int_sdna(prop, nullptr, "boundary_edges_propagation_steps");
   RNA_def_property_range(prop, 1, AUTOMASKING_BOUNDARY_EDGES_MAX_PROPAGATION_STEPS);
   RNA_def_property_ui_range(prop, 1, AUTOMASKING_BOUNDARY_EDGES_MAX_PROPAGATION_STEPS, 1, -1);
@@ -1037,63 +1067,71 @@ static void rna_def_mesh_automasking_settings(BlenderRNA *brna)
                            "Propagation Steps",
                            "Distance where boundary edge automasking is going to protect vertices "
                            "from the fully masked edge");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "cavity_factor", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_float_sdna(prop, nullptr, "cavity_factor");
   RNA_def_property_ui_text(prop, "Cavity Factor", "The contrast of the cavity mask");
   RNA_def_property_float_default(prop, 1.0f);
   RNA_def_property_range(prop, 0.0f, 5.0f);
   RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "cavity_blur_steps", PROP_INT, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_int_sdna(prop, nullptr, "cavity_blur_steps");
   RNA_def_property_ui_text(prop, "Blur Steps", "The number of times the cavity mask is blurred");
   RNA_def_property_int_default(prop, 0);
   RNA_def_property_range(prop, 0, 25);
   RNA_def_property_ui_range(prop, 0, 10, 1, 1);
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "cavity_curve", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_pointer_sdna(prop, nullptr, "cavity_curve");
   RNA_def_property_struct_type(prop, "CurveMapping");
   RNA_def_property_ui_text(prop, "Cavity Curve", "Curve used for the sensitivity");
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "cavity_curve_op", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_pointer_sdna(prop, nullptr, "cavity_curve_op");
   RNA_def_property_struct_type(prop, "CurveMapping");
   RNA_def_property_ui_text(prop, "Cavity Curve", "Curve used for the sensitivity");
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "start_normal_limit", PROP_FLOAT, PROP_ANGLE);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_float_sdna(prop, nullptr, "start_normal_limit");
   RNA_def_property_range(prop, 0.0001f, M_PI);
   RNA_def_property_ui_text(prop, "Area Normal Limit", "The range of angles that will be affected");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "start_normal_falloff", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_float_sdna(prop, nullptr, "start_normal_falloff");
   RNA_def_property_range(prop, 0.0001f, 1.0f);
   RNA_def_property_ui_text(
       prop, "Area Normal Falloff", "Extend the angular range with a falloff gradient");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "view_normal_limit", PROP_FLOAT, PROP_ANGLE);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_float_sdna(prop, nullptr, "view_normal_limit");
   RNA_def_property_range(prop, 0.0001f, M_PI);
   RNA_def_property_ui_text(prop, "View Normal Limit", "The range of angles that will be affected");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 
   prop = RNA_def_property(srna, "view_normal_falloff", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_flag(prop, PROP_CONTEXT_UPDATE);
   RNA_def_property_float_sdna(prop, nullptr, "view_normal_falloff");
   RNA_def_property_range(prop, 0.0001f, 1.0f);
   RNA_def_property_ui_text(
       prop, "View Normal Falloff", "Extend the angular range with a falloff gradient");
-  RNA_def_property_update(prop, NC_SCENE | ND_TOOLSETTINGS, nullptr);
+  RNA_def_property_update(prop, 0, "rna_MeshAutomaskingSettings_update");
 }
 
 static void rna_def_sculpt(BlenderRNA *brna)

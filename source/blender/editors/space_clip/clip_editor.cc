@@ -76,6 +76,14 @@ bool ED_space_clip_view_clip_poll(bContext *C)
 
   return false;
 }
+bool ED_space_clip_view_clip_with_region_poll(bContext *C)
+{
+  const ARegion *region = CTX_wm_region(C);
+  if (!(region && region->regiontype == RGN_TYPE_WINDOW)) {
+    return false;
+  }
+  return ED_space_clip_view_clip_poll(C);
+}
 
 bool ED_space_clip_tracking_poll(bContext *C)
 {
@@ -421,19 +429,19 @@ void ED_clip_select_all(const SpaceClip *sc, int action, bool *r_has_selection)
     if (ED_space_clip_marker_is_visible(sc, tracking_object, &track, marker)) {
       switch (action) {
         case SEL_SELECT:
-          track.flag |= SELECT;
-          track.pat_flag |= SELECT;
-          track.search_flag |= SELECT;
+          track.flag |= TRACK_SELECT;
+          track.pat_flag |= TRACK_SELECT;
+          track.search_flag |= TRACK_SELECT;
           break;
         case SEL_DESELECT:
-          track.flag &= ~SELECT;
-          track.pat_flag &= ~SELECT;
-          track.search_flag &= ~SELECT;
+          track.flag &= ~TRACK_SELECT;
+          track.pat_flag &= ~TRACK_SELECT;
+          track.search_flag &= ~TRACK_SELECT;
           break;
         case SEL_INVERT:
-          track.flag ^= SELECT;
-          track.pat_flag ^= SELECT;
-          track.search_flag ^= SELECT;
+          track.flag ^= TRACK_SELECT;
+          track.pat_flag ^= TRACK_SELECT;
+          track.search_flag ^= TRACK_SELECT;
           break;
       }
     }
@@ -450,13 +458,13 @@ void ED_clip_select_all(const SpaceClip *sc, int action, bool *r_has_selection)
 
     switch (action) {
       case SEL_SELECT:
-        plane_track.flag |= SELECT;
+        plane_track.flag |= PLANE_TRACK_SELECT;
         break;
       case SEL_DESELECT:
-        plane_track.flag &= ~SELECT;
+        plane_track.flag &= ~PLANE_TRACK_SELECT;
         break;
       case SEL_INVERT:
-        plane_track.flag ^= SELECT;
+        plane_track.flag ^= PLANE_TRACK_SELECT;
         break;
     }
     if (plane_track.flag & SELECT) {
@@ -674,12 +682,14 @@ struct PrefetchJob {
   MovieClip *clip_local;
 
   int start_frame, current_frame, end_frame;
-  short render_size, render_flag;
+  eMovieClipProxy_RenderSize render_size;
+  eMovieClipProxy_RenderFlag render_flag;
 };
 
 struct PrefetchQueue {
   int initial_frame, current_frame, start_frame, end_frame;
-  short render_size, render_flag;
+  eMovieClipProxy_RenderSize render_size;
+  eMovieClipProxy_RenderFlag render_flag;
 
   /* If true pre-fetching goes forward in time,
    * otherwise it goes backwards in time (starting from current frame).
@@ -700,8 +710,11 @@ static bool check_prefetch_break()
 }
 
 /* read file for specified frame number to the memory */
-static uchar *prefetch_read_file_to_memory(
-    MovieClip *clip, int current_frame, short render_size, short render_flag, size_t *r_size)
+static uchar *prefetch_read_file_to_memory(MovieClip *clip,
+                                           int current_frame,
+                                           eMovieClipProxy_RenderSize render_size,
+                                           eMovieClipProxy_RenderFlag render_flag,
+                                           size_t *r_size)
 {
   MovieClipUser user = {};
   user.framenr = current_frame;
@@ -745,8 +758,8 @@ static uchar *prefetch_read_file_to_memory(
 static int prefetch_find_uncached_frame(MovieClip *clip,
                                         int from_frame,
                                         int end_frame,
-                                        short render_size,
-                                        short render_flag,
+                                        eMovieClipProxy_RenderSize render_size,
+                                        eMovieClipProxy_RenderFlag render_flag,
                                         short direction)
 {
   int current_frame;
@@ -851,7 +864,8 @@ static void prefetch_task_func(TaskPool *__restrict pool, void *task_data)
   while ((mem = prefetch_thread_next_frame(queue, clip, &size, &current_frame))) {
     ImBuf *ibuf;
     MovieClipUser user = {};
-    int flag = IB_byte_data | IB_multilayer | IB_alphamode_detect | IB_metadata;
+    ImBufFlags flag = ImBufFlags::ByteData | ImBufFlags::MultiLayer | ImBufFlags::AlphaDetect |
+                      ImBufFlags::Metadata;
     int result;
     char *colorspace_name = nullptr;
     const bool use_proxy = (clip->flag & MCLIP_USE_PROXY) &&
@@ -890,8 +904,8 @@ static void start_prefetch_threads(MovieClip *clip,
                                    int start_frame,
                                    int current_frame,
                                    int end_frame,
-                                   short render_size,
-                                   short render_flag,
+                                   eMovieClipProxy_RenderSize render_size,
+                                   eMovieClipProxy_RenderFlag render_flag,
                                    bool *stop,
                                    bool *do_update,
                                    float *progress)
@@ -924,8 +938,8 @@ static void start_prefetch_threads(MovieClip *clip,
 static bool prefetch_movie_frame(MovieClip *clip,
                                  MovieClip *clip_local,
                                  int frame,
-                                 short render_size,
-                                 short render_flag,
+                                 eMovieClipProxy_RenderSize render_size,
+                                 eMovieClipProxy_RenderFlag render_flag,
                                  bool *stop)
 {
   MovieClipUser user = {};
@@ -967,8 +981,8 @@ static void do_prefetch_movie(MovieClip *clip,
                               int start_frame,
                               int current_frame,
                               int end_frame,
-                              short render_size,
-                              short render_flag,
+                              eMovieClipProxy_RenderSize render_size,
+                              eMovieClipProxy_RenderFlag render_flag,
                               bool *stop,
                               bool *do_update,
                               float *progress)

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 #include "usd_writer_light.hh"
 #include "usd_attribute_utils.hh"
+#include "usd_colorspace_utils.hh"
 #include "usd_hierarchy_iterator.hh"
 
 #include <pxr/usd/usdLux/diskLight.h>
@@ -150,9 +151,8 @@ void USDLightWriter::do_write(HierarchyContext &context)
                 pxr::GfVec3f(light->r, light->g, light->b),
                 time,
                 usd_value_writer_);
-  set_attribute(usd_light_api.CreateEnableColorTemperatureAttr(
-                    pxr::VtValue(), (light->mode & LA_USE_TEMPERATURE) != 0),
-                true,
+  set_attribute(usd_light_api.CreateEnableColorTemperatureAttr(pxr::VtValue(), true),
+                (light->mode & LA_USE_TEMPERATURE) != 0,
                 time,
                 usd_value_writer_);
   set_attribute(usd_light_api.CreateColorTemperatureAttr(pxr::VtValue(), true),
@@ -176,6 +176,7 @@ void USDLightWriter::do_write(HierarchyContext &context)
   pxr::UsdPrim prim = usd_light_api.GetPrim();
   add_to_prim_map(prim.GetPath(), &light->id);
   write_id_properties(prim, light->id, time);
+  colorspace_apply_to_prim(prim);
 
   /* Only a subset of light types are "boundable". */
   if (auto boundable = pxr::UsdGeomBoundable(prim)) {

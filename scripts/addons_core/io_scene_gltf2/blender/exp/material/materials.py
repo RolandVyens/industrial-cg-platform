@@ -22,7 +22,9 @@ from .extensions.specular import export_specular
 from .extensions.transmission import export_transmission
 from .extensions.clearcoat import export_clearcoat
 from .extensions.anisotropy import export_anisotropy
+from .extensions.iridescence import export_iridescence
 from .extensions.ior import export_ior
+from .extensions.dispersion import export_dispersion
 from .search_node_tree import \
     has_image_node_from_socket, \
     get_socket_from_gltf_material_node, \
@@ -301,7 +303,6 @@ def __gather_extensions(bmat, emissive_factor, export_settings):
         udim_infos.update(udim_info_clearcoat)
 
     # KHR_materials_transmission
-
     transmission_extension, uvmap_info, udim_info_transmission = export_transmission(bmat, export_settings)
     if transmission_extension:
         extensions["KHR_materials_transmission"] = transmission_extension
@@ -314,7 +315,6 @@ def __gather_extensions(bmat, emissive_factor, export_settings):
         extensions["KHR_materials_emissive_strength"] = emissive_strength_extension
 
     # KHR_materials_volume
-
     volume_extension, uvmap_info, udim_info = export_volume(bmat, export_settings)
     if volume_extension:
         extensions["KHR_materials_volume"] = volume_extension
@@ -342,6 +342,18 @@ def __gather_extensions(bmat, emissive_factor, export_settings):
         uvmap_infos.update(uvmap_info)
         udim_infos.update(udim_info)
 
+    # KHR_materials_iridescence
+    iridescence_extension, uvmap_info, udim_info = export_iridescence(bmat, export_settings)
+    if iridescence_extension:
+        extensions["KHR_materials_iridescence"] = iridescence_extension
+        uvmap_infos.update(uvmap_info)
+        udim_infos.update(udim_info)
+
+    # KHR_materials_dispersion
+    dispersion_extension = export_dispersion(bmat, extensions, export_settings)
+    if dispersion_extension:
+        extensions["KHR_materials_dispersion"] = dispersion_extension
+
     # KHR_materials_ior
     # Keep this extension at the end, because we export it only if some others are exported
     ior_extension = export_ior(bmat, extensions, export_settings)
@@ -363,7 +375,13 @@ def __gather_normal_texture(bmat, export_settings):
             path_['path'] = export_settings['current_texture_transform'][k]['path'].replace(
                 "YYY", "normalTexture/extensions")
             path_['vector_type'] = export_settings['current_texture_transform'][k]['vector_type']
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
     export_settings['current_texture_transform'] = {}
 
@@ -372,7 +390,13 @@ def __gather_normal_texture(bmat, export_settings):
             path_ = {}
             path_['length'] = export_settings['current_normal_scale'][k]['length']
             path_['path'] = export_settings['current_normal_scale'][k]['path'].replace("YYY", "normalTexture")
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
     export_settings['current_normal_scale'] = {}
 
@@ -433,7 +457,13 @@ def __gather_orm_texture(bmat, export_settings):
             path_['path'] = export_settings['current_texture_transform'][k]['path'].replace(
                 "YYY", "occlusionTexture/extensions")
             path_['vector_type'] = export_settings['current_texture_transform'][k]['vector_type']
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
         # This case can't happen because we are going to keep only 1 UVMap
         export_settings['log'].warning("This case should not happen, please report a bug")
@@ -443,7 +473,13 @@ def __gather_orm_texture(bmat, export_settings):
             path_['path'] = export_settings['current_texture_transform'][k]['path'].replace(
                 "YYY", "pbrMetallicRoughness/metallicRoughnessTexture/extensions")
             path_['vector_type'] = export_settings['current_texture_transform'][k]['vector_type']
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
     export_settings['current_texture_transform'] = {}
 
@@ -466,7 +502,13 @@ def __gather_occlusion_texture(bmat, orm_texture, export_settings):
             path_['length'] = export_settings['current_occlusion_strength'][k]['length']
             path_['path'] = export_settings['current_occlusion_strength'][k]['path']
             path_['reverse'] = export_settings['current_occlusion_strength'][k]['reverse']
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
     export_settings['current_occlusion_strength'] = {}
 
@@ -477,7 +519,13 @@ def __gather_occlusion_texture(bmat, orm_texture, export_settings):
             path_['path'] = export_settings['current_texture_transform'][k]['path'].replace(
                 "YYY", "occlusionTexture/extensions")
             path_['vector_type'] = export_settings['current_texture_transform'][k]['vector_type']
-            export_settings['current_paths'][k] = path_
+            if k in export_settings['current_paths']:
+                if 'additional' not in export_settings['current_paths'][k]:
+                    export_settings['current_paths'][k]['additional'] = []
+                if path_['path'] != export_settings['current_paths'][k]['path']:
+                    export_settings['current_paths'][k]['additional'].append(path_['path'])
+            else:
+                export_settings['current_paths'][k] = path_
 
     export_settings['current_texture_transform'] = {}
 
@@ -516,7 +564,7 @@ def __export_unlit(bmat, export_settings):
         alpha_mode=__gather_alpha_mode(alpha_info, export_settings),
         double_sided=__gather_double_sided(bmat, {}, export_settings),
         extensions={"KHR_materials_unlit": Extension("KHR_materials_unlit", {}, required=False)},
-        extras=gather_extras(bmat, export_settings),
+        extras=gather_extras(bmat.material, export_settings),
         name=gather_name(bmat, export_settings),
         emissive_factor=None,
         emissive_texture=None,
@@ -549,16 +597,6 @@ def __export_unlit(bmat, export_settings):
     return material, uvmap_info, vc_info, udim_info
 
 
-def get_render_uvmap_index(blender_mesh):
-    # retrieve render render UVMap
-    active_uvmap_idx = 0
-    for i in range(len(blender_mesh.uv_layers)):
-        if blender_mesh.uv_layers[i].active_render is True:
-            active_uvmap_idx = i
-            break
-    return active_uvmap_idx
-
-
 def get_final_material(mesh, blender_material, attr_indices, base_material, uvmap_info, export_settings):
 
     # First, we need to calculate all index of UVMap
@@ -580,9 +618,9 @@ def get_final_material(mesh, blender_material, attr_indices, base_material, uvma
                 indices[m] = i
             else:
                 # Using render index
-                indices[m] = get_render_uvmap_index(mesh)
+                indices[m] = mesh.uv_layers.active_render_index
         elif v['type'] == 'Render':
-            indices[m] = get_render_uvmap_index(mesh)
+            indices[m] = mesh.uv_layers.active_render_index
         elif v['type'] == "Attribute":
             # This can be a regular UVMap or a custom attribute
             i = mesh.uv_layers.find(v['value'])
@@ -682,6 +720,12 @@ def __get_final_material_with_indices(blender_material, base_material, caching_i
         elif tex == "anisotropyTexture":
             if material.extensions["KHR_materials_anisotropy"].extension['anisotropyTexture']:
                 material.extensions["KHR_materials_anisotropy"].extension['anisotropyTexture'].tex_coord = ind
+        elif tex == "iridescenceTexture":
+            if material.extensions["KHR_materials_iridescence"].extension['iridescenceTexture']:
+                material.extensions["KHR_materials_iridescence"].extension['iridescenceTexture'].tex_coord = ind
+        elif tex == "iridescenceThicknessTexture":
+            if material.extensions["KHR_materials_iridescence"].extension['iridescenceThicknessTexture']:
+                material.extensions["KHR_materials_iridescence"].extension['iridescenceThicknessTexture'].tex_coord = ind
         elif tex.startswith("additional"):
             export_settings['additional_texture_export'][export_settings['additional_texture_export_current_idx']
                                                          [id(blender_material)] + int(tex[10:])].tex_coord = ind
@@ -756,6 +800,8 @@ def get_all_textures(idx=0):
     tab.append("sheenRoughnessTexture")
     tab.append("thicknessTexture")
     tab.append("anisotropyTexture")
+    tab.append("iridescenceTexture")
+    tab.append("iridescenceThicknessTexture")
 
     for i in range(idx):
         tab.append("additional" + str(i))

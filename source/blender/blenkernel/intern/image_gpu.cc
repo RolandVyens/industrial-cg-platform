@@ -149,7 +149,7 @@ static gpu::Texture *gpu_texture_create_tile_array(Image *ima, ImBuf *main_ibuf)
   int arraywidth = 0, arrayheight = 0;
   ListBaseT<FixedSizeBoxPack> boxes = {nullptr};
 
-  int planes = 0;
+  bool all_grayscale = true;
 
   for (ImageTile &tile : ima->tiles) {
     ImageUser iuser;
@@ -177,7 +177,9 @@ static gpu::Texture *gpu_texture_create_tile_array(Image *ima, ImBuf *main_ibuf)
 
       BKE_image_release_ibuf(ima, ibuf, nullptr);
       BLI_addtail(&boxes, packtile);
-      planes = max_ii(planes, ibuf->planes);
+      if (ibuf->color_mode != ImColorMode::BW) {
+        all_grayscale = false;
+      }
     }
   }
 
@@ -205,12 +207,12 @@ static gpu::Texture *gpu_texture_create_tile_array(Image *ima, ImBuf *main_ibuf)
       tile_runtime->tilearray_layer = arraylayers;
     }
 
-    BLI_freelistN(&packed);
+    packed.free_no_destruct();
     arraylayers++;
   }
 
   const bool use_high_bitdepth = (ima->flag & IMA_HIGH_BITDEPTH);
-  const bool use_grayscale = planes <= 8;
+  const bool use_grayscale = all_grayscale;
   /* Create Texture without content. */
   gpu::Texture *tex = IMB_touch_gpu_texture(ima->id.name + 2,
                                             main_ibuf,
@@ -621,8 +623,8 @@ void BKE_image_free_anim_gputextures(Main *bmain)
 
 void BKE_image_free_old_gputextures(Main *bmain)
 {
-  static int lasttime = 0;
-  int ctime = int(BLI_time_now_seconds());
+  static int64_t lasttime = 0;
+  int64_t ctime = BLI_time_now_seconds_i();
 
   /*
    * Run garbage collector once for every collecting period of time
@@ -643,7 +645,7 @@ void BKE_image_free_old_gputextures(Main *bmain)
     if ((ima.flag & IMA_NOCOLLECT) == 0 && ctime - ima.runtime->lastused > U.textimeout) {
       /* If it's in GL memory, deallocate and set time tag to current time
        * This gives textures a "second chance" to be used before dying. */
-      if (BKE_image_has_opengl_texture(&ima)) {
+      if (BKE_image_has_gpu_texture(&ima)) {
         BKE_image_free_gputextures(&ima);
         ima.runtime->lastused = ctime;
       }
@@ -820,12 +822,12 @@ static void gpu_texture_update_from_ibuf(
     if (IMB_colormanagement_space_is_data(ibuf->byte_buffer.colorspace) && !scaled) {
       /* Not scaled Non-color data, just store buffer as is. */
     }
-    else if (IMB_colormanagement_space_is_srgb(ibuf->byte_buffer.colorspace) ||
+    else if (IMB_colormanagement_space_is_scene_linear_srgb(ibuf->byte_buffer.colorspace) ||
              IMB_colormanagement_space_is_scene_linear(ibuf->byte_buffer.colorspace) ||
              IMB_colormanagement_space_is_data(ibuf->byte_buffer.colorspace))
     {
-      /* sRGB or scene linear or scaled down non-color data, store as byte texture that the GPU
-       * can decode directly. */
+      /* scene linear + sRGB transfer function or scene linear or scaled down non-color data,
+       * store as byte texture that the GPU can decode directly. */
       rect = MEM_new_array_uninitialized<uchar>(4 * size_t(w) * size_t(h), __func__);
       if (rect == nullptr) {
         return;
@@ -941,7 +943,7 @@ void BKE_image_update_gputexture_delayed(
 void BKE_image_paint_set_mipmap(Main *bmain, bool mipmap)
 {
   for (Image &ima : bmain->images) {
-    if (BKE_image_has_opengl_texture(&ima)) {
+    if (BKE_image_has_gpu_texture(&ima)) {
       if (ima.runtime->gpuflag & IMA_GPU_MIPMAP_COMPLETE) {
         for (int a = 0; a < TEXTARGET_COUNT; a++) {
           if (ELEM(a, TEXTARGET_2D, TEXTARGET_2D_ARRAY)) {

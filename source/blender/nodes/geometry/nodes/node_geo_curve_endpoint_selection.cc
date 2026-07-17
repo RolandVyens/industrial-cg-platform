@@ -15,15 +15,16 @@ static void node_declare(NodeDeclarationBuilder &b)
   b.add_input<decl::Int>("Start Size"_ustr)
       .min(0)
       .default_value(1)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .description("The amount of points to select from the start of each spline");
   b.add_input<decl::Int>("End Size"_ustr)
       .min(0)
       .default_value(1)
-      .supports_field()
+      .structure_type(StructureType::Field)
       .description("The amount of points to select from the end of each spline");
   b.add_output<decl::Bool>("Selection"_ustr)
-      .field_source_reference_all()
+      .structure_type(StructureType::Field)
+      .propagate_references()
       .description("The selection from the start and end of the splines based on the input sizes");
 }
 
@@ -87,19 +88,12 @@ class EndpointFieldInput final : public bke::GeometryFieldInput {
     fn(end_size_);
   }
 
-  uint64_t hash() const final
+  void hash_unique(UniqueHashBytes &hash, fn::FieldHashDeep &deep_hash_cache) const final
   {
-    return get_default_hash(start_size_, end_size_);
-  }
-
-  bool is_equal_to(const fn::FieldInput &other) const final
-  {
-    if (const EndpointFieldInput *other_endpoint = dynamic_cast<const EndpointFieldInput *>(
-            &other))
-    {
-      return start_size_ == other_endpoint->start_size_ && end_size_ == other_endpoint->end_size_;
-    }
-    return false;
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(deep_hash_cache.ensure(start_size_));
+    hash.add(deep_hash_cache.ensure(end_size_));
   }
 
   std::optional<AttrDomain> preferred_domain(const GeometryComponent & /*component*/) const final

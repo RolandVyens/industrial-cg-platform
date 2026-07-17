@@ -113,6 +113,7 @@ void GRAPH_OT_previewrange_set(wmOperatorType *ot);
 void GRAPH_OT_view_all(wmOperatorType *ot);
 void GRAPH_OT_view_selected(wmOperatorType *ot);
 void GRAPH_OT_view_frame(wmOperatorType *ot);
+void GRAPH_OT_local_view(wmOperatorType *ot);
 
 void GRAPH_OT_click_insert(wmOperatorType *ot);
 void GRAPH_OT_keyframe_insert(wmOperatorType *ot);
@@ -192,6 +193,7 @@ enum eGraphKeys_Mirror_Mode {
 /* ----------- */
 
 void GRAPH_OT_fmodifier_add(wmOperatorType *ot);
+void GRAPH_OT_fmodifier_delete(wmOperatorType *ot);
 void GRAPH_OT_fmodifier_copy(wmOperatorType *ot);
 void GRAPH_OT_fmodifier_paste(wmOperatorType *ot);
 

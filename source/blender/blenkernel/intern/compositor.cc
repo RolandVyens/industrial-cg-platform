@@ -249,6 +249,68 @@ bool node_tree_has_linked_file_output(const bNodeTree *node_tree)
   return false;
 }
 
+bool deep_output_target_from_node(const bNode &node,
+                                  const Scene &default_scene,
+                                  const Scene **r_scene,
+                                  int *r_view_layer_id,
+                                  bool *r_alpha_only)
+{
+  if (r_scene) {
+    *r_scene = nullptr;
+  }
+  if (r_view_layer_id) {
+    *r_view_layer_id = 0;
+  }
+  if (r_alpha_only) {
+    *r_alpha_only = false;
+  }
+
+  const bNodeLink *linked_link = nullptr;
+  int linked_inputs = 0;
+  for (const bNodeSocket &input : node.inputs) {
+    if (StringRef(input.identifier).startswith("__extend__")) {
+      continue;
+    }
+
+    const Span<const bNodeLink *> links = input.directly_linked_links();
+    linked_inputs += links.size();
+    if (linked_inputs > 1) {
+      return false;
+    }
+    if (!links.is_empty()) {
+      linked_link = links.first();
+    }
+  }
+
+  if (linked_inputs != 1 || linked_link == nullptr || linked_link->fromnode == nullptr ||
+      linked_link->fromsock == nullptr || linked_link->fromnode->type_legacy != CMP_NODE_R_LAYERS)
+  {
+    return false;
+  }
+
+  const bNode &render_layers_node = *linked_link->fromnode;
+  const Scene *target_scene = reinterpret_cast<const Scene *>(render_layers_node.id);
+  if (target_scene == nullptr) {
+    target_scene = &default_scene;
+  }
+  if (render_layers_node.custom1 < 0 ||
+      BLI_findlink(&target_scene->view_layers, render_layers_node.custom1) == nullptr)
+  {
+    return false;
+  }
+
+  if (r_scene) {
+    *r_scene = target_scene;
+  }
+  if (r_view_layer_id) {
+    *r_view_layer_id = render_layers_node.custom1;
+  }
+  if (r_alpha_only) {
+    *r_alpha_only = StringRef(linked_link->fromsock->name) == "Alpha";
+  }
+  return true;
+}
+
 void add_depsgraph_relations(Scene &scene, DepsNodeHandle *compositor_output_depsgraph_node)
 {
   nodes::EvalDependencies evaluation_dependencies = nodes::gather_eval_dependencies_recursive(

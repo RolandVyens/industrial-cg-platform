@@ -14,7 +14,7 @@ from .i18n import (
     register_translations,
     unregister_translations,
 )
-from .manager import show_manager
+from .manager import show_manager, shutdown_manager
 from .presets import (
     apply_named_pass_preset,
     apply_pass_preset,
@@ -36,6 +36,7 @@ def register() -> None:
 
 
 def unregister() -> None:
+    shutdown_manager()
     unregister_translations()
     return None
 

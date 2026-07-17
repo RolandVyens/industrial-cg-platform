@@ -11,10 +11,11 @@ set(INC_SYS
 
 set(SRC
   buffers.cpp
+  cache_eviction.cpp
   deep_buffers.cpp
   deep_output_driver.cpp
-  display_driver.cpp
   denoising.cpp
+  display_driver.cpp
   merge.cpp
   session.cpp
   tile.cpp
@@ -22,10 +23,12 @@ set(SRC
 
 set(SRC_HEADERS
   buffers.h
+  cache_eviction.h
   deep_buffers.h
+  deep_camera_sample_set.h
   deep_output_driver.h
-  display_driver.h
   denoising.h
+  display_driver.h
   merge.h
   output_driver.h
   session.h

@@ -65,6 +65,7 @@ set(SRC
   view3d_snap.cc
   view3d_utils.cc
   view3d_view.cc
+  view3d_vr_location_scouting.cc
 
   view3d_intern.hh
   view3d_navigate.hh
@@ -105,9 +106,29 @@ endif()
 
 if(WITH_XR_OPENXR)
   add_definitions(-DWITH_XR_OPENXR)
+
+  list(APPEND INC
+    ../../windowmanager/xr/
+  )
 endif()
 
 blender_add_lib(bf_editor_space_view3d "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 
 # RNA_prototypes.hh
 add_dependencies(bf_editor_space_view3d bf_rna)
+
+if(WITH_GTESTS)
+  set(TEST_SRC
+    view3d_overscan_test.cc
+  )
+  set(TEST_INC
+  )
+  set(TEST_LIB
+  )
+  blender_add_test_suite_lib(editor_space_view3d
+    "${TEST_SRC}"
+    "${INC};${TEST_INC}"
+    "${INC_SYS}"
+    "${LIB};${TEST_LIB}"
+  )
+endif()

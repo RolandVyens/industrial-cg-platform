@@ -39,7 +39,6 @@ namespace blender {
 
 struct BLI_mempool;
 struct BlendThumbnail;
-struct GHash;
 struct ID;
 struct IDNameLib_Map;
 struct ImBuf;
@@ -513,7 +512,17 @@ struct MainMergeReport {
  *
  * Since `bmain_src` is either empty or contains left-over IDs with (likely) invalid ID
  * relationships and other potential issues after the merge, it is always freed.
+ *
+ * \param force_merge_src_ids: If not null, a set of source IDs that should always be merged, even
+ * if a matching destination ID could be found. Typically used to ensure that 'container IDs' for
+ * complex copy/paste of ID sub-data (nodes, sequencer strips...) are always merged in destination
+ * main, even if another ID with the same exact name already exists there.
  */
+void BKE_main_merge(Main *bmain_dst,
+                    Set<ID *> *force_merge_src_ids,
+                    Main **r_bmain_src,
+                    MainMergeReport &reports);
+/** Simpler overload of the other #BKE_main_merge. */
 void BKE_main_merge(Main *bmain_dst, Main **r_bmain_src, MainMergeReport &reports);
 
 /**
@@ -883,7 +892,7 @@ class MainAllIDsIterator {
 #define BLEN_THUMB_SIZE 128
 
 #define BLEN_THUMB_MEMSIZE(_x, _y) \
-  (sizeof(BlendThumbnail) + ((size_t)(_x) * (size_t)(_y)) * sizeof(int))
+  (sizeof(BlendThumbnail) + (size_t(_x) * size_t(_y)) * sizeof(int))
 /** Protect against buffer overflow vulnerability & negative sizes. */
 #define BLEN_THUMB_MEMSIZE_IS_VALID(_x, _y) \
   (((_x) > 0 && (_y) > 0) && ((uint64_t)(_x) * (uint64_t)(_y) < (SIZE_MAX / (sizeof(int) * 4))))

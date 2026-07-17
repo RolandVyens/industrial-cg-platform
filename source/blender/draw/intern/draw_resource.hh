@@ -120,7 +120,7 @@ inline void ObjectInfos::sync(const draw::ObjectRef ref,
     shadow_terminator_normal_offset = 0.0f;
   }
 
-  random = ref.random();
+  random = ref.random(0);
 
   if (ref.object->data == nullptr) {
     orco_add = float3(0.0f);

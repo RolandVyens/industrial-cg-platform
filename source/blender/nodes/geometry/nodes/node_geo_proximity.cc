@@ -29,20 +29,27 @@ static void node_declare(NodeDeclarationBuilder &b)
       .description("Geometry to find the closest point on");
   b.add_input<decl::Int>("Group ID"_ustr)
       .hide_value()
-      .field_on_all()
+      .evaluated_geometry_field()
       .description(
           "Splits the elements of the input geometry into groups which can be sampled "
           "individually");
-  b.add_input<decl::Vector>("Sample Position"_ustr, "Source Position"_ustr)
-      .implicit_field(NODE_DEFAULT_INPUT_POSITION_FIELD);
-  b.add_input<decl::Int>("Sample Group ID"_ustr)
-      .hide_value()
-      .supports_field()
-      .structure_type(StructureType::Dynamic);
-  b.add_output<decl::Vector>("Position"_ustr).dependent_field({2, 3}).reference_pass_all();
-  b.add_output<decl::Float>("Distance"_ustr).dependent_field({2, 3}).reference_pass_all();
+  auto &sample_position = b.add_input<decl::Vector>("Sample Position"_ustr, "Source Position"_ustr)
+                              .default_input_type(NODE_DEFAULT_INPUT_POSITION_FIELD)
+                              .structure_type(StructureType::Dynamic);
+  auto &sample_group_id = b.add_input<decl::Int>("Sample Group ID"_ustr)
+                              .hide_value()
+                              .structure_type(StructureType::Dynamic);
+
+  const std::array<int, 2> dynamic_inputs = {sample_position.index(), sample_group_id.index()};
+  b.add_output<decl::Vector>("Position"_ustr)
+      .inferred_structure_type(dynamic_inputs)
+      .propagate_references(dynamic_inputs);
+  b.add_output<decl::Float>("Distance"_ustr)
+      .inferred_structure_type(dynamic_inputs)
+      .propagate_references(dynamic_inputs);
   b.add_output<decl::Bool>("Is Valid"_ustr)
-      .dependent_field({2, 3})
+      .inferred_structure_type(dynamic_inputs)
+      .propagate_references(dynamic_inputs)
       .description(
           "Whether the sampling was successful. It can fail when the sampled group is empty");
 }
@@ -67,15 +74,18 @@ class ProximityFunction : public mf::MultiFunction {
   };
 
   GeometrySet target_;
+  Field<int> group_id_field_;
   GeometryNodeProximityTargetType type_;
-  Vector<BVHTrees> bvh_trees_;
-  VectorSet<int> group_indices_;
+
+  mutable CacheMutex mutex_;
+  mutable Vector<BVHTrees> bvh_trees_;
+  mutable VectorSet<int> group_indices_;
 
  public:
   ProximityFunction(GeometrySet target,
                     GeometryNodeProximityTargetType type,
                     const Field<int> &group_id_field)
-      : target_(std::move(target)), type_(type)
+      : target_(std::move(target)), group_id_field_(std::move(group_id_field)), type_(type)
   {
     static const mf::Signature signature = []() {
       mf::Signature signature;
@@ -88,20 +98,11 @@ class ProximityFunction : public mf::MultiFunction {
       return signature;
     }();
     this->set_signature(&signature);
-
-    if (target_.has_pointcloud() && type_ == GEO_NODE_PROX_TARGET_POINTS) {
-      const PointCloud &pointcloud = *target_.get_pointcloud();
-      this->init_for_pointcloud(pointcloud, group_id_field);
-    }
-    if (target_.has_mesh()) {
-      const Mesh &mesh = *target_.get_mesh();
-      this->init_for_mesh(mesh, group_id_field);
-    }
   }
 
   ~ProximityFunction() override = default;
 
-  void init_for_pointcloud(const PointCloud &pointcloud, const Field<int> &group_id_field)
+  void init_for_pointcloud(const PointCloud &pointcloud, const Field<int> &group_id_field) const
   {
     /* Compute group ids. */
     bke::PointCloudFieldContext field_context{pointcloud};
@@ -133,7 +134,7 @@ class ProximityFunction : public mf::MultiFunction {
             [&](const int group_i) { return group_masks[group_i].size(); }, pointcloud.totpoint));
   }
 
-  void init_for_mesh(const Mesh &mesh, const Field<int> &group_id_field)
+  void init_for_mesh(const Mesh &mesh, const Field<int> &group_id_field) const
   {
     /* Compute group ids. */
     const bke::AttrDomain domain = this->get_domain_on_mesh();
@@ -256,6 +257,30 @@ class ProximityFunction : public mf::MultiFunction {
     ExecutionHints hints;
     hints.min_grain_size = 512;
     return hints;
+  }
+
+  void hash_unique(UniqueHashBytes &hash) const override
+  {
+    static constexpr int8_t id = 0;
+    hash.add(&id);
+    hash.add(target_.get_mesh());
+    hash.add(type_);
+    fn::FieldHashDeep field_hash;
+    hash.add(field_hash.ensure(group_id_field_));
+  }
+
+  void prepare_for_execution() const override
+  {
+    mutex_.ensure([&]() {
+      if (target_.has_pointcloud() && type_ == GEO_NODE_PROX_TARGET_POINTS) {
+        const PointCloud &pointcloud = *target_.get_pointcloud();
+        this->init_for_pointcloud(pointcloud, group_id_field_);
+      }
+      if (target_.has_mesh()) {
+        const Mesh &mesh = *target_.get_mesh();
+        this->init_for_mesh(mesh, group_id_field_);
+      }
+    });
   }
 };
 

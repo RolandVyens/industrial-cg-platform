@@ -627,7 +627,7 @@ wmOperatorStatus join_objects_exec(bContext *C, wmOperator *op)
                                        face_ranges.total_size(),
                                        corner_ranges.total_size());
   BKE_mesh_copy_parameters_for_eval(dst_mesh, active_mesh);
-  BLI_freelistN(&dst_mesh->vertex_group_names);
+  dst_mesh->vertex_group_names.free_no_destruct();
   MEM_SAFE_DELETE(dst_mesh->mat);
   dst_mesh->totcol = 0;
 
@@ -705,6 +705,14 @@ wmOperatorStatus join_objects_exec(bContext *C, wmOperator *op)
 
   /* Copy multires data to the out-of-main mesh. */
   if (get_multires_modifier(scene, active_object, true)) {
+    for (const int i : objects_to_join.index_range().drop_front(1)) {
+      Object &src_object = *objects_to_join[i];
+      multiresModifier_prepare_join(depsgraph, scene, &src_object, active_object);
+      if (MultiresModifierData *mmd = get_multires_modifier(scene, &src_object, true)) {
+        object::iter_other(
+            bmain, &src_object, true, object::multires_update_totlevels, &mmd->totlvl);
+      }
+    }
     if (std::any_of(objects_to_join.begin(), objects_to_join.end(), [](const Object *object) {
           const Mesh &src_mesh = *id_cast<const Mesh *>(object->data);
           return CustomData_has_layer(&src_mesh.corner_data, CD_MDISPS);
@@ -734,14 +742,6 @@ wmOperatorStatus join_objects_exec(bContext *C, wmOperator *op)
               CD_GRID_PAINT_MASK, src, &dst[corner_ranges[i].first()], src_mesh.corners_num);
         }
       }
-    }
-  }
-  for (const int i : objects_to_join.index_range().drop_front(1)) {
-    Object &src_object = *objects_to_join[i];
-    multiresModifier_prepare_join(depsgraph, scene, &src_object, active_object);
-    if (MultiresModifierData *mmd = get_multires_modifier(scene, &src_object, true)) {
-      object::iter_other(
-          bmain, &src_object, true, object::multires_update_totlevels, &mmd->totlvl);
     }
   }
 

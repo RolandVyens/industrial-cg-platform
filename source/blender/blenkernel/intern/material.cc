@@ -45,6 +45,7 @@
 
 #include "BKE_anim_data.hh"
 #include "BKE_attribute.h"
+#include "BKE_attribute.hh"
 #include "BKE_brush.hh"
 #include "BKE_curve.hh"
 #include "BKE_curves.hh"
@@ -64,6 +65,7 @@
 #include "BKE_node_runtime.hh"
 #include "BKE_object.hh"
 #include "BKE_object_types.hh"
+#include "BKE_pointcloud.hh"
 #include "BKE_preview_image.hh"
 #include "BKE_scene.hh"
 #include "BKE_vfont.hh"
@@ -139,7 +141,7 @@ static void material_copy_data(Main *bmain,
         MEM_dupalloc(material_src->gp_style));
   }
 
-  BLI_listbase_clear(&material_dst->gpumaterial);
+  material_dst->gpumaterial.clear_no_delete();
 
   /* TODO: Duplicate Engine Settings and set runtime to nullptr. */
 }
@@ -205,7 +207,7 @@ static void material_blend_write(BlendWriter *writer, ID *id, const void *id_add
 
   /* Clean up, important in undo case to reduce false detection of changed datablocks. */
   ma->texpaintslot = nullptr;
-  BLI_listbase_clear(&ma->gpumaterial);
+  ma->gpumaterial.clear_no_delete();
 
   /* Set deprecated #use_nodes for forward compatibility. */
   ma->use_nodes = true;
@@ -239,7 +241,7 @@ static void material_blend_read_data(BlendDataReader *reader, ID *id)
   BLO_read_struct(reader, PreviewImage, &ma->preview);
   BKE_previewimg_blend_read(reader, ma->preview);
 
-  BLI_listbase_clear(&ma->gpumaterial);
+  ma->gpumaterial.clear_no_delete();
 
   BLO_read_struct(reader, MaterialGPencilStyle, &ma->gp_style);
 }
@@ -293,6 +295,13 @@ void BKE_gpencil_material_attr_init(Material *ma)
     gp_style->placement_count = 1;
     gp_style->placement_density = 10.0f;
     gp_style->placement_radius_spacing = 100.0f;
+    gp_style->random_size_factor = 0.0f;
+    gp_style->random_strength_factor = 0.0f;
+    gp_style->random_rotation_factor = 0.0f;
+    gp_style->random_hue_factor = 0.0f;
+    gp_style->random_saturation_factor = 0.0f;
+    gp_style->random_value_factor = 0.0f;
+    gp_style->random_noise_scale = 1.0f;
   }
 }
 
@@ -977,12 +986,10 @@ MaterialGPencilStyle *BKE_gpencil_material_settings(Object *ob, short act)
  * When materials are assigned, the active material must be in the range of `1..totcol`.
  * see #139182 for details.
  */
-static void object_material_active_index_sanitize(Object *ob)
+void BKE_object_material_active_index_sanitize(Object *ob)
 {
-  if (ob->totcol && ob->actcol == 0) {
-    ob->actcol = 1;
-  }
-  ob->actcol = std::min(ob->actcol, ob->totcol);
+  const int min_index = (ob->totcol) ? 1 : 0;
+  ob->actcol = std::clamp(ob->actcol, min_index, ob->totcol);
 }
 
 void BKE_object_material_resize(Main *bmain, Object *ob, const short totcol, bool do_id_user)
@@ -1047,7 +1054,7 @@ void BKE_object_materials_sync_length(Main *bmain, Object *ob, ID *id)
   else {
     /* Normal case: the use the obdata amount of materials slots to update the object's one. */
     BKE_object_material_resize(bmain, ob, *totcol, false);
-    object_material_active_index_sanitize(ob);
+    BKE_object_material_active_index_sanitize(ob);
   }
 }
 
@@ -1067,7 +1074,7 @@ void BKE_objects_materials_sync_length_all(Main *bmain, ID *id)
   {
     if (ob->data == id) {
       BKE_object_material_resize(bmain, ob, *totcol, false);
-      object_material_active_index_sanitize(ob);
+      BKE_object_material_active_index_sanitize(ob);
       processed_objects++;
       BLI_assert(processed_objects <= id->us && processed_objects > 0);
       if (processed_objects == id->us) {
@@ -1233,6 +1240,26 @@ void BKE_object_material_assign_single_obdata(Main *bmain, Object *ob, Material 
   object_material_assign(bmain, ob, ma, act, BKE_MAT_ASSIGN_OBDATA, false);
 }
 
+void BKE_material_attr_indices_remap(bke::MutableAttributeAccessor attributes,
+                                     const uint *remap,
+                                     const int remap_num)
+{
+  /* The "material_index" attribute may contain values outside the valid material range
+   * (it's only clamped on read), so skip indices that don't map into the material array. */
+  bke::SpanAttributeWriter<int> material_indices = attributes.lookup_for_write_span<int>(
+      "material_index");
+  if (!material_indices) {
+    return;
+  }
+  for (const int i : material_indices.span.index_range()) {
+    const int index = material_indices.span[i];
+    if (IndexRange(remap_num).contains(index)) {
+      material_indices.span[i] = remap[index];
+    }
+  }
+  material_indices.finish();
+}
+
 void BKE_object_material_remap(Object *ob, const uint *remap)
 {
   Material ***matar = BKE_object_material_array_p(ob);
@@ -1256,6 +1283,20 @@ void BKE_object_material_remap(Object *ob, const uint *remap)
   }
   else if (ob->type == OB_GREASE_PENCIL) {
     BKE_grease_pencil_material_remap(id_cast<GreasePencil *>(ob->data), remap, ob->totcol);
+  }
+  else if (ob->type == OB_CURVES) {
+    BKE_curves_material_remap(id_cast<Curves *>(ob->data), remap, ob->totcol);
+  }
+  else if (ob->type == OB_POINTCLOUD) {
+    BKE_pointcloud_material_remap(id_cast<PointCloud *>(ob->data), remap, ob->totcol);
+  }
+  else if (ob->type == OB_VOLUME) {
+    /* Material support doesn't store "indices".
+     * The way "baked" materials are stored means they store ID's and don't need remapping. */
+  }
+  else if (ob->type == OB_MBALL) {
+    /* While meta-balls have a material array, they only use the first material slot
+     * (no support for mixing materials). */
   }
   else {
     /* add support for this object data! */
@@ -1444,7 +1485,7 @@ bool BKE_object_material_slot_remove(Main *bmain, Object *ob)
   }
 
   /* can happen on face selection in editmode */
-  object_material_active_index_sanitize(ob);
+  BKE_object_material_active_index_sanitize(ob);
 
   /* we delete the actcol */
   mao = (*matarar)[ob->actcol - 1];
@@ -1483,7 +1524,7 @@ bool BKE_object_material_slot_remove(Main *bmain, Object *ob)
         obt->matbits[a - 1] = obt->matbits[a];
       }
       obt->totcol--;
-      object_material_active_index_sanitize(ob);
+      BKE_object_material_active_index_sanitize(ob);
 
       if (obt->totcol == 0) {
         MEM_delete(obt->mat);
@@ -1503,6 +1544,59 @@ bool BKE_object_material_slot_remove(Main *bmain, Object *ob)
   }
 
   return true;
+}
+
+int BKE_object_material_remove_unused(Main *bmain, Object *ob)
+{
+  int actcol = ob->actcol;
+  int removed = 0;
+
+  for (int slot = 1; slot <= ob->totcol; slot++) {
+    while (slot <= ob->totcol && !BKE_object_material_slot_used(ob, slot)) {
+      ob->actcol = slot;
+
+      if (!BKE_object_material_slot_remove(bmain, ob)) {
+        break;
+      }
+
+      if (actcol >= slot) {
+        actcol--;
+      }
+
+      removed++;
+    }
+  }
+
+  ob->actcol = actcol;
+  BKE_object_material_active_index_sanitize(ob);
+
+  return removed;
+}
+
+int BKE_object_material_remove_all(Main *bmain, Object *ob)
+{
+  int actcol = ob->actcol;
+  int removed = 0;
+
+  for (int slot = 1; slot <= ob->totcol; slot++) {
+    while (slot <= ob->totcol) {
+      ob->actcol = slot;
+
+      if (!BKE_object_material_slot_remove(bmain, ob)) {
+        break;
+      }
+
+      if (actcol >= slot) {
+        actcol--;
+      }
+
+      removed++;
+    }
+  }
+  ob->actcol = actcol;
+  BKE_object_material_active_index_sanitize(ob);
+
+  return removed;
 }
 
 static bNode *nodetree_uv_node_recursive(bNode *node)
@@ -2090,16 +2184,16 @@ static void material_default_surface_init(Material **ma_p)
   bNodeTree *ntree = ma->nodetree;
 
   bNode *principled = bke::node_add_static_node(nullptr, *ntree, SH_NODE_BSDF_PRINCIPLED);
-  bNodeSocket *base_color = bke::node_find_socket(*principled, SOCK_IN, "Base Color");
+  bNodeSocket *base_color = bke::node_find_socket(*principled, SOCK_IN, "Base Color"_ustr);
   copy_v3_v3((static_cast<bNodeSocketValueRGBA *>(base_color->default_value))->value, &ma->r);
 
   bNode *output = bke::node_add_static_node(nullptr, *ntree, SH_NODE_OUTPUT_MATERIAL);
 
   bke::node_add_link(*ntree,
                      *principled,
-                     *bke::node_find_socket(*principled, SOCK_OUT, "BSDF"),
+                     *bke::node_find_socket(*principled, SOCK_OUT, "BSDF"_ustr),
                      *output,
-                     *bke::node_find_socket(*output, SOCK_IN, "Surface"));
+                     *bke::node_find_socket(*output, SOCK_IN, "Surface"_ustr));
 
   principled->location[0] = -200.0f;
   principled->location[1] = 100.0f;
@@ -2119,9 +2213,9 @@ static void material_default_volume_init(Material **ma_p)
 
   bke::node_add_link(*ntree,
                      *principled,
-                     *bke::node_find_socket(*principled, SOCK_OUT, "Volume"),
+                     *bke::node_find_socket(*principled, SOCK_OUT, "Volume"_ustr),
                      *output,
-                     *bke::node_find_socket(*output, SOCK_IN, "Volume"));
+                     *bke::node_find_socket(*output, SOCK_IN, "Volume"_ustr));
 
   principled->location[0] = -200.0f;
   principled->location[1] = 100.0f;
@@ -2141,9 +2235,9 @@ static void material_default_holdout_init(Material **ma_p)
 
   bke::node_add_link(*ntree,
                      *holdout,
-                     *bke::node_find_socket(*holdout, SOCK_OUT, "Holdout"),
+                     *bke::node_find_socket(*holdout, SOCK_OUT, "Holdout"_ustr),
                      *output,
-                     *bke::node_find_socket(*output, SOCK_IN, "Surface"));
+                     *bke::node_find_socket(*output, SOCK_IN, "Surface"_ustr));
 
   holdout->location[0] = 10.0f;
   holdout->location[1] = 300.0f;

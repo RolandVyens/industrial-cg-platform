@@ -112,6 +112,8 @@ set(SRC_METAL
 )
 
 set(SRC_OPTIX
+  optix/cache.cpp
+  optix/cache.h
   optix/device.cpp
   optix/device.h
   optix/device_impl.cpp

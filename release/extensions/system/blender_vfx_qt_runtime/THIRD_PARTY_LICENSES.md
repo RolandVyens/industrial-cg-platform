@@ -1,9 +1,10 @@
 # Third-Party Licenses
 
 This bundled System Extension ships third-party wheels inside `./wheels/`.
-The authoritative license texts remain embedded in each wheel's `.dist-info`
-payload and travel with the final ZIP package. The wheel filenames, sizes, and
-SHA-256 hashes are recorded in `third_party_sources.md`.
+Wheel filenames, sizes, and SHA-256 hashes are recorded in
+`third_party_sources.md`. The Qt/PySide copyleft texts are shipped separately
+under `./licenses/` because the bundled wheels carry only a compact commercial
+license reference.
 
 Bundled runtime components:
 
@@ -50,12 +51,15 @@ Bundled runtime components:
     `shiboken6-6.11.0.dist-info/licenses/LicenseRef-Qt-Commercial.txt`
   - upstream licenses: `https://doc.qt.io/qtforpython-6/licenses.html`
 
+Qt/PySide shared license payload:
+
+- `licenses/LGPL-3.0-or-later.txt`
+- `licenses/GPL-2.0-or-later.txt`
+- `licenses/GPL-3.0-or-later.txt`
+
 Release-facing note:
 
-- The final Windows ZIP must preserve the bundled wheels intact so the upstream
-  `.dist-info` license payloads remain available to recipients.
-- If any wheel is repacked, stripped, or replaced in a way that omits embedded
-  license texts, the omitted license texts must be shipped separately alongside
-  the runtime package. This is especially important for Qt/PySide payloads,
-  whose upstream license texts must remain available even when only a compact
-  commercial license reference is embedded in the wheel metadata.
+- The final Windows ZIP must preserve the bundled wheels and `licenses/`
+  directory intact.
+- If any wheel is repacked, stripped, or replaced, release owners must review
+  its license payload and update the shipped notices before publication.

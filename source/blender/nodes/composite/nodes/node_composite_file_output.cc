@@ -5,7 +5,6 @@
  * \ingroup cmpnodes
  */
 
-#include <algorithm>
 #include <cmath>
 
 #include "BLI_assert.h"
@@ -25,6 +24,7 @@
 
 #include "BLO_read_write.hh"
 
+#include "BKE_compositor.hh"
 #include "BKE_context.hh"
 #include "BKE_cryptomatte.hh"
 #include "BKE_image.hh"
@@ -40,7 +40,6 @@
 
 #include "WM_api.hh"
 
-#include "IMB_deep_sample_merge.hh"
 #include "IMB_imbuf.hh"
 #include "IMB_openexr.hh"
 
@@ -61,104 +60,15 @@
 
 #include "node_composite_util.hh"
 
-namespace blender::imbuf::deep_merge {
-
-template<> struct DeepSampleTraits<DeepSample> {
-  static float r(const DeepSample &sample)
-  {
-    return sample.r;
-  }
-
-  static float g(const DeepSample &sample)
-  {
-    return sample.g;
-  }
-
-  static float b(const DeepSample &sample)
-  {
-    return sample.b;
-  }
-
-  static float a(const DeepSample &sample)
-  {
-    return sample.a;
-  }
-
-  static float z(const DeepSample &sample)
-  {
-    return sample.z;
-  }
-
-  static float z_back(const DeepSample &sample)
-  {
-    return sample.z_back;
-  }
-
-  static void set_r(DeepSample &sample, const float value)
-  {
-    sample.r = value;
-  }
-
-  static void set_g(DeepSample &sample, const float value)
-  {
-    sample.g = value;
-  }
-
-  static void set_b(DeepSample &sample, const float value)
-  {
-    sample.b = value;
-  }
-
-  static void set_a(DeepSample &sample, const float value)
-  {
-    sample.a = value;
-  }
-
-  static void set_z_back(DeepSample &sample, const float value)
-  {
-    sample.z_back = value;
-  }
-};
-
-}  // namespace blender::imbuf::deep_merge
-
 namespace blender::nodes::node_composite_file_output_cc {
 
-namespace deep_merge = blender::imbuf::deep_merge;
 namespace path_templates = blender::bke::path_templates;
 
 NODE_STORAGE_FUNCS(NodeCompositorFileOutput)
 
 namespace {
-constexpr float deep_volume_depth_epsilon = 1e-6f;
 constexpr float default_deep_merge_tolerance = 0.01f;
 }  // namespace
-
-static void deep_merge_samples(std::vector<std::vector<DeepSample>> &deep_samples,
-                               const float depth_merge_threshold,
-                               const float alpha_merge_threshold)
-{
-  if (depth_merge_threshold <= 0.0f) {
-    return;
-  }
-
-  for (auto &pixel_samples : deep_samples) {
-    if (pixel_samples.size() <= 1) {
-      continue;
-    }
-
-    std::sort(pixel_samples.begin(),
-              pixel_samples.end(),
-              [](const DeepSample &a, const DeepSample &b) { return a.z < b.z; });
-    const size_t merged_count = deep_merge::merge_sorted_deep_samples(
-        pixel_samples.data(),
-        pixel_samples.size(),
-        depth_merge_threshold,
-        alpha_merge_threshold,
-        deep_volume_depth_epsilon);
-    pixel_samples.resize(merged_count);
-  }
-}
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
@@ -184,7 +94,7 @@ static void node_declare(NodeDeclarationBuilder &b)
 
   for (const int i : IndexRange(storage.items_count)) {
     const NodeCompositorFileOutputItem &item = storage.items[i];
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(item.socket_type);
+    const eNodeSocketDatatype socket_type = item.socket_type;
     const std::string identifier = FileOutputItemsAccessor::socket_identifier_for_item(item);
     BaseSocketDeclarationBuilder *declaration = nullptr;
     if (socket_type == SOCK_VECTOR) {
@@ -199,7 +109,8 @@ static void node_declare(NodeDeclarationBuilder &b)
         .socket_name_ptr(&node_tree->id, *FileOutputItemsAccessor::item_srna, &item, "name");
   }
 
-  b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr);
+  b.add_input<decl::Extend>(""_ustr, "__extend__"_ustr)
+      .custom_draw(socket_items::ui::draw_extend_socket_fn<FileOutputItemsAccessor>());
 }
 
 static void node_init(const bContext *C, PointerRNA *node_pointer)
@@ -209,7 +120,7 @@ static void node_init(const bContext *C, PointerRNA *node_pointer)
   node->storage = data;
   data->save_as_render = true;
   data->use_file_extension = true;
-  data->file_name = BLI_strdup("file_name");
+  data->file_name = BLI_strdup("{blend_name}");
 
   BKE_image_format_init(&data->format);
   BKE_image_format_media_type_set(
@@ -379,7 +290,7 @@ static void output_paths_layout(ui::Layout &layout,
   const std::string file_name = storage.file_name ? storage.file_name : "";
   const Scene &scene = *CTX_data_scene(context);
 
-  if (bool(scene.r.scemode & R_MULTIVIEW) && format.views_format == R_IMF_VIEWS_MULTIVIEW) {
+  if (bool(scene.r.scemode & R_MULTIVIEW) && format.views_format == R_IMF_VIEWS_INDIVIDUAL) {
     for (SceneRenderView &view : scene.r.views) {
       if (!BKE_scene_multiview_is_render_view_active(&scene.r, &view)) {
         continue;
@@ -507,13 +418,13 @@ static void node_gather_link_searches(GatherLinkSearchOpParams &params)
   if (origin_socket.in_out != SOCK_OUT) {
     return;
   }
-  const eNodeSocketDatatype origin_socket_type = eNodeSocketDatatype(origin_socket.type);
+  const eNodeSocketDatatype origin_socket_type = origin_socket.type;
   if (!FileOutputItemsAccessor::supports_socket_type(origin_socket_type, NTREE_COMPOSIT)) {
     return;
   }
   params.add_item("File Output", [](LinkSearchOpParams &params) {
     bNode &node = params.add_node("CompositorNodeOutputFile"_ustr);
-    const eNodeSocketDatatype socket_type = eNodeSocketDatatype(params.socket.type);
+    const eNodeSocketDatatype socket_type = params.socket.type;
     if (socket_type == SOCK_VECTOR) {
       socket_items::add_item_with_socket_type_and_name<FileOutputItemsAccessor>(
           params.node_tree,
@@ -535,89 +446,6 @@ using namespace blender::compositor;
 class FileOutputOperation : public NodeOperation {
  public:
   using NodeOperation::NodeOperation;
-
-  bool deep_target_from_links(const Scene **r_scene, int *r_view_layer_id) const
-  {
-    if (r_scene) {
-      *r_scene = nullptr;
-    }
-    if (r_view_layer_id) {
-      *r_view_layer_id = 0;
-    }
-
-    const bNode &node = this->node();
-    int linked_inputs = 0;
-    const bNodeLink *linked_link = nullptr;
-
-    for (bNodeSocket *socket = static_cast<bNodeSocket *>(node.inputs.first); socket;
-         socket = socket->next)
-    {
-      if (StringRef(socket->identifier).startswith("__extend__")) {
-        continue;
-      }
-      const Span<bNodeLink *> links = socket->directly_linked_links();
-      if (links.is_empty()) {
-        continue;
-      }
-      linked_inputs += links.size();
-      if (linked_inputs > 1) {
-        return false;
-      }
-      linked_link = links.first();
-    }
-
-    if (linked_inputs != 1 || linked_link == nullptr || linked_link->fromnode == nullptr) {
-      return false;
-    }
-
-    const bNode *from_node = linked_link->fromnode;
-    if (from_node->type_legacy != CMP_NODE_R_LAYERS) {
-      return false;
-    }
-
-    const Scene *scene = reinterpret_cast<const Scene *>(from_node->id);
-    if (!scene) {
-      scene = &this->context().get_scene();
-    }
-
-    if (r_scene) {
-      *r_scene = scene;
-    }
-    if (r_view_layer_id) {
-      *r_view_layer_id = from_node->custom1;
-    }
-    return true;
-  }
-
-  bool deep_alpha_only_from_links() const
-  {
-    const bNode &node = this->node();
-    int linked_inputs = 0;
-    const bNodeLink *linked_link = nullptr;
-
-    for (bNodeSocket *socket = static_cast<bNodeSocket *>(node.inputs.first); socket;
-         socket = socket->next)
-    {
-      if (StringRef(socket->identifier).startswith("__extend__")) {
-        continue;
-      }
-      const Span<bNodeLink *> links = socket->directly_linked_links();
-      if (links.is_empty()) {
-        continue;
-      }
-      linked_inputs += links.size();
-      if (linked_inputs > 1) {
-        return false;
-      }
-      linked_link = links.first();
-    }
-
-    if (linked_inputs != 1 || linked_link == nullptr || linked_link->fromsock == nullptr) {
-      return false;
-    }
-
-    return STREQ(linked_link->fromsock->name, "Alpha");
-  }
 
   bool domain_has_display_window(const Domain &domain) const
   {
@@ -650,6 +478,20 @@ class FileOutputOperation : public NodeOperation {
   {
     const NodeCompositorFileOutput &storage = node_storage(this->node());
 
+    const Scene *target_scene = nullptr;
+    int view_layer_id = 0;
+    bool alpha_only = false;
+    if (!bke::compositor::deep_output_target_from_node(this->node(),
+                                                       this->context().get_scene(),
+                                                       &target_scene,
+                                                       &view_layer_id,
+                                                       &alpha_only))
+    {
+      this->context().set_info_message(
+          "Deep File Output requires exactly one direct Render Layers input.");
+      return;
+    }
+
     /* Compute output path. */
     char image_path[FILE_MAX];
     const char *view = this->context().get_view_name().data();
@@ -660,13 +502,6 @@ class FileOutputOperation : public NodeOperation {
     }
 
     /* Get deep data and write it. */
-    const Scene *target_scene = nullptr;
-    int view_layer_id = 0;
-    if (!this->deep_target_from_links(&target_scene, &view_layer_id)) {
-      target_scene = &this->context().get_scene();
-      view_layer_id = 0;
-    }
-
     blender::RenderDeepData *deep_data = nullptr;
     int width = 0;
     int height = 0;
@@ -680,16 +515,13 @@ class FileOutputOperation : public NodeOperation {
     }
 
     const std::vector<std::vector<DeepSample>> &deep_samples = deep_data->pixels;
-    const bool alpha_only = this->deep_alpha_only_from_links();
     float depth_merge_tolerance = storage.format.deep_merge_tolerance;
     const float alpha_merge_tolerance = storage.format.deep_alpha_merge_tolerance;
     if (depth_merge_tolerance <= 0.0f && alpha_merge_tolerance > 0.0f) {
       depth_merge_tolerance = default_deep_merge_tolerance;
     }
     if (depth_merge_tolerance > 0.0f) {
-      std::vector<std::vector<DeepSample>> merged_samples = deep_samples;
-      deep_merge_samples(merged_samples, depth_merge_tolerance, alpha_merge_tolerance);
-      IMB_exr_save_deep(merged_samples,
+      IMB_exr_save_deep(deep_samples,
                         width,
                         height,
                         image_path,
@@ -702,7 +534,9 @@ class FileOutputOperation : public NodeOperation {
                         deep_data->display_offset[0],
                         deep_data->display_offset[1],
                         deep_data->data_offset[0],
-                        deep_data->data_offset[1]);
+                        deep_data->data_offset[1],
+                        depth_merge_tolerance,
+                        alpha_merge_tolerance);
     }
     else {
       IMB_exr_save_deep(deep_samples,
@@ -883,26 +717,23 @@ class FileOutputOperation : public NodeOperation {
                            const char *pass_name,
                            const char *view_name)
   {
-    /* For single values, we fill a buffer that covers the domain of the operation with the value
-     * of the result. */
-    const int2 size = result.is_single_value() ? this->compute_domain().data_size :
-                                                 result.domain().data_size;
-
-    /* The image buffer in the file output will take ownership of this buffer and freeing it will
-     * be its responsibility. */
-    float *buffer = nullptr;
+    Result data = this->context().create_result(result.type());
     if (result.is_single_value()) {
-      buffer = this->inflate_result(result, size);
+      /* For single values, we fill a buffer that covers the domain of the operation with the value
+       * of the result. */
+      data.allocate_texture(this->compute_domain(), true, ResultStorageType::CPU);
+      const GPointer single_value = result.single_value();
+      const int64_t pixel_count = int64_t(data.domain().data_size.x) * data.domain().data_size.y;
+      single_value.type()->fill_assign_n(
+          single_value.get(), data.cpu_data_for_write().data(), pixel_count);
+    }
+    else if (this->context().use_gpu()) {
+      Result result_cpu = result.download_to_cpu();
+      data.share_data(result_cpu);
+      result_cpu.release();
     }
     else {
-      if (this->context().use_gpu()) {
-        GPU_memory_barrier(GPU_BARRIER_TEXTURE_UPDATE);
-        buffer = static_cast<float *>(GPU_texture_read(result, GPU_DATA_FLOAT, 0));
-      }
-      else {
-        /* Copy the result into a new buffer. */
-        buffer = MEM_dupalloc(static_cast<const float *>(result.cpu_data().data()));
-      }
+      data.share_data(result);
     }
 
     switch (result.type()) {
@@ -911,39 +742,32 @@ class FileOutputOperation : public NodeOperation {
          * specify that all uppercase RGBA channels will be compressed, and Cryptomatte should not
          * be compressed. */
         if (result.meta_data.is_cryptomatte_layer()) {
-          file_output.add_pass(pass_name, view_name, "rgba", buffer);
+          file_output.add_pass(pass_name, view_name, "rgba", data);
         }
         else {
-          file_output.add_pass(pass_name, view_name, "RGBA", buffer);
+          file_output.add_pass(pass_name, view_name, "RGBA", data);
         }
         break;
       case ResultType::Float3:
-        /* Float3 results might be stored in 4-component textures due to hardware limitations, so
-         * we need to convert the buffer to a 3-component buffer on the host. */
-        if (!result.is_single_value() && this->context().use_gpu() &&
-            GPU_texture_component_len(GPU_texture_format(result)) == 4)
-        {
-          file_output.add_pass(pass_name, view_name, "XYZ", float4_to_float3_image(size, buffer));
-        }
-        else {
-          file_output.add_pass(pass_name, view_name, "XYZ", buffer);
-        }
+        file_output.add_pass(pass_name, view_name, "XYZ", data);
         break;
       case ResultType::Float4:
-        file_output.add_pass(pass_name, view_name, "XYZW", buffer);
+        file_output.add_pass(pass_name, view_name, "XYZW", data);
         break;
       case ResultType::Float:
-        file_output.add_pass(pass_name, view_name, "V", buffer);
+        file_output.add_pass(pass_name, view_name, "V", data);
         break;
       case ResultType::Float2:
-        file_output.add_pass(pass_name, view_name, "XY", buffer);
+        file_output.add_pass(pass_name, view_name, "XY", data);
         break;
       case ResultType::Int2:
       case ResultType::Int3:
+      case ResultType::Int4:
       case ResultType::Int:
       case ResultType::Bool:
       case ResultType::Float4x4:
       case ResultType::Menu:
+      case ResultType::Quaternion:
       case ResultType::String:
       case ResultType::Object:
       case ResultType::Image:
@@ -955,96 +779,45 @@ class FileOutputOperation : public NodeOperation {
         BLI_assert_unreachable();
         break;
     }
-  }
 
-  /* Allocates and fills an image buffer of the specified size with the value of the given single
-   * value result. */
-  float *inflate_result(const Result &result, const int2 size)
-  {
-    BLI_assert(result.is_single_value());
-
-    const int64_t length = int64_t(size.x) * size.y;
-    const int64_t buffer_size = length * (result.get_cpp_type().size / sizeof(float));
-    float *buffer = MEM_new_array_uninitialized<float>(buffer_size,
-                                                       "File Output Inflated Buffer.");
-
-    switch (result.type()) {
-      case ResultType::Float:
-      case ResultType::Float2:
-      case ResultType::Float3:
-      case ResultType::Float4:
-      case ResultType::Color: {
-        const GPointer single_value = result.single_value();
-        single_value.type()->fill_assign_n(single_value.get(), buffer, length);
-        return buffer;
-      }
-      case ResultType::Int:
-      case ResultType::Int2:
-      case ResultType::Int3:
-      case ResultType::Bool:
-      case ResultType::Float4x4:
-      case ResultType::Menu:
-      case ResultType::String:
-      case ResultType::Object:
-      case ResultType::Image:
-      case ResultType::Font:
-      case ResultType::Scene:
-      case ResultType::Text:
-      case ResultType::Mask:
-        /* Not supported. */
-        BLI_assert_unreachable();
-        return nullptr;
-    }
-
-    BLI_assert_unreachable();
-    return nullptr;
+    data.release();
   }
 
   /* Read the data stored the given result and add a view of the given name and read buffer. */
   void add_view_for_result(FileOutput &file_output, const Result &result, const char *view_name)
   {
-    /* The image buffer in the file output will take ownership of this buffer and freeing it will
-     * be its responsibility. */
-    float *buffer = nullptr;
+    Result data = this->context().create_result(result.type());
     if (this->context().use_gpu()) {
-      GPU_memory_barrier(GPU_BARRIER_TEXTURE_UPDATE);
-      buffer = static_cast<float *>(GPU_texture_read(result, GPU_DATA_FLOAT, 0));
+      Result result_cpu = result.download_to_cpu();
+      data.share_data(result_cpu);
+      result_cpu.release();
     }
     else {
-      /* Copy the result into a new buffer. */
-      buffer = MEM_dupalloc(static_cast<const float *>(result.cpu_data().data()));
+      data.share_data(result);
     }
 
-    const int2 size = result.domain().data_size;
     switch (result.type()) {
       case ResultType::Color:
-        file_output.add_view(view_name, 4, buffer);
+        file_output.add_view(view_name, data);
         break;
       case ResultType::Float4:
-        file_output.add_view(view_name, 4, buffer);
+        file_output.add_view(view_name, data);
         break;
       case ResultType::Float3:
-        /* Float3 results might be stored in 4-component textures due to hardware limitations, so
-         * we need to convert the buffer to a 3-component buffer on the host. */
-        if (!result.is_single_value() && this->context().use_gpu() &&
-            GPU_texture_component_len(GPU_texture_format(result)) == 4)
-        {
-          file_output.add_view(view_name, 3, float4_to_float3_image(size, buffer));
-        }
-        else {
-          file_output.add_view(view_name, 3, buffer);
-        }
+        file_output.add_view(view_name, data);
         break;
       case ResultType::Float:
-        file_output.add_view(view_name, 1, buffer);
+        file_output.add_view(view_name, data);
         break;
       case ResultType::Float2:
       case ResultType::Int2:
       case ResultType::Int:
       case ResultType::Int3:
+      case ResultType::Int4:
       case ResultType::Bool:
       case ResultType::Float4x4:
       case ResultType::Menu:
+      case ResultType::Quaternion:
       case ResultType::String:
       case ResultType::Object:
       case ResultType::Image:
@@ -1056,24 +829,8 @@ class FileOutputOperation : public NodeOperation {
         BLI_assert_unreachable();
         break;
     }
-  }
 
-  /* Given a float4 image, return a newly allocated float3 image that ignores the last channel. The
-   * input image is freed. */
-  float *float4_to_float3_image(int2 size, float *float4_image)
-  {
-    float *float3_image = MEM_new_array_uninitialized<float>(3 * size_t(size.x) * size_t(size.y),
-                                                             "File Output Vector Buffer.");
-
-    parallel_for(size, [&](const int2 texel) {
-      for (int i = 0; i < 3; i++) {
-        const int64_t pixel_index = int64_t(texel.y) * size.x + texel.x;
-        float3_image[pixel_index * 3 + i] = float4_image[pixel_index * 4 + i];
-      }
-    });
-
-    MEM_delete(float4_image);
-    return float3_image;
+    data.release();
   }
 
   /* Add Cryptomatte meta data to the file if they exist for the given result of the given layer

@@ -62,6 +62,7 @@
 #include "IMB_imbuf_types.hh"
 
 #include "NOD_geometry.hh"
+#include "NOD_geometry_nodes_bundle.hh"
 #include "NOD_geometry_nodes_gizmos.hh"
 #include "NOD_node_declaration.hh"
 #include "NOD_socket.hh"
@@ -775,6 +776,9 @@ static void node_texture_buts_proc(ui::Layout &layout, bContext * /*C*/, Pointer
       col.prop(&tex_ptr, "color_mode", DEFAULT_FLAGS, "", ICON_NONE);
       break;
     }
+    case TEX_NOISE:
+    case TEX_IMAGE:
+      break;
   }
 }
 
@@ -1004,7 +1008,7 @@ static const float std_node_socket_colors[][4] = {
     {0, 0, 0, 1},            /* SOCK_SCENE */
     {0, 0, 0, 1},            /* SOCK_TEXT_ID */
     {0, 0, 0, 1},            /* SOCK_MASK */
-    {0, 0, 0, 1},            /* SOCK_SOUND */
+    {0.39, 0.34, 0.26, 1},   /* SOCK_SOUND */
     {0.36, 0.47, 0.61, 1.0}, /* SOCK_INT_VECTOR */
 };
 
@@ -1093,6 +1097,17 @@ static bool socket_needs_volume_grid_search(const bNode &node, const bNodeSocket
   return socket.runtime->declaration->is_volume_grid_name;
 }
 
+static bool socket_needs_bundle_type_search(const bNode &node, const bNodeSocket &socket)
+{
+  if (node.type_legacy == NODE_COMBINE_BUNDLE) {
+    return socket.name == nodes::Bundle::type_item_name.ustr();
+  }
+  if (node.is_type("NodeGetNestedBundlePaths"_ustr)) {
+    return socket.name == StringRef("Bundle Type");
+  }
+  return false;
+}
+
 static void draw_gizmo_pin_icon(ui::Layout *layout, PointerRNA *socket_ptr)
 {
   layout->prop(socket_ptr, "pin_gizmo", UI_ITEM_NONE, "", ICON_GIZMO);
@@ -1108,7 +1123,7 @@ static void draw_node_socket_name_editable(ui::Layout *layout,
       layout->emboss_set(ui::EmbossType::None);
       layout->prop((&sock->runtime->declaration->socket_name_rna->owner),
                    sock->runtime->declaration->socket_name_rna->property_name,
-                   UI_ITEM_NONE,
+                   sock->in_out == SOCK_OUT ? ui::eUI_Item_Flag::ITEM_R_TEXT_RIGHT : UI_ITEM_NONE,
                    "",
                    ICON_NONE);
       return;
@@ -1295,6 +1310,16 @@ static void std_node_socket_draw(
           node_geometry_add_volume_grid_search_button(*C, *node, *ptr, *row);
         }
       }
+      else if (socket_needs_bundle_type_search(*node, *sock)) {
+        if (optional_label) {
+          node_bundle_type_add_string_search_button(*C, *node, *ptr, *layout, label);
+        }
+        else {
+          ui::Layout *row = &layout->split(0.4f, false);
+          row->label(label, ICON_NONE);
+          node_bundle_type_add_string_search_button(*C, *node, *ptr, *row);
+        }
+      }
       else {
         if (optional_label) {
           layout->prop(ptr,
@@ -1365,8 +1390,7 @@ static void std_node_socket_draw(
     case SOCK_MATERIAL:
     case SOCK_SCENE:
     case SOCK_TEXT_ID:
-    case SOCK_MASK:
-    case SOCK_SOUND: {
+    case SOCK_MASK: {
       if (optional_label) {
         layout->prop(ptr,
                      RNA_struct_find_property(ptr, "default_value"),
@@ -1386,7 +1410,18 @@ static void std_node_socket_draw(
                      label,
                      ICON_NONE);
       }
-
+      break;
+    }
+    case SOCK_SOUND: {
+      if (optional_label) {
+        template_id(layout, C, ptr, "default_value", nullptr, "SOUND_OT_open", nullptr);
+      }
+      else {
+        /* 0.3 is consistent with image sockets. */
+        ui::Layout *row = &layout->split(0.3f, false);
+        row->label(label, ICON_NONE);
+        template_id(row, C, ptr, "default_value", nullptr, "SOUND_OT_open", nullptr);
+      }
       break;
     }
     case SOCK_FONT: {
@@ -1451,7 +1486,7 @@ static void std_node_socket_interface_draw(ID *id,
 
   const bke::bNodeSocketType *typeinfo = interface_socket->socket_typeinfo();
   BLI_assert(typeinfo != nullptr);
-  eNodeSocketDatatype type = eNodeSocketDatatype(typeinfo->type);
+  eNodeSocketDatatype type = typeinfo->type;
 
   ui::Layout *col = &layout->column(false);
 
@@ -1539,8 +1574,12 @@ static void std_node_socket_interface_draw(ID *id,
   col = &layout->column(false);
 
   const bNodeTree *node_tree = reinterpret_cast<const bNodeTree *>(id);
-  if (interface_socket->flag & NODE_INTERFACE_SOCKET_INPUT && node_tree->type == NTREE_GEOMETRY) {
-    if (ELEM(type, SOCK_INT, SOCK_VECTOR, SOCK_MATRIX)) {
+  if (interface_socket->flag & NODE_INTERFACE_SOCKET_INPUT &&
+      ELEM(node_tree->type, NTREE_GEOMETRY, NTREE_COMPOSIT))
+  {
+    if (ELEM(type, SOCK_INT, SOCK_FLOAT, SOCK_VECTOR, SOCK_MATRIX) ||
+        (node_tree->type == NTREE_GEOMETRY && type == SOCK_OBJECT))
+    {
       col->prop(&ptr, "default_input", DEFAULT_FLAGS, std::nullopt, ICON_NONE);
     }
   }
@@ -1561,9 +1600,7 @@ static void std_node_socket_interface_draw(ID *id,
     ui::Layout *sub = &col->column(false);
     sub->active_set(!is_layer_selection_field(*interface_socket));
     sub->prop(&ptr, "hide_in_modifier", DEFAULT_FLAGS, std::nullopt, ICON_NONE);
-    if (nodes::socket_type_supports_fields(type) || nodes::socket_type_supports_grids(type)) {
-      sub->prop(&ptr, "structure_type", DEFAULT_FLAGS, IFACE_("Shape"), ICON_NONE);
-    }
+    sub->prop(&ptr, "structure_type", DEFAULT_FLAGS, IFACE_("Shape"), ICON_NONE);
   }
 }
 
@@ -1667,8 +1704,9 @@ void draw_nodespace_back_pix(const bContext &C,
   if (ibuf) {
     /* somehow the offset has to be calculated inverse */
     wmOrtho2_region_pixelspace(&region);
-    const float2 offset = ibuf->flags & IB_has_display_window ? float2(ibuf->display_offset) :
-                                                                float2(0.0f);
+    const float2 offset = flag_is_set(ibuf->flags, ImBufFlags::HasDisplayWindow) ?
+                              float2(ibuf->display_offset) :
+                              float2(0.0f);
     const float offset_x = snode.xof + offset.x * snode.zoom;
     const float offset_y = snode.yof + offset.y * snode.zoom;
     const float x = (region.winx - snode.zoom * ibuf->x) / 2 + offset_x;
@@ -1745,10 +1783,10 @@ static std::array<float2, 4> node_link_bezier_points(const bNodeLink &link)
 
 static bool node_link_draw_is_visible(const View2D &v2d, const std::array<float2, 4> &points)
 {
-  if (min_ffff(points[0].x, points[1].x, points[2].x, points[3].x) > v2d.cur.xmax) {
+  if (std::min({points[0].x, points[1].x, points[2].x, points[3].x}) > v2d.cur.xmax) {
     return false;
   }
-  if (max_ffff(points[0].x, points[1].x, points[2].x, points[3].x) < v2d.cur.xmin) {
+  if (std::max({points[0].x, points[1].x, points[2].x, points[3].x}) < v2d.cur.xmin) {
     return false;
   }
   return true;
@@ -2208,7 +2246,7 @@ static bool node_link_is_field_link(const SpaceNode &snode, const bNodeLink &lin
   if (!link.fromsock) {
     return false;
   }
-  if (!nodes::socket_type_supports_fields(eNodeSocketDatatype(link.fromsock->type))) {
+  if (!nodes::socket_type_supports_fields(link.fromsock->type)) {
     /* Normally, StructureType::Dynamic would result in dashed links. We override that for socket
      * types we know currently can't be used as fields. */
     return false;
@@ -2436,6 +2474,8 @@ void node_draw_link_dragged(const bContext &C,
   /* End marker fill. */
   node_draw_link_end_markers(link, draw_config, points, false);
 }
+
+/** \} */
 
 }  // namespace ed::space_node
 

@@ -97,6 +97,8 @@
 #include "DEG_depsgraph_debug.hh"
 #include "DEG_depsgraph_query.hh"
 
+#include "NOD_eval_log.hh"
+
 #include "RE_engine.h"
 
 #include "RNA_access.hh"
@@ -115,6 +117,10 @@
 #include "versioning_common.hh"
 
 namespace blender {
+
+/* -------------------------------------------------------------------- */
+/** \name Scene Data-Block
+ * \{ */
 
 using bke::CompositorRuntime;
 using bke::SceneRuntime;
@@ -177,7 +183,7 @@ static void scene_init_data(ID *id)
 
   scene->toolsettings = MEM_new<ToolSettings>(__func__);
 
-  scene->toolsettings->autokey_mode = uchar(U.autokey_mode);
+  scene->toolsettings->autokey_mode = U.autokey_mode;
 
   scene->toolsettings->unified_paint_settings.curve_rand_hue = BKE_paint_default_curve();
   scene->toolsettings->unified_paint_settings.curve_rand_saturation = BKE_paint_default_curve();
@@ -368,8 +374,7 @@ static void scene_free_markers(Scene *scene, bool do_id_user)
 {
   for (TimeMarker &marker : scene->markers.items_mutable()) {
     if (marker.prop != nullptr) {
-      IDP_FreePropertyContent_ex(marker.prop, do_id_user);
-      MEM_delete(marker.prop);
+      IDP_FreeProperty_ex(marker.prop, do_id_user);
     }
     MEM_delete(&marker);
   }
@@ -397,8 +402,8 @@ static void scene_free_data(ID *id)
   }
 
   scene_free_markers(scene, do_id_user);
-  BLI_freelistN(&scene->transform_spaces);
-  BLI_freelistN(&scene->r.views);
+  scene->transform_spaces.free_no_destruct();
+  scene->r.views.free_no_destruct();
 
   BKE_toolsettings_free(scene->toolsettings);
   scene->toolsettings = nullptr;
@@ -1431,7 +1436,7 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
       BKE_curveprofile_blend_read(reader, sce->toolsettings->custom_bevel_profile_preset);
     }
 
-    BLO_read_data_address(reader, &sce->toolsettings->paint_mode.canvas_image);
+    BLO_read_raw_address(reader, &sce->toolsettings->paint_mode.canvas_image);
     BLO_read_struct(reader, SequencerToolSettings, &sce->toolsettings->sequencer_tool_settings);
   }
 
@@ -1439,10 +1444,8 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
     BLO_read_struct(reader, Editing, &sce->ed);
     Editing *ed = sce->ed;
 
-    ed->act_strip = static_cast<Strip *>(
-        BLO_read_get_new_data_address_no_us(reader, ed->act_strip, sizeof(Strip)));
-    ed->current_meta_strip = static_cast<Strip *>(
-        BLO_read_get_new_data_address_no_us(reader, ed->current_meta_strip, sizeof(Strip)));
+    BLO_read_struct_no_us(reader, Strip, &ed->act_strip);
+    BLO_read_struct_no_us(reader, Strip, &ed->current_meta_strip);
     ed->runtime = MEM_new<seq::EditingRuntime>(__func__);
 
     /* recursive link sequences, lb will be correctly initialized */
@@ -1458,8 +1461,7 @@ static void scene_blend_read_data(BlendDataReader *reader, ID *id)
     for (MetaStack &ms : ed->metastack) {
       BLO_read_struct(reader, Strip, &ms.parent_strip);
 
-      ms.old_strip = static_cast<Strip *>(
-          BLO_read_get_new_data_address_no_us(reader, ms.old_strip, sizeof(Strip)));
+      BLO_read_struct_no_us(reader, Strip, &ms.old_strip);
     }
   }
 
@@ -1613,7 +1615,7 @@ IDTypeInfo IDType_ID_SCE = {
     .main_listbase_index = INDEX_ID_SCE,
     .struct_size = sizeof(Scene),
     .name = "Scene",
-    .name_plural = "scenes",
+    .name_plural = N_("scenes"),
     .translation_context = BLT_I18NCONTEXT_ID_SCENE,
     .flags = IDTYPE_FLAGS_NEVER_UNUSED,
     .asset_type_info = nullptr,
@@ -1643,7 +1645,7 @@ IDTypeInfo IDType_ID_SCE = {
 
 /* -------------------------------------------------------------------- */
 /** \name Scene member functions
- */
+ * \{ */
 
 double Scene::frames_per_second() const
 {
@@ -2023,6 +2025,35 @@ Scene *BKE_scene_duplicate(Main *bmain,
                                  LIB_ID_DUPLICATE_IS_SUBPROCESS);
       }
     }
+
+    /* Duplicate receiver and blocker collections from the light linking settings.
+     * If light linking used a collection from a scene collection, the light linking will end up
+     * using the same duplicated collection as the scene collection.
+     * If light linking used its own collection (outside any scene collection), the collection
+     * will be duplicated, and the objects inside this collection will be remapped to the objects
+     * from the duplicated scene. */
+    FOREACH_SCENE_OBJECT_BEGIN (sce_copy, object) {
+      if (!object->light_linking) {
+        continue;
+      }
+      if (object->light_linking->receiver_collection) {
+        BKE_collection_duplicate(bmain,
+                                 nullptr,
+                                 nullptr,
+                                 object->light_linking->receiver_collection,
+                                 duplicate_flags,
+                                 LIB_ID_DUPLICATE_IS_SUBPROCESS);
+      }
+      if (object->light_linking->blocker_collection) {
+        BKE_collection_duplicate(bmain,
+                                 nullptr,
+                                 nullptr,
+                                 object->light_linking->blocker_collection,
+                                 duplicate_flags,
+                                 LIB_ID_DUPLICATE_IS_SUBPROCESS);
+      }
+    }
+    FOREACH_SCENE_OBJECT_END;
   }
   else {
     /* Remove sequencer if not full copy */
@@ -2160,7 +2191,7 @@ void BKE_scene_set_background(Main *bmain, Scene *scene)
 
   /* Deselect objects (for data select). */
   for (Object &ob : bmain->objects) {
-    ob.flag &= ~SELECT;
+    ob.flag &= ~OB_SELECT;
   }
 
   /* copy layers and flags from bases to objects */
@@ -2491,7 +2522,7 @@ bool BKE_scene_validate_setscene(Main *bmain, Scene *sce)
   if (sce->set == nullptr) {
     return true;
   }
-  totscene = BLI_listbase_count(&bmain->scenes);
+  totscene = bmain->scenes.count();
 
   for (a = 0, sce_iter = sce; sce_iter->set; sce_iter = sce_iter->set, a++) {
     /* more iterations than scenes means we have a cycle */
@@ -2728,7 +2759,12 @@ static void scene_graph_update_tagged(Depsgraph *depsgraph, Main *bmain, bool on
     BKE_callback_exec_id(bmain, &scene->id, BKE_CB_EVT_DEPSGRAPH_UPDATE_PRE);
   }
 
-  BKE_scene_view_layers_synced_ensure(*bmain, scene);
+  /* Cannot limit this to the currently evaluated scene/view layer, as the depsgraph may have
+   * dependencies on others, see e.g. #158225, which pulls in another scene. */
+  /* TODO: If this becomes a performance issue, we'll likely have to find a way in the depsgraph
+   * itself to gather all 'known' scenes, and ensure that their viewlayers / collections
+   * hierarchies are in sync. */
+  BKE_main_view_layers_synced_ensure(bmain);
 
   for (int pass = 0; pass < 2; pass++) {
     /* (Re-)build dependency graph if needed. */
@@ -2804,6 +2840,13 @@ void BKE_scene_graph_update_for_newframe_ex(Depsgraph *depsgraph, const bool cle
 
   /* Keep this first. */
   BKE_callback_exec_id(bmain, &scene->id, BKE_CB_EVT_FRAME_CHANGE_PRE);
+
+  /* Cannot limit this to the currently evaluated scene/view layer, as the depsgraph may have
+   * dependencies on others, see e.g. #158225, which pulls in another scene. */
+  /* TODO: If this becomes a performance issue, we'll likely have to find a way in the depsgraph
+   * itself to gather all 'known' scenes, and ensure that their viewlayers / collections
+   * hierarchies are in sync. */
+  BKE_main_view_layers_synced_ensure(bmain);
 
   for (int pass = 0; pass < 2; pass++) {
     /* Update animated image textures for particles, modifiers, gpu, etc,

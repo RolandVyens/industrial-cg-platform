@@ -143,7 +143,8 @@ static void update_mipmaps(Texture &texture, Shader &shader)
                                                 layer_count,
                                                 texture.mip_count(),
                                                 TextureFormat::UNORM_8_8_8_8,
-                                                GPU_TEXTURE_USAGE_SHADER_WRITE,
+                                                GPU_TEXTURE_USAGE_SHADER_READ |
+                                                    GPU_TEXTURE_USAGE_SHADER_WRITE,
                                                 nullptr);
     }
     else {

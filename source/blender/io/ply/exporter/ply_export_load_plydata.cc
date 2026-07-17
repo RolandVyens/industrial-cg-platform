@@ -7,6 +7,7 @@
  */
 
 #include "ply_export_load_plydata.hh"
+#include "IO_mesh_utils.hh"
 #include "IO_ply.hh"
 #include "ply_data.hh"
 
@@ -15,7 +16,7 @@
 #include "BKE_lib_id.hh"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_wrapper.hh"
-#include "BKE_object.hh"
+#include "BLI_array_utils.hh"
 #include "BLI_color.hh"
 #include "BLI_hash.hh"
 #include "BLI_math_matrix.h"
@@ -28,6 +29,7 @@
 
 #include "DNA_customdata_types.h"
 #include "DNA_layer_types.h"
+#include "DNA_object_types.h"
 
 #include "bmesh.hh"
 #include "tools/bmesh_triangulate.hh"
@@ -111,10 +113,8 @@ static void generate_vertex_map(const Mesh *mesh,
   /* If we do not export or have UVs, then mapping of vertex indices is simple. */
   if (!export_uv) {
     r_ply_to_vertex.resize(mesh->verts_num);
-    for (int index = 0; index < mesh->verts_num; index++) {
-      r_vertex_to_ply[index] = index;
-      r_ply_to_vertex[index] = index;
-    }
+    array_utils::fill_index_range(r_vertex_to_ply.as_mutable_span());
+    array_utils::fill_index_range(r_ply_to_vertex.as_mutable_span());
     for (int index = 0; index < mesh->corners_num; index++) {
       r_loop_to_ply[index] = corner_verts[index];
     }
@@ -344,8 +344,10 @@ void load_plydata(PlyData &plyData, Depsgraph *depsgraph, const PLYExportParams 
     }
 
     Object *obj_eval = DEG_get_evaluated(depsgraph, object);
-    const Mesh *mesh = export_params.apply_modifiers ? BKE_object_get_evaluated_mesh(obj_eval) :
-                                                       BKE_object_get_pre_modified_mesh(obj_eval);
+
+    MeshCoerceForExport coerce;
+    const Mesh *mesh = mesh_coerce_for_export_setup(
+        coerce, depsgraph, obj_eval, export_params.apply_modifiers);
 
     /* Ensure data exists if currently in edit mode. */
     BKE_mesh_wrapper_ensure_mdata(const_cast<Mesh *>(mesh));

@@ -5,7 +5,6 @@
 
 # This script is part of the official build environment, see wiki page for details.
 # https://developer.blender.org/docs/handbook/release_process/build/rocky_8/
-
 set -e
 
 if [ `id -u` -ne 0 ]; then
@@ -18,6 +17,9 @@ ARCH=$(uname -i)
 
 # Required by: config manager command below to enable powertools.
 dnf -y install 'dnf-command(config-manager)'
+
+# Required for version locking CUDA installation
+dnf -y install 'dnf-command(versionlock)'
 
 # Packages `ninja-build` and `meson` are not available unless CBR or PowerTools repositories are enabled.
 # See: https://wiki.rockylinux.org/rocky/repo/#notes-on-unlisted-repositories
@@ -41,8 +43,10 @@ dnf -y install gcc-toolset-14
 if [ "$ARCH" = "aarch64" ]; then
     CUDA_ARCH="sbsa"
 fi
-# Repository for CUDA (`nvcc`).
+# Repository for CUDA (`nvcc`)
 dnf config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/${CUDA_ARCH-x86_64}/cuda-rhel8.repo
+# Version lock CUDA install/update candidates to 12.8
+dnf versionlock add 'cuda-*-12-8*'
 
 # Install packages needed for Blender's dependencies.
 PACKAGES_FOR_LIBS=(
@@ -120,18 +124,10 @@ PACKAGES_FOR_LIBS=(
     # For example, this is used for the `python3-mako` package
     # So use the "default" system Python since it means it's most compatible with other packages.
     python3
-    # Required by: `external_mesa`.
-    python3-mako
 
     # Required by: `external_igc`.
+    python3-mako
     python3-pyyaml
-
-    # Required by: `external_mesa`.
-    expat-devel
-
-    # Required by: `external_mesa`.
-    libxshmfence
-    libxshmfence-devel
 
     # Required by: `external_igc` & `external_osl` as a build-time dependency.
     bison
@@ -144,6 +140,7 @@ PACKAGES_FOR_LIBS=(
     libstdc++-static
 
     # Required by: `external_ssl` (build dependencies).
+    perl-core
     perl-IPC-Cmd
     perl-Pod-Html
 
@@ -200,23 +197,23 @@ if [ "$ARCH" != "aarch64" ]; then
     # Register ROCm packages
     rpm --import https://repo.radeon.com/rocm/rocm.gpg.key
 
-    rm -f /etc/yum.repos.d/amdgpu-6.4.3.repo
-    rm -f /etc/yum.repos.d/rocm-6.4.3.repo
+    rm -f /etc/yum.repos.d/graphics-7.2.1.repo
+    rm -f /etc/yum.repos.d/rocm-7.2.1.repo
 
-    tee /etc/yum.repos.d/amdgpu-6.4.3.repo > /dev/null <<EOF
-[amdgpu-6.4.3]
-name=amdgpu-6.4.3
-baseurl=https://repo.radeon.com/amdgpu/6.4.3/el/8.10/main/x86_64/
+    tee /etc/yum.repos.d/graphics-7.2.1.repo > /dev/null <<EOF
+[graphics-7.2.1]
+name=graphics-7.2.1
+baseurl=https://repo.radeon.com/graphics/7.2.1/el/8.10/main/x86_64/
 enabled=1
 priority=50
 gpgcheck=1
 gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
 EOF
 
-    tee /etc/yum.repos.d/rocm-6.4.3.repo > /dev/null <<EOF
-[ROCm-6.4.3]
-name=ROCm-6.4.3
-baseurl=https://repo.radeon.com/rocm/el8/6.4.3/main
+    tee /etc/yum.repos.d/rocm-7.2.1.repo > /dev/null <<EOF
+[ROCm-7.2.1]
+name=ROCm-7.2.1
+baseurl=https://repo.radeon.com/rocm/el8/7.2.1/main
 enabled=1
 gpgcheck=1
 exclude=rock-dkms
@@ -224,6 +221,6 @@ gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
 EOF
 
     dnf -y update
-    dnf -y install hipcc6.4.3 hip-devel6.4.3 rocm-llvm6.4.3 rocm-core6.4.3 rocm-device-libs6.4.3
-    update-alternatives --set rocm /opt/rocm-6.4.3
+    dnf -y install hipcc7.2.1 hip-devel7.2.1 rocm-llvm7.2.1 rocm-core7.2.1 rocm-device-libs7.2.1
+    update-alternatives --set rocm /opt/rocm-7.2.1
 fi

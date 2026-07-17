@@ -17,9 +17,13 @@ static const EnumPropertyItem mode_items[] = {
     {int(Mode::FirstFromStart),
      "FROM_START",
      0,
-     "From Start",
-     "Find the first occurrence of the string"},
-    {int(Mode::FirstFromEnd), "FROM_END", 0, "From End", "Find the last occurrence of the string"},
+     N_("From Start"),
+     N_("Find the first occurrence of the string")},
+    {int(Mode::FirstFromEnd),
+     "FROM_END",
+     0,
+     N_("From End"),
+     N_("Find the last occurrence of the string")},
     {},
 };
 
@@ -80,7 +84,7 @@ static void node_register()
 {
   static bke::bNodeType ntype;
 
-  fn_node_type_base(&ntype, "FunctionNodeFindInString"_ustr, FN_NODE_FIND_IN_STRING);
+  fn_cmp_node_type_base(&ntype, "FunctionNodeFindInString"_ustr, FN_NODE_FIND_IN_STRING);
   ntype.ui_name = "Find in String";
   ntype.ui_description =
       "Find the number of times a given string occurs in another string and the position of the "

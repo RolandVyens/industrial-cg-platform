@@ -31,7 +31,11 @@ set(SRC
   integrator_render_scheduler_test.cpp
   integrator_tile_test.cpp
   kernel_camera_projection_test.cpp
+  optix_cache_policy_test.cpp
   render_graph_finalize_test.cpp
+  scene_lightgroup_pass_test.cpp
+  scene_shadow_color_test.cpp
+  session_deep_camera_sample_set_test.cpp
   util_aligned_malloc_test.cpp
   util_boundbox_test.cpp
   util_cache_limiter_test.cpp
