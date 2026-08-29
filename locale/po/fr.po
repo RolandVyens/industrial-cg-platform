@@ -122768,6 +122768,16 @@ msgid "Report a Bug"
 msgstr "Signaler un bug (en)"
 
 
+msgctxt "Operator"
+msgid "Report an Industrial CG Platform Bug"
+msgstr "Signaler un bug d’Industrial CG Platform"
+
+
+msgctxt "Operator"
+msgid "Report a Blender Bug"
+msgstr "Signaler un bug de Blender"
+
+
 msgid "Blender's extension repository must be enabled to install extensions!"
 msgstr "Le dépôt d’extensions de Blender doit être activé pour installer des extensions !"
 
@@ -136994,10 +137004,6 @@ msgstr "Erreur à la lecture de l’entrée de fichier de la liste d’assets, i
 
 msgid "Error reading asset listing file entry, skipping. Reason: found a file ({:s}) without 'hash' field"
 msgstr "Erreur à la lecture de l’entrée de fichier de la liste d’assets, ignoré. Raison : un fichier ({:s}) sans champ « hash » a été trouvé"
-
-
-msgid "Error reading asset listing file entry, skipping. Reason: found a file ({:s}) without 'size_in_bytes' field"
-msgstr "Erreur à la lecture de l’entrée de fichier de la liste d’assets, ignoré. Raison : un fichier ({:s}) sans champ « size_in_bytes » a été trouvé ({:s})"
 
 
 msgid "no assets listed"

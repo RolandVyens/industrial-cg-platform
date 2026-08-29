@@ -39,6 +39,16 @@ class Shader;
 class ShaderGraph;
 class TaskPool;
 
+struct BlenderDeepOutputRequirements {
+  bool direct = false;
+  bool compositor = false;
+
+  bool needed() const
+  {
+    return direct || compositor;
+  }
+};
+
 class BlenderSync {
  public:
   BlenderSync(blender::RenderEngine &b_engine,
@@ -53,6 +63,9 @@ class BlenderSync {
   void reset(blender::Main &b_data, blender::Scene &b_scene);
 
   void tag_update();
+
+  static BlenderDeepOutputRequirements get_deep_output_requirements(
+      blender::Scene &input_scene, blender::Scene &evaluated_scene, bool viewport);
 
   void set_bake_target(blender::Object &b_object);
 
@@ -141,7 +154,8 @@ class BlenderSync {
                                void **python_thread_state);
   void sync_film(blender::ViewLayer &b_view_layer,
                  blender::bScreen *b_screen,
-                 blender::View3D *b_v3d);
+                 blender::View3D *b_v3d,
+                 bool use_deep_output);
   void sync_view();
 
   /* Shader */

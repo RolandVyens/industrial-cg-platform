@@ -888,9 +888,7 @@ class CYCLES_RENDER_PT_performance_memory(CyclesButtonsPanel, Panel):
         cscene = scene.cycles
 
         layout.prop(cscene, "tile_size")
-        sub = layout.column()
-        sub.enabled = cscene.use_auto_tile
-        sub.prop(cscene, "deep_tile_budget_mb")
+        layout.prop(cscene, "deep_tile_budget_mb")
 
 
 class CYCLES_RENDER_PT_performance_texture_cache(CyclesButtonsPanel, Panel):

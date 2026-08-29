@@ -643,12 +643,13 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
 
   blender::Scene *input_scene = DEG_get_input_scene(b_depsgraph);
   blender::Scene *evaluated_scene = DEG_get_evaluated_scene(b_depsgraph);
-  const bool compositor_needs_deep = blender::RE_scene_has_deep_exr_file_output(input_scene);
-  const bool is_deep_exr_format = evaluated_scene &&
-                                  evaluated_scene->r.im_format.imtype ==
-                                      blender::R_IMF_IMTYPE_DEEP_EXR;
+  const BlenderDeepOutputRequirements deep_output = BlenderSync::get_deep_output_requirements(
+      *input_scene, *evaluated_scene, false);
+  const bool compositor_needs_deep = deep_output.compositor;
+  const bool is_deep_exr_format = deep_output.direct;
   const bool direct_deep_without_compositor = is_deep_exr_format &&
                                               !compositor_needs_deep;
+  const bool need_deep_output = deep_output.needed();
   direct_deep_without_compositor_ = direct_deep_without_compositor;
   skip_full_buffer_readback_for_background_direct_deep_ = background &&
                                                           direct_deep_without_compositor &&
@@ -701,12 +702,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
                     &python_thread_state,
                     session_params.denoise_device);
 
-    /* Create deep output driver if deep output is enabled (after sync populates film settings).
-     * Also auto-enable for Deep EXR format (R_IMF_IMTYPE_DEEP_EXR = 37).
-     * Also auto-enable if compositor has Deep EXR File Output node.
-     * Get fresh scene from depsgraph for accurate im_format reading.
-     * Only set up once on the first view. */
-    const bool need_deep_output = is_deep_exr_format || compositor_needs_deep;
+    /* Create the Deep output driver after Film synchronization has applied output demand. */
 
     if (is_multi_view && need_deep_output) {
       if (!deep_output_error_reported) {
@@ -720,12 +716,6 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
     }
 
     if (need_deep_output && !deep_output_blocked) {
-      /* Ensure deep output stays enabled for every view layer render. */
-      if (!scene->film->get_use_deep_output()) {
-        scene->film->set_use_deep_output(true);
-        scene->film->tag_modified();
-      }
-
       DeepOutputDriver *deep_driver = session->get_deep_output_driver();
       if (!deep_driver) {
         auto new_driver = make_unique<DeepOutputDriver>(session->device.get());

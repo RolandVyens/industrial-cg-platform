@@ -729,8 +729,9 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
 
     blur_glossy: FloatProperty(
         name="Filter Glossy",
-        description="Adaptively blur glossy shaders after blurry bounces, "
-        "to reduce noise at the cost of accuracy",
+        description="Adaptively blur glossy shaders and image textures after blurry bounces, "
+        "to reduce noise and improve texture cache efficiency at the cost of accuracy. Lower "
+        "this value to render caustics",
         min=0.0, max=10.0,
         default=1.0,
     )
@@ -1232,16 +1233,6 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         max=65536,
     )
 
-    # DEPRECATED: use_deep_output is no longer exposed in UI.
-    # Deep output is now auto-enabled when:
-    # - Output format is set to DEEP_EXR
-    # - Compositor File Output node uses DEEP_EXR format
-    # Kept for backward compatibility with existing blend files.
-    use_deep_output: BoolProperty(
-        name="Deep Output",
-        description="(Deprecated) Deep output is automatically enabled when needed",
-        default=False,
-    )
     # DEPRECATED: deep_max_samples is no longer exposed in UI.
     # Kept for backward compatibility with existing blend files.
     # Internal default of 64 is used automatically.
@@ -2146,7 +2137,7 @@ class CyclesPreferences(bpy.types.AddonPreferences):
                           icon='BLANK1', translate=False)
             elif device_type == 'OPTIX':
                 compute_capability = "5.0"
-                driver_version = "535"
+                driver_version = "575"
                 col.label(text=rpt_("Requires NVIDIA GPU with compute capability %s") % compute_capability,
                           icon='BLANK1', translate=False)
                 col.label(text=rpt_("and NVIDIA driver version %s or newer") % driver_version,

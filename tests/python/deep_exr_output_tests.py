@@ -147,6 +147,47 @@ class DeepExrOutputTests(unittest.TestCase):
             "An unmapped Deep File Output must not write fallback view-layer data",
         )
 
+    def test_deep_exr_codec_defaults_to_zips(self):
+        scene_format = self.scene.render.image_settings
+        scene_format.file_format = "PNG"
+        scene_format.exr_codec = "NONE"
+        scene_format.file_format = "DEEP_EXR"
+        self.assertEqual(scene_format.exr_codec, "ZIPS")
+
+        file_output = self.scene.compositing_node_group.nodes.new("CompositorNodeOutputFile")
+        file_output.format.media_type = "IMAGE"
+        file_output.format.file_format = "PNG"
+        file_output.format.exr_codec = "NONE"
+        file_output.format.file_format = "DEEP_EXR"
+        self.assertEqual(file_output.format.exr_codec, "ZIPS")
+
+    def test_existing_project_deep_node_ignores_disabled_legacy_toggle(self):
+        self.scene.cycles["use_deep_output"] = False
+        blend_path = self.output_root / "existing_project.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.ops.wm.open_mainfile(filepath=str(blend_path))
+        self.scene = bpy.context.scene
+        self.assertNotIn(
+            "use_deep_output",
+            type(self.scene.cycles).bl_rna.properties.keys(),
+            "Deep capture must not expose or deserialize a hidden user-controlled enable switch",
+        )
+        self.file_output = next(
+            node
+            for node in self.scene.compositing_node_group.nodes
+            if node.bl_idname == "CompositorNodeOutputFile"
+            and node.format.file_format == "DEEP_EXR"
+        )
+
+        sample_counts = self._render_sample_counts("existing_project", 0.0)
+        self.assertTrue(
+            any(count > 0 for count in sample_counts),
+            "A valid Deep File Output node must capture samples after loading an existing project, "
+            "regardless of the deprecated hidden toggle stored in the blend file",
+        )
+
     def test_deep_rgba_half_channels_honor_color_depth(self):
         path = self._render_deep("half_channels", 0.0, color_depth="16")
 

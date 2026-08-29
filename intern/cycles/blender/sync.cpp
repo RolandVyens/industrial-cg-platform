@@ -12,6 +12,7 @@
 #include "DNA_world_types.h"
 #include "RNA_prototypes.hh"
 #include "RNA_types.hh"
+#include "RE_pipeline.h"
 
 #include "scene/background.h"
 #include "scene/bake.h"
@@ -46,6 +47,19 @@
 CCL_NAMESPACE_BEGIN
 
 static const char *cryptomatte_prefix = "Crypto";
+
+BlenderDeepOutputRequirements BlenderSync::get_deep_output_requirements(
+    blender::Scene &input_scene, blender::Scene &evaluated_scene, const bool viewport)
+{
+  if (viewport) {
+    return {};
+  }
+
+  return {
+      evaluated_scene.r.im_format.imtype == blender::R_IMF_IMTYPE_DEEP_EXR,
+      blender::RE_scene_has_deep_exr_file_output(&input_scene),
+  };
+}
 
 /* Constructor */
 
@@ -305,6 +319,12 @@ void BlenderSync::sync_data(blender::RenderData &b_render,
                             void **python_thread_state,
                             const DeviceInfo &denoise_device_info)
 {
+  const BlenderDeepOutputRequirements deep_output = get_deep_output_requirements(
+      *DEG_get_input_scene(&b_depsgraph), *DEG_get_evaluated_scene(&b_depsgraph), b_v3d != nullptr);
+  if (scene->film->get_use_deep_output() != deep_output.needed()) {
+    has_updates_ = true;
+  }
+
   /* For auto refresh images. */
   ImageManager *image_manager = scene->image_manager.get();
   const float frame = BKE_scene_frame_get(b_scene);
@@ -331,7 +351,7 @@ void BlenderSync::sync_data(blender::RenderData &b_render,
   sync_scene_attributes();
   sync_view_layer(b_view_layer);
   sync_integrator(b_view_layer, background, denoise_device_info);
-  sync_film(b_view_layer, b_screen, b_v3d);
+  sync_film(b_view_layer, b_screen, b_v3d, deep_output.needed());
   sync_shaders(b_depsgraph, b_screen, b_v3d, auto_refresh_update, frame_update);
   sync_images();
 
@@ -609,7 +629,8 @@ void BlenderSync::sync_scene_attributes()
 
 void BlenderSync::sync_film(blender::ViewLayer &b_view_layer,
                             blender::bScreen *b_screen,
-                            blender::View3D *b_v3d)
+                            blender::View3D *b_v3d,
+                            const bool use_deep_output)
 {
   blender::PointerRNA scene_rna_ptr = RNA_id_pointer_create(&b_scene->id);
   blender::PointerRNA cscene = RNA_pointer_get(&scene_rna_ptr, "cycles");
@@ -665,10 +686,7 @@ void BlenderSync::sync_film(blender::ViewLayer &b_view_layer,
   film->set_denoising_pass_use_albedo_roughness_weighting(
       get_boolean(crl, "denoising_pass_use_albedo_roughness_weighting"));
 
-  /* Deep output settings.
-   * Auto-enable deep output when DEEP_EXR format is selected.
-   * Compositor File Output node detection is handled in session.cpp. */
-  bool use_deep_output = (b_scene->r.im_format.imtype == blender::R_IMF_IMTYPE_DEEP_EXR);
+  /* Deep capture is derived once by get_deep_output_requirements() before the sync early-out. */
   film->set_use_deep_output(use_deep_output);
   film->set_deep_max_samples(get_int(cscene, "deep_max_samples"));
 }

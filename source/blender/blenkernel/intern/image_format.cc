@@ -115,7 +115,12 @@ void BKE_image_format_media_type_set(ImageFormatData *format,
 
 void BKE_image_format_set(ImageFormatData *imf, ID *owner_id, const char imtype)
 {
+  const char previous_imtype = imf->imtype;
   imf->imtype = imtype;
+
+  if (imtype == R_IMF_IMTYPE_DEEP_EXR && previous_imtype != R_IMF_IMTYPE_DEEP_EXR) {
+    imf->exr_codec = R_IMF_EXR_CODEC_ZIPS;
+  }
 
   /* Update media type in case it doesn't match the new imtype. Note that normally, one would use
    * the BKE_image_format_media_type_set function to set the media type, but that function itself

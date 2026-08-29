@@ -122767,6 +122767,16 @@ msgid "Report a Bug"
 msgstr "报告问题"
 
 
+msgctxt "Operator"
+msgid "Report an Industrial CG Platform Bug"
+msgstr "报告工业化CG平台问题"
+
+
+msgctxt "Operator"
+msgid "Report a Blender Bug"
+msgstr "报告 Blender 问题"
+
+
 msgid "Blender's extension repository must be enabled to install extensions!"
 msgstr "必须启用Blender的扩展存储库才能安装扩展！"
 

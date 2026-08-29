@@ -632,7 +632,12 @@ class TOPBAR_MT_help(Menu):
 
         layout.separator()
 
-        layout.operator("wm.url_open_preset", text="Report a Bug", icon='URL').type = 'BUG'
+        layout.operator(
+            "wm.url_open",
+            text="Report an Industrial CG Platform Bug",
+            icon='URL',
+        ).url = "https://github.com/RolandVyens/industrial-cg-platform/issues/new/choose"
+        layout.operator("wm.url_open_preset", text="Report a Blender Bug", icon='URL').type = 'BUG'
         layout.operator("wm.sysinfo")
 
 
