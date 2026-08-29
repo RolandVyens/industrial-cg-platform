@@ -13,7 +13,7 @@ See release/text/readme.html for packaged end-user notes.
 
 <p align="center">
   <a href="https://cgweave.com/zh/industrial-cg-platform/">
-    <img width="180" alt="Industrial CG Platform Logo" src="https://cgweave.com/logo.png">
+    <img width="180" alt="Industrial CG Platform Logo" src="https://cgweave.com/logo.webp">
   </a>
 </p>
 
