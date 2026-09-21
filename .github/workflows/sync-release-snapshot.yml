@@ -1,0 +1,65 @@
+name: Sync release snapshot to docs
+
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-release-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out documentation repository
+        uses: actions/checkout@v4
+        with:
+          repository: RolandVyens/industrial-cg-platform-docs
+          ref: main
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+
+      - name: Fetch source repository releases
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            })
+            const snapshot = releases.map((release) => ({
+              tag_name: release.tag_name,
+              name: release.name,
+              published_at: release.published_at,
+              prerelease: release.prerelease,
+              body: release.body,
+              html_url: release.html_url,
+              assets: release.assets.map((asset) => ({
+                id: asset.id,
+                name: asset.name,
+                size: asset.size,
+                download_count: asset.download_count,
+                browser_download_url: asset.browser_download_url,
+              })),
+            }))
+            require('fs').writeFileSync(
+              'docs/releases.data.json',
+              `${JSON.stringify(snapshot, null, 2)}\n`,
+              'utf8',
+            )
+
+      - name: Commit and push snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- docs/releases.data.json; then
+            echo 'Release snapshot is already current.'
+            exit 0
+          fi
+          git add docs/releases.data.json
+          git commit -m 'chore(releases): sync release snapshot'
+          git push origin HEAD:main
