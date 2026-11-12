@@ -11,14 +11,14 @@
 
 CCL_NAMESPACE_BEGIN
 
-PathTraceTile::PathTraceTile(PathTrace &path_trace)
+PathTraceTile::PathTraceTile(PathTrace &path_trace, const bool copied_from_device)
     : OutputDriver::Tile(path_trace.get_render_tile_offset(),
                          path_trace.get_render_tile_size(),
                          path_trace.get_render_size(),
                          path_trace.get_render_tile_params().layer,
                          path_trace.get_render_tile_params().view),
       path_trace_(path_trace),
-      copied_from_device_(false)
+      copied_from_device_(copied_from_device)
 {
 }
 

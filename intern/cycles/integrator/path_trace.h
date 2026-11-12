@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "integrator/deep_bounded_layout.h"
+
 #include <functional>
 
 #include "integrator/denoiser.h"
@@ -13,7 +15,6 @@
 #include "integrator/work_balancer.h"
 
 #include "session/buffers.h"
-#include "session/deep_output_driver.h"
 
 #include "util/guiding.h"  // IWYU pragma: keep
 #include "util/thread.h"
@@ -73,6 +74,8 @@ class PathTrace {
 
   void device_free();
 
+  void set_retain_bounded_native_film(const bool value) { retain_bounded_native_film_ = value; }
+
   /* Set progress tracker.
    * Used to communicate details about the progress to the outer world, check whether rendering is
    * to be canceled.
@@ -107,14 +110,10 @@ class PathTrace {
   /* Set display driver for interactive render buffer display. */
   void set_display_driver(unique_ptr<DisplayDriver> driver);
 
-  /* Set deep output driver for deep EXR output. */
-  void set_deep_output_driver(unique_ptr<DeepOutputDriver> driver);
+  bool set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer);
+  int2 deep_bounded_camera_limits() const;
+  vector<DeepBoundedDeviceAdmission> deep_bounded_admission_devices() const;
 
-  /* Get deep output driver (for finalization after render). */
-  DeepOutputDriver *get_deep_output_driver() const
-  {
-    return deep_output_driver_.get();
-  }
 
   /* Clear the display buffer by filling it in with all zeroes. */
   void zero_display();
@@ -148,7 +147,8 @@ class PathTrace {
 
   /* Read given full-frame file from disk, perform needed processing and write it to the software
    * via the write callback. */
-  void process_full_buffer_from_disk(string_view filename);
+  void process_full_buffer_from_disk(string_view filename,
+                                     DeepFrameCaptureConsumer *beauty_consumer = nullptr);
 
   /* Get number of samples in the current big tile render buffers. */
   int get_num_render_tile_samples() const;
@@ -229,11 +229,6 @@ class PathTrace {
   void rebalance(const RenderWork &render_work);
   void write_tile_buffer(const RenderWork &render_work);
   void finalize_full_buffer_on_disk(const RenderWork &render_work);
-  void sync_deep_output_buffers();
-  void get_deep_tile_pixels(vector<float> &beauty_pixels,
-                            bool &has_beauty_pixels,
-                            vector<float> &sample_count_pixels,
-                            bool &has_sample_count_pixels);
 
   /* Updates/initializes the guiding structures after a rendering iteration.
    * The structures are updated using the training data/samples generated during the previous
@@ -252,13 +247,14 @@ class PathTrace {
   bool is_cancel_requested();
 
   /* Write the big tile render buffer via the write callback. */
-  void tile_buffer_write();
+  void tile_buffer_write(bool copied_from_device = false);
 
   /* Read the big tile render buffer via the read callback. */
   void tile_buffer_read();
 
   /* Write current tile into the file on disk. */
   void tile_buffer_write_to_disk();
+  bool stage_bounded_native_film(const RenderBuffers &tile);
 
   /* Run the progress_update_cb callback if it is needed. */
   void progress_update_if_needed(const RenderWork &render_work);
@@ -280,6 +276,7 @@ class PathTrace {
   unique_ptr<Device> cpu_device_;
 
   Film *film_;
+  DeepFrameCaptureConsumer *deep_frame_consumer_ = nullptr;
   DeviceScene *device_scene_;
 
   RenderScheduler &render_scheduler_;
@@ -291,9 +288,6 @@ class PathTrace {
   /* Output driver to write render buffer to. */
   unique_ptr<OutputDriver> output_driver_;
 
-  /* Deep output driver for deep EXR output. */
-  unique_ptr<DeepOutputDriver> deep_output_driver_;
-
   /* Per-compute device descriptors of work which is responsible for path tracing on its configured
    * device. */
   vector<unique_ptr<PathTraceWork>> path_trace_works_;
@@ -304,6 +298,10 @@ class PathTrace {
   /* Render buffer parameters of the full frame and current big tile. */
   BufferParams full_params_;
   BufferParams big_tile_params_;
+  /* Common arena admission is stable within one frozen logical Tile. */
+  bool deep_aggregate_admitted_ = false;
+  int64_t deep_aggregate_window_[4] = {};
+  float deep_aggregate_resolution_ = 0.0f;
 
   /* Denoiser which takes care of denoising the big tile. */
   unique_ptr<Denoiser> denoiser_;
@@ -379,6 +377,10 @@ class PathTrace {
   struct {
     RenderBuffers *render_buffers = nullptr;
   } full_frame_state_;
+
+  struct BoundedNativeFilm;
+  unique_ptr<BoundedNativeFilm> bounded_native_film_;
+  bool retain_bounded_native_film_ = false;
 };
 
 CCL_NAMESPACE_END

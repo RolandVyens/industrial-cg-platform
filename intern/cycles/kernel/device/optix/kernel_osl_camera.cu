@@ -15,6 +15,21 @@ extern "C" __global__ void __raygen__kernel_optix_integrator_init_from_camera()
 {
   const int global_index = optixGetLaunchIndex().x;
 
+  /* Receipt replay uses this queue entry with no camera tiles. Match the CUDA
+   * adapter before tile arithmetic; launch width is the exact receipt count. */
+  if (kernel_integrator_state.deep_optical_inputs) {
+    integrator_init_from_optical_receipt(nullptr, global_index);
+    return;
+  }
+
+  if (kernel_params.num_tiles == 0) {
+    const int *indices = (const int *)kernel_params.path_index_array;
+    const int path_index = indices ? indices[global_index] : global_index;
+    integrator_init_from_camera(
+        nullptr, path_index, nullptr, kernel_params.render_buffer, 0, 0, 0);
+    return;
+  }
+
   const KernelWorkTile *tiles = (const KernelWorkTile *)kernel_params.path_index_array;
 
   const int tile_index = global_index / kernel_params.max_tile_work_size;
@@ -31,5 +46,6 @@ extern "C" __global__ void __raygen__kernel_optix_integrator_init_from_camera()
   uint x, y, sample;
   get_work_pixel(tile, tile_work_index, &x, &y, &sample);
 
-  integrator_init_from_camera(nullptr, path_index, tile, kernel_params.render_buffer, x, y, sample);
+  integrator_init_from_camera(
+      nullptr, path_index, tile, kernel_params.render_buffer, x, y, sample);
 }

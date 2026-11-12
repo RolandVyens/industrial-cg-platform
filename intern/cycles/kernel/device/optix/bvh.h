@@ -40,13 +40,11 @@ template<typename T> ccl_device_forceinline T *get_payload_ptr_6()
 
 ccl_device_forceinline int get_object_id()
 {
-#ifdef __OBJECT_MOTION__
-  /* Always get the instance ID from the TLAS
-   * There might be a motion transform node between TLAS and BLAS which does not have one. */
-  return optixGetInstanceIdFromHandle(optixGetTransformListHandle(0));
-#else
+  /* The builder has one IAS whose instance ID is the Cycles object index;
+   * its child is a GAS or a motion transform wrapping that GAS. The native
+   * instance-ID query retains the most recently visited instance across motion
+   * transforms, without dereferencing an optional transform-list entry. */
   return optixGetInstanceId();
-#endif
 }
 
 ccl_device_forceinline Intersection get_intersection()

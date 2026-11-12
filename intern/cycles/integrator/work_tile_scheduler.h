@@ -44,6 +44,9 @@ class WorkTileScheduler {
    * Optionally pass max_work_size to do nothing if there is no tile small enough. */
   bool get_work(KernelWorkTile *work_tile, const int max_work_size = 0);
 
+  /* A size-limited get_work() can return false before exhaustion. */
+  bool has_remaining_work() const { return next_work_index_ < total_work_size_; }
+
  protected:
   void reset_scheduler_state();
 

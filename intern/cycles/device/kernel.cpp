@@ -19,6 +19,8 @@ bool device_kernel_has_shading(DeviceKernel kernel)
           kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE ||
           kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME ||
           kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING ||
+          kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL ||
+          kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL_WARP ||
           kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW ||
           kernel == DEVICE_KERNEL_INTEGRATOR_SHADE_DEDICATED_LIGHT ||
           kernel == DEVICE_KERNEL_SHADER_EVAL_DISPLACE ||
@@ -50,6 +52,8 @@ const char *device_kernel_as_string(DeviceKernel kernel)
     /* Integrator. */
     case DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA:
       return "integrator_init_from_camera";
+    case DEVICE_KERNEL_INTEGRATOR_DEEP_BEAUTY_READY:
+      return "integrator_deep_beauty_ready";
     case DEVICE_KERNEL_INTEGRATOR_INIT_FROM_BAKE:
       return "integrator_init_from_bake";
     case DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST:
@@ -82,6 +86,10 @@ const char *device_kernel_as_string(DeviceKernel kernel)
       return "integrator_shade_volume";
     case DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING:
       return "integrator_shade_volume_ray_marching";
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL:
+      return "integrator_shade_deep_volume_optical";
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL_WARP:
+      return "integrator_shade_deep_volume_optical_warp";
     case DEVICE_KERNEL_INTEGRATOR_SHADE_DEDICATED_LIGHT:
       return "integrator_shade_dedicated_light";
     case DEVICE_KERNEL_INTEGRATOR_MEGAKERNEL:
@@ -104,6 +112,8 @@ const char *device_kernel_as_string(DeviceKernel kernel)
       return "integrator_compact_paths_array";
     case DEVICE_KERNEL_INTEGRATOR_COMPACT_STATES:
       return "integrator_compact_states";
+    case DEVICE_KERNEL_INTEGRATOR_DEEP_NATIVE_ROOT_PINS:
+      return "integrator_deep_native_root_pins";
     case DEVICE_KERNEL_INTEGRATOR_TERMINATED_SHADOW_PATHS_ARRAY:
       return "integrator_terminated_shadow_paths_array";
     case DEVICE_KERNEL_INTEGRATOR_COMPACT_SHADOW_PATHS_ARRAY:

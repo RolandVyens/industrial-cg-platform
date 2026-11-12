@@ -122,16 +122,31 @@ class DeviceInfo {
 
   bool has_mnee() const
   {
+    if (!has_mnee_) {
+      return false;
+    }
+
     /* Shadow caustics not supported on HIP without hardware ray-tracing, see #160089.
      * This is a more complex condition that can't be determined in device_hip_info,
      * so there is a helper for it here. */
-    return has_mnee_ && (type != DEVICE_HIP || use_hardware_raytracing);
+    if (type == DEVICE_HIP && !use_hardware_raytracing) {
+      return false;
+    }
+    for (const DeviceInfo &info : multi_devices) {
+      if (info.type == DEVICE_HIP && !info.use_hardware_raytracing) {
+        return false;
+      }
+    }
+    return true;
   }
 };
 
 /* Device */
 
 class Device {
+ protected:
+  uint32_t deep_bounded_policy_ = 0;
+
   friend class device_sub_ptr;
 
  protected:
@@ -182,7 +197,22 @@ class Device {
   /* constant memory */
   virtual void const_copy_to(const char *name, void *host, const size_t size) = 0;
 
+  /* Checked cleanup after a joined native producer, even with a prior logical error.
+   * Unsupported backends cannot acknowledge restoration. Never clears a device error. */
+  virtual bool restore_integrator_state(void * /*host*/, const size_t /*size*/)
+  {
+    return false;
+  }
+
   /* load/compile kernels, must be called before adding tasks */
+  /* Frozen before any kernel or frame work is admitted. No DeviceKernel IDs
+   * are added for physical module variants. */
+  virtual void set_deep_bounded_policy(const uint32_t policy)
+  {
+    deep_bounded_policy_ = policy;
+  }
+  uint32_t deep_bounded_policy() const { return deep_bounded_policy_; }
+
   virtual bool load_kernels(uint /*kernel_features*/)
   {
     return true;

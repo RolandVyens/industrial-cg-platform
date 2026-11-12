@@ -32,3 +32,12 @@ extern "C" __global__ void __raygen__kernel_optix_integrator_shade_volume_ray_ma
                              global_index;
   integrator_shade_volume_ray_marching(nullptr, path_index, kernel_params.render_buffer);
 }
+
+extern "C" __global__ void __raygen__kernel_optix_integrator_shade_deep_volume_optical()
+{
+  const int global_index = optixGetLaunchIndex().x;
+  const int path_index = (kernel_params.path_index_array) ?
+                             kernel_params.path_index_array[global_index] :
+                             global_index;
+  integrator_shade_deep_volume_optical(nullptr, path_index, kernel_params.render_buffer);
+}

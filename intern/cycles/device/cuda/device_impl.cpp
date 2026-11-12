@@ -134,8 +134,15 @@ CUDADevice::CUDADevice(const DeviceInfo &info, Stats &stats, Profiler &profiler,
 CUDADevice::~CUDADevice()
 {
   image_info.free();
-  if (cuModule) {
-    cuda_assert(cuModuleUnload(cuModule));
+  for (CUmodule module : deep_policy_modules_) {
+    if (module) {
+      cuda_assert(cuModuleUnload(module));
+    }
+  }
+  for (CUmodule module : volume_policy_modules_) {
+    if (module) {
+      cuda_assert(cuModuleUnload(module));
+    }
   }
   cuda_assert(cuDevicePrimaryCtxRelease(cuDevice));
 }
@@ -410,6 +417,27 @@ string CUDADevice::compile_kernel(const string &common_cflags, const char *name,
   return cubin;
 }
 
+static CUresult inherit_cuda_parameters(const CUmodule source, const CUmodule destination)
+{
+  if (!source || source == destination) {
+    return CUDA_SUCCESS;
+  }
+  CUdeviceptr src = 0, dst = 0;
+  size_t src_bytes = 0, dst_bytes = 0;
+  CUresult result = cuModuleGetGlobal(&src, &src_bytes, source, "kernel_params");
+  if (result != CUDA_SUCCESS) {
+    return result;
+  }
+  result = cuModuleGetGlobal(&dst, &dst_bytes, destination, "kernel_params");
+  if (result != CUDA_SUCCESS) {
+    return result;
+  }
+  if (src_bytes != sizeof(KernelParamsCUDA) || src_bytes != dst_bytes) {
+    return CUDA_ERROR_INVALID_VALUE;
+  }
+  return cuMemcpyDtoD(dst, src, src_bytes);
+}
+
 bool CUDADevice::load_kernels(const uint kernel_features)
 {
   /* TODO(sergey): Support kernels re-load for CUDA devices adaptive compile.
@@ -417,7 +445,7 @@ bool CUDADevice::load_kernels(const uint kernel_features)
    * Currently re-loading kernel will invalidate memory pointers,
    * causing problems in cuCtxSynchronize.
    */
-  if (cuModule) {
+  if (cuModule && loaded_deep_policy_ == deep_bounded_policy()) {
     if (use_adaptive_compilation()) {
       LOG_INFO << "Skipping CUDA kernel reload for adaptive compilation, not currently supported.";
     }
@@ -435,7 +463,52 @@ bool CUDADevice::load_kernels(const uint kernel_features)
   }
 
   /* get kernel */
-  const char *kernel_name = "kernel";
+  const uint32_t policy = deep_bounded_policy();
+  const char *diagnostic = policy == 1 ? getenv("CYCLES_TEST_DEEP_ALPHA_MODULE_WITHOUT_CAPTURE") :
+                                         nullptr;
+  if (diagnostic && std::strncmp(diagnostic, "compute-", 8) == 0) {
+    if (!deep_policy_modules_[0]) {
+      set_deep_bounded_policy(0);
+      const bool base_loaded = load_kernels(kernel_features);
+      set_deep_bounded_policy(policy);
+      if (!base_loaded) {
+        return false;
+      }
+    }
+    const CUDAContextScope scope(this);
+    size_t bytes = 0;
+    const CUresult result = cuModuleGetGlobal(&deep_module_test_params_, &bytes,
+                                              deep_policy_modules_[0], "kernel_params");
+    if (result != CUDA_SUCCESS || bytes != sizeof(KernelParamsCUDA)) {
+      set_error("Cannot bind the Flat module for compute diagnostics");
+      return false;
+    }
+    deep_module_test_group_ = diagnostic + 8;
+  }
+  if (policy > 3) {
+    set_error("Invalid frozen Deep capture policy");
+    return false;
+  }
+  if (deep_policy_modules_[policy]) {
+    const CUDAContextScope scope(this);
+    const CUmodule candidate = deep_policy_modules_[policy];
+    const CUresult result = inherit_cuda_parameters(cuModule, candidate);
+    cuda_assert(result);
+    if (result != CUDA_SUCCESS) {
+      return false;
+    }
+    cuModule = candidate;
+    if (!load_volume_kernels(kernel_features)) {
+      return false;
+    }
+    loaded_deep_policy_ = policy;
+    kernels.load(this);
+    reserve_local_memory(kernel_features);
+    return !have_error();
+  }
+  static const char *names[] = {"kernel", "kernel_deep_alpha", "kernel_deep_simple",
+                                "kernel_deep_physical"};
+  const char *kernel_name = names[policy];
   string cflags = compile_kernel_get_common_cflags(kernel_features);
   string cubin = compile_kernel(cflags, kernel_name);
   if (cubin.empty()) {
@@ -447,25 +520,87 @@ bool CUDADevice::load_kernels(const uint kernel_features)
 
   string cubin_data;
   CUresult result;
+  CUmodule candidate = nullptr;
 
   if (path_read_compressed_text(cubin, cubin_data)) {
-    result = cuModuleLoadData(&cuModule, cubin_data.c_str());
+    result = cuModuleLoadData(&candidate, cubin_data.c_str());
+    if (result == CUDA_SUCCESS) {
+      result = inherit_cuda_parameters(cuModule, candidate);
+    }
   }
   else {
     result = CUDA_ERROR_FILE_NOT_FOUND;
   }
 
   if (result != CUDA_SUCCESS) {
+    if (candidate) {
+      cuModuleUnload(candidate);
+    }
     set_error(string_printf(
         "Failed to load CUDA kernel from '%s' (%s)", cubin.c_str(), cuewErrorString(result)));
   }
 
   if (result == CUDA_SUCCESS) {
+    cuModule = candidate;
+    deep_policy_modules_[policy] = cuModule;
+    if (!load_volume_kernels(kernel_features)) {
+      return false;
+    }
+    loaded_deep_policy_ = policy;
     kernels.load(this);
     reserve_local_memory(kernel_features);
   }
 
   return (result == CUDA_SUCCESS);
+}
+
+bool CUDADevice::load_volume_kernels(const uint kernel_features)
+{
+  if (info.type != DEVICE_OPTIX) {
+    return true;
+  }
+  const uint32_t policy = deep_bounded_policy();
+  const CUDAContextScope scope(this);
+  CUmodule &module = volume_policy_modules_[policy];
+  if (!module) {
+    static const char *names[] = {"kernel_volume", "kernel_deep_alpha_volume",
+                                  "kernel_deep_simple_volume", "kernel_deep_physical_volume"};
+    const string flags = compile_kernel_get_common_cflags(kernel_features) +
+                         " --fmad=false --entries=kernel_gpu_integrator_shade_volume,"
+                         "kernel_gpu_integrator_shade_volume_ray_marching";
+    const string binary = compile_kernel(flags, names[policy]);
+    string data;
+    if (binary.empty() || !path_read_compressed_text(binary, data)) {
+      set_error("Cannot read the numeric volume kernel module");
+      return false;
+    }
+    CUmodule candidate = nullptr;
+    CUresult result = cuModuleLoadData(&candidate, data.c_str());
+    size_t bytes = 0;
+    CUdeviceptr parameters = 0;
+    if (result == CUDA_SUCCESS) {
+      result = cuModuleGetGlobal(&parameters, &bytes, candidate, "kernel_params");
+      if (result == CUDA_SUCCESS && bytes != sizeof(KernelParamsCUDA)) {
+        result = CUDA_ERROR_INVALID_VALUE;
+      }
+    }
+    if (result != CUDA_SUCCESS) {
+      if (candidate) {
+        cuModuleUnload(candidate);
+      }
+      cuda_assert(result);
+      return false;
+    }
+    module = candidate;
+    volume_policy_params_[policy] = parameters;
+  }
+  const CUresult result = inherit_cuda_parameters(cuModule, module);
+  cuda_assert(result);
+  if (result != CUDA_SUCCESS) {
+    return false;
+  }
+  cuVolumeModule = module;
+  return true;
 }
 
 void CUDADevice::reserve_local_memory(const uint kernel_features)
@@ -679,6 +814,38 @@ device_ptr CUDADevice::mem_alloc_sub_ptr(device_memory &mem, const size_t offset
   return (device_ptr)(((char *)mem.device_pointer) + mem.memory_elements_size(offset));
 }
 
+bool CUDADevice::restore_integrator_state(void *host, const size_t size)
+{
+  if (!host || size != sizeof(IntegratorStateGPU)) {
+    set_error("Invalid native integrator-state restoration size");
+    return false;
+  }
+  const CUDAContextScope scope(this);
+  CUdeviceptr memory = 0;
+  size_t bytes = 0;
+  const CUresult lookup_result = cuModuleGetGlobal(&memory, &bytes, cuModule, "kernel_params");
+  cuda_assert(lookup_result);
+  if (lookup_result != CUDA_SUCCESS)
+    return false;
+  constexpr size_t offset = offsetof(KernelParamsCUDA, integrator_state);
+  if (bytes < offset || size > bytes - offset) {
+    set_error("Native integrator-state restoration exceeds compiled module parameters");
+    return false;
+  }
+  const CUresult copy_result = cuMemcpyHtoD(memory + offset, host, size);
+  cuda_assert(copy_result);
+  if (copy_result != CUDA_SUCCESS) {
+    return false;
+  }
+  if (cuVolumeModule) {
+    const CUresult result = cuMemcpyHtoD(volume_policy_params_[loaded_deep_policy_] + offset,
+                                         host, size);
+    cuda_assert(result);
+    return result == CUDA_SUCCESS;
+  }
+  return true;
+}
+
 void CUDADevice::const_copy_to(const char *name, void *host, const size_t size)
 {
   CUDAContextScope scope(this);
@@ -688,10 +855,23 @@ void CUDADevice::const_copy_to(const char *name, void *host, const size_t size)
   cuda_assert(cuModuleGetGlobal(&mem, &bytes, cuModule, "kernel_params"));
   assert(bytes == sizeof(KernelParamsCUDA));
 
+  const auto copy_field = [&](const size_t offset) {
+    cuda_assert(cuMemcpyHtoD(mem + offset, host, size));
+    if (cuVolumeModule) {
+      cuda_assert(cuMemcpyHtoD(volume_policy_params_[loaded_deep_policy_] + offset, host, size));
+    }
+    if (deep_module_test_params_) {
+      cuda_assert(cuMemcpyHtoD(deep_module_test_params_ + offset, host, size));
+      if (volume_policy_params_[0] && loaded_deep_policy_ != 0) {
+        cuda_assert(cuMemcpyHtoD(volume_policy_params_[0] + offset, host, size));
+      }
+    }
+  };
+
   /* Update data storage pointers in launch parameters. */
 #  define KERNEL_DATA_ARRAY(data_type, data_name) \
     if (strcmp(name, #data_name) == 0) { \
-      cuda_assert(cuMemcpyHtoD(mem + offsetof(KernelParamsCUDA, data_name), host, size)); \
+      copy_field(offsetof(KernelParamsCUDA, data_name)); \
       return; \
     }
   KERNEL_DATA_ARRAY(KernelData, data)
@@ -1070,12 +1250,26 @@ bool CUDADevice::should_use_graphics_interop(const GraphicsInteropDevice &intero
 
 int CUDADevice::get_num_multiprocessors()
 {
-  return get_device_default_attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, 0);
+  int value = cached_num_multiprocessors_.load(std::memory_order_relaxed);
+  if (value == 0) {
+    value = get_device_default_attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, 0);
+    if (value > 0) {
+      cached_num_multiprocessors_.store(value, std::memory_order_relaxed);
+    }
+  }
+  return value;
 }
 
 int CUDADevice::get_max_num_threads_per_multiprocessor()
 {
-  return get_device_default_attribute(CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR, 0);
+  int value = cached_max_threads_per_multiprocessor_.load(std::memory_order_relaxed);
+  if (value == 0) {
+    value = get_device_default_attribute(CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR, 0);
+    if (value > 0) {
+      cached_max_threads_per_multiprocessor_.store(value, std::memory_order_relaxed);
+    }
+  }
+  return value;
 }
 
 bool CUDADevice::get_device_attribute(CUdevice_attribute attribute, int *value)

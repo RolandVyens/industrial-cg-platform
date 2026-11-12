@@ -477,27 +477,34 @@ class FileOutputOperation : public NodeOperation {
   void execute_deep_exr()
   {
     const NodeCompositorFileOutput &storage = node_storage(this->node());
+    const auto report_deep_error = [&](const std::string &message) {
+      this->context().set_info_message(message);
+      if (compositor::RenderContext *render_context = this->context().render_context()) {
+        render_context->set_output_error(message);
+      }
+    };
 
     const Scene *target_scene = nullptr;
     int view_layer_id = 0;
     bool alpha_only = false;
-    if (!bke::compositor::deep_output_target_from_node(this->node(),
-                                                       this->context().get_scene(),
-                                                       &target_scene,
-                                                       &view_layer_id,
-                                                       &alpha_only))
+    if (!bke::compositor::deep_output_target_from_node(
+            this->node(), this->context().get_scene(), &target_scene, &view_layer_id, &alpha_only))
     {
-      this->context().set_info_message(
-          "Deep File Output requires exactly one direct Render Layers input.");
+      report_deep_error("Deep File Output requires exactly one direct Render Layers input.");
       return;
     }
 
     /* Compute output path. */
     char image_path[FILE_MAX];
     const char *view = this->context().get_view_name().data();
+    if (view[0] && storage.format.views_format != R_IMF_VIEWS_INDIVIDUAL) {
+      report_deep_error("Deep EXR nodes require individual view files");
+      return;
+    }
     Vector<path_templates::Error> path_errors = this->get_image_path(
         storage.format, "", view, image_path);
     if (!path_errors.is_empty()) {
+      report_deep_error("Deep File Output path-template resolution failed");
       return;
     }
 
@@ -505,54 +512,76 @@ class FileOutputOperation : public NodeOperation {
     blender::RenderDeepData *deep_data = nullptr;
     int width = 0;
     int height = 0;
-    if (!this->context().get_deep_data(
-            target_scene, view_layer_id, &deep_data, &width, &height))
-    {
+    if (!this->context().get_deep_data(target_scene, view_layer_id, &deep_data, &width, &height)) {
+      report_deep_error(std::string("Missing complete Deep data for output: ") + image_path);
       return;
     }
     if (!deep_data) {
+      report_deep_error(std::string("Missing complete Deep data for output: ") + image_path);
       return;
     }
 
+    if (deep_data->canonical_source) {
+      std::string error;
+      if (!deep_data->canonical_source->write(image_path,
+                                              storage.format.exr_codec,
+                                              storage.format.depth == R_IMF_CHAN_DEPTH_16,
+                                              alpha_only,
+                                              storage.format.deep_merge_tolerance,
+                                              storage.format.deep_alpha_merge_tolerance,
+                                              error,
+                                              uint64_t(this->get_instance_key().value) + 1,
+                                              view))
+      {
+        report_deep_error(std::string("Deep canonical output failed: ") + image_path + ": " +
+                          error);
+      }
+      return;
+    }
     const std::vector<std::vector<DeepSample>> &deep_samples = deep_data->pixels;
+    bool write_success = false;
     float depth_merge_tolerance = storage.format.deep_merge_tolerance;
     const float alpha_merge_tolerance = storage.format.deep_alpha_merge_tolerance;
     if (depth_merge_tolerance <= 0.0f && alpha_merge_tolerance > 0.0f) {
       depth_merge_tolerance = default_deep_merge_tolerance;
     }
     if (depth_merge_tolerance > 0.0f) {
-      IMB_exr_save_deep(deep_samples,
-                        width,
-                        height,
-                        image_path,
-                        storage.format.exr_codec,
-                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
-                        alpha_only,
-                        deep_data->has_display_window,
-                        deep_data->display_size[0],
-                        deep_data->display_size[1],
-                        deep_data->display_offset[0],
-                        deep_data->display_offset[1],
-                        deep_data->data_offset[0],
-                        deep_data->data_offset[1],
-                        depth_merge_tolerance,
-                        alpha_merge_tolerance);
+      write_success = IMB_exr_save_deep(deep_samples,
+                                        width,
+                                        height,
+                                        image_path,
+                                        storage.format.exr_codec,
+                                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
+                                        alpha_only,
+                                        deep_data->has_display_window,
+                                        deep_data->display_size[0],
+                                        deep_data->display_size[1],
+                                        deep_data->display_offset[0],
+                                        deep_data->display_offset[1],
+                                        deep_data->data_offset[0],
+                                        deep_data->data_offset[1],
+                                        depth_merge_tolerance,
+                                        alpha_merge_tolerance);
     }
     else {
-      IMB_exr_save_deep(deep_samples,
-                        width,
-                        height,
-                        image_path,
-                        storage.format.exr_codec,
-                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
-                        alpha_only,
-                        deep_data->has_display_window,
-                        deep_data->display_size[0],
-                        deep_data->display_size[1],
-                        deep_data->display_offset[0],
-                        deep_data->display_offset[1],
-                        deep_data->data_offset[0],
-                        deep_data->data_offset[1]);
+      write_success = IMB_exr_save_deep(deep_samples,
+                                        width,
+                                        height,
+                                        image_path,
+                                        storage.format.exr_codec,
+                                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
+                                        alpha_only,
+                                        deep_data->has_display_window,
+                                        deep_data->display_size[0],
+                                        deep_data->display_size[1],
+                                        deep_data->display_offset[0],
+                                        deep_data->display_offset[1],
+                                        deep_data->data_offset[0],
+                                        deep_data->data_offset[1]);
+    }
+    if (!write_success) {
+      const std::string message = std::string("Failed to write complete Deep EXR: ") + image_path;
+      report_deep_error(message);
     }
   }
 

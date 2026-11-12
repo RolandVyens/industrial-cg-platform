@@ -17,7 +17,7 @@ class PathTrace;
 
 class PathTraceTile : public OutputDriver::Tile {
  public:
-  PathTraceTile(PathTrace &path_trace);
+  PathTraceTile(PathTrace &path_trace, bool copied_from_device = false);
 
   bool get_pass_pixels(const string_view pass_name,
                        const int num_channels,

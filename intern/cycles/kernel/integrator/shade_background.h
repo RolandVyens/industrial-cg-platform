@@ -166,9 +166,13 @@ ccl_device_inline ShaderEvalResult integrate_background(
   return SHADER_EVAL_OK;
 }
 
-ccl_device_inline ShaderEvalResult integrate_sun_lights(
-    KernelGlobals kg, IntegratorState state, ccl_global float *ccl_restrict render_buffer)
+ccl_device_inline ShaderEvalResult
+integrate_sun_lights(KernelGlobals kg,
+                     IntegratorState state,
+                     ccl_global float *ccl_restrict render_buffer,
+                     ccl_private bool *native_paused)
 {
+  *native_paused = false;
   const float3 ray_D = INTEGRATOR_STATE(state, ray, D);
   const float ray_time = INTEGRATOR_STATE(state, ray, time);
   const int lamp_offset = integrator_shade_background_cache_miss_get_resume_offset(state);
@@ -237,10 +241,50 @@ ccl_device_inline ShaderEvalResult integrate_sun_lights(
     const float mis_weight = light_sample_mis_weight_forward_distant(
         kg, state, path_visibility, path_flag, klight->object_id, light_eval.pdf);
 
+    uint32_t native_root = 0;
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (deep_native_is_camera_chain(state)) {
+      native_root = deep_native_append_root(state,
+                                            DEEP_NATIVE_ROOT_DISTANT,
+                                            FLT_MAX,
+                                            klight->object_id,
+                                            PRIM_NONE,
+                                            klight->shader_id);
+      if (!native_root) {
+        *native_paused = true;
+        return SHADER_EVAL_OK; /* The joined host observes the reservation error before Film. */
+      }
+    }
+#endif
     /* Write to render buffer. */
     guiding_record_background(kg, state, eval, mis_weight);
-    film_write_surface_emission(
-        kg, state, eval, mis_weight, render_buffer, object_lightgroup(kg, klight->object_id));
+#if __DEEP_BOUNDED_POLICY__ > 0
+    if (deep_bounded_camera_chain(kg, state) &&
+        deep_bounded_kind(INTEGRATOR_STATE(state, path, deep_bounded_slot_kind)) ==
+            DeepBoundedSourceKind::UNBOUND)
+    {
+      deep_bounded_background(kg, state, true);
+    }
+#endif
+    film_write_surface_emission(kg,
+                                state,
+                                eval,
+                                mis_weight,
+                                render_buffer,
+                                object_lightgroup(kg, klight->object_id),
+                                false,
+                                native_root);
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_native_cameras) {
+      /* Reuse the native cache cursor, but advance only after this actual
+       * light call. A later cache miss cannot replay completed Sun calls. */
+      integrator_shade_background_cache_miss_set_resume_offset(state, lamp + 1);
+      if (deep_native_validation_once(DEEP_NATIVE_FAULT_BACKGROUND_RETRY))
+        return SHADER_EVAL_CACHE_MISS;
+      *native_paused = true;
+      return SHADER_EVAL_OK;
+    }
+#endif
   }
 
   return SHADER_EVAL_OK;
@@ -253,7 +297,10 @@ ccl_device void integrator_shade_background(KernelGlobals kg,
   PROFILING_INIT(kg, PROFILING_SHADE_LIGHT_SETUP);
 
   /* TODO: unify these in a single loop to only have a single shader evaluation call. */
-  ShaderEvalResult result = integrate_sun_lights(kg, state, render_buffer);
+  bool native_paused = false;
+  ShaderEvalResult result = integrate_sun_lights(kg, state, render_buffer, &native_paused);
+  if (native_paused)
+    return; /* Native queue remains authoritative until the final background. */
   if (result == SHADER_EVAL_CACHE_MISS) {
     integrator_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_BACKGROUND);
     return;

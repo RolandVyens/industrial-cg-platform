@@ -8,9 +8,9 @@
 #include "kernel/integrator/surface_shader.h"
 
 #include "kernel/film/data_passes.h"
+#include "kernel/film/deep_write.h"
 #include "kernel/film/denoising_passes.h"
 #include "kernel/film/light_passes.h"
-#include "kernel/film/deep_write.h"
 
 #include "kernel/camera/camera.h"
 
@@ -20,6 +20,7 @@
 #include "kernel/geom/triangle.h"
 
 #include "kernel/integrator/guiding.h"
+#include "kernel/integrator/init_from_camera.h"
 #include "kernel/integrator/shadow_linking.h"
 #include "kernel/integrator/subsurface.h"
 #include "kernel/integrator/volume_stack.h"
@@ -41,6 +42,40 @@ ccl_device_forceinline void integrate_surface_shader_setup(KernelGlobals kg,
 
   shader_setup_from_ray(kg, sd, &ray, &isect);
 }
+
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+ccl_device_inline void deep_native_prepare_surface_candidate(KernelGlobals kg,
+                                                             ConstIntegratorState state,
+                                                             const ccl_private ShaderData *sd,
+                                                             const bool mnee_admission = false)
+{
+  if (!kernel_integrator_state.deep_native_full_optical || !deep_native_is_camera_chain(state))
+    return;
+  uint32_t handle = INTEGRATOR_STATE(state, path, deep_frame_root_handle);
+  if (!handle) {
+    handle = deep_native_append_root(state,
+                                     DEEP_NATIVE_ROOT_SURFACE,
+                                     deep_native_surface_depth(kg, state, sd),
+                                     sd->object,
+                                     sd->prim,
+                                     sd->shader,
+                                     sd->ray_length,
+                                     deep_pack_geometric_normal(sd->Ng),
+                                     false,
+                                     mnee_admission);
+    INTEGRATOR_STATE_WRITE(state, path, deep_frame_root_handle) = handle;
+  }
+  else {
+    const auto *candidate = deep_native_root_handle(
+        INTEGRATOR_STATE(state, path, deep_frame_camera_index), handle);
+    if (!candidate || candidate->kind != DEEP_NATIVE_ROOT_SURFACE ||
+        candidate->object != sd->object || candidate->prim != sd->prim ||
+        candidate->shader != sd->shader || candidate->physical_t != sd->ray_length ||
+        candidate->z != deep_native_surface_depth(kg, state, sd))
+      deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+  }
+}
+#endif
 
 ccl_device_forceinline float3 integrate_surface_ray_offset(KernelGlobals kg,
                                                            const ccl_private ShaderData *sd,
@@ -98,7 +133,8 @@ ccl_device_forceinline float3 integrate_surface_ray_offset(KernelGlobals kg,
 ccl_device_forceinline bool integrate_surface_holdout(KernelGlobals kg,
                                                       ConstIntegratorState state,
                                                       ccl_private ShaderData *sd,
-                                                      ccl_global float *ccl_restrict render_buffer)
+                                                      ccl_global float *ccl_restrict render_buffer,
+                                                      ccl_private Spectrum *deep_holdout = nullptr)
 {
   /* Write holdout transparency to render buffer and stop if fully holdout. */
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
@@ -107,6 +143,7 @@ ccl_device_forceinline bool integrate_surface_holdout(KernelGlobals kg,
       (path_flag & PATH_RAY_TRANSPARENT_BACKGROUND))
   {
     const Spectrum holdout_weight = surface_shader_apply_holdout(sd);
+    if (deep_holdout) *deep_holdout = holdout_weight;
     const Spectrum throughput = INTEGRATOR_STATE(state, path, throughput);
     const float transparent = average(holdout_weight * throughput);
     film_write_holdout(kg, state, path_flag, transparent, render_buffer);
@@ -224,6 +261,15 @@ integrate_direct_light_shadow_init_common(KernelGlobals kg,
   if (mnee_vertex_count > 0) {
     /* Reuse shadow path that was already allocated by intersect_mnee. */
     shadow_state = integrator_state_get_mnee_shadow_state(state);
+#if __DEEP_BOUNDED_POLICY__ == 3
+    if (deep_bounded_active(kg)) {
+      /* The pending shadow was allocated before the real surface was shaded. */
+      INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_slot_kind) =
+          INTEGRATOR_STATE(state, path, deep_bounded_slot_kind);
+      INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_anchor_z) =
+          INTEGRATOR_STATE(state, path, deep_bounded_anchor_z);
+    }
+#endif
     integrator_shadow_path_next(
         shadow_state, DEVICE_KERNEL_INTEGRATOR_SHADOW_PATH_MNEE_PENDING, next_kernel);
   }
@@ -260,6 +306,8 @@ integrate_direct_light_shadow_init_common(KernelGlobals kg,
       state, path, sample);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
       state, path, deep_surface_sample_idx);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_volume_radiance_idx) = INTEGRATOR_STATE(
+      state, path, deep_volume_radiance_idx);
 
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = INTEGRATOR_STATE(
       state, path, transparent_bounce);
@@ -753,6 +801,8 @@ ccl_device_forceinline void integrate_surface_ao(KernelGlobals kg,
       state, path, visibility);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
       state, path, deep_surface_sample_idx);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_volume_radiance_idx) = INTEGRATOR_STATE(
+      state, path, deep_volume_radiance_idx);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, flag) = shadow_flag;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, bounce) = bounce;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = transparent_bounce;
@@ -819,9 +869,72 @@ ccl_device int integrate_surface(KernelGlobals kg,
       /* Filter closures. */
       surface_shader_prepare_closures(kg, state, &sd, path_visibility);
 
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      if (kernel_integrator_state.deep_native_cameras) {
+        if (deep_native_is_camera_chain(state)) {
+          if (kernel_integrator_state.deep_native_full_optical) {
+            /* A vertex can emit and launch NEE before choosing transparent
+             * continuation. Its immutable source survives in those calls, but
+             * does not select the lasting owner or provide any opacity. */
+            deep_native_prepare_surface_candidate(kg, state, &sd);
+          }
+          else if (!isequal(surface_shader_alpha(&sd), one_spectrum()) || (sd.flag & SD_HOLDOUT) ||
+                   (sd.object_flag & SD_OBJECT_HOLDOUT_MASK))
+          {
+            /* No candidate root survives a transparent continuation. Full
+             * camera-chain Optical/holdout support is required before accepting it. */
+            deep_native_capture_error(DEEP_NATIVE_ERROR_SURFACE);
+          }
+          else {
+            deep_native_set_root(state,
+                                 DEEP_NATIVE_ROOT_SURFACE,
+                                 deep_native_surface_depth(kg, state, &sd),
+                                 sd.object,
+                                 sd.prim,
+                                 sd.shader,
+                                 sd.ray_length,
+                                 deep_pack_geometric_normal(sd.Ng));
+          }
+        }
+      }
+#endif
+
 #ifdef __DEEP_OUTPUT__
       /* Write deep sample at primary camera ray intersection (bounce 0).
        * Use shader alpha for transparent surfaces; RGB is applied via Deep Recolor. */
+#  ifdef __KERNEL_GPU__
+      if (kernel_integrator_state.deep_surface_receipts &&
+          INTEGRATOR_STATE(state, path, bounce) == 0)
+      {
+        const float depth = camera_z_depth(kg, sd.P);
+        const float alpha = average(surface_shader_alpha(&sd));
+        if (depth > 0.0f && alpha > 0.0f) {
+          DeepSurfaceReceipt receipt = {};
+          receipt.rgba[3] = alpha;
+          receipt.z = receipt.zback = depth;
+          receipt.pixel = INTEGRATOR_STATE(state, path, render_pixel_index);
+          receipt.sample = INTEGRATOR_STATE(state, path, sample);
+          receipt.rng_pixel = INTEGRATOR_STATE(state, path, rng_pixel);
+          receipt.rng_offset = INTEGRATOR_STATE(state, path, rng_offset);
+          receipt.ordinal = INTEGRATOR_STATE(state, path, transparent_bounce);
+          receipt.path_flags = INTEGRATOR_STATE(state, path, flag);
+          const float3 alpha_rgb = spectrum_to_rgb(surface_shader_alpha(&sd));
+          const float3 throughput = spectrum_to_rgb(INTEGRATOR_STATE(state, path, throughput));
+          receipt.alpha_rgb[0] = alpha_rgb.x;
+          receipt.alpha_rgb[1] = alpha_rgb.y;
+          receipt.alpha_rgb[2] = alpha_rgb.z;
+          receipt.throughput[0] = throughput.x;
+          receipt.throughput[1] = throughput.y;
+          receipt.throughput[2] = throughput.z;
+          receipt.time = INTEGRATOR_STATE(state, ray, time);
+          deep_make_surface_key(
+              sd.object, sd.prim, sd.shader, receipt.object, receipt.prim, receipt.shader);
+          receipt.packed_normal = deep_pack_geometric_normal(sd.Ng);
+          INTEGRATOR_STATE_WRITE(
+              state, path, deep_surface_sample_idx) = film_append_surface_receipt(receipt);
+        }
+      }
+#  endif
       if (kernel_data.film.use_deep_output && (INTEGRATOR_STATE(state, path, bounce) == 0)) {
         const float depth = camera_z_depth(kg, sd.P);
         if (depth > 0.0f) {
@@ -839,18 +952,19 @@ ccl_device int integrate_surface(KernelGlobals kg,
               deep_make_surface_key(
                   sd.object, sd.prim, sd.shader, surface_object, surface_prim, surface_shader);
               INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) =
-                  film_write_deep_surface_sample_transparent(kg,
-                                                             pixel_index,
-                                                             deep_samples,
-                                                             deep_sample_counts,
-                                                             alpha,
-                                                             depth,
-                                                             depth,
-                                                             surface_object,
-                                                             surface_prim,
-                                                             surface_shader,
-                                                             deep_pack_geometric_normal(sd.Ng),
-                                                             INTEGRATOR_STATE(state, path, sample));
+                  film_write_deep_surface_sample_transparent(
+                      kg,
+                      pixel_index,
+                      deep_samples,
+                      deep_sample_counts,
+                      alpha,
+                      depth,
+                      depth,
+                      surface_object,
+                      surface_prim,
+                      surface_shader,
+                      deep_pack_geometric_normal(sd.Ng),
+                      INTEGRATOR_STATE(state, path, sample));
             }
           }
         }
@@ -858,7 +972,29 @@ ccl_device int integrate_surface(KernelGlobals kg,
 #endif
 
       /* Evaluate holdout. */
-      if (!integrate_surface_holdout(kg, state, &sd, render_buffer)) {
+#if __DEEP_BOUNDED_POLICY__ > 0
+      const bool bounded_surface = deep_bounded_camera_chain(kg, state) &&
+                                   !(sd.object_flag & SD_OBJECT_SHADOW_CATCHER);
+      const Spectrum bounded_t = bounded_surface ? surface_shader_transparency(&sd) :
+                                                   zero_spectrum();
+      Spectrum bounded_h = zero_spectrum();
+      const bool holdout_continue = integrate_surface_holdout(
+          kg, state, &sd, render_buffer, bounded_surface ? &bounded_h : nullptr);
+      if (bounded_surface) {
+        deep_bounded_surface(kg, state, &sd, bounded_t, bounded_h, holdout_continue);
+      }
+#elif defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      const bool deep_surface_capture = deep_compact_camera_chain(state);
+      const Spectrum deep_transparency = deep_surface_capture ? surface_shader_transparency(&sd) : zero_spectrum();
+      Spectrum deep_holdout = zero_spectrum();
+      const bool holdout_continue = integrate_surface_holdout(
+          kg, state, &sd, render_buffer, deep_surface_capture ? &deep_holdout : nullptr);
+      if (deep_surface_capture)
+        deep_compact_capture_surface(kg, state, &sd, deep_transparency, deep_holdout);
+#else
+      const bool holdout_continue = integrate_surface_holdout(kg, state, &sd, render_buffer);
+#endif
+      if (!holdout_continue) {
         return LABEL_NONE;
       }
 
@@ -915,6 +1051,24 @@ ccl_device int integrate_surface(KernelGlobals kg,
 
     PROFILING_EVENT(PROFILING_SHADE_SURFACE_INDIRECT_LIGHT);
     continue_path_label = integrate_surface_bsdf_bssrdf_bounce(kg, state, &sd, &rng_state);
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_native_cameras && deep_native_is_camera_chain(state)) {
+      const uint32_t handle = INTEGRATOR_STATE(state, path, deep_frame_root_handle);
+      if (continue_path_label & LABEL_TRANSPARENT) {
+        /* Queued shadow states keep the candidate they snapshotted. The main
+         * camera chain resumes without assigning later media to this vertex. */
+        INTEGRATOR_STATE_WRITE(state, path, deep_frame_root_handle) = 0;
+      }
+      else if (continue_path_label != LABEL_NONE) {
+        const auto *candidate = deep_native_root_handle(
+            INTEGRATOR_STATE(state, path, deep_frame_camera_index), handle);
+        if (!candidate || candidate->kind != DEEP_NATIVE_ROOT_SURFACE)
+          deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+        else
+          deep_native_camera(state)->root_handle = handle;
+      }
+    }
+#endif
 #ifdef __VOLUME__
   }
   else {
@@ -933,6 +1087,16 @@ ccl_device int integrate_surface(KernelGlobals kg,
   if (continue_path_label & LABEL_TRANSMIT) {
     /* Enter/Exit volume. */
     volume_stack_enter_exit<false>(kg, state, &sd);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    deep_compact_save_stack(kg, state, true);
+    if (deep_compact_camera_chain(state)) {
+      auto &deep_ray = kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)];
+      if (!(deep_ray.flags & DEEP_COMPACT_STOP_SHARING)) {
+        deep_ray.cursor = sd.ray_length;
+        deep_ray.last_surface_t = sd.ray_length;
+      }
+    }
+#  endif
   }
 #endif
 
@@ -957,6 +1121,169 @@ ccl_device_forceinline void integrator_shade_surface(KernelGlobals kg,
                                                      IntegratorState state,
                                                      ccl_global float *ccl_restrict render_buffer)
 {
+#if defined(__DEEP_OUTPUT__) && defined(__VOLUME__)
+  if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL) {
+#  ifdef __KERNEL_GPU__
+    if (kernel_integrator_state.deep_compact_rays) {
+      auto &scalar = kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)];
+      if (scalar.flags & DEEP_COMPACT_FINISH_PENDING) {
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        return;
+      }
+      if (scalar.flags & DEEP_COMPACT_PENDING_POINT) {
+        const DeepCompactPrimitive point = scalar.pending_point;
+        const bool apply_boundary = scalar.pending_phase != 3u;
+        if (!deep_compact_resume_point(scalar)) return;
+        auto &coverage = kernel_integrator_state.deep_owned_optical_coverage[state];
+        coverage.cursor_t = scalar.cursor;
+        coverage.z_back = point.back;
+        if (scalar.flags & DEEP_COMPACT_TERMINAL) {
+          coverage.flags |= point.kind == DEEP_COMPACT_BACKGROUND ? DEEP_OWNED_OPTICAL_FAR :
+                                                                  DEEP_OWNED_OPTICAL_VISIBILITY_END;
+          integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        }
+        else {
+          if (apply_boundary) {
+            ShaderData boundary;
+            boundary.flag = point.group;
+            boundary.object = int(point.object);
+            boundary.shader = int(point.shader);
+            volume_stack_enter_exit<false>(kg, state, &boundary);
+          }
+          INTEGRATOR_STATE_WRITE(state, ray, tmin) = intersection_t_offset(scalar.cursor);
+          path_state_next(kg, state, LABEL_TRANSPARENT, point.group);
+          INTEGRATOR_STATE_WRITE(state, path, flag) &= ~(PATH_RAY_TERMINATE_ON_NEXT_SURFACE |
+                                                       PATH_RAY_TERMINATE_AFTER_TRANSPARENT);
+          integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
+        }
+        return;
+      }
+    }
+#  endif
+    ShaderData sd;
+    integrate_surface_shader_setup(kg, state, &sd);
+
+#  ifdef __KERNEL_GPU__
+    if (kernel_integrator_state.deep_owned_optical_coverage && !(sd.flag & SD_HAS_ONLY_VOLUME)) {
+      const uint32_t original_flag = INTEGRATOR_STATE(state, path, flag);
+      const uint32_t shader_flag = original_flag & ~PATH_RAY_DEEP_VOLUME_OPTICAL;
+      surface_shader_eval<node_feature_mask>(
+          kg, state, &sd, nullptr, INTEGRATOR_STATE(state, path, visibility), shader_flag);
+      if (sd.flag & SD_CACHE_MISS) {
+        integrator_path_cache_miss_sorted(state, current_kernel);
+        return;
+      }
+      surface_shader_prepare_closures(kg, state, &sd, INTEGRATOR_STATE(state, path, visibility));
+      const Spectrum raw_t = surface_shader_transparency(&sd);
+      Spectrum raw_q = zero_spectrum();
+      if (((sd.flag & SD_HOLDOUT) || (sd.object_flag & SD_OBJECT_HOLDOUT_MASK)) &&
+          (shader_flag & PATH_RAY_TRANSPARENT_BACKGROUND))
+        raw_q = surface_shader_apply_holdout(&sd);
+      if (!isfinite_safe(raw_t) || !isfinite_safe(raw_q)) {
+        deep_owned_optical_error(DEEP_OPTICAL_ERROR_NONFINITE);
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        return;
+      }
+      const Spectrum t = saturate(raw_t);
+      const Spectrum q = min(max(raw_q, zero_spectrum()), one_spectrum() - t);
+      auto &coverage = kernel_integrator_state.deep_owned_optical_coverage[state];
+      if (kernel_integrator_state.deep_compact_rays) {
+        deep_compact_capture_surface(kg, state, &sd, t, q);
+        auto &scalar = kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)];
+        if (scalar.flags & DEEP_COMPACT_PENDING_POINT) return;
+        coverage.cursor_t = sd.ray_length;
+        coverage.z_back = camera_z_depth(kg, sd.P);
+        coverage.visibility++;
+        if (scalar.flags & DEEP_COMPACT_TERMINAL) {
+          coverage.flags |= DEEP_OWNED_OPTICAL_VISIBILITY_END;
+          integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        }
+        else {
+          volume_stack_enter_exit<false>(kg, state, &sd);
+          INTEGRATOR_STATE_WRITE(state, ray, tmin) = intersection_t_offset(sd.ray_length);
+          path_state_next(kg, state, LABEL_TRANSPARENT, sd.flag);
+          INTEGRATOR_STATE_WRITE(state, path, flag) &= ~(PATH_RAY_TERMINATE_ON_NEXT_SURFACE |
+                                                       PATH_RAY_TERMINATE_AFTER_TRANSPARENT);
+          integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
+        }
+        return;
+      }
+      if (coverage.cursor_t != sd.ray_length) {
+        deep_owned_optical_error(DEEP_OPTICAL_ERROR_COMPLETION);
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        return;
+      }
+      const uint index = atomic_fetch_and_add_uint32(
+          &kernel_integrator_state.queue_counter->deep_owned_optical_visibility_count, 1);
+      if (index >= kernel_integrator_state.deep_owned_optical_visibility_capacity) {
+        deep_owned_optical_error(DEEP_OPTICAL_ERROR_CAPACITY);
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        return;
+      }
+      DeepOwnedOpticalVisibility point = {};
+      point.receipt = state;
+      point.ordinal = coverage.visibility;
+      point.z = camera_z_depth(kg, sd.P);
+      point.physical_t = sd.ray_length;
+      point.transmission[0] = t.x;
+      point.transmission[1] = t.y;
+      point.transmission[2] = t.z;
+      point.holdout[0] = q.x;
+      point.holdout[1] = q.y;
+      point.holdout[2] = q.z;
+      point.object = sd.object;
+      point.prim = sd.prim;
+      point.shader = sd.shader;
+      point.packed_normal = deep_pack_geometric_normal(sd.Ng);
+      if (!isequal(t, raw_t) || !isequal(q, raw_q)) {
+        point.flags |= DEEP_OWNED_OPTICAL_CLAMPED;
+        coverage.clamps++;
+      }
+      kernel_integrator_state.deep_owned_optical_visibility[index] = point;
+      coverage.visibility++;
+      coverage.z_back = point.z;
+      if (is_zero(t)) {
+        coverage.flags |= DEEP_OWNED_OPTICAL_VISIBILITY_END;
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+      }
+      else {
+        volume_stack_enter_exit<false>(kg, state, &sd);
+        INTEGRATOR_STATE_WRITE(state, ray, tmin) = intersection_t_offset(sd.ray_length);
+        path_state_next(kg, state, LABEL_TRANSPARENT, sd.flag);
+        /* Beauty bounce limits do not certify the independent physical suffix. */
+        INTEGRATOR_STATE_WRITE(state, path, flag) &= ~(PATH_RAY_TERMINATE_ON_NEXT_SURFACE |
+                                                       PATH_RAY_TERMINATE_AFTER_TRANSPARENT);
+        integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
+      }
+      return;
+    }
+#  endif
+
+    if (sd.flag & SD_HAS_ONLY_VOLUME) {
+      const int label = integrate_surface_volume_only_bounce(state, &sd);
+      if (label & LABEL_TRANSMIT) {
+        volume_stack_enter_exit<false>(kg, state, &sd);
+        integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
+      }
+      else {
+#  ifdef __KERNEL_GPU__
+        if (kernel_integrator_state.deep_optical_inputs) {
+          deep_owned_optical_bounds(kg, state, 5, sd.ray_length, 0, label, sd.flag, zero_spectrum());
+        }
+#  endif
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+      }
+    }
+    else {
+      /* An opaque/non-volume surface is the useful end of this camera prefix. Beauty will
+       *
+       * independently shade the same surface after the camera state is restored. */
+      integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+    }
+    return;
+  }
+#endif
+
   const int continue_path_label = integrate_surface<node_feature_mask>(kg, state, render_buffer);
   if (continue_path_label == LABEL_CACHE_MISS) {
     integrator_path_cache_miss_sorted(state, current_kernel);

@@ -601,6 +601,7 @@ static void store_result_geometry(const bContext &C,
       Curves *new_curves = geometry.get_curves_for_write();
       if (!new_curves) {
         curves.geometry.wrap() = {};
+        DEG_id_tag_update(&curves.id, ID_RECALC_GEOMETRY);
         break;
       }
 
@@ -617,8 +618,9 @@ static void store_result_geometry(const bContext &C,
       PointCloud *new_points =
           geometry.get_component_for_write<bke::PointCloudComponent>().release();
       if (!new_points) {
-        new_points->attribute_storage.wrap() = {};
+        points.attribute_storage.wrap() = {};
         points.totpoint = 0;
+        DEG_id_tag_update(&points.id, ID_RECALC_GEOMETRY);
         break;
       }
 
@@ -1111,6 +1113,9 @@ static bool run_node_group_poll(bContext *C, wmOperatorType *ot)
     return false;
   }
   const GeometryNodeAssetTraitFlag flag = asset_flag_for_context(*active_object);
+  if (flag == GeometryNodeAssetTraitFlag(0)) {
+    return false;
+  }
   if ((type_data.flag & flag) != flag) {
     return false;
   }

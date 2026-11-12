@@ -4,16 +4,23 @@
 
 #include "session/deep_output_driver.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 #include "device/device.h"
 #include "kernel/types.h"
 #include "session/deep_camera_sample_set.h"
+#include "session/deep_volume_profile.h"
 
 #include "util/log.h"
 #include "util/math.h"
 #include "util/path.h"
 #include "util/string.h"
+#include "util/task.h"
+#include "util/time.h"
 
 #include <cstring>
 
@@ -27,6 +34,24 @@ constexpr float deep_surface_depth_epsilon = 1e-6f;
 constexpr float deep_opaque_surface_alpha_threshold = 1.0f - 1e-6f;
 constexpr float deep_inactive_sample_epsilon = 1e-8f;
 constexpr float deep_surface_normal_dot_threshold = 0.94f;
+
+bool deep_capture_pool_reuse_enabled()
+{
+  const char *value = getenv("CYCLES_EXPERIMENTAL_DEEP_CAPTURE_POOL_REUSE");
+  return value && std::strcmp(value, "1") == 0;
+}
+
+bool deep_volume_profile_enabled()
+{
+  static const bool enabled = getenv("CYCLES_EXPERIMENTAL_DEEP_VOLUME_PROFILE") != nullptr;
+  return enabled;
+}
+
+bool deep_gpu_volume_profile_enabled()
+{
+  const char *value = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_VOLUME_PROFILE");
+  return value && std::strcmp(value, "1") == 0;
+}
 
 struct OpaqueSurfacePrefixInfo {
   int prefix_count = 0;
@@ -378,6 +403,7 @@ struct DeepOutputDriver::DeepBufferSnapshot {
   int window_height = 0;
   int max_samples = 0;
   vector<uint32_t> sample_counts;
+  vector<uint32_t> sample_offsets;
   vector<DeepSampleData> sample_data;
 };
 
@@ -397,32 +423,43 @@ DeepOutputDriver::~DeepOutputDriver()
   release_temporary_host_caches();
 }
 
-void DeepOutputDriver::reset(int width, int height, int max_samples_per_pixel)
+void DeepOutputDriver::reset(const int width,
+                             const int height,
+                             const int max_samples_per_pixel,
+                             const int capture_samples_per_pixel)
 {
   width_ = width;
   height_ = height;
   max_samples_per_pixel_ = max_samples_per_pixel;
+  capture_samples_per_pixel_ = max(capture_samples_per_pixel, max_samples_per_pixel_);
   processed_cache_.reset();
   deep_buffers_processed_ = false;
+  processing_error_.store(false, std::memory_order_relaxed);
   pixel_written_.clear();
   beauty_buffer_.clear();
   use_beauty_buffer_ = false;
   sample_count_buffer_.clear();
   use_sample_count_buffer_ = false;
   sample_count_scale_ = 1.0f;
+  raw_capture_cache_.reset();
+  raw_capture_complete_.clear();
   device_buffers_.clear();
 }
 
 void DeepOutputDriver::clear_device_buffers()
 {
+  processing_error_.store(false, std::memory_order_relaxed);
   for (DeepBufferSlice &slice : device_buffers_) {
     if (slice.buffers) {
+      slice.buffers->discard_retained_device_capture();
       slice.buffers->zero();
     }
   }
   processed_cache_.reset();
   deep_buffers_processed_ = false;
   pixel_written_.clear();
+  raw_capture_cache_.reset();
+  raw_capture_complete_.clear();
 }
 
 DeepRenderBuffers *DeepOutputDriver::get_deep_buffers()
@@ -445,9 +482,11 @@ bool DeepOutputDriver::layout_matches(const vector<SliceParams> &slices) const
     if (existing.device != slice.device || existing.full_x != slice.full_x ||
         existing.full_y != slice.full_y || existing.width != slice.width ||
         existing.height != slice.height || existing.window_x != slice.window_x ||
-        existing.window_y != slice.window_y ||
-        existing.window_width != slice.window_width ||
-        existing.window_height != slice.window_height)
+        existing.window_y != slice.window_y || existing.window_width != slice.window_width ||
+        existing.window_height != slice.window_height ||
+        (existing.buffers &&
+         existing.buffers->get_max_samples_per_pixel() !=
+             capture_samples_for_slice(slice, max(capture_samples_per_pixel_, 1))))
     {
       return false;
     }
@@ -456,21 +495,61 @@ bool DeepOutputDriver::layout_matches(const vector<SliceParams> &slices) const
   return true;
 }
 
+int DeepOutputDriver::capture_samples_for_slice(const SliceParams &slice,
+                                                const int requested) const
+{
+  if (!capture_pool_budget_bytes_)
+    return requested;
+  int samples;
+  size_t bytes;
+  return deep_bounded_sparse_capture_samples(
+             slice.width, slice.height, requested, capture_pool_budget_bytes_, samples, bytes) ?
+             samples :
+             0;
+}
+
 bool DeepOutputDriver::build_device_estimates(const vector<SliceParams> &slices,
                                               int max_samples,
                                               vector<DeviceEstimate> &estimates) const
 {
   estimates.clear();
+  if (capture_pool_budget_bytes_ && (slices.size() != 1 || !deep_volume_profile_enabled())) {
+    device_->set_error("Bounded Deep capture requires a single sparse device slice");
+    return false;
+  }
 
-  for (const SliceParams &slice : slices) {
+  for (size_t i = 0; i < slices.size(); i++) {
+    const SliceParams &slice = slices[i];
     if (!slice.device || slice.width <= 0 || slice.height <= 0) {
       continue;
     }
 
     size_t bytes = 0;
-    if (!deep_compute_buffer_bytes(slice.width, slice.height, max_samples, bytes)) {
+    const int slice_samples = capture_samples_for_slice(slice, max_samples);
+    if (slice_samples <= 0) {
+      slice.device->set_error("Deep append pool budget cannot represent this render geometry");
+      return false;
+    }
+    const bool sparse_capture = deep_volume_profile_enabled();
+    const bool size_valid = sparse_capture ? deep_compute_sparse_buffer_bytes(
+                                                 slice.width, slice.height, slice_samples, bytes) :
+                                             deep_compute_buffer_bytes(
+                                                 slice.width, slice.height, slice_samples, bytes);
+    if (!size_valid) {
       slice.device->set_error("Deep EXR buffer size overflow (dimensions too large)");
       return false;
+    }
+
+    /* Exact-shape reuse already owns this allocation. Charge only newly required memory. */
+    if (deep_capture_pool_reuse_enabled() && sparse_capture && i < device_buffers_.size()) {
+      const DeepBufferSlice &existing = device_buffers_[i];
+      if (existing.device == slice.device && existing.buffers && existing.width == slice.width &&
+          existing.height == slice.height &&
+          existing.buffers->get_max_samples_per_pixel() == slice_samples &&
+          existing.buffers->uses_sparse_capture())
+      {
+        bytes = 0;
+      }
     }
 
     bool found = false;
@@ -561,11 +640,23 @@ vector<DeepOutputDriver::DeepBufferSnapshot> DeepOutputDriver::snapshot_device_b
 
     const size_t num_pixels = static_cast<size_t>(max(existing.width, 0)) *
                               max(existing.height, 0);
-    const size_t total_samples = num_pixels * static_cast<size_t>(snapshot.max_samples);
-    snapshot.sample_counts.assign(existing.buffers->get_sample_counts().data(),
-                                  existing.buffers->get_sample_counts().data() + num_pixels);
-    snapshot.sample_data.assign(existing.buffers->get_sample_data().data(),
-                                existing.buffers->get_sample_data().data() + total_samples);
+    snapshot.sample_counts.resize(num_pixels);
+    snapshot.sample_offsets.resize(num_pixels + 1, 0);
+    for (size_t pixel = 0; pixel < num_pixels; pixel++) {
+      uint32_t raw_count;
+      const DeepSampleData *samples;
+      size_t offset;
+      if (!existing.buffers->get_pixel_sample_range(pixel, raw_count, samples, offset)) {
+        LOG_ERROR << "Failed to preserve a Deep EXR pixel range during rebalance";
+        snapshots.clear();
+        return snapshots;
+      }
+      snapshot.sample_counts[pixel] = raw_count;
+      const size_t count = deep_sample_count_retained(raw_count);
+      snapshot.sample_data.insert(
+          snapshot.sample_data.end(), samples + offset, samples + offset + count);
+      snapshot.sample_offsets[pixel + 1] = snapshot.sample_data.size();
+    }
 
     snapshots.push_back(std::move(snapshot));
   }
@@ -575,10 +666,33 @@ vector<DeepOutputDriver::DeepBufferSnapshot> DeepOutputDriver::snapshot_device_b
 
 void DeepOutputDriver::init_device_buffers(const vector<SliceParams> &slices, int max_samples)
 {
+  const bool trace = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE") != nullptr;
+  const double start = trace ? time_dt() : 0.0;
+  vector<DeepBufferSlice> reused(slices.size());
+  if (deep_capture_pool_reuse_enabled() && deep_volume_profile_enabled()) {
+    for (size_t i = 0; i < min(slices.size(), device_buffers_.size()); i++) {
+      const SliceParams &slice = slices[i];
+      DeepBufferSlice &existing = device_buffers_[i];
+      if (existing.device == slice.device && existing.buffers && existing.width == slice.width &&
+          existing.height == slice.height &&
+          existing.buffers->get_max_samples_per_pixel() ==
+              capture_samples_for_slice(slice, max_samples) &&
+          existing.buffers->uses_sparse_capture())
+      {
+        reused[i].buffers = std::move(existing.buffers);
+        reused[i].uploaded_kernel_data = std::move(existing.uploaded_kernel_data);
+      }
+    }
+  }
+  /* Release unmatched shapes before allocating replacements, preserving the original peak. */
   device_buffers_.clear();
+  if (trace) {
+    std::fprintf(stderr, "DEEP_BUFFER_FREE total_ms=%.6f\n", (time_dt() - start) * 1000);
+  }
   device_buffers_.reserve(slices.size());
 
-  for (const SliceParams &slice : slices) {
+  for (size_t i = 0; i < slices.size(); i++) {
+    const SliceParams &slice = slices[i];
     DeepBufferSlice entry;
     entry.device = slice.device;
     entry.full_x = slice.full_x;
@@ -591,8 +705,26 @@ void DeepOutputDriver::init_device_buffers(const vector<SliceParams> &slices, in
     entry.window_height = slice.window_height;
 
     if (slice.device && slice.width > 0 && slice.height > 0) {
-      entry.buffers = make_unique<DeepRenderBuffers>(slice.device);
-      entry.buffers->reset(slice.width, slice.height, max_samples);
+      entry.buffers = std::move(reused[i].buffers);
+      entry.uploaded_kernel_data = std::move(reused[i].uploaded_kernel_data);
+      if (!entry.buffers) {
+        entry.buffers = make_unique<DeepRenderBuffers>(slice.device);
+      }
+      /* Retained captures were drained before the layout change. Reset counts and host caches;
+       * ordinary restore_snapshots remains the sole owner of same-tile rebalance preservation. */
+      entry.buffers->reset(slice.width,
+                           slice.height,
+                           capture_samples_for_slice(slice, max_samples),
+                           deep_volume_profile_enabled());
+      if (trace && capture_pool_budget_bytes_) {
+        std::fprintf(stderr, "DEEP_BOUNDED_POOL width=%d height=%d average=%d capacity=%zu "
+                             "bytes=%zu budget=%zu\n", slice.width, slice.height,
+                     entry.buffers->get_max_samples_per_pixel(),
+                     entry.buffers->get_global_sample_capacity(),
+                     entry.buffers->get_sample_data().size() * sizeof(DeepSampleData) +
+                         entry.buffers->get_sample_counts().size() * sizeof(uint32_t),
+                     capture_pool_budget_bytes_);
+      }
     }
 
     device_buffers_.push_back(std::move(entry));
@@ -649,7 +781,10 @@ void DeepOutputDriver::restore_snapshots(const vector<DeepBufferSnapshot> &snaps
     }
 
     const size_t dst_pixels = static_cast<size_t>(dst_width) * dst_height;
-    std::fill(dst_counts, dst_counts + dst_pixels, 0);
+    const bool sparse_capture = slice.buffers->uses_sparse_capture();
+    std::fill(dst_counts, dst_counts + dst_pixels + (sparse_capture ? 1 : 0), 0);
+    size_t sparse_write_offset = 0;
+    const size_t sparse_capacity = slice.buffers->get_global_sample_capacity();
 
     for (int y = 0; y < dst_height; ++y) {
       const int global_y = slice.full_y + y;
@@ -667,12 +802,14 @@ void DeepOutputDriver::restore_snapshots(const vector<DeepBufferSnapshot> &snaps
         }
 
         const size_t src_idx = static_cast<size_t>(src_y) * snapshot->width + src_x;
-        uint32_t count = snapshot->sample_counts[src_idx];
+        const uint32_t raw_count = snapshot->sample_counts[src_idx];
+        const bool overflowed = deep_sample_count_overflowed(raw_count);
+        uint32_t count = deep_sample_count_retained(raw_count);
         if (count == 0) {
           continue;
         }
 
-        if (count > static_cast<uint32_t>(dst_max_samples)) {
+        if (!sparse_capture && count > static_cast<uint32_t>(dst_max_samples)) {
           if (!clamp_logged) {
             LOG_WARNING
                 << "Deep EXR buffer preservation clamped samples due to max sample mismatch";
@@ -682,14 +819,39 @@ void DeepOutputDriver::restore_snapshots(const vector<DeepBufferSnapshot> &snaps
         }
 
         const size_t dst_idx = static_cast<size_t>(y) * dst_width + x;
-        dst_counts[dst_idx] = count;
-
-        const size_t src_offset = src_idx * static_cast<size_t>(snapshot->max_samples);
-        const size_t dst_offset = dst_idx * static_cast<size_t>(dst_max_samples);
+        const size_t src_offset = snapshot->sample_offsets[src_idx];
+        size_t dst_offset = dst_idx * static_cast<size_t>(dst_max_samples);
+        if (sparse_capture) {
+          dst_offset = sparse_write_offset;
+          const size_t available = sparse_capacity - min(sparse_write_offset, sparse_capacity);
+          if (count > available) {
+            count = static_cast<uint32_t>(available);
+            if (!clamp_logged) {
+              LOG_WARNING << "Deep EXR sparse buffer preservation reached the shared pool capacity";
+              clamp_logged = true;
+            }
+          }
+          sparse_write_offset += count;
+        }
+        dst_counts[dst_idx] = count |
+                              ((overflowed ||
+                                (sparse_capture && count <
+                                                       deep_sample_count_retained(raw_count))) ?
+                                   DEEP_SAMPLE_COUNT_OVERFLOW :
+                                   0u);
         memcpy(dst_samples + dst_offset,
                snapshot->sample_data.data() + src_offset,
                sizeof(DeepSampleData) * count);
+        if (sparse_capture) {
+          for (uint32_t sample = 0; sample < count; sample++) {
+            dst_samples[dst_offset + sample].pixel_index = static_cast<uint32_t>(dst_idx);
+          }
+        }
       }
+    }
+
+    if (sparse_capture) {
+      dst_counts[dst_pixels] = static_cast<uint32_t>(sparse_write_offset);
     }
 
     slice.buffers->copy_to_device();
@@ -706,7 +868,18 @@ void DeepOutputDriver::sync_device_buffers(const vector<SliceParams> &slices)
     return;
   }
 
-  const int max_samples = max(max_samples_per_pixel_, 1);
+  /* Retained chunks belong to the old slice's pixel coordinates. Drain them before a layout
+   * change destroys their allocations or changes the mapping to the full-image cache. */
+  for (const DeepBufferSlice &slice : device_buffers_) {
+    if (slice.buffers && slice.buffers->has_retained_device_capture()) {
+      if (!flush_device_capture(true)) {
+        return;
+      }
+      break;
+    }
+  }
+
+  const int max_samples = max(capture_samples_per_pixel_, 1);
   vector<DeviceEstimate> estimates;
   if (!build_device_estimates(slices, max_samples, estimates)) {
     return;
@@ -715,14 +888,63 @@ void DeepOutputDriver::sync_device_buffers(const vector<SliceParams> &slices)
     return;
   }
 
-  vector<DeepBufferSnapshot> snapshots = snapshot_device_buffers();
+  /* Preserve device data only when work is rebalanced inside the same logical render tile.
+   * Adjacent tiles have overlapping render-buffer borders, but those border samples have not been
+   * committed to the output window. Restoring them into the next tile and rendering them again
+   * duplicates optical events in narrow tile-periodic bands. */
+  int old_min_x = std::numeric_limits<int>::max();
+  int old_min_y = std::numeric_limits<int>::max();
+  int old_max_x = std::numeric_limits<int>::min();
+  int old_max_y = std::numeric_limits<int>::min();
+  bool old_window_valid = false;
+  for (const DeepBufferSlice &slice : device_buffers_) {
+    if (slice.window_width <= 0 || slice.window_height <= 0) {
+      continue;
+    }
+    old_min_x = min(old_min_x, slice.full_x + slice.window_x);
+    old_min_y = min(old_min_y, slice.full_y + slice.window_y);
+    old_max_x = max(old_max_x, slice.full_x + slice.window_x + slice.window_width);
+    old_max_y = max(old_max_y, slice.full_y + slice.window_y + slice.window_height);
+    old_window_valid = true;
+  }
+
+  int new_min_x = std::numeric_limits<int>::max();
+  int new_min_y = std::numeric_limits<int>::max();
+  int new_max_x = std::numeric_limits<int>::min();
+  int new_max_y = std::numeric_limits<int>::min();
+  bool new_window_valid = false;
+  for (const SliceParams &slice : slices) {
+    if (slice.window_width <= 0 || slice.window_height <= 0) {
+      continue;
+    }
+    new_min_x = min(new_min_x, slice.full_x + slice.window_x);
+    new_min_y = min(new_min_y, slice.full_y + slice.window_y);
+    new_max_x = max(new_max_x, slice.full_x + slice.window_x + slice.window_width);
+    new_max_y = max(new_max_y, slice.full_y + slice.window_y + slice.window_height);
+    new_window_valid = true;
+  }
+
+  const bool preserve_same_tile = old_window_valid && new_window_valid &&
+                                  old_min_x == new_min_x && old_min_y == new_min_y &&
+                                  old_max_x == new_max_x && old_max_y == new_max_y;
+  vector<DeepBufferSnapshot> snapshots = preserve_same_tile ? snapshot_device_buffers() :
+                                                              vector<DeepBufferSnapshot>();
   init_device_buffers(slices, max_samples);
-  restore_snapshots(snapshots);
+  if (preserve_same_tile) {
+    restore_snapshots(snapshots);
+  }
 
   if (pixel_written_.empty()) {
     processed_cache_.reset();
   }
   deep_buffers_processed_ = false;
+}
+
+void DeepOutputDriver::invalidate_device_kernel_data()
+{
+  for (DeepBufferSlice &slice : device_buffers_) {
+    slice.uploaded_kernel_data.clear();
+  }
 }
 
 void DeepOutputDriver::update_device_kernel_data(const KernelData &base_data)
@@ -731,27 +953,70 @@ void DeepOutputDriver::update_device_kernel_data(const KernelData &base_data)
     return;
   }
 
-  for (const DeepBufferSlice &slice : device_buffers_) {
+  for (DeepBufferSlice &slice : device_buffers_) {
     if (!slice.device || !slice.buffers) {
       continue;
     }
 
     KernelData data = base_data;
+    /* Keep the kernel-side addressing mode tied to the buffer layout allocated for this device
+     * slice. The scene KernelData copy can predate per-tile Deep buffer synchronization on GPU
+     * backends; leaving its boolean-style value intact makes the kernel write dense per-pixel
+     * slots while the host interprets the allocation as an append-only sparse pool. */
+    data.film.use_deep_output = slice.buffers->uses_sparse_capture() ? 2 : 1;
+    const char *optical_only = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_OPTICAL_ONLY_KERNEL");
+    data.film.deep_optical_only_kernel =
+        data.film.use_deep_output == 2 && optical_only && std::strcmp(optical_only, "1") == 0 &&
+        !(base_data.kernel_features & KERNEL_FEATURE_OSL_SHADING) &&
+        (slice.device->info.type == DEVICE_CUDA || slice.device->info.type == DEVICE_OPTIX);
+    const char *optical_warp = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_OPTICAL_WARP_KERNEL");
+    if (data.film.deep_optical_only_kernel && optical_warp &&
+        std::strcmp(optical_warp, "1") == 0)
+    {
+      data.film.deep_optical_only_kernel = 2;
+    }
+    const char *optical_wavefront = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_OPTICAL_WAVEFRONT");
+    if (data.film.deep_optical_only_kernel == 2 && optical_wavefront &&
+        std::strcmp(optical_wavefront, "1") == 0)
+    {
+      data.film.deep_optical_only_kernel = 3;
+    }
+    const char *warp_append = getenv("CYCLES_EXPERIMENTAL_DEEP_WARP_APPEND");
+    if (data.film.use_deep_output == 2 && warp_append && std::strcmp(warp_append, "1") == 0 &&
+        (slice.device->info.type == DEVICE_CUDA || slice.device->info.type == DEVICE_OPTIX))
+    {
+      data.film.use_deep_output = 3;
+    }
     data.film.deep_width = slice.width;
     data.film.deep_height = slice.height;
-    data.film.deep_max_samples = max_samples_per_pixel_;
+    data.film.deep_max_samples = slice.buffers->get_max_samples_per_pixel();
     data.film.deep_samples_ptr = slice.buffers->get_sample_data_device_ptr();
     data.film.deep_sample_counts_ptr = slice.buffers->get_sample_counts_device_ptr();
 
+    const char *cache = getenv("CYCLES_EXPERIMENTAL_DEEP_KERNEL_DATA_CACHE");
+    const bool use_cache = cache && std::strcmp(cache, "1") == 0 &&
+        (slice.device->info.type == DEVICE_CUDA || slice.device->info.type == DEVICE_OPTIX);
+    if (use_cache && slice.uploaded_kernel_data.size() == sizeof(data) &&
+        std::memcmp(slice.uploaded_kernel_data.data(), &data, sizeof(data)) == 0)
+    {
+      continue;
+    }
     slice.device->const_copy_to("data", &data, sizeof(data));
+    if (use_cache && !slice.device->have_error()) {
+      slice.uploaded_kernel_data.resize(sizeof(data));
+      std::memcpy(slice.uploaded_kernel_data.data(), &data, sizeof(data));
+    }
+    else {
+      slice.uploaded_kernel_data.clear();
+    }
   }
 }
 
-void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
+bool DeepOutputDriver::finalize_deep_output(const std::string &filepath)
 {
   std::vector<std::vector<blender::DeepSample>> *deep_data = ensure_processed_cache();
   if (!deep_data) {
-    return;
+    return false;
   }
 
   /* Write using provided callback. */
@@ -773,15 +1038,16 @@ void DeepOutputDriver::finalize_deep_output(const std::string &filepath)
         data_offset_x_,
         data_offset_y_);
     if (success) {
-    LOG_INFO << "Deep EXR saved successfully: " << filepath;
+      LOG_INFO << "Deep EXR saved successfully: " << filepath;
     }
     else {
       LOG_ERROR << "Failed to write deep EXR: " << filepath;
     }
+    return success;
   }
   else {
     LOG_WARNING << "No deep EXR write callback set - skipping file output";
-    LOG_INFO << "Deep output finalization complete (callback not configured)";
+    return false;
   }
 }
 
@@ -792,6 +1058,13 @@ DeepOutputDriver::get_unmerged_processed_deep_data()
   if (!deep_data) {
     return nullptr;
   }
+  if (getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_VOLUME_DUMP_ROOT") && width_ > 204 && height_ > 127) {
+    for (const size_t pixel : {size_t(127) * width_ + 204, size_t(136) * width_ + 165}) {
+      std::fprintf(stderr, "DEEP_GPU_PROFILE_EXPORT pixel=%zu samples=%zu\n", pixel, (*deep_data)[pixel].size());
+      for (const auto &sample : (*deep_data)[pixel])
+        std::fprintf(stderr, "DEEP_GPU_PROFILE_EXPORT_VALUE %.9g %.9g %.9g\n", sample.z, sample.z_back, sample.a);
+    }
+  }
 
   return processed_cache_.release();
 }
@@ -799,6 +1072,8 @@ DeepOutputDriver::get_unmerged_processed_deep_data()
 void DeepOutputDriver::release_temporary_host_caches()
 {
   processed_cache_.reset();
+  raw_capture_cache_.reset();
+  raw_capture_complete_.free_memory();
   pixel_written_.free_memory();
   sample_count_buffer_.free_memory();
   beauty_buffer_.free_memory();
@@ -809,6 +1084,8 @@ void DeepOutputDriver::release_temporary_host_caches()
 
 void DeepOutputDriver::set_beauty_buffer(const float *rgba_buffer, int width, int height)
 {
+  if (getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_VOLUME_DUMP_ROOT"))
+    std::fprintf(stderr, "DEEP_GPU_PROFILE_ROUTE beauty_set cache=%d size=%dx%d\n", int(processed_cache_ != nullptr), width, height);
   if (!rgba_buffer || width != width_ || height != height_) {
     use_beauty_buffer_ = false;
     beauty_buffer_.clear();
@@ -856,10 +1133,21 @@ void DeepOutputDriver::accumulate_tile(const float *beauty_pixels,
     return;
   }
 
-  if (!process_device_buffers()) {
+  const bool trace = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE") != nullptr;
+  const double start = trace ? time_dt() : 0.0;
+  const bool batched_capture = deep_volume_profile_enabled();
+  if (batched_capture) {
+    if (!flush_device_capture(true, deep_gpu_volume_profile_enabled())) {
+      processing_error_.store(true, std::memory_order_relaxed);
+      return;
+    }
+  }
+  else if (!process_device_buffers()) {
+    processing_error_.store(true, std::memory_order_relaxed);
     return;
   }
 
+  const double flushed = trace ? time_dt() : 0.0;
   if (!processed_cache_) {
     init_processed_cache();
   }
@@ -893,20 +1181,40 @@ void DeepOutputDriver::accumulate_tile(const float *beauty_pixels,
     }
   }
 
-  const bool track_overlap = true;
-  bool overlap_logged = false;
-  for (const DeepBufferSlice &slice : device_buffers_) {
-    merge_slice_into_cache(slice,
-                           track_overlap,
-                           pixel_written_,
-                           overlap_logged,
-                           beauty_pixels,
-                           tile_width,
-                           tile_height,
-                           tile_offset_x,
-                           tile_offset_y);
+  if (batched_capture) {
+    if (deep_gpu_volume_profile_enabled() &&
+        !merge_device_volume_capture(beauty_pixels, tile_width, tile_height,
+                                     tile_offset_x, tile_offset_y))
+    {
+      processing_error_.store(true, std::memory_order_relaxed);
+      return;
+    }
+    merge_raw_capture_region_into_cache(beauty_pixels,
+                                        tile_width,
+                                        tile_height,
+                                        tile_offset_x,
+                                        tile_offset_y);
+  }
+  else {
+    const bool track_overlap = true;
+    bool overlap_logged = false;
+    for (const DeepBufferSlice &slice : device_buffers_) {
+      merge_slice_into_cache(slice,
+                             track_overlap,
+                             pixel_written_,
+                             overlap_logged,
+                             beauty_pixels,
+                             tile_width,
+                             tile_height,
+                             tile_offset_x,
+                             tile_offset_y);
+    }
   }
 
+  if (trace) {
+    std::fprintf(stderr, "DEEP_TILE_MERGE flush_ms=%.6f merge_ms=%.6f\n",
+                 (flushed - start) * 1000, (time_dt() - flushed) * 1000);
+  }
   /* Next tile will have different device buffers; reprocess on demand. */
   deep_buffers_processed_ = false;
 }
@@ -923,6 +1231,8 @@ void DeepOutputDriver::set_enabled(bool enabled)
     processed_cache_.reset();
     deep_buffers_processed_ = false;
     pixel_written_.clear();
+    raw_capture_cache_.reset();
+    raw_capture_complete_.clear();
     device_buffers_.clear();
   }
 }
@@ -989,6 +1299,7 @@ bool DeepOutputDriver::process_device_buffers()
     /* Copy data from device to host. */
     if (!slice.buffers->copy_from_device()) {
       LOG_ERROR << "Failed to copy deep buffers from device";
+      processing_error_.store(true, std::memory_order_relaxed);
       return false;
     }
 
@@ -1001,10 +1312,398 @@ bool DeepOutputDriver::process_device_buffers()
   return true;
 }
 
+void DeepOutputDriver::init_raw_capture_cache()
+{
+  const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
+  raw_capture_cache_ = make_unique<vector<vector<DeepSampleData>>>(pixel_count);
+  raw_capture_complete_.assign(pixel_count, 1);
+}
+
+bool DeepOutputDriver::flush_device_capture(const bool finalize, const bool allow_device_profile)
+{
+  if (!enabled_ || !deep_volume_profile_enabled()) {
+    return true;
+  }
+  if (!raw_capture_cache_) {
+    init_raw_capture_cache();
+  }
+
+  const char *parallel = getenv("CYCLES_EXPERIMENTAL_DEEP_PARALLEL_CAPTURE");
+  const bool use_parallel = parallel && std::strcmp(parallel, "1") == 0;
+  const char *trace = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE");
+  const bool trace_enabled = trace && std::strcmp(trace, "1") == 0;
+  if (trace_enabled && finalize) {
+    std::fprintf(stderr, "DEEP_GPU_PROFILE_ROUTE final_flush allow=%d slices=%zu\n",
+                 int(allow_device_profile), device_buffers_.size());
+  }
+  const auto append_batch = [&](DeepBufferSlice &slice) {
+    const double start = trace_enabled ? time_dt() : 0.0;
+    slice.buffers->sort_samples_by_depth();
+    const double append_start = trace_enabled ? time_dt() : 0.0;
+    std::atomic<bool> success(true);
+    std::atomic<bool> overflow(false);
+    const auto append_rows = [&](const blocked_range<int> &rows) {
+      for (int y = rows.begin(); y < rows.end(); y++) {
+        const int local_y = slice.window_y + y;
+        const int global_y = slice.full_y + local_y;
+        if (local_y < 0 || local_y >= slice.height || global_y < 0 || global_y >= height_) {
+          continue;
+        }
+        for (int x = 0; x < slice.window_width; x++) {
+          const int local_x = slice.window_x + x;
+          const int global_x = slice.full_x + local_x;
+          if (local_x < 0 || local_x >= slice.width || global_x < 0 || global_x >= width_) {
+            continue;
+          }
+
+          const size_t local_idx = static_cast<size_t>(local_y) * slice.width + local_x;
+          const size_t global_idx = static_cast<size_t>(global_y) * width_ + global_x;
+          uint32_t raw_count;
+          const DeepSampleData *samples;
+          size_t offset;
+          if (!slice.buffers->get_pixel_sample_range(local_idx, raw_count, samples, offset)) {
+            success.store(false);
+            return;
+          }
+
+          if (deep_sample_count_overflowed(raw_count)) {
+            overflow.store(true);
+            success.store(false);
+            return;
+          }
+          const size_t count = deep_sample_count_retained(raw_count);
+          if (count > 0) {
+            vector<DeepSampleData> &destination = (*raw_capture_cache_)[global_idx];
+            destination.insert(destination.end(), samples + offset, samples + offset + count);
+          }
+        }
+      }
+    };
+    const blocked_range<int> rows(0, max(0, slice.window_height), 1);
+    if (use_parallel) {
+      tbb::task_group_context context;
+      context.capture_fp_settings();
+      parallel_for(rows, append_rows, context);
+    }
+    else {
+      append_rows(rows);
+    }
+    if (overflow.load()) {
+      slice.device->set_error(
+          "Deep EXR optical capture overflow: the bounded capture batch was too large");
+    }
+    if (trace_enabled) {
+      std::fprintf(stderr,
+                   "DEEP_CAPTURE_APPEND parallel=%d sort_ms=%.6f append_ms=%.6f\n",
+                   int(use_parallel), (append_start - start) * 1000,
+                   (time_dt() - append_start) * 1000);
+    }
+    return success.load();
+  };
+
+  for (DeepBufferSlice &slice : device_buffers_) {
+    if (!slice.buffers) {
+      continue;
+    }
+    const DeepDeviceCaptureResult capture = slice.buffers->retain_device_capture();
+    if (capture == DeepDeviceCaptureResult::Error) {
+      processing_error_.store(true, std::memory_order_relaxed);
+      return false;
+    }
+    if (capture == DeepDeviceCaptureResult::Retained) {
+      slice.buffers->zero();
+      if (!finalize || allow_device_profile) {
+        continue;
+      }
+    }
+    /* Preserve original batch order, aborted-attempt filtering, and per-batch depth sorting on
+     * both finalization and a budget spill. A spill never drops events or camera samples. */
+    while (slice.buffers->has_retained_device_capture()) {
+      if (!slice.buffers->copy_retained_device_capture() || !append_batch(slice)) {
+        processing_error_.store(true, std::memory_order_relaxed);
+        return false;
+      }
+    }
+    if (capture == DeepDeviceCaptureResult::Readback) {
+      if (!slice.buffers->copy_from_device() || !append_batch(slice)) {
+        processing_error_.store(true, std::memory_order_relaxed);
+        return false;
+      }
+      slice.buffers->zero();
+    }
+  }
+
+  deep_buffers_processed_ = false;
+  return true;
+}
+
+bool DeepOutputDriver::merge_device_volume_capture(const float *beauty_pixels,
+                                                   const int beauty_width,
+                                                   const int beauty_height,
+                                                   const int beauty_offset_x,
+                                                   const int beauty_offset_y)
+{
+  if (getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE")) {
+    std::fprintf(stderr, "DEEP_GPU_PROFILE_ROUTE merge slices=%zu beauty=%d size=%dx%d max=%d\n",
+                 device_buffers_.size(), int(beauty_pixels != nullptr), beauty_width, beauty_height,
+                 max_samples_per_pixel_);
+  }
+  /* Multiple device slices and missing Beauty metadata retain the complete established path.
+   * Layout changes also use the ordinary non-deferred flush before changing pixel ownership. */
+  if (device_buffers_.size() != 1 || !beauty_pixels || beauty_width <= 0 || beauty_height <= 0)
+    return flush_device_capture(true);
+  DeepBufferSlice &slice = device_buffers_.front();
+  if (getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE")) {
+    std::fprintf(stderr, "DEEP_GPU_PROFILE_ROUTE slice full=%d,%d size=%dx%d window=%d,%d %dx%d\n",
+                 slice.full_x, slice.full_y, slice.width, slice.height, slice.window_x,
+                 slice.window_y, slice.window_width, slice.window_height);
+  }
+  if (!slice.buffers || !slice.buffers->has_retained_device_capture()) return true;
+  for (int y = 0; y < slice.window_height; y++) {
+    const int gy = slice.full_y + slice.window_y + y;
+    if (gy < 0 || gy >= height_) continue;
+    for (int x = 0; x < slice.window_width; x++) {
+      const int gx = slice.full_x + slice.window_x + x;
+      if (gx < 0 || gx >= width_) continue;
+      if (!(*raw_capture_cache_)[size_t(gy) * width_ + gx].empty())
+        return flush_device_capture(true); /* A prior budget spill already belongs to this pixel. */
+    }
+  }
+  const size_t pixels = size_t(slice.width) * slice.height;
+  vector<float> population(pixels, 1.0f), beauty(pixels * 4, 0.0f);
+  for (int y = 0; y < slice.height; y++) {
+    const int gy = slice.full_y + y;
+    for (int x = 0; x < slice.width; x++) {
+      const int gx = slice.full_x + x;
+      const size_t local = size_t(y) * slice.width + x;
+      if (gx < 0 || gx >= width_ || gy < 0 || gy >= height_) continue;
+      population[local] = float(max(1, int(get_sample_count_pixel(size_t(gy) * width_ + gx) + 0.5f)));
+      const int bx = gx - beauty_offset_x, by = gy - beauty_offset_y;
+      if (bx >= 0 && bx < beauty_width && by >= 0 && by < beauty_height)
+        std::copy_n(beauty_pixels + (size_t(by) * beauty_width + bx) * 4, 4,
+                    beauty.data() + local * 4);
+    }
+  }
+  vector<uint32_t> offsets;
+  vector<uint8_t> storage;
+  const bool trace = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE") != nullptr;
+  const double profile_start = trace ? time_dt() : 0.0;
+  const DeepVolumeCaptureResult result = slice.buffers->profile_retained_device_capture(
+      population, beauty, max_samples_per_pixel_, offsets, storage);
+  const double install_start = trace ? time_dt() : 0.0;
+  if (result == DeepVolumeCaptureResult::Error) return false;
+  if (result == DeepVolumeCaptureResult::Unsupported) return flush_device_capture(true);
+  if (offsets.size() != pixels + 1 || storage.size() != size_t(offsets.back()) * 24) {
+    slice.device->set_error("Invalid Deep GPU profile host layout");
+    return false;
+  }
+  static_assert(sizeof(blender::DeepSample) == 24);
+  const bool dump_install = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_VOLUME_DUMP_ROOT") != nullptr;
+  std::atomic<bool> invalid_range(false), invalid_sample(false);
+  const auto install_rows = [&](const blocked_range<int> &rows) {
+    for (int y = rows.begin(); y < rows.end(); y++) {
+      const int ly = slice.window_y + y, gy = slice.full_y + ly;
+      if (ly < 0 || ly >= slice.height || gy < 0 || gy >= height_) continue;
+      for (int x = 0; x < slice.window_width; x++) {
+        const int lx = slice.window_x + x, gx = slice.full_x + lx;
+        if (lx < 0 || lx >= slice.width || gx < 0 || gx >= width_) continue;
+        const size_t local = size_t(ly) * slice.width + lx, global = size_t(gy) * width_ + gx;
+        if (!slice.buffers->device_profile_pixel(local)) continue;
+        if (offsets[local] > offsets[local + 1] || offsets[local + 1] > offsets.back()) {
+          invalid_range.store(true, std::memory_order_relaxed);
+          return;
+        }
+        if (pixel_written_[global]) continue;
+        auto &destination = (*processed_cache_)[global];
+        destination.resize(offsets[local + 1] - offsets[local]);
+        if (!destination.empty())
+          std::memcpy(destination.data(), storage.data() + size_t(offsets[local]) * 24,
+                       destination.size() * 24);
+        for (const blender::DeepSample &sample : destination) {
+          if (!std::isfinite(sample.r) || !std::isfinite(sample.g) || !std::isfinite(sample.b) ||
+              !std::isfinite(sample.a) || sample.a < 0 || sample.a > 1 ||
+              !std::isfinite(sample.z) || !std::isfinite(sample.z_back) || sample.z_back <= sample.z)
+          {
+            invalid_sample.store(true, std::memory_order_relaxed);
+            return;
+          }
+        }
+        pixel_written_[global] = 1;
+        if (dump_install &&
+            ((gx == 204 && gy == 127) || (gx == 165 && gy == 136))) {
+          std::fprintf(stderr, "DEEP_GPU_PROFILE_INSTALL pixel=%zu samples=%zu\n", global, destination.size());
+          for (const auto &sample : destination)
+            std::fprintf(stderr, "DEEP_GPU_PROFILE_INSTALL_VALUE %.9g %.9g %.9g\n", sample.z, sample.z_back, sample.a);
+        }
+      }
+    }
+  };
+  const char *parallel_install = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_PARALLEL_INSTALL");
+  const bool use_parallel_install = parallel_install && std::strcmp(parallel_install, "1") == 0;
+  const blocked_range<int> rows(0, max(0, slice.window_height), 1);
+  if (use_parallel_install) {
+    /* Each row owns distinct sample vectors and byte-valued pixel status. Join before
+     * checking errors, selecting fallback pixels, or releasing retained device batches. */
+    tbb::task_group_context context;
+    context.capture_fp_settings();
+    parallel_for(rows, install_rows, context);
+  }
+  else {
+    install_rows(rows);
+  }
+  if (invalid_range.load(std::memory_order_relaxed)) {
+    slice.device->set_error("Invalid Deep GPU profile pixel range");
+    return false;
+  }
+  if (invalid_sample.load(std::memory_order_relaxed)) {
+    slice.device->set_error("Non-finite or invalid Deep GPU profile sample");
+    return false;
+  }
+  const double install_finish = trace ? time_dt() : 0.0;
+  const char *profile_window = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_PROFILE_WINDOW");
+  if (profile_window && std::strcmp(profile_window, "1") == 0) {
+    const int x = max(slice.window_x, max(0, -slice.full_x));
+    const int y = max(slice.window_y, max(0, -slice.full_y));
+    const int right = min(slice.window_x + slice.window_width, min(slice.width, width_ - slice.full_x));
+    const int bottom = min(slice.window_y + slice.window_height, min(slice.height, height_ - slice.full_y));
+    if (!slice.buffers->select_device_profile_window(x, y, max(0, right - x), max(0, bottom - y))) {
+      return false;
+    }
+  }
+  if (!slice.buffers->device_profile_needs_host_fallback())
+    slice.buffers->discard_retained_device_capture();
+  /* The selector keeps complete chronological raw payloads for every unsupported pixel. */
+  const bool success = flush_device_capture(true);
+  if (trace) {
+    std::fprintf(stderr,
+                 "DEEP_GPU_PROFILE_INSTALL parallel=%d profile_ms=%.6f install_ms=%.6f fallback_ms=%.6f\n",
+                 int(use_parallel_install), (install_start - profile_start) * 1000,
+                 (install_finish - install_start) * 1000,
+                 (time_dt() - install_finish) * 1000);
+  }
+  return success;
+}
+
 void DeepOutputDriver::init_processed_cache()
 {
   const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
   processed_cache_ = make_unique<std::vector<std::vector<blender::DeepSample>>>(pixel_count);
+}
+
+void DeepOutputDriver::merge_raw_capture_region_into_cache(const float *beauty_pixels,
+                                                           const int beauty_width,
+                                                           const int beauty_height,
+                                                           const int beauty_offset_x,
+                                                           const int beauty_offset_y)
+{
+  if (!processed_cache_ || !raw_capture_cache_) {
+    return;
+  }
+
+  const int region_x = beauty_pixels && beauty_width > 0 ? beauty_offset_x : 0;
+  const int region_y = beauty_pixels && beauty_height > 0 ? beauty_offset_y : 0;
+  const int region_width = beauty_pixels && beauty_width > 0 ? beauty_width : width_;
+  const int region_height = beauty_pixels && beauty_height > 0 ? beauty_height : height_;
+  std::atomic<bool> overlap_logged(false);
+  const char *parallel = getenv("CYCLES_EXPERIMENTAL_DEEP_PARALLEL_PROFILE");
+  const bool use_parallel = parallel && std::strcmp(parallel, "1") == 0;
+  const char *trace = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE");
+  const bool trace_enabled = trace && std::strcmp(trace, "1") == 0;
+  const char *surface_ties = getenv("CYCLES_EXPERIMENTAL_DEEP_SURFACE_TIE_ORDER");
+  const bool deterministic_surface_ties = surface_ties && std::strcmp(surface_ties, "1") == 0;
+  const double start = trace_enabled ? time_dt() : 0.0;
+
+  /* Each row owns distinct vectors and byte-valued status entries. Keep every pixel's sort,
+   * ray encounter order and floating-point operations unchanged; join before writing the tile. */
+  const auto process_rows = [&](const blocked_range<int> &rows) {
+    for (int y = rows.begin(); y < rows.end(); y++) {
+      const int global_y = region_y + y;
+      if (global_y < 0 || global_y >= height_) {
+        continue;
+      }
+      for (int x = 0; x < region_width; x++) {
+        const int global_x = region_x + x;
+        if (global_x < 0 || global_x >= width_) {
+          continue;
+        }
+        const size_t global_idx = static_cast<size_t>(global_y) * width_ + global_x;
+        vector<DeepSampleData> &samples = (*raw_capture_cache_)[global_idx];
+        if (samples.empty()) {
+          continue;
+        }
+
+        if (!pixel_written_.empty() && pixel_written_[global_idx]) {
+          if (!overlap_logged.exchange(true)) {
+            LOG_WARNING << "Deep EXR raw capture overlap detected while merging tiles";
+          }
+          samples.clear();
+          raw_capture_complete_[global_idx] = 1;
+          continue;
+        }
+        if (!pixel_written_.empty()) {
+          pixel_written_[global_idx] = 1;
+        }
+
+        if (deterministic_surface_ties) {
+          /* Equal-depth hard surfaces otherwise reach normal-based grouping in append order.
+           * A different GPU batch topology can move a whole camera's coverage between groups.
+           * Break only these exact depth ties; retain every record and every depth. */
+          std::sort(samples.begin(), samples.end(), [](const DeepSampleData &a,
+                                                       const DeepSampleData &b) {
+            if (a.z != b.z) return a.z < b.z;
+            const bool a_surface = deep_sample_has_hard_surface_metadata(a);
+            const bool b_surface = deep_sample_has_hard_surface_metadata(b);
+            if (a_surface != b_surface) return a_surface < b_surface;
+            if (!a_surface) return false;
+            if (a.flags != b.flags) return a.flags < b.flags;
+            if (a.surface_object != b.surface_object) return a.surface_object < b.surface_object;
+            if (a.surface_prim != b.surface_prim) return a.surface_prim < b.surface_prim;
+            if (a.surface_shader != b.surface_shader) return a.surface_shader < b.surface_shader;
+            return a.packed_geometric_normal < b.packed_geometric_normal;
+          });
+        }
+        else {
+          std::sort(samples.begin(), samples.end());
+        }
+        if (beauty_pixels && beauty_width > 0 && beauty_height > 0) {
+          const size_t beauty_idx = (static_cast<size_t>(y) * beauty_width + x) * 4;
+          populate_pixel_samples_with_resolved_beauty(global_idx,
+                                                      int(samples.size()),
+                                                      samples.data(),
+                                                      0,
+                                                      true,
+                                                      beauty_pixels[beauty_idx + 0],
+                                                      beauty_pixels[beauty_idx + 1],
+                                                      beauty_pixels[beauty_idx + 2],
+                                                      beauty_pixels[beauty_idx + 3],
+                                                      raw_capture_complete_[global_idx] != 0);
+        }
+        else {
+          populate_pixel_samples(global_idx,
+                                 int(samples.size()),
+                                 samples.data(),
+                                 0,
+                                 raw_capture_complete_[global_idx] != 0);
+        }
+        samples.clear();
+        raw_capture_complete_[global_idx] = 1;
+      }
+    }
+  };
+  const blocked_range<int> rows(0, max(0, region_height), 1);
+  if (use_parallel) {
+    tbb::task_group_context context;
+    context.capture_fp_settings();
+    parallel_for(rows, process_rows, context);
+  }
+  else {
+    process_rows(rows);
+  }
+  if (trace_enabled) {
+    std::fprintf(stderr,
+                 "DEEP_PROFILE_REGION parallel=%d width=%d height=%d total_ms=%.6f\n",
+                 int(use_parallel), region_width, region_height, (time_dt() - start) * 1000);
+  }
 }
 
 void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
@@ -1022,12 +1721,8 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
     return;
   }
 
-  const uint32_t *sample_counts = slice.buffers->get_sample_counts_host();
-  const DeepSampleData *sample_data = slice.buffers->get_sample_data_host();
-
   const int buffer_width = slice.width;
   const int buffer_height = slice.height;
-  const int buffer_max_samples = slice.buffers->get_max_samples_per_pixel();
 
   for (int y = 0; y < slice.window_height; y++) {
     const int local_y = slice.window_y + y;
@@ -1046,8 +1741,14 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
       const size_t local_idx = static_cast<size_t>(local_y) * buffer_width + local_x;
       const size_t global_idx = static_cast<size_t>(global_y) * width_ + global_x;
 
-      const int count = static_cast<int>(sample_counts[local_idx]);
-      const size_t offset = local_idx * static_cast<size_t>(buffer_max_samples);
+      uint32_t raw_count;
+      const DeepSampleData *sample_data;
+      size_t offset;
+      if (!slice.buffers->get_pixel_sample_range(local_idx, raw_count, sample_data, offset)) {
+        continue;
+      }
+      const int count = static_cast<int>(deep_sample_count_retained(raw_count));
+      const bool optical_data_complete = !deep_sample_count_overflowed(raw_count);
       if (count <= 0) {
         continue;
       }
@@ -1075,13 +1776,21 @@ void DeepOutputDriver::merge_slice_into_cache(const DeepBufferSlice &slice,
           const float beauty_g = beauty_pixels[beauty_idx + 1];
           const float beauty_b = beauty_pixels[beauty_idx + 2];
           const float beauty_a = beauty_pixels[beauty_idx + 3];
-          populate_pixel_samples_with_resolved_beauty(
-              global_idx, count, sample_data, offset, true, beauty_r, beauty_g, beauty_b, beauty_a);
+          populate_pixel_samples_with_resolved_beauty(global_idx,
+                                                      count,
+                                                      sample_data,
+                                                      offset,
+                                                      true,
+                                                      beauty_r,
+                                                      beauty_g,
+                                                      beauty_b,
+                                                      beauty_a,
+                                                      optical_data_complete);
           continue;
         }
       }
 
-      populate_pixel_samples(global_idx, count, sample_data, offset);
+      populate_pixel_samples(global_idx, count, sample_data, offset, optical_data_complete);
     }
   }
 }
@@ -1195,6 +1904,46 @@ void DeepOutputDriver::compute_scaled_alphas(const DeepSampleData *sample_data,
     beauty_g = 0.0f;
     beauty_b = 0.0f;
   }
+}
+
+static bool deep_assign_volume_profile_with_beauty(
+    std::vector<blender::DeepSample> &pixel_samples,
+    const DeepSampleData *sample_data,
+    const size_t offset,
+    const int count,
+    const int total_camera_samples,
+    const int max_profile_samples,
+    float beauty_r,
+    float beauty_g,
+    float beauty_b,
+    const float beauty_a)
+{
+  vector<DeepVolumeProfileSample> profile;
+  if (!deep_build_volume_profile(
+          sample_data,
+          offset,
+          count,
+          total_camera_samples,
+          max_profile_samples,
+          make_float3(beauty_r, beauty_g, beauty_b),
+          beauty_a,
+          profile))
+  {
+    return false;
+  }
+
+  pixel_samples.clear();
+  pixel_samples.reserve(profile.size());
+  for (const DeepVolumeProfileSample &src : profile) {
+    blender::DeepSample &dst = pixel_samples.emplace_back();
+    dst.r = src.rgb.x;
+    dst.g = src.rgb.y;
+    dst.b = src.rgb.z;
+    dst.a = src.alpha;
+    dst.z = src.z;
+    dst.z_back = src.z_back;
+  }
+  return true;
 }
 
 static void deep_assign_single_sample_with_beauty(std::vector<blender::DeepSample> &pixel_samples,
@@ -1458,9 +2207,10 @@ bool DeepOutputDriver::populate_opaque_surface_prefix_samples(size_t global_idx,
 }
 
 void DeepOutputDriver::populate_pixel_samples(size_t global_idx,
-                                              int count,
-                                              const DeepSampleData *sample_data,
-                                              size_t offset)
+                                               int count,
+                                               const DeepSampleData *sample_data,
+                                               size_t offset,
+                                               const bool optical_data_complete)
 {
   float beauty_r = 0.0f;
   float beauty_g = 0.0f;
@@ -1477,7 +2227,8 @@ void DeepOutputDriver::populate_pixel_samples(size_t global_idx,
       beauty_r,
       beauty_g,
       beauty_b,
-      beauty_a);
+      beauty_a,
+      optical_data_complete);
 }
 
 void DeepOutputDriver::populate_pixel_samples_with_resolved_beauty(
@@ -1489,11 +2240,57 @@ void DeepOutputDriver::populate_pixel_samples_with_resolved_beauty(
     float beauty_r,
     float beauty_g,
     float beauty_b,
-    float beauty_a)
+    float beauty_a,
+    const bool optical_data_complete)
 {
   vector<float> scaled_alphas;
   if (has_beauty && count > 0) {
     const DeepPixelLayout pixel_layout = classify_deep_pixel_layout(sample_data, offset, count);
+
+    if (deep_volume_profile_enabled() && pixel_layout == DeepPixelLayout::pure_volume &&
+        !optical_data_complete)
+    {
+      processing_error_.store(true, std::memory_order_relaxed);
+      static std::atomic<bool> logged_volume_profile_overflow(false);
+      if (!logged_volume_profile_overflow.exchange(true)) {
+        LOG_WARNING << "Experimental Deep volume profile rejected incomplete optical data: "
+                       "the raw per-pixel event buffer overflowed (retained samples="
+                    << count << ").";
+      }
+      return;
+    }
+
+    if (deep_volume_profile_enabled() && pixel_layout == DeepPixelLayout::pure_volume &&
+        optical_data_complete)
+    {
+      const int camera_samples = max(1, int(get_sample_count_pixel(global_idx) + 0.5f));
+      const int profile_camera_samples = deep_volume_profile_camera_population(
+          camera_samples, count, max_samples_per_pixel_);
+      const bool assigned = deep_assign_volume_profile_with_beauty((*processed_cache_)[global_idx],
+                                                                   sample_data,
+                                                                   offset,
+                                                                   count,
+                                                                   profile_camera_samples,
+                                                                   max_samples_per_pixel_,
+                                                                   beauty_r,
+                                                                   beauty_g,
+                                                                   beauty_b,
+                                                                   beauty_a);
+      static std::atomic<bool> logged_volume_profile_status(false);
+      if (!logged_volume_profile_status.exchange(true)) {
+        LOG_INFO << "Experimental Deep volume profile: "
+                 << (assigned ? "active" : "metadata unavailable") << ", captured samples="
+                 << count << ", camera samples=" << camera_samples
+                 << ", first flags=" << deep_sample_info_flags(sample_data[offset].flags);
+      }
+      if (assigned) {
+        return;
+      }
+      /* A profile rejection is not a license to replace missing/invalid optical input with
+       * terminal Beauty normalization. Do not publish any processed result for this frame. */
+      processing_error_.store(true, std::memory_order_relaxed);
+      return;
+    }
 
     if (count == 1) {
       const DeepSampleData &src = sample_data[offset];
@@ -1572,27 +2369,42 @@ std::vector<std::vector<blender::DeepSample>> *DeepOutputDriver::ensure_processe
   }
 
   if (!processed_cache_) {
-    if (!process_device_buffers()) {
-      return nullptr;
+    if (deep_volume_profile_enabled()) {
+      if (!flush_device_capture(true)) {
+        return nullptr;
+      }
+      init_processed_cache();
+      merge_raw_capture_region_into_cache(nullptr, 0, 0, 0, 0);
     }
+    else {
+      if (!process_device_buffers()) {
+        return nullptr;
+      }
 
-    init_processed_cache();
+      init_processed_cache();
 
-    const bool track_overlap = (device_buffers_.size() > 1);
-    bool overlap_logged = false;
-    vector<uint8_t> pixel_written;
-    if (track_overlap) {
-      const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
-      pixel_written.resize(pixel_count, 0);
+      const bool track_overlap = (device_buffers_.size() > 1);
+      bool overlap_logged = false;
+      vector<uint8_t> pixel_written;
+      if (track_overlap) {
+        const size_t pixel_count = static_cast<size_t>(width_) * static_cast<size_t>(height_);
+        pixel_written.resize(pixel_count, 0);
+      }
+
+      for (const DeepBufferSlice &slice : device_buffers_) {
+        merge_slice_into_cache(
+            slice, track_overlap, pixel_written, overlap_logged, nullptr, 0, 0, 0, 0);
+      }
     }
-
-    for (const DeepBufferSlice &slice : device_buffers_) {
-      merge_slice_into_cache(
-          slice, track_overlap, pixel_written, overlap_logged, nullptr, 0, 0, 0, 0);
-    }
-
   }
 
+  if (processing_error_.load(std::memory_order_relaxed)) {
+    if (device_) device_->set_error("Deep EXR rejected invalid or incomplete optical profile");
+    return nullptr;
+  }
+  for (const DeepBufferSlice &slice : device_buffers_) {
+    if (slice.device && slice.device->have_error()) return nullptr;
+  }
   return processed_cache_.get();
 }
 

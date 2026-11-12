@@ -7,6 +7,7 @@
 #include "kernel/film/light_passes.h"
 
 #include "kernel/integrator/guiding.h"
+#include "kernel/integrator/init_from_camera.h"
 #include "kernel/integrator/path_state.h"
 #include "kernel/integrator/shadow_catcher.h"
 
@@ -118,6 +119,11 @@ ccl_device_forceinline void integrator_split_shadow_catcher(
   /* Mark current state so that it will only track contribution of shadow catcher objects ignoring
    * non-catcher objects. */
   INTEGRATOR_STATE_WRITE(state, path, flag) |= PATH_RAY_SHADOW_CATCHER_PASS;
+#if __DEEP_BOUNDED_POLICY__ == 1 || __DEEP_BOUNDED_POLICY__ == 2
+  /* The matte clone has no independent Deep camera ownership. */
+  INTEGRATOR_STATE_WRITE(state, path, deep_bounded_slot_kind) =
+      uint32_t(DeepBoundedSourceKind::EXCLUDED) << 30;
+#endif
 
   /* Shadow catcher path does not use guiding.
    * Clear the path_segment to ensure we do not reference possibly stale data from the main path.
@@ -231,7 +237,32 @@ ccl_device_forceinline void integrator_intersect_next_kernel(
     const int shader = (hit_surface) ? intersection_get_shader(kg, isect) : SHADER_NONE;
     const int flags = (hit_surface) ? kernel_data_fetch(shaders, shader).flags : 0;
 
-    if (!integrator_intersect_terminate(kg, state, flags)) {
+    if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL) {
+#  ifdef __KERNEL_GPU__
+      if (kernel_integrator_state.deep_optical_inputs) {
+        integrator_path_next(
+            state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL);
+      }
+      else if (kernel_data.film.deep_optical_only_kernel >= 2) {
+        integrator_path_next(
+            state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL_WARP);
+      }
+      else if (kernel_data.film.deep_optical_only_kernel) {
+        integrator_path_next(
+            state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL);
+      }
+      else
+#  endif
+          if (kernel_data.integrator.volume_ray_marching)
+      {
+        integrator_path_next(
+            state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING);
+      }
+      else {
+        integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME);
+      }
+    }
+    else if (!integrator_intersect_terminate(kg, state, flags)) {
       if (kernel_data.integrator.volume_ray_marching) {
         integrator_path_next(
             state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING);
@@ -242,6 +273,39 @@ ccl_device_forceinline void integrator_intersect_next_kernel(
     }
     else {
       integrator_path_terminate(kg, state, render_buffer, current_kernel);
+    }
+    return;
+  }
+#endif
+
+#ifdef __DEEP_OUTPUT__
+  if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL) {
+#  ifdef __KERNEL_GPU__
+    if (kernel_integrator_state.deep_owned_optical_coverage) {
+      const float begin = kernel_integrator_state.deep_owned_optical_coverage[state].cursor_t;
+      const float end = hit ? isect->t : kernel_integrator_state.deep_optical_inputs[state].tmax;
+      if (!deep_owned_optical_piece(
+              kg, state, begin, end, zero_spectrum(), DEEP_OWNED_OPTICAL_VACUUM))
+      {
+        integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+        return;
+      }
+    }
+#  endif
+    if (hit) {
+      /* Surface setup is sufficient to identify and cross a volume boundary. Avoid shader
+       * evaluation, path termination, MNEE, and shadow-catcher splitting during this pass. */
+#  ifdef __KERNEL_GPU__
+      if (kernel_integrator_state.deep_optical_inputs) {
+        integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE);
+      }
+      else
+#  endif
+        integrator_path_next_sorted(
+            kg, state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE, 0);
+    }
+    else {
+      integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
     }
     return;
   }
@@ -306,6 +370,25 @@ ccl_device_forceinline void integrator_intersect_next_kernel_after_volume(
     const ccl_private Intersection *ccl_restrict isect,
     ccl_global float *ccl_restrict render_buffer)
 {
+#ifdef __DEEP_OUTPUT__
+  if (INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL) {
+    if (isect->prim != PRIM_NONE) {
+#  ifdef __KERNEL_GPU__
+      if (kernel_integrator_state.deep_optical_inputs) {
+        integrator_path_next(state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE);
+      }
+      else
+#  endif
+        integrator_path_next_sorted(
+            kg, state, current_kernel, DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE, 0);
+    }
+    else {
+      integrator_finish_deep_volume_optical_traversal<current_kernel>(kg, state);
+    }
+    return;
+  }
+#endif
+
   if (isect->prim != PRIM_NONE) {
     /* Hit a surface, continue with light or surface kernel. */
     if (isect->type & PRIMITIVE_LAMP) {
@@ -384,6 +467,33 @@ ccl_device void integrator_intersect_closest(KernelGlobals kg,
   ray.self.light_object = OBJECT_NONE;
   ray.self.light_prim = PRIM_NONE;
   bool hit = scene_intersect(kg, &ray, visibility, &isect);
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_owned_optical_coverage) {
+    const float original_tmin = ray.tmin;
+    int lamps = 0;
+    while (hit && (isect.type & PRIMITIVE_LAMP)) {
+      const float next = intersection_t_offset(isect.t);
+      if (++lamps > 4096 || next <= ray.tmin) {
+        deep_owned_optical_bounds(kg, state, 4, ray.tmin, isect.t, next, lamps, zero_spectrum());
+        integrator_finish_deep_volume_optical_traversal<
+            DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST>(kg, state);
+        return;
+      }
+      INTEGRATOR_STATE_WRITE(
+          state, path, transparent_bounce) = INTEGRATOR_STATE(state, path, transparent_bounce) + 1;
+      if (next >= ray.tmax) {
+        hit = false;
+        isect.prim = PRIM_NONE;
+        break;
+      }
+      ray.tmin = next;
+      isect.object = OBJECT_NONE;
+      isect.prim = PRIM_NONE;
+      hit = scene_intersect(kg, &ray, visibility, &isect);
+    }
+    ray.tmin = original_tmin;
+  }
+#endif
 
   /* TODO: remove this and do it in the various intersection functions instead. */
   if (!hit) {
@@ -421,7 +531,8 @@ ccl_device void integrator_intersect_closest(KernelGlobals kg,
 #endif /* __MNEE__ */
 
   /* Light intersection for MIS. */
-  if ((kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_LIGHT_MIS) &&
+  if (!(path_flag & PATH_RAY_DEEP_VOLUME_OPTICAL) &&
+      (kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_LIGHT_MIS) &&
       !integrator_intersect_skip_lights(kg, state))
   {
     /* NOTE: if we make lights visible to camera rays, we'll need to initialize

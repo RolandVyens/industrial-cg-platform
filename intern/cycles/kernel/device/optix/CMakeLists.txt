@@ -30,6 +30,19 @@ if(WITH_CYCLES_OSL)
   )
 endif()
 
+foreach(deep_mode alpha simple physical)
+  list(APPEND SRC_KERNEL_DEVICE_OPTIX
+    kernel_deep_${deep_mode}.cu
+    kernel_mnee_deep_${deep_mode}.cu
+    kernel_shader_raytrace_deep_${deep_mode}.cu
+  )
+  if(WITH_CYCLES_OSL)
+    foreach(osl_part "" _camera _volume _mnee _shader_raytrace)
+      list(APPEND SRC_KERNEL_DEVICE_OPTIX kernel_osl${osl_part}_deep_${deep_mode}.cu)
+    endforeach()
+  endif()
+endforeach()
+
 set(SRC_KERNEL_DEVICE_OPTIX_HEADERS
   bvh.h
   compat.h
@@ -80,6 +93,7 @@ if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_DEVICE_OPTIX)
         ${output}
       DEPENDS
         ${input}
+        ${SRC_KERNEL_DEVICE_OPTIX}
         ${SRC_KERNEL_DEVICE_OPTIX_HEADERS}
         $<TARGET_PROPERTY:cycles_kernel,INTERFACE_SOURCES>
       COMMAND
@@ -143,6 +157,19 @@ if(WITH_CYCLES_CUDA_BINARIES AND WITH_CYCLES_DEVICE_OPTIX)
       "../../osl/services_optix.cu"
       "--relocatable-device-code=true")
   endif()
+
+  foreach(deep_mode alpha simple physical)
+    cycles_optix_kernel_add(kernel_optix_deep_${deep_mode} "kernel_deep_${deep_mode}.cu" "")
+    cycles_optix_kernel_add(kernel_optix_mnee_deep_${deep_mode} "kernel_mnee_deep_${deep_mode}.cu" "")
+    cycles_optix_kernel_add(kernel_optix_shader_raytrace_deep_${deep_mode}
+      "kernel_shader_raytrace_deep_${deep_mode}.cu" "--keep-device-functions")
+    if(WITH_CYCLES_OSL)
+      foreach(osl_part "" _camera _volume _mnee _shader_raytrace)
+        cycles_optix_kernel_add(kernel_optix_osl${osl_part}_deep_${deep_mode}
+          "kernel_osl${osl_part}_deep_${deep_mode}.cu" "--relocatable-device-code=true")
+      endforeach()
+    endif()
+  endforeach()
 
   add_custom_target(cycles_kernel_optix
     ALL

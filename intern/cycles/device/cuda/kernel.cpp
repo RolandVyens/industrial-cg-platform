@@ -4,6 +4,8 @@
 
 #ifdef WITH_CUDA
 
+#  include <string_view>
+
 #  include "device/cuda/kernel.h"
 #  include "device/cuda/device_impl.h"
 
@@ -22,8 +24,25 @@ void CUDADeviceKernels::load(CUDADevice *device)
 
     const std::string function_name = std::string("kernel_gpu_") +
                                       device_kernel_as_string((DeviceKernel)i);
+    const bool volume = i == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME ||
+                        i == DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING;
+    CUmodule selected = volume && device->cuVolumeModule ? device->cuVolumeModule : cuModule;
+    if (const char *group = device->deep_module_test_group_) {
+      const std::string_view name = device_kernel_as_string((DeviceKernel)i);
+      const std::string_view kind = group;
+      const bool surface = name.starts_with("integrator_shade_surface");
+      const bool active = (kind == "camera" && name == "integrator_init_from_camera") ||
+                          (kind == "volume" && volume) || (kind == "surface" && surface) ||
+                          (kind == "other" && !volume && !surface &&
+                           name != "integrator_init_from_camera");
+      if (!active) {
+        selected = volume && device->volume_policy_modules_[0] ?
+                       device->volume_policy_modules_[0] :
+                       device->deep_policy_modules_[0];
+      }
+    }
     cuda_device_assert(device,
-                       cuModuleGetFunction(&kernel.function, cuModule, function_name.c_str()));
+                       cuModuleGetFunction(&kernel.function, selected, function_name.c_str()));
 
     if (kernel.function) {
       cuda_device_assert(device, cuFuncSetCacheConfig(kernel.function, CU_FUNC_CACHE_PREFER_L1));

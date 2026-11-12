@@ -4,7 +4,10 @@
 
 #pragma once
 
+#include <functional>
+
 #include "integrator/pass_accessor.h"
+#include "integrator/deep_bounded_layout.h"
 #include "scene/pass.h"
 #include "session/buffers.h"
 #include "util/unique_ptr.h"
@@ -14,9 +17,11 @@ CCL_NAMESPACE_BEGIN
 class BufferParams;
 class Device;
 class DeviceScene;
+class DeepFrameCaptureConsumer;
 class Film;
 class PathTraceDisplay;
 class RenderBuffers;
+class Progress;
 
 class PathTraceWork {
  public:
@@ -35,6 +40,10 @@ class PathTraceWork {
                                           const bool *cancel_requested_flag);
 
   virtual ~PathTraceWork();
+  /* Borrow the Session progress source for joined continuation boundaries.
+   * Each new RenderWork resets the per-work cancellation observation. */
+  void set_progress(Progress *progress);
+  bool poll_cancel_requested();
 
   /* Access the render buffers.
    *
@@ -63,6 +72,43 @@ class PathTraceWork {
 
   /* Release resources acquired by init_execution(). */
   virtual void deinit_execution() {}
+
+  /* Optional single-GPU capture boundary after every admitted camera group has drained. */
+  virtual bool set_deep_capture_group_flush(std::function<bool()> /*flush*/,
+                                            const int /*max_camera_paths*/,
+                                            const int /*max_ready_paths*/ = 0)
+  {
+    return false;
+  }
+
+  /* Production capture is supported only by an explicitly selected native GPU work. */
+  virtual bool set_deep_frame_capture_consumer(DeepFrameCaptureConsumer * /*consumer*/)
+  {
+    return false;
+  }
+  virtual bool close_deep_tile()
+  {
+    return false;
+  }
+  virtual bool prepare_deep_tile()
+  {
+    return false;
+  }
+  /* Single Host owner only, after render_samples workers have joined. */
+  virtual bool publish_ready_deep_tiles() { return true; }
+  virtual bool drain_deep_tiles()
+  {
+    return true;
+  }
+  virtual bool migrate_bounded_deep(PathTraceWork &, int, int, uint32_t, uint32_t)
+  {
+    return false;
+  }
+  virtual bool set_bounded_deep_beauty(const RenderBuffers &)
+  {
+    return false;
+  }
+  virtual void set_deep_beauty_denoised(bool) {}
 
   /* Render given number of samples as a synchronous blocking call.
    * The samples are added to the render buffer associated with this work. */
@@ -141,7 +187,7 @@ class PathTraceWork {
   {
     /* NOTE: Rely on the fact that on x86 CPU reading scalar can happen without atomic even in
      * threaded environment. */
-    return *cancel_requested_flag_;
+    return *cancel_requested_flag_ || progress_cancel_requested_;
   }
 
   /* Access to the device which is used to path trace this work on. */
@@ -154,6 +200,10 @@ class PathTraceWork {
   {
     return effective_buffer_params_;
   }
+
+  virtual DeepBoundedDeviceAdmission deep_bounded_admission_snapshot() const { return {}; }
+  virtual void set_deep_bounded_admission_limit(uint32_t, size_t, size_t) {}
+  virtual int2 deep_bounded_camera_limits() const { return make_int2(0, 0); }
 
 #if defined(WITH_PATH_GUIDING)
   /* Initializes the per-thread guiding kernel data. */
@@ -202,6 +252,8 @@ class PathTraceWork {
   BufferParams effective_denoised_buffer_params_;
 
   const bool *cancel_requested_flag_ = nullptr;
+  Progress *progress_ = nullptr;
+  bool progress_cancel_requested_ = false;
 };
 
 CCL_NAMESPACE_END

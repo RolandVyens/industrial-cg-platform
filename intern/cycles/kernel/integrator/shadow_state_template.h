@@ -5,13 +5,17 @@
 /********************************* Shadow Path State **************************/
 
 KERNEL_STRUCT_BEGIN(shadow_path)
+KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, deep_frame_camera_index, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, deep_frame_root_handle, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, deep_bounded_slot_kind, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(shadow_path, float, deep_bounded_anchor_z, KERNEL_FEATURE_PATH_TRACING)
 /* Index of a pixel within the device render buffer. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, render_pixel_index, KERNEL_FEATURE_PATH_TRACING)
 /* Current sample number. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, sample, KERNEL_FEATURE_PATH_TRACING)
 /* Active deep hard-surface sample for primary visibility contribution accumulation. */
-KERNEL_STRUCT_MEMBER(
-    shadow_path, uint32_t, deep_surface_sample_idx, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, deep_surface_sample_idx, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, deep_volume_radiance_idx, KERNEL_FEATURE_PATH_TRACING)
 /* Random number generator per-pixel info. */
 KERNEL_STRUCT_MEMBER(shadow_path, uint32_t, rng_pixel, KERNEL_FEATURE_PATH_TRACING)
 /* Random number dimension offset. */

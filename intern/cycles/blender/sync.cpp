@@ -8,10 +8,13 @@
 #include "BKE_scene.hh"
 #include "DEG_depsgraph_query.hh"
 #include "DNA_scene_types.h"
+#include "DNA_layer_types.h"
+#include "BLI_listbase.h"
 #include "DNA_userdef_types.h"
 #include "DNA_world_types.h"
 #include "RNA_prototypes.hh"
 #include "RNA_types.hh"
+#include "RE_deep_output.hh"
 #include "RE_pipeline.h"
 
 #include "scene/background.h"
@@ -49,16 +52,32 @@ CCL_NAMESPACE_BEGIN
 static const char *cryptomatte_prefix = "Crypto";
 
 BlenderDeepOutputRequirements BlenderSync::get_deep_output_requirements(
-    blender::Scene &input_scene, blender::Scene &evaluated_scene, const bool viewport)
+    blender::Scene &input_scene,
+    blender::Scene &evaluated_scene,
+    const bool viewport,
+    const char *view_layer_name,
+    const blender::RenderEngine *engine)
 {
   if (viewport) {
     return {};
   }
 
-  return {
-      evaluated_scene.r.im_format.imtype == blender::R_IMF_IMTYPE_DEEP_EXR,
-      blender::RE_scene_has_deep_exr_file_output(&input_scene),
-  };
+  BlenderDeepOutputRequirements result;
+  result.direct = evaluated_scene.r.im_format.imtype == blender::R_IMF_IMTYPE_DEEP_EXR;
+  blender::RE_engine_foreach_deep_exr_file_output(
+      engine, &input_scene, [&](const blender::RenderDeepOutputConsumer &output) {
+        const auto *layer = static_cast<const blender::ViewLayer *>(
+            BLI_findlink(&input_scene.view_layers, output.view_layer_id));
+        if (output.scene != &input_scene || !layer ||
+            (view_layer_name && string(layer->name) != view_layer_name))
+          return;
+        result.compositor_alpha_tolerance = result.compositor ?
+                                                std::min(result.compositor_alpha_tolerance,
+                                                         output.alpha_tolerance) :
+                                                output.alpha_tolerance;
+        result.compositor = true;
+      });
+  return result;
 }
 
 /* Constructor */
@@ -316,12 +335,17 @@ void BlenderSync::sync_data(blender::RenderData &b_render,
                             blender::RegionView3D *b_rv3d,
                             const int width,
                             const int height,
-                            void **python_thread_state,
                             const DeviceInfo &denoise_device_info)
 {
   const BlenderDeepOutputRequirements deep_output = get_deep_output_requirements(
-      *DEG_get_input_scene(&b_depsgraph), *DEG_get_evaluated_scene(&b_depsgraph), b_v3d != nullptr);
-  if (scene->film->get_use_deep_output() != deep_output.needed()) {
+      *DEG_get_input_scene(&b_depsgraph),
+      *DEG_get_evaluated_scene(&b_depsgraph),
+      b_v3d != nullptr,
+      DEG_get_evaluated_view_layer(&b_depsgraph)->name, b_engine);
+  blender::PointerRNA deep_scene_ptr = RNA_id_pointer_create(&b_scene->id);
+  blender::PointerRNA deep_cscene = RNA_pointer_get(&deep_scene_ptr, "cycles");
+  if (scene->film->get_use_deep_output() != deep_output.needed() ||
+      scene->film->get_deep_simple_mode() != get_boolean(deep_cscene, "deep_simple_mode")) {
     has_updates_ = true;
   }
 
@@ -357,8 +381,7 @@ void BlenderSync::sync_data(blender::RenderData &b_render,
 
   geometry_synced.clear(); /* use for objects and motion sync */
 
-  sync_objects_and_motion(
-      b_render, b_depsgraph, b_screen, b_v3d, b_rv3d, width, height, python_thread_state);
+  sync_objects_and_motion(b_render, b_depsgraph, b_screen, b_v3d, b_rv3d, width, height);
 
   geometry_synced.clear();
 
@@ -688,6 +711,7 @@ void BlenderSync::sync_film(blender::ViewLayer &b_view_layer,
 
   /* Deep capture is derived once by get_deep_output_requirements() before the sync early-out. */
   film->set_use_deep_output(use_deep_output);
+  film->set_deep_simple_mode(get_boolean(cscene, "deep_simple_mode"));
   film->set_deep_max_samples(get_int(cscene, "deep_max_samples"));
 }
 
@@ -1313,6 +1337,7 @@ SessionParams BlenderSync::get_session_params(blender::RenderEngine &b_engine,
                          BlenderSession::print_render_stats;
 
   params.deep_tile_budget_mb = max(get_int(cscene, "deep_tile_budget_mb"), 0);
+  params.deep_simple_mode = get_boolean(cscene, "deep_simple_mode");
 
   if (background) {
     params.use_auto_tile = true;

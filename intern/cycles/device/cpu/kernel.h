@@ -32,6 +32,9 @@ class CPUKernels {
   IntegratorInitFunction integrator_init_from_bake;
   IntegratorShadeFunction integrator_megakernel;
 
+  IntegratorInitFunction deep_init[3];
+  IntegratorShadeFunction deep_megakernel[3];
+
   /* Shader evaluation. */
 
   using ShaderEvalFunction = CPUKernelFunction<void (*)(

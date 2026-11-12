@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -67,7 +68,10 @@ class DeepOutputDriver {
   ~DeepOutputDriver();
 
   /* Initialize for a new render with given dimensions and settings. */
-  void reset(int width, int height, int max_samples_per_pixel);
+  void reset(int width,
+             int height,
+             int max_samples_per_pixel,
+             int capture_samples_per_pixel = 0);
 
   /* Clear deep sample buffers between renders without reallocating. */
   void clear_device_buffers();
@@ -77,7 +81,7 @@ class DeepOutputDriver {
   DeepRenderBuffers *get_deep_buffers();
 
   /* Called after rendering completes to finalize and save deep data. */
-  void finalize_deep_output(const std::string &filepath);
+  bool finalize_deep_output(const std::string &filepath);
 
   /* Check if deep output is enabled. */
   bool is_enabled() const;
@@ -128,6 +132,10 @@ class DeepOutputDriver {
                        int tile_offset_x,
                        int tile_offset_y);
 
+  /* Completed tiles have already consumed their raw samples with resolved Beauty and counts.
+   * Late Blender pass capture must not invalidate this cache. */
+  bool has_accumulated_tiles() const { return !pixel_written_.empty(); }
+
   /* Get unmerged processed deep data for compositor storage.
    * Uses std::vector to match Blender render/imbuf API expectations.
    * Returns a newly allocated vector that becomes owned by the caller.
@@ -144,10 +152,24 @@ class DeepOutputDriver {
   int get_width() const { return width_; }
   int get_height() const { return height_; }
   int get_max_samples_per_pixel() const { return max_samples_per_pixel_; }
+  int get_capture_samples_per_pixel() const { return capture_samples_per_pixel_; }
+  void set_capture_pool_budget(size_t bytes)
+  {
+    capture_pool_budget_bytes_ = bytes;
+  }
+  size_t get_capture_pool_budget() const
+  {
+    return capture_pool_budget_bytes_;
+  }
 
   /* Sync per-device deep buffers and update kernel data with device-specific pointers. */
   void sync_device_buffers(const vector<SliceParams> &slices);
   void update_device_kernel_data(const KernelData &base_data);
+  /* Scene/camera uploads overwrite slice-specific constants, even if their values match. */
+  void invalidate_device_kernel_data();
+
+  /* Preserve the current progressive sparse-capture batch on the host and reuse the device pool. */
+  bool flush_device_capture(bool finalize = false, bool allow_device_profile = false);
 
  private:
   bool enabled_ = false;
@@ -156,6 +178,8 @@ class DeepOutputDriver {
   int width_ = 0;
   int height_ = 0;
   int max_samples_per_pixel_ = 0;
+  int capture_samples_per_pixel_ = 0;
+  size_t capture_pool_budget_bytes_ = 0;
   int compression_ = 1; /* ZIPS by default */
   bool use_half_float_ = false;
   bool has_display_window_ = false;
@@ -169,6 +193,7 @@ class DeepOutputDriver {
   struct DeepBufferSlice {
     Device *device = nullptr;
     unique_ptr<DeepRenderBuffers> buffers;
+    vector<uint8_t> uploaded_kernel_data;
     int full_x = 0;
     int full_y = 0;
     int width = 0;
@@ -185,6 +210,7 @@ class DeepOutputDriver {
   };
 
   struct DeepBufferSnapshot;
+  int capture_samples_for_slice(const SliceParams &slice, int requested) const;
 
   vector<DeepBufferSlice> device_buffers_;
   Device *device_ = nullptr;
@@ -203,8 +229,13 @@ class DeepOutputDriver {
   /* Stored as std::vector to match Blender's IMB_exr_save_deep API. */
   unique_ptr<std::vector<std::vector<blender::DeepSample>>> processed_cache_;
   bool deep_buffers_processed_ = false;
+  std::atomic<bool> processing_error_{false};
   /* Populated only when accumulate_tile() is used to track written pixels. */
   vector<uint8_t> pixel_written_;
+
+  /* Actual-size raw optical events accumulated across progressive sample batches. */
+  unique_ptr<vector<vector<DeepSampleData>>> raw_capture_cache_;
+  vector<uint8_t> raw_capture_complete_;
 
   bool process_device_buffers();
   bool layout_matches(const vector<SliceParams> &slices) const;
@@ -216,6 +247,17 @@ class DeepOutputDriver {
   void init_device_buffers(const vector<SliceParams> &slices, int max_samples);
   void restore_snapshots(const vector<DeepBufferSnapshot> &snapshots);
   void init_processed_cache();
+  void init_raw_capture_cache();
+  void merge_raw_capture_region_into_cache(const float *beauty_pixels,
+                                           int beauty_width,
+                                           int beauty_height,
+                                           int beauty_offset_x,
+                                           int beauty_offset_y);
+  bool merge_device_volume_capture(const float *beauty_pixels,
+                                   int beauty_width,
+                                   int beauty_height,
+                                   int beauty_offset_x,
+                                   int beauty_offset_y);
   void merge_slice_into_cache(const DeepBufferSlice &slice,
                               bool track_overlap,
                               vector<uint8_t> &pixel_written,
@@ -229,7 +271,8 @@ class DeepOutputDriver {
   void populate_pixel_samples(size_t global_idx,
                               int count,
                               const DeepSampleData *sample_data,
-                              size_t offset);
+                              size_t offset,
+                              bool optical_data_complete);
   void populate_pixel_samples_with_resolved_beauty(size_t global_idx,
                                                    int count,
                                                    const DeepSampleData *sample_data,
@@ -238,7 +281,8 @@ class DeepOutputDriver {
                                                    float beauty_r,
                                                    float beauty_g,
                                                    float beauty_b,
-                                                   float beauty_a);
+                                                   float beauty_a,
+                                                   bool optical_data_complete);
   void get_beauty_pixel(size_t global_idx,
                         float &beauty_r,
                         float &beauty_g,

@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "scene/film.h"
+
+#include <cstdlib>
+
 #include "device/device.h"
 #include "scene/background.h"
 #include "scene/bake.h"
@@ -158,6 +161,7 @@ NODE_DEFINE(Film)
 
   /* Deep EXR output. */
   SOCKET_BOOLEAN(use_deep_output, "Use Deep Output", false);
+  SOCKET_BOOLEAN(deep_simple_mode, "Deep Simple Mode", true);
   SOCKET_INT(deep_max_samples, "Deep Max Samples", 64);
 
   return type;
@@ -523,8 +527,16 @@ void Film::device_update(Device *device, DeviceScene *dscene, Scene *scene)
   }
 
   /* Deep output settings. */
-  kfilm->use_deep_output = use_deep_output;
+  const char *frame_option = getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_PIPELINE");
+  /* CPU halo pixels use the ordinary CPU kernel. Suppress its historical
+   * Deep writes while a bounded CPU owner supplies the actual Deep output. */
+  const bool bounded_cpu = device->info.type == DEVICE_CPU && device->deep_bounded_policy() != 0;
+  const bool frame_pipeline = bounded_cpu || (frame_option && strcmp(frame_option, "1") == 0);
+  kfilm->use_deep_output = use_deep_output && !frame_pipeline ?
+                               (getenv("CYCLES_EXPERIMENTAL_DEEP_VOLUME_PROFILE") ? 2 : 1) :
+                               0;
   kfilm->deep_max_samples = deep_max_samples;
+  kfilm->deep_simple_mode = deep_simple_mode;
   kfilm->deep_width = deep_width_;
   kfilm->deep_height = deep_height_;
   kfilm->deep_samples_ptr = deep_samples_ptr_;
@@ -708,7 +720,7 @@ void Film::update_passes(Scene *scene)
   }
 
   /* Add sample count pass for tiled rendering. */
-  if (use_sample_count) {
+  if (use_sample_count || use_deep_output) {
     if (!Pass::contains(scene->passes, PASS_SAMPLE_COUNT)) {
       add_auto_pass(scene, PASS_SAMPLE_COUNT);
     }

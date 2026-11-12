@@ -77,6 +77,8 @@ class DeviceScene {
   /* shaders */
   device_vector<int> svm_nodes;
   device_vector<KernelShader> shaders;
+  /* Host-only capture demand; never infer this from a sampled emission value. */
+  bool volume_may_emit = true;
 
   /* lookup tables */
   device_vector<float> lookup_table;

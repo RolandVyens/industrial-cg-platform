@@ -80,6 +80,13 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 {
   const int work_index = ccl_gpu_global_id_x();
 
+  if (kernel_integrator_state.deep_optical_inputs) {
+    if (work_index < num_active_paths) {
+      ccl_gpu_kernel_call(integrator_init_from_optical_receipt(nullptr, work_index));
+    }
+    return;
+  }
+
   if (tiles) {
     if (work_index >= max_tile_work_size * num_tiles) {
       return;
@@ -111,6 +118,23 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 
     ccl_gpu_kernel_call(
         integrator_init_from_camera(nullptr, state, nullptr, render_buffer, 0, 0, 0));
+  }
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+    ccl_gpu_kernel_signature(integrator_deep_beauty_ready,
+                             const ccl_global int *path_index_array,
+                             const int num_active_paths)
+{
+  const int work_index = ccl_gpu_global_id_x();
+  if (work_index < num_active_paths) {
+    const int state = path_index_array ? path_index_array[work_index] : work_index;
+    ccl_gpu_kernel_call(integrator_path_next(state,
+                                             DEVICE_KERNEL_INTEGRATOR_DEEP_BEAUTY_READY,
+                                             kernel_data.cam.is_inside_volume ?
+                                                 DEVICE_KERNEL_INTEGRATOR_INTERSECT_VOLUME_STACK :
+                                                 DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST));
   }
 }
 ccl_gpu_kernel_postfix
@@ -397,6 +421,46 @@ ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
 }
 ccl_gpu_kernel_postfix
 
+#ifdef __KERNEL_CUDA__
+ccl_gpu_kernel(128, 64)
+#else
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+#endif
+    ccl_gpu_kernel_signature(integrator_shade_deep_volume_optical,
+                             const ccl_global int *path_index_array,
+                             ccl_global float *render_buffer,
+                             const int work_size)
+{
+  const int global_index = ccl_gpu_global_id_x();
+  if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+    const int state = (path_index_array) ? path_index_array[global_index] : global_index;
+    ccl_gpu_kernel_call(integrator_shade_deep_volume_optical(nullptr, state, render_buffer));
+  }
+}
+ccl_gpu_kernel_postfix
+
+#ifdef __KERNEL_CUDA__
+ccl_gpu_kernel(128, 128)
+#else
+ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
+#endif
+    ccl_gpu_kernel_signature(integrator_shade_deep_volume_optical_warp,
+                             const ccl_global int *path_index_array,
+                             ccl_global float *render_buffer,
+                             const int work_size)
+{
+#ifdef __KERNEL_CUDA__
+  const int global_index = ccl_gpu_global_id_x() / 32;
+#else
+  const int global_index = ccl_gpu_global_id_x();
+#endif
+  if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+    const int state = (path_index_array) ? path_index_array[global_index] : global_index;
+    ccl_gpu_kernel_call(integrator_shade_deep_volume_optical_warp(nullptr, state, render_buffer));
+  }
+}
+ccl_gpu_kernel_postfix
+
 ccl_gpu_kernel(GPU_KERNEL_BLOCK_NUM_THREADS, GPU_KERNEL_MAX_REGISTERS)
     ccl_gpu_kernel_signature(integrator_shade_dedicated_light,
                              const ccl_global int *path_index_array,
@@ -654,16 +718,72 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORTED_INDEX_DEFAULT_BLOCK_SIZE)
                              const ccl_global int *active_terminated_states,
                              const int active_states_offset,
                              const int terminated_states_offset,
-                             const int work_size)
+                             const int work_size,
+                             const ccl_global int *device_count)
 {
   const int global_index = ccl_gpu_global_id_x();
 
   if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+#if __DEEP_BOUNDED_POLICY__ > 0
+    if (device_count && global_index >= *device_count) {
+      return;
+    }
+#endif
     const int from_state = active_terminated_states[active_states_offset + global_index];
     const int to_state = active_terminated_states[terminated_states_offset + global_index];
 
     ccl_gpu_kernel_call(integrator_state_move(nullptr, to_state, from_state));
   }
+}
+ccl_gpu_kernel_postfix
+
+ccl_gpu_kernel_threads(GPU_PARALLEL_ACTIVE_INDEX_DEFAULT_BLOCK_SIZE)
+    ccl_gpu_kernel_signature(integrator_deep_native_root_pins,
+                             const int main_states,
+                             const int shadow_states,
+                             const int cameras,
+                             ccl_global uint32_t *pins)
+{
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_CUDA__)
+  const uint index = ccl_gpu_global_id_x();
+  if (index < uint(cameras)) {
+    const uint handle = kernel_integrator_state.deep_native_cameras[index].root_handle;
+    if (handle) {
+      const uint slot = deep_native_root_slot(index, handle, true);
+      if (slot != DEEP_NATIVE_INVALID_INDEX)
+        atomic_fetch_and_or_uint32(pins + slot, DEEP_NATIVE_ROOT_PIN_CAMERA);
+    }
+  }
+  if (index < uint(main_states) && INTEGRATOR_STATE(index, path, queued_kernel) != 0 &&
+      deep_native_path_writes_combined(INTEGRATOR_STATE(index, path, flag)))
+  {
+    const uint handle = INTEGRATOR_STATE(index, path, deep_frame_root_handle);
+    if (handle) {
+      const uint slot = deep_native_root_slot(
+          INTEGRATOR_STATE(index, path, deep_frame_camera_index), handle, true);
+      if (slot != DEEP_NATIVE_INVALID_INDEX)
+        atomic_fetch_and_or_uint32(pins + slot, DEEP_NATIVE_ROOT_PIN_MAIN);
+    }
+  }
+  /* Includes MNEE_PENDING: its queued source is live before it can execute. */
+  if (index < uint(shadow_states) && INTEGRATOR_STATE(index, shadow_path, queued_kernel) != 0 &&
+      (INTEGRATOR_STATE(index, shadow_path, queued_kernel) ==
+           DEVICE_KERNEL_INTEGRATOR_SHADOW_PATH_MNEE_PENDING ||
+       deep_native_path_writes_combined(INTEGRATOR_STATE(index, shadow_path, flag))))
+  {
+    const uint handle = INTEGRATOR_STATE(index, shadow_path, deep_frame_root_handle);
+    if (handle) {
+      const uint slot = deep_native_root_slot(
+          INTEGRATOR_STATE(index, shadow_path, deep_frame_camera_index), handle, true);
+      if (slot != DEEP_NATIVE_INVALID_INDEX)
+        atomic_fetch_and_or_uint32(pins + slot,
+                                   INTEGRATOR_STATE(index, shadow_path, queued_kernel) ==
+                                           DEVICE_KERNEL_INTEGRATOR_SHADOW_PATH_MNEE_PENDING ?
+                                       DEEP_NATIVE_ROOT_PIN_MNEE :
+                                       DEEP_NATIVE_ROOT_PIN_SHADOW);
+    }
+  }
+#endif
 }
 ccl_gpu_kernel_postfix
 
@@ -688,11 +808,17 @@ ccl_gpu_kernel_threads(GPU_PARALLEL_SORTED_INDEX_DEFAULT_BLOCK_SIZE)
                              const ccl_global int *active_terminated_states,
                              const int active_states_offset,
                              const int terminated_states_offset,
-                             const int work_size)
+                             const int work_size,
+                             const ccl_global int *device_count)
 {
   const int global_index = ccl_gpu_global_id_x();
 
   if (ccl_gpu_kernel_within_bounds(global_index, work_size)) {
+#if __DEEP_BOUNDED_POLICY__ > 0
+    if (device_count && global_index >= *device_count) {
+      return;
+    }
+#endif
     const int from_state = active_terminated_states[active_states_offset + global_index];
     const int to_state = active_terminated_states[terminated_states_offset + global_index];
 

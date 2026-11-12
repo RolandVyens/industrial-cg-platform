@@ -11,12 +11,19 @@ set(INC_SYS
 )
 
 set(SRC_KERNEL_DEVICE_CPU
+  deep_alpha.cpp
+  deep_simple.cpp
+  deep_physical.cpp
+  deep_alpha_avx2.cpp
+  deep_simple_avx2.cpp
+  deep_physical_avx2.cpp
   globals.cpp
   kernel.cpp
   kernel_avx2.cpp
 )
 
 set(SRC_KERNEL_DEVICE_CPU_HEADERS
+  deep_kernel_impl.h
   bvh.h
   compat.h
   image.h
@@ -37,11 +44,11 @@ include_directories(${INC})
 include_directories(SYSTEM ${INC_SYS})
 
 if(DEFINED CYCLES_KERNEL_FLAGS)
-  set_source_files_properties(kernel.cpp PROPERTIES COMPILE_FLAGS "${CYCLES_KERNEL_FLAGS}")
+  set_source_files_properties(kernel.cpp deep_alpha.cpp deep_simple.cpp deep_physical.cpp PROPERTIES COMPILE_FLAGS "${CYCLES_KERNEL_FLAGS}")
 endif()
 
 if(CXX_HAS_AVX2 AND CXX_HAS_F16C)
-  set_source_files_properties(kernel_avx2.cpp PROPERTIES COMPILE_FLAGS "${CYCLES_AVX2_F16C_FLAGS}")
+  set_source_files_properties(kernel_avx2.cpp deep_alpha_avx2.cpp deep_simple_avx2.cpp deep_physical_avx2.cpp PROPERTIES COMPILE_FLAGS "${CYCLES_AVX2_F16C_FLAGS}")
 endif()
 
 # Warnings to avoid using doubles in the kernel.

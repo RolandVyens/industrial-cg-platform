@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "testing/testing.h"
+#include <limits>
 
 #include "IMB_deep_sample_merge.hh"
 
@@ -83,6 +84,40 @@ TEST(IMB_deep_sample_merge, composite_near_sample_over_far_sample)
   EXPECT_NEAR(samples[0].a, 0.625f, 1.0e-6f);
   EXPECT_NEAR(samples[0].z, 1.0f, 1.0e-6f);
   EXPECT_NEAR(samples[0].z_back, 1.0f, 1.0e-6f);
+}
+
+TEST(IMB_deep_sample_merge, rejects_same_alpha_intervals_with_large_interior_error)
+{
+  TestDeepSample samples[] = {{0.5f, 0.0f, 0.0f, 0.5f, 0.0f, 0.01f},
+                              {0.5f, 0.0f, 0.0f, 0.5f, 0.01f, 1.0f}};
+  EXPECT_EQ(deep_merge::merge_sorted_deep_samples(samples, 2, 0.01f, 0.01f, 1.0e-6f), 2u);
+}
+
+TEST(IMB_deep_sample_merge, nonfinite_tolerance_cannot_accept_interval_fits)
+{
+  TestDeepSample samples[] = {{0.5f, 0.0f, 0.0f, 0.5f, 0.0f, 0.01f},
+                              {0.5f, 0.0f, 0.0f, 0.5f, 0.01f, 1.0f}};
+  EXPECT_EQ(deep_merge::merge_sorted_deep_samples(samples, 2, 0.01f,
+                  std::numeric_limits<float>::quiet_NaN(), 1.0e-6f), 2u);
+}
+
+TEST(IMB_deep_sample_merge, merges_consistent_volume_density_and_radiance)
+{
+  TestDeepSample samples[] = {{0.25f, 0.0f, 0.0f, 0.25f, 1.0f, 2.0f},
+                              {0.25f, 0.0f, 0.0f, 0.25f, 2.0f, 3.0f}};
+  EXPECT_EQ(deep_merge::merge_sorted_deep_samples(samples, 2, 0.01f, 0.01f, 1.0e-6f), 1u);
+  EXPECT_NEAR(samples[0].a, 0.4375f, 1.0e-6f);
+}
+
+TEST(IMB_deep_sample_merge, retains_zero_alpha_light_and_rejects_overlapping_volumes)
+{
+  TestDeepSample samples[] = {{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 2.0f},
+                              {1.0f, 0.0f, 0.0f, 0.0f, 2.0f, 3.0f}};
+  EXPECT_EQ(deep_merge::merge_sorted_deep_samples(samples, 2, 0.01f, 0.01f, 1.0e-6f), 1u);
+  EXPECT_EQ(samples[0].r, 2.0f);
+  TestDeepSample overlapping[] = {{0.2f, 0.0f, 0.0f, 0.2f, 1.0f, 3.0f},
+                                  {0.2f, 0.0f, 0.0f, 0.2f, 2.0f, 4.0f}};
+  EXPECT_EQ(deep_merge::merge_sorted_deep_samples(overlapping, 2, 0.01f, 0.01f, 1.0e-6f), 2u);
 }
 
 }  // namespace blender::imbuf::tests

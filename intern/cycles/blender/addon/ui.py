@@ -875,6 +875,18 @@ class CYCLES_RENDER_PT_performance_threads(CyclesButtonsPanel, Panel):
         sub.prop(rd, "threads")
 
 
+class CYCLES_RENDER_PT_performance_deep(CyclesButtonsPanel, Panel):
+    bl_label = "Deep"
+    bl_parent_id = "CYCLES_RENDER_PT_performance"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        layout.prop(context.scene.cycles, "deep_simple_mode")
+
+
 class CYCLES_RENDER_PT_performance_memory(CyclesButtonsPanel, Panel):
     bl_label = "Memory"
     bl_parent_id = "CYCLES_RENDER_PT_performance"
@@ -2669,6 +2681,7 @@ classes = (
     CYCLES_RENDER_PT_performance_compositor_denoise_settings,
     CYCLES_RENDER_PT_performance_threads,
     CYCLES_RENDER_PT_performance_memory,
+    CYCLES_RENDER_PT_performance_deep,
     CYCLES_RENDER_PT_performance_texture_cache,
     CYCLES_RENDER_PT_performance_acceleration_structure,
     CYCLES_RENDER_PT_performance_final_render,

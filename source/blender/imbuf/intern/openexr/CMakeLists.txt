@@ -15,6 +15,8 @@ set(INC_SYS
 set(SRC
   openexr_api.cpp
   openexr_api.h
+  openexr_deep_core.cc
+  openexr_deep_core.hh
 )
 
 set(LIB

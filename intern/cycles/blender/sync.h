@@ -42,6 +42,7 @@ class TaskPool;
 struct BlenderDeepOutputRequirements {
   bool direct = false;
   bool compositor = false;
+  float compositor_alpha_tolerance = 0.1f;
 
   bool needed() const
   {
@@ -65,7 +66,8 @@ class BlenderSync {
   void tag_update();
 
   static BlenderDeepOutputRequirements get_deep_output_requirements(
-      blender::Scene &input_scene, blender::Scene &evaluated_scene, bool viewport);
+      blender::Scene &input_scene, blender::Scene &evaluated_scene, bool viewport,
+      const char *view_layer_name = nullptr, const blender::RenderEngine *engine = nullptr);
 
   void set_bake_target(blender::Object &b_object);
 
@@ -81,7 +83,6 @@ class BlenderSync {
                  blender::RegionView3D *b_rv3d,
                  const int width,
                  const int height,
-                 void **python_thread_state,
                  const DeviceInfo &denoise_device_info);
   void sync_view_layer(blender::ViewLayer &b_view_layer);
   void sync_render_passes(blender::RenderLayer &b_rlay, blender::ViewLayer &b_view_layer);
@@ -150,8 +151,7 @@ class BlenderSync {
                                blender::View3D *b_v3d,
                                blender::RegionView3D *b_rv3d,
                                const int width,
-                               const int height,
-                               void **python_thread_state);
+                               const int height);
   void sync_film(blender::ViewLayer &b_view_layer,
                  blender::bScreen *b_screen,
                  blender::View3D *b_v3d,

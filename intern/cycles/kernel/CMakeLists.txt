@@ -180,6 +180,23 @@ set(SRC_KERNEL_FILM_HEADERS
 )
 
 set(SRC_KERNEL_INTEGRATOR_HEADERS
+  integrator/deep_bounded_schema.h
+  integrator/deep_bounded_types.h
+  integrator/deep_bounded_capture.h
+  integrator/deep_bounded_records.h
+  integrator/deep_bounded_numeric.h
+  integrator/deep_camera_receipt.h
+  integrator/deep_surface_receipt.h
+  integrator/deep_volume_radiance_receipt.h
+  integrator/deep_volume_emission_span.h
+  integrator/deep_compact_capture.h
+  integrator/deep_compact_witness.h
+  integrator/deep_compact_trace.h
+  integrator/deep_compact_cases.h
+  integrator/deep_compact_types.h
+  integrator/deep_gpu_frame.h
+    integrator/deep_optical_capture.h
+  integrator/deep_optical_event.h
   integrator/displacement_shader.h
   integrator/init_from_bake.h
   integrator/init_from_camera.h
@@ -405,6 +422,98 @@ cycles_add_gpu_kernel_dependencies(cycles_kernel_optix)
 cycles_add_gpu_kernel_dependencies(cycles_kernel_hip)
 cycles_add_gpu_kernel_dependencies(cycles_kernel_hiprt)
 cycles_add_gpu_kernel_dependencies(cycles_kernel_oneapi)
+
+# Device-resident Deep numerical module, built and installed with the owning
+# OptiX runtime. Do not rely on a retained experimental PTX from another ABI.
+if(WITH_CYCLES_DEVICE_OPTIX AND CUDA_NVCC_EXECUTABLE)
+  set(deep_bounded_ptx "${CMAKE_CURRENT_BINARY_DIR}/deep_bounded_7.ptx")
+  set(deep_bounded_source "${CMAKE_CURRENT_SOURCE_DIR}/../device/cuda/deep_bounded.cu")
+  add_custom_command(
+    OUTPUT "${deep_bounded_ptx}"
+    COMMAND ${CUDA_NVCC_EXECUTABLE} -std=c++17 --ptx -arch=compute_50
+      -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+      -I "${CMAKE_CURRENT_SOURCE_DIR}/.." -o "${deep_bounded_ptx}" "${deep_bounded_source}"
+    DEPENDS "${deep_bounded_source}" ${SRC_KERNEL_INTEGRATOR_HEADERS}
+    VERBATIM
+  )
+  set(deep_bounded_binaries "${deep_bounded_ptx}")
+  get_filename_component(deep_bounded_cuda_bin "${CUDA_NVCC_EXECUTABLE}" DIRECTORY)
+  set(deep_bounded_ptxas "${deep_bounded_cuda_bin}/ptxas${CMAKE_EXECUTABLE_SUFFIX}")
+  foreach(arch ${CYCLES_CUDA_BINARIES_ARCH})
+    if(arch MATCHES "^sm_[0-9]+$")
+      set(deep_bounded_cubin "${CMAKE_CURRENT_BINARY_DIR}/deep_bounded_7_${arch}.cubin")
+      add_custom_command(
+        OUTPUT "${deep_bounded_cubin}"
+        COMMAND "${deep_bounded_ptxas}" -arch=${arch} -O3
+          "${deep_bounded_ptx}" -o "${deep_bounded_cubin}"
+        DEPENDS "${deep_bounded_ptx}"
+        VERBATIM
+      )
+      list(APPEND deep_bounded_binaries "${deep_bounded_cubin}")
+    endif()
+  endforeach()
+  add_custom_target(cycles_kernel_deep_bounded ALL DEPENDS ${deep_bounded_binaries})
+  add_dependencies(cycles_kernel cycles_kernel_deep_bounded)
+  if(WITH_BLENDER)
+    set(deep_bounded_runtime
+        "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/${BLENDER_VERSION}/${CYCLES_INSTALL_PATH}/lib")
+    add_custom_command(TARGET cycles_kernel_deep_bounded POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${deep_bounded_runtime}"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${deep_bounded_binaries} "${deep_bounded_runtime}"
+      VERBATIM
+    )
+  endif()
+  delayed_install("${CMAKE_CURRENT_BINARY_DIR}" "${deep_bounded_binaries}" "${CYCLES_INSTALL_PATH}/lib")
+endif()
+
+if(WITH_CYCLES_DEEP_REFERENCE_GPU AND
+   (NOT WITH_CYCLES_DEVICE_OPTIX OR NOT CUDA_NVCC_EXECUTABLE))
+  message(FATAL_ERROR "Deep GPU reference module requires OptiX and NVCC")
+endif()
+
+if(WITH_CYCLES_DEEP_REFERENCE_GPU)
+  set(deep_frame_ptx "${CMAKE_CURRENT_BINARY_DIR}/deep_frame_reduce_44474603.ptx")
+  set(deep_frame_source_root "${CMAKE_CURRENT_SOURCE_DIR}/..")
+  set(deep_frame_sources
+    "${deep_frame_source_root}/device/cuda/deep_frame_reduce.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_encode.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_native.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_grid.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_compact.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_colour.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_simple.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_compact_encode.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_sort.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_archive.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_witness.cu"
+    "${deep_frame_source_root}/device/cuda/deep_frame_cases.cu"
+    "${deep_frame_source_root}/device/cuda/deep_compact_fit.cuh"
+    "${deep_frame_source_root}/device/cuda/deep_compact_trace.cuh"
+    "${deep_frame_source_root}/kernel/integrator/deep_compact_types.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/integrator/deep_gpu_frame.h"
+  )
+  add_custom_command(OUTPUT "${deep_frame_ptx}"
+    COMMAND "${CUDA_NVCC_EXECUTABLE}" --ptx --gpu-architecture=compute_75
+            --std=c++17 --fmad=true --ftz=false -Wno-deprecated-gpu-targets
+            "-I${deep_frame_source_root}"
+            "${deep_frame_source_root}/device/cuda/deep_frame_reduce.cu"
+            -o "${deep_frame_ptx}"
+    DEPENDS ${deep_frame_sources}
+    VERBATIM
+  )
+  add_custom_target(cycles_kernel_deep_frame ALL DEPENDS "${deep_frame_ptx}")
+  add_dependencies(cycles_kernel cycles_kernel_deep_frame)
+  if(WITH_BLENDER)
+    set(deep_frame_runtime
+        "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/${BLENDER_VERSION}/${CYCLES_INSTALL_PATH}/lib")
+    add_custom_command(TARGET cycles_kernel_deep_frame POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${deep_frame_runtime}"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${deep_frame_ptx}" "${deep_frame_runtime}"
+      VERBATIM
+    )
+  endif()
+  delayed_install("${CMAKE_CURRENT_BINARY_DIR}" "${deep_frame_ptx}" "${CYCLES_INSTALL_PATH}/lib")
+endif()
 
 # Copy precompiled kernel binaries into the Blender add-on runtime folder for local builds.
 if(WITH_BLENDER)

@@ -1,0 +1,154 @@
+{
+  "schema": 7,
+  "records": [
+    {
+      "name": "DeepBoundedPacket",
+      "size_bytes": 64,
+      "fields": [
+        {
+          "name": "owned_x",
+          "type": "i32",
+          "offset": 0
+        },
+        {
+          "name": "owned_y",
+          "type": "i32",
+          "offset": 4
+        },
+        {
+          "name": "owned_w",
+          "type": "u32",
+          "offset": 8
+        },
+        {
+          "name": "owned_h",
+          "type": "u32",
+          "offset": 12
+        },
+        {
+          "name": "owned_pitch",
+          "type": "u32",
+          "offset": 16
+        },
+        {
+          "name": "plane_pitch",
+          "type": "u32",
+          "offset": 20
+        },
+        {
+          "name": "start_sample",
+          "type": "i32",
+          "offset": 24
+        },
+        {
+          "name": "sample_offset",
+          "type": "i32",
+          "offset": 28
+        },
+        {
+          "name": "num_samples",
+          "type": "u32",
+          "offset": 32
+        },
+        {
+          "name": "root_capacity",
+          "type": "u32",
+          "offset": 36
+        },
+        {
+          "name": "epoch",
+          "type": "u64",
+          "offset": 40
+        },
+        {
+          "name": "layout_id",
+          "type": "u64",
+          "offset": 48
+        },
+        {
+          "name": "status_ptr",
+          "type": "u64",
+          "offset": 56
+        }
+      ]
+    },
+    {
+      "name": "DeepBoundedBridge",
+      "size_bytes": 12,
+      "fields": [
+        {
+          "name": "event_t",
+          "type": "float",
+          "offset": 0
+        },
+        {
+          "name": "reason",
+          "type": "u32",
+          "offset": 4
+        },
+        {
+          "name": "has_extinction",
+          "type": "bool",
+          "offset": 8,
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "DeepBoundedEncodedHeader",
+      "size_bytes": 16,
+      "fields": [
+        {
+          "name": "M",
+          "type": "u64",
+          "offset": 0
+        },
+        {
+          "name": "layout",
+          "type": "u32",
+          "offset": 8
+        },
+        {
+          "name": "status",
+          "type": "u32",
+          "offset": 12
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "DeepBoundedSourceKind",
+      "values": {
+        "UNBOUND": 0,
+        "POINT": 1,
+        "VOLUME": 2,
+        "EXCLUDED": 3
+      }
+    },
+    {
+      "name": "DeepBoundedPolicy",
+      "values": {
+        "NONE": 0,
+        "ALPHA": 1,
+        "SIMPLE": 2,
+        "PHYSICAL": 3
+      }
+    },
+    {
+      "name": "DeepBoundedCopyStage",
+      "values": {
+        "LEASED": 0,
+        "COMPACT_SUBMITTED": 1,
+        "COMPACT_EVENT_RECORDED": 2,
+        "HEADER_SUBMITTED": 3,
+        "HEADER_EVENT_RECORDED": 4,
+        "PAYLOAD_SUBMITTED": 5,
+        "DMA_EVENT_RECORDED": 6,
+        "HOST_VALIDATED": 7,
+        "CPU_DONE": 8,
+        "RETIRED": 9
+      }
+    }
+  ]
+}

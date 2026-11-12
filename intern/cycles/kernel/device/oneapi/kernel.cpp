@@ -495,6 +495,33 @@ bool oneapi_enqueue_kernel(KernelContext *kernel_context,
                       oneapi_kernel_integrator_shade_dedicated_light);
           break;
         }
+        case DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL: {
+          oneapi_call(kg,
+                      cgh,
+                      global_size,
+                      local_size,
+                      args,
+                      oneapi_kernel_integrator_shade_deep_volume_optical);
+          break;
+        }
+        case DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL_WARP: {
+          oneapi_call(kg,
+                      cgh,
+                      global_size,
+                      local_size,
+                      args,
+                      oneapi_kernel_integrator_shade_deep_volume_optical_warp);
+          break;
+        }
+        case DEVICE_KERNEL_INTEGRATOR_DEEP_BEAUTY_READY: {
+          oneapi_call(kg,
+                      cgh,
+                      global_size,
+                      local_size,
+                      args,
+                      oneapi_kernel_integrator_deep_beauty_ready);
+          break;
+        }
         case DEVICE_KERNEL_INTEGRATOR_QUEUED_PATHS_ARRAY: {
           oneapi_call(
               kg, cgh, global_size, local_size, args, oneapi_kernel_integrator_queued_paths_array);

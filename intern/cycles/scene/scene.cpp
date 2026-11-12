@@ -235,7 +235,8 @@ void Scene::device_update(Device *device_, Progress &progress)
      * we have to redo the first part of the scene update. */
     const uint kernel_features = dscene.data.kernel_features;
     scene_updated_while_loading_kernels = false;
-    if (!kernels_loaded || loaded_kernel_features != kernel_features) {
+    if (!kernels_loaded || loaded_kernel_features != kernel_features ||
+        loaded_deep_bounded_policy != device->deep_bounded_policy()) {
       mutex.unlock();
       kernels_reloaded |= load_kernels(progress);
       mutex.lock();
@@ -725,6 +726,7 @@ bool Scene::load_kernels(Progress &progress)
 
   kernels_loaded = true;
   loaded_kernel_features = kernel_features;
+  loaded_deep_bounded_policy = device->deep_bounded_policy();
   return true;
 }
 

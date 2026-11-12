@@ -11,6 +11,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -78,6 +79,90 @@ template<> struct DeepSampleTraits<blender::DeepSample> {
 };
 
 template<typename Sample>
+inline double interval_contribution_fraction(const Sample &sample, const double depth)
+{
+  using Traits = DeepSampleTraits<Sample>;
+  if (depth <= Traits::z(sample)) return 0.0;
+  if (depth >= Traits::z_back(sample)) return 1.0;
+  const double fraction = (depth - Traits::z(sample)) /
+                          (double(Traits::z_back(sample)) - Traits::z(sample));
+  const double alpha = Traits::a(sample);
+  if (alpha == 0.0) return fraction;
+  return -std::expm1(std::log1p(-alpha) * fraction) / alpha;
+}
+
+/* A bounded run retains original prefix witnesses instead of repeatedly comparing a
+ * candidate against an already approximated pair. Post-integration fitting checks
+ * opacity and premultiplied RGB with separate residuals. The probes are a local production
+ * policy, not a formal continuous/global error certificate. Original knots and four inner
+ * subintervals protect depth cuts; a failed fit keeps the original output run. */
+template<typename Sample> class VolumeMergeReference {
+  struct Witness {
+    double depth, transmission;
+    std::array<double, 3> rgb;
+  };
+  static constexpr size_t maximum_segments = 32;
+  std::array<Witness, maximum_segments * 5> witnesses_;
+  size_t count_ = 0, segments_ = 0;
+  double transmission_ = 1.0;
+  std::array<double, 3> rgb_ = {};
+
+ public:
+  void reset(const Sample &sample)
+  {
+    count_ = segments_ = 0;
+    transmission_ = 1.0;
+    rgb_ = {};
+    append(sample);
+  }
+
+  bool append(const Sample &sample)
+  {
+    using Traits = DeepSampleTraits<Sample>;
+    if (segments_ == maximum_segments) return false;
+    const std::array<double, 3> color = {Traits::r(sample), Traits::g(sample), Traits::b(sample)};
+    for (int probe = 0; probe <= 4; probe++) {
+      const double depth = double(Traits::z(sample)) +
+                           (double(Traits::z_back(sample)) - Traits::z(sample)) * (probe / 4.0);
+      const double fraction = probe == 0 ? 0.0 :
+                               probe == 4 ? 1.0 : interval_contribution_fraction(sample, depth);
+      Witness &witness = witnesses_[count_++];
+      witness.depth = depth;
+      witness.transmission = transmission_ * (1.0 - Traits::a(sample) * fraction);
+      for (int channel = 0; channel < 3; channel++)
+        witness.rgb[channel] = rgb_[channel] + transmission_ * color[channel] * fraction;
+    }
+    for (int channel = 0; channel < 3; channel++)
+      rgb_[channel] += transmission_ * color[channel];
+    transmission_ *= 1.0 - Traits::a(sample);
+    segments_++;
+    return true;
+  }
+
+  bool accepts(const Sample &candidate, const double tolerance) const
+  {
+    if (!std::isfinite(tolerance) || tolerance < 0.0) return false;
+    using Traits = DeepSampleTraits<Sample>;
+    const std::array<double, 3> color = {
+        Traits::r(candidate), Traits::g(candidate), Traits::b(candidate)};
+    for (size_t i = 0; i < count_; i++) {
+      const Witness &reference = witnesses_[i];
+      const double fraction = interval_contribution_fraction(candidate, reference.depth);
+      const double transmission = 1.0 - Traits::a(candidate) * fraction;
+      if (!std::isfinite(transmission) ||
+          std::abs(transmission - reference.transmission) > tolerance) return false;
+      for (int channel = 0; channel < 3; channel++) {
+        const double actual = color[channel] * fraction;
+        if (!std::isfinite(actual) || std::abs(actual - reference.rgb[channel]) >
+                                         tolerance * (1.0 + std::abs(reference.rgb[channel])))
+          return false;
+      }
+    }
+    return true;
+  }
+};
+
+template<typename Sample>
 inline size_t merge_sorted_deep_samples(Sample *samples,
                                         size_t count,
                                         const float depth_merge_threshold,
@@ -90,6 +175,8 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
   }
 
   size_t write_idx = 0;
+  VolumeMergeReference<Sample> volume_reference;
+  float previous_input_back = 0.0f;
   for (size_t read_idx = 0; read_idx < count; read_idx++) {
     const Sample current = samples[read_idx];
 
@@ -114,7 +201,23 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
             /* Volumes: allow merging of contiguous segments along the ray. */
             depth_similar = (curr_z <= prev_z_back + depth_merge_threshold);
           }
-          const bool alpha_similar = std::abs(curr_a - prev_a) < alpha_merge_threshold;
+          bool alpha_similar = std::abs(curr_a - prev_a) < alpha_merge_threshold;
+          if (prev_volume) {
+            Sample candidate = prev;
+            const float remaining = 1.0f - prev_a;
+            DeepSampleTraits<Sample>::set_r(candidate, DeepSampleTraits<Sample>::r(prev) +
+                                                      remaining * DeepSampleTraits<Sample>::r(current));
+            DeepSampleTraits<Sample>::set_g(candidate, DeepSampleTraits<Sample>::g(prev) +
+                                                      remaining * DeepSampleTraits<Sample>::g(current));
+            DeepSampleTraits<Sample>::set_b(candidate, DeepSampleTraits<Sample>::b(prev) +
+                                                      remaining * DeepSampleTraits<Sample>::b(current));
+            DeepSampleTraits<Sample>::set_a(candidate, prev_a + remaining * curr_a);
+            DeepSampleTraits<Sample>::set_z_back(candidate, std::max(prev_z_back, curr_z_back));
+            /* Overlapping intervals cannot be composed as two disjoint front-to-back pieces. */
+            alpha_similar = curr_z >= previous_input_back &&
+                            volume_reference.append(current) &&
+                            volume_reference.accepts(candidate, alpha_merge_threshold);
+          }
           if (depth_similar && alpha_similar) {
             /* Samples are sorted front to back: composite the nearer previous sample first. */
             const float one_minus_a = 1.0f - prev_a;
@@ -137,6 +240,7 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
               /* Keep merged surfaces as surfaces (no thickness). */
               DeepSampleTraits<Sample>::set_z_back(prev, prev_z);
             }
+            previous_input_back = curr_z_back;
             continue;
           }
         }
@@ -147,6 +251,9 @@ inline size_t merge_sorted_deep_samples(Sample *samples,
       samples[write_idx] = current;
     }
     write_idx++;
+    const float front = DeepSampleTraits<Sample>::z(current);
+    previous_input_back = DeepSampleTraits<Sample>::z_back(current);
+    if (previous_input_back > front + volume_depth_epsilon) volume_reference.reset(current);
   }
 
   return write_idx;

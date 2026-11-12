@@ -15,6 +15,14 @@ KERNEL_STRUCT_MEMBER(path, uint32_t, render_pixel_index, KERNEL_FEATURE_PATH_TRA
 KERNEL_STRUCT_MEMBER(path, uint32_t, sample, KERNEL_FEATURE_PATH_TRACING)
 /* Active deep hard-surface sample for primary visibility contribution accumulation. */
 KERNEL_STRUCT_MEMBER(path, uint32_t, deep_surface_sample_idx, KERNEL_FEATURE_PATH_TRACING)
+/* Stable native Volume radiance owner, separate from Surface opacity ownership. */
+KERNEL_STRUCT_MEMBER(path, uint32_t, deep_volume_radiance_idx, KERNEL_FEATURE_PATH_TRACING)
+/* New production camera identity. Generated native compaction preserves this index. */
+KERNEL_STRUCT_MEMBER(path, uint32_t, deep_frame_camera_index, KERNEL_FEATURE_PATH_TRACING)
+/* Optional current source vertex, independent of the selected indirect owner. */
+KERNEL_STRUCT_MEMBER(path, uint32_t, deep_frame_root_handle, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(path, uint32_t, deep_bounded_slot_kind, KERNEL_FEATURE_PATH_TRACING)
+KERNEL_STRUCT_MEMBER(path, float, deep_bounded_anchor_z, KERNEL_FEATURE_PATH_TRACING)
 /* Current ray bounce depth. */
 KERNEL_STRUCT_MEMBER(path, uint16_t, bounce, KERNEL_FEATURE_PATH_TRACING)
 /* Current transparent ray bounce depth. */

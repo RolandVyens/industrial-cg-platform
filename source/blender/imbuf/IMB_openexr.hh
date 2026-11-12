@@ -10,8 +10,10 @@
 
 #pragma once
 
+#include <memory_resource>
 #include <vector>
 
+#include "BLI_function_ref.hh"
 #include "BLI_string_ref.hh"
 #include "IMB_deep_sample.hh"
 
@@ -108,6 +110,49 @@ void IMB_exr_get_display_window(ExrHandle *handle,
                                 int display_offset[2],
                                 int data_offset[2]);
 /* Deep EXR support. */
+
+struct DeepExrWriteParams {
+  int width = 0, height = 0, compression = 0;
+  bool use_half_float = false, alpha_only = false, has_display_window = false;
+  int display_width = 0, display_height = 0, display_offset_x = 0, display_offset_y = 0;
+  int data_offset_x = 0, data_offset_y = 0;
+};
+
+/* Synchronously supplies one native input row, in the same coordinate order as
+ * the vector overload. The callback owns no file handle; its row storage remains
+ * borrowed through compression/write. Already fitted samples are not merged. */
+using DeepExrRowReader = FunctionRef<bool(int, std::vector<std::vector<DeepSample>> &)>;
+/* A packed row contains little-endian cumulative i32 counts and channel-major sample bytes. */
+using DeepExrPackedRowReader = FunctionRef<bool(int,
+                                                std::pmr::vector<unsigned char> &,
+                                                std::pmr::vector<unsigned char> &)>;
+struct DeepExrMemoryCallbacks {
+  /* Acquire may throw before allocation; release must not throw. Callback
+   * lifetimes cover the synchronous writer, including exception cleanup. */
+  FunctionRef<void(size_t)> acquire;
+  FunctionRef<void(size_t)> release;
+};
+enum class DeepExrWriteFailure { None, InvalidInput, Reader, Memory, Codec, Io };
+struct DeepExrWriteReport {
+  DeepExrWriteFailure failure = DeepExrWriteFailure::None;
+  char message[256] = {};
+  size_t library_peak = 0, library_remaining = 0;
+  bool library_private_accounted = false, close_checked = false;
+  /* Nested wall times: these stages are contained within total_seconds. */
+  double read_seconds = 0, pack_seconds = 0, compress_write_seconds = 0;
+  double finish_seconds = 0, total_seconds = 0;
+};
+bool IMB_exr_save_deep_rows(DeepExrRowReader reader,
+                            const DeepExrWriteParams &params,
+                            const char *filepath,
+                            const DeepExrMemoryCallbacks *memory = nullptr,
+                            DeepExrWriteReport *report = nullptr);
+
+bool IMB_exr_save_deep_packed_rows(DeepExrPackedRowReader reader,
+                                   const DeepExrWriteParams &params,
+                                   const char *filepath,
+                                   const DeepExrMemoryCallbacks *memory,
+                                   DeepExrWriteReport *report);
 
 /**
  * Save deep EXR file with per-pixel variable sample counts.

@@ -17,6 +17,8 @@
 #include "util/types_image.h"  // IWYU pragma: keep
 #include "util/unique_ptr.h"
 
+struct DeepBoundedBinding;
+
 CCL_NAMESPACE_BEGIN
 
 struct OSLGlobals;
@@ -92,6 +94,9 @@ struct ThreadKernelGlobalsCPU : public KernelGlobalsCPU {
   unique_ptr<openpgl::cpp::SurfaceSamplingDistribution> opgl_surface_sampling_distribution;
   unique_ptr<openpgl::cpp::VolumeSamplingDistribution> opgl_volume_sampling_distribution;
 #endif
+
+  /* Borrowed only while this thread executes an owned bounded camera sample. */
+  const ::DeepBoundedBinding *deep_bounded = nullptr;
 
  protected:
   Profiler &cpu_profiler_;

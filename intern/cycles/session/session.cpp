@@ -7,6 +7,9 @@
 
 #include "device/cpu/device.h"
 #include "device/device.h"
+#include "integrator/deep_bounded_cpu.h"
+#include "integrator/deep_bounded_work.h"
+#include "integrator/deep_native_capacity.h"
 #include "integrator/path_trace.h"
 #include "scene/background.h"
 #include "scene/camera.h"
@@ -19,7 +22,6 @@
 #include "scene/shader_graph.h"
 #include "session/buffers.h"
 #include "session/deep_buffers.h"
-#include "session/deep_output_driver.h"
 #include "session/display_driver.h"
 #include "session/output_driver.h"
 #include "session/session.h"
@@ -27,6 +29,7 @@
 #include "util/log.h"
 #include "util/math.h"
 #include "util/string.h"
+#include "util/system.h"
 #include "util/task.h"
 #include "util/time.h"
 
@@ -38,8 +41,8 @@ bool buffer_params_has_expanded_data_window(const BufferParams &buffer_params)
 {
   return buffer_params.window_x != 0 || buffer_params.window_y != 0 ||
          buffer_params.width > buffer_params.full_width ||
-         buffer_params.height > buffer_params.full_height ||
-         buffer_params.full_x < 0 || buffer_params.full_y < 0 ||
+         buffer_params.height > buffer_params.full_height || buffer_params.full_x < 0 ||
+         buffer_params.full_y < 0 ||
          (buffer_params.full_x + buffer_params.width) > buffer_params.full_width ||
          (buffer_params.full_y + buffer_params.height) > buffer_params.full_height;
 }
@@ -71,6 +74,17 @@ Session::Session(const SessionParams &params_, const SceneParams &scene_params)
   new_work_added_ = false;
 
   device = Device::create(params.device, stats, profiler, params_.headless);
+
+  /* Qualification-only switch: run the Alpha module with no capture binding to
+   * distinguish mode specialization from work done by the producer. */
+  if (params_.headless && device->info.type == DEVICE_OPTIX) {
+    const char *mode = getenv("CYCLES_TEST_DEEP_ALPHA_MODULE_WITHOUT_CAPTURE");
+    if (mode && (std::strcmp(mode, "1") == 0 || std::strcmp(mode, "compute") == 0 ||
+                 std::strcmp(mode, "optix") == 0 || std::strncmp(mode, "compute-", 8) == 0))
+    {
+      device->set_deep_bounded_policy(1);
+    }
+  }
 
   if (device->have_error()) {
     progress.set_error(device->error_message());
@@ -347,8 +361,9 @@ RenderWork Session::run_update_for_next_iteration()
   /* Perform delayed reset if requested. */
   const bool reset_buffers = delayed_reset_buffer_params();
 
-  /* Update scene */
-  const bool reset_scene = update_scene(delayed_reset_.do_reset);
+  /* The pending flag was consumed above. Preserve this reset when updating the
+   * integrator so a new render can lower its sample count after cancellation. */
+  const bool reset_scene = update_scene(reset_buffers);
 
   /* Update buffers for new parameters. After scene update which influences the passes used. */
   bool have_tiles = true;
@@ -356,6 +371,26 @@ RenderWork Session::run_update_for_next_iteration()
 
   if (reset_buffers) {
     update_buffers_for_params();
+
+    if (deep_frame_capture_consumer_ && deep_frame_capture_consumer_->uses_bounded_processing()) {
+      const int2 tile_size = get_effective_tile_size();
+      const size_t devices = std::max(size_t(1), device->info.multi_devices.size());
+      bool retain_native_film = false;
+      if (!deep_bounded_admit_host(*deep_frame_capture_consumer_,
+                                   buffer_params_,
+                                   size_t(tile_size.x) * tile_size.y,
+                                   devices,
+                                   system_available_ram(),
+                                   retain_native_film,
+                                   deep_frame_capture_consumer_->uses_cpu_processing() ?
+                                       size_t(device->info.cpu_threads) :
+                                       0))
+      {
+        progress.set_error("Deep host quota cannot admit this frame and its output consumers");
+        return render_work;
+      }
+      path_trace_->set_retain_bounded_native_film(retain_native_film);
+    }
 
     /* After reset make sure the tile manager is at the first big tile. */
     have_tiles = tile_manager_.next();
@@ -442,11 +477,13 @@ RenderWork Session::run_update_for_next_iteration()
     const bool use_data_window_resolution = buffer_params_use_data_window_camera_resolution(
         buffer_params_);
     const int width = max(
-        1, int((use_data_window_resolution ? buffer_params_.width : buffer_params_.full_width) /
-               resolution));
+        1,
+        int((use_data_window_resolution ? buffer_params_.width : buffer_params_.full_width) /
+            resolution));
     const int height = max(
-        1, int((use_data_window_resolution ? buffer_params_.height : buffer_params_.full_height) /
-               resolution));
+        1,
+        int((use_data_window_resolution ? buffer_params_.height : buffer_params_.full_height) /
+            resolution));
 
     scene->update_camera_resolution(progress, width, height);
 
@@ -537,6 +574,146 @@ int2 Session::get_effective_tile_size() const
   const int image_width = buffer_params_.width;
   const int image_height = buffer_params_.height;
 
+  if (deep_frame_capture_consumer_) {
+    if (deep_frame_capture_consumer_->uses_bounded_processing()) {
+      if (!params.use_auto_tile) {
+        return make_int2(image_width, image_height);
+      }
+      const int requested = tile_manager_.compute_render_tile_size(params.tile_size);
+      if (deep_frame_capture_consumer_->uses_cpu_processing()) {
+        const auto &budget = deep_frame_capture_consumer_->device_memory_budget();
+        const size_t available = budget.quota() - budget.used();
+        const uint32_t threads = uint32_t(std::max(device->info.cpu_threads, 1));
+        const int block = TileManager::IMAGE_TILE_SIZE;
+        const auto fits = [&](const int2 size) {
+          const uint64_t p = uint64_t(size.x) * size.y;
+          DeepCPUAdmission admission;
+          return p < (1u << 30) &&
+                 deep_cpu_admission(
+                     *deep_frame_capture_consumer_, uint32_t(p), threads, admission) &&
+                 admission.peak <= available;
+        };
+        for (int side = requested; side > 0;) {
+          const int2 square = make_int2(std::min(side, image_width), std::min(side, image_height));
+          if (fits(square)) {
+            for (const int columns : {3, 2}) {
+              const int2 rectangle = make_int2(std::min({columns * block, requested, image_width}),
+                                               std::min({block, requested, image_height}));
+              if (uint64_t(rectangle.x) * rectangle.y <= uint64_t(square.x) * square.y)
+                break;
+              if (fits(rectangle))
+                return rectangle;
+            }
+            return square;
+          }
+          side = side > block ? ((side - 1) / block) * block : side / 2;
+        }
+        /* The owner produces the explicit minimum-working-set failure. */
+        return make_int2(1, 1);
+      }
+      const int2 limits = path_trace_->deep_bounded_camera_limits();
+      const auto policy = DeepBoundedPolicy(device->deep_bounded_policy());
+      const auto &budget = deep_frame_capture_consumer_->device_memory_budget();
+      const uint32_t families = deep_bounded_family_count(deep_frame_capture_consumer_->bounded_consumers());
+      size_t total = 0, free = 0;
+      device->get_device_memory_info(total, free);
+      const size_t quota = budget.quota() - budget.used();
+      const size_t available = total ? std::min(quota, free) : quota;
+      const uint32_t max_samples = deep_frame_capture_consumer_->bounded_max_samples();
+      const auto devices = path_trace_->deep_bounded_admission_devices();
+      const auto admit = [&](const uint32_t pixels) {
+        return devices.empty() ? deep_bounded_choose_packet(
+            pixels, max_samples, uint32_t(limits.x), policy,
+            buffer_params_.use_transparent_background, families, available) :
+            deep_bounded_choose_devices(pixels, max_samples, policy,
+                buffer_params_.use_transparent_background, families, quota, devices);
+      };
+      const int block = TileManager::IMAGE_TILE_SIZE;
+      const auto prefer_rectangular = [&](const int2 square) {
+        /* Larger native waves amortize Work joins. Keep an eight-sample
+         * admission floor so a wider Tile does not fragment every packet. */
+        for (const int columns : {3, 2}) {
+          const int2 size = make_int2(std::min({columns * block, requested, image_width}),
+                                     std::min({block, requested, image_height}));
+          const uint32_t pixels = uint32_t(size.x) * size.y;
+          if (pixels <= uint64_t(square.x) * square.y) {
+            break;
+          }
+          const auto rectangle = admit(pixels);
+          if (rectangle.roots && rectangle.packet_samples >= std::min(max_samples, 8u)) {
+            return size;
+          }
+        }
+        return square;
+      };
+      DeepBoundedAdmission best;
+      int2 best_size = make_int2(1, 1);
+      const char *largest_tile = getenv("CYCLES_TEST_DEEP_LARGEST_ADMITTED_TILE");
+      const bool test_largest_tile = params.headless && largest_tile &&
+                                     std::strcmp(largest_tile, "1") == 0;
+      for (int side = requested; side > 0;) {
+        const int2 size = make_int2(std::min(side, image_width), std::min(side, image_height));
+        const uint64_t pixels = uint64_t(size.x) * size.y;
+        if (pixels && pixels < (uint64_t(1) << 30)) {
+          const auto candidate = admit(uint32_t(pixels));
+          if (candidate.roots &&
+              (test_largest_tile || candidate.roots >= uint32_t(limits.y)))
+          {
+            return test_largest_tile ? size : prefer_rectangular(size);
+          }
+          if (candidate.roots > best.roots) {
+            best = candidate;
+            best_size = size;
+          }
+        }
+        side = side > block ? ((side - 1) / block) * block : side / 2;
+      }
+      return test_largest_tile ? best_size : prefer_rectangular(best_size);
+    }
+    DeepNativeCaptureCapacity one;
+    const bool gpu = deep_frame_capture_consumer_->uses_bounded_processing();
+    const bool rgb = deep_frame_capture_consumer_->capture_demand().capture_rgb();
+    const uint32_t stack_size = scene->dscene.data.volume_stack_size ?
+                                    scene->dscene.data.volume_stack_size : MAX_VOLUME_STACK_SIZE;
+    if (!deep_native_capture_capacity(1, 0, true, true, false, one, true, rgb, !gpu, gpu,
+                                      stack_size))
+      return make_int2(1, 1);
+    const size_t quota = deep_frame_capture_consumer_->device_memory_budget().quota();
+    constexpr size_t index_reserve = 16 << 20;
+    size_t maximum_pixels = quota > index_reserve ? (quota - index_reserve) / one.device : 1;
+    if (deep_frame_capture_consumer_->uses_bounded_processing()) {
+      /* Keep room for a joined producer page and a continuation transaction.
+       * Final AA windows are separately admitted from actual archived counts. */
+      maximum_pixels = std::max(size_t(1), maximum_pixels / 4);
+      const auto &host = deep_frame_capture_consumer_->memory_budget();
+      const size_t host_available = host.quota() - host.used();
+      const size_t raw_per_camera = sizeof(DeepCompactCamera) + 2 * sizeof(DeepCompactPrimitive) +
+                                   (rgb ? 2 * sizeof(DeepCompactColourSource) : 0);
+      const size_t samples = size_t(std::max(1, params.samples));
+      const size_t host_pixels = host_available / 2 / raw_per_camera / samples;
+      maximum_pixels = std::max(size_t(1), std::min(maximum_pixels, host_pixels));
+    }
+    const int halo = scene->integrator->get_adaptive_sampling().use ? 8 : 0;
+    const int cap = deep_frame_capture_consumer_->uses_bounded_processing() ? 256 : 64;
+    const int side = std::max(1, std::min(cap, int(std::sqrt(double(maximum_pixels)))) - halo);
+    const int requested = params.use_auto_tile ?
+                              tile_manager_.compute_render_tile_size(params.tile_size) :
+                              std::max(image_width, image_height);
+    int bounded = std::min(requested, side);
+    /* The native temporary EXR uses IMAGE_TILE_SIZE blocks for big tiles.
+     * Round down to keep both budget admission and writer alignment. A tile
+     * smaller than that block defines its own file block size instead. */
+    if (bounded > TileManager::IMAGE_TILE_SIZE)
+      bounded = (bounded / TileManager::IMAGE_TILE_SIZE) * TileManager::IMAGE_TILE_SIZE;
+    std::fprintf(stderr,
+                 "DEEP_FRAME_NATIVE_TILE side=%d halo=%d requested=%d device_quota=%llu\n",
+                 bounded,
+                 halo,
+                 requested,
+                 static_cast<unsigned long long>(quota));
+    return make_int2(std::min(image_width, bounded), std::min(image_height, bounded));
+  }
+
   if (!params.use_auto_tile) {
     return make_int2(image_width, image_height);
   }
@@ -551,18 +728,37 @@ int2 Session::get_effective_tile_size() const
   bool deep_tile_clamp_active = false;
 
   if (scene && scene->film->get_use_deep_output() && params.deep_tile_budget_mb > 0) {
-    const int max_samples = deep_effective_max_samples(scene->film, scene->integrator);
+    constexpr bool bounded_pool = false;
+    const int max_samples = deep_effective_capture_samples(
+        scene->film, scene->integrator, params.samples);
 
     size_t bytes_per_pixel = 0;
-    if (deep_compute_buffer_bytes(1, 1, max_samples, bytes_per_pixel) && bytes_per_pixel > 0) {
-      const size_t deep_budget_bytes = static_cast<size_t>(params.deep_tile_budget_mb) *
-                                       1024 * 1024;
+    const bool sparse_capture = getenv("CYCLES_EXPERIMENTAL_DEEP_VOLUME_PROFILE") != nullptr;
+    const bool size_valid = sparse_capture ?
+                                deep_compute_sparse_buffer_bytes(
+                                    1, 1, bounded_pool ? 1 : max_samples, bytes_per_pixel) :
+                                deep_compute_buffer_bytes(1, 1, max_samples, bytes_per_pixel);
+    if (size_valid && bytes_per_pixel > 0) {
+      const size_t deep_budget_bytes = static_cast<size_t>(params.deep_tile_budget_mb) * 1024 *
+                                       1024;
       const size_t max_pixels = deep_budget_bytes / bytes_per_pixel;
       if (max_pixels > 0) {
         const double max_pixels_double = static_cast<double>(max_pixels);
         const int max_tile_unaligned = max(
             8, static_cast<int>(std::floor(std::sqrt(max_pixels_double))));
         int max_tile = max_tile_unaligned;
+        if (bounded_pool) {
+          /* Geometry no longer reserves the worst-case step count at every pixel. Camera
+
+           * * admission drains the bounded append pool before reuse. Keep frame workspace bounded
+
+           * * too; this changes execution batches, never the user's event storage budget. */
+          int geometry_limit = 768;
+          if (const char *value = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RENDER_TILE_SIZE")) {
+            geometry_limit = clamp(atoi(value), 64, 2048);
+          }
+          max_tile = min(max_tile, geometry_limit);
+        }
         if (max_tile >= TileManager::IMAGE_TILE_SIZE) {
           max_tile = (max_tile / TileManager::IMAGE_TILE_SIZE) * TileManager::IMAGE_TILE_SIZE;
         }
@@ -572,8 +768,21 @@ int2 Session::get_effective_tile_size() const
           tile_size = max_tile;
 
           size_t estimated_bytes = 0;
+          int estimated_samples = 0;
           const string budget_str = string_human_readable_size(deep_budget_bytes);
-          if (deep_compute_buffer_bytes(tile_size, tile_size, max_samples, estimated_bytes)) {
+          const bool estimate_valid = bounded_pool ?
+                                          deep_bounded_sparse_capture_samples(tile_size,
+                                                                              tile_size,
+                                                                              max_samples,
+                                                                              deep_budget_bytes,
+                                                                              estimated_samples,
+                                                                              estimated_bytes) :
+                                      sparse_capture ?
+                                          deep_compute_sparse_buffer_bytes(
+                                              tile_size, tile_size, max_samples, estimated_bytes) :
+                                          deep_compute_buffer_bytes(
+                                              tile_size, tile_size, max_samples, estimated_bytes);
+          if (estimate_valid) {
             const string estimated_str = string_human_readable_size(estimated_bytes);
             LOG_INFO << "Deep EXR: clamping tile size to " << tile_size << " (budget "
                      << budget_str << ", estimated " << estimated_str << ", max samples "
@@ -748,15 +957,27 @@ void Session::set_display_driver(unique_ptr<DisplayDriver> driver)
   path_trace_->set_display_driver(std::move(driver));
 }
 
-void Session::set_deep_output_driver(unique_ptr<DeepOutputDriver> driver)
+
+bool Session::set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer)
 {
-  path_trace_->set_deep_output_driver(std::move(driver));
+  const uint32_t old_policy = device->deep_bounded_policy();
+  const DeepCaptureDemand demand = consumer ? consumer->capture_demand() : DeepCaptureDemand{};
+  uint32_t policy = 0;
+  if (consumer && consumer->uses_bounded_processing()) {
+    policy = !demand.needs_rgb ? 1u : demand.simple_mode ? 2u : 3u;
+  }
+  device->set_deep_bounded_policy(policy);
+  if (!path_trace_->set_deep_frame_capture_consumer(consumer)) {
+    device->set_deep_bounded_policy(old_policy);
+    return false;
+  }
+  deep_frame_capture_consumer_ = consumer;
+  if (old_policy != policy && scene) {
+    scene->film->tag_modified();
+  }
+  return true;
 }
 
-DeepOutputDriver *Session::get_deep_output_driver()
-{
-  return path_trace_->get_deep_output_driver();
-}
 
 double Session::get_estimated_remaining_time() const
 {
@@ -897,9 +1118,10 @@ void Session::collect_statistics(RenderStats *render_stats)
  * Full-frame on-disk storage.
  */
 
-void Session::process_full_buffer_from_disk(string_view filename)
+void Session::process_full_buffer_from_disk(string_view filename,
+                                            DeepFrameCaptureConsumer *beauty_consumer)
 {
-  path_trace_->process_full_buffer_from_disk(filename);
+  path_trace_->process_full_buffer_from_disk(filename, beauty_consumer);
 }
 
 CCL_NAMESPACE_END

@@ -21,7 +21,7 @@ Result Context::get_pass(const Scene * /*scene*/, int /*view_layer*/, const char
   return invalid_pass;
 }
 
-bool Context::get_deep_data(const Scene * /*scene*/,
+bool Context::get_deep_data(const Scene *scene,
                             int /*view_layer_id*/,
                             RenderDeepData **r_data,
                             int *r_width,
@@ -36,6 +36,9 @@ bool Context::get_deep_data(const Scene * /*scene*/,
   if (r_height) {
     *r_height = 0;
   }
+
+  if (scene)
+    return false; /* An explicit target needs that exact scene/layer's retained source. */
 
   RenderContext *render_ctx = this->render_context();
   if (render_ctx && render_ctx->has_deep_data()) {

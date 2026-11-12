@@ -9,6 +9,8 @@
 #include "device/cpu/device.h"
 #include "device/device.h"
 
+#include "integrator/deep_frame_capture.h"
+#include "integrator/deep_bounded_plan.h"
 #include "integrator/pass_accessor.h"
 #include "integrator/path_trace_display.h"
 #include "integrator/path_trace_tile.h"
@@ -43,6 +45,25 @@ float combined_transparency_to_alpha(const float transparency)
 }
 
 }  // namespace
+
+struct PathTrace::BoundedNativeFilm {
+  BoundedNativeFilm(Device &device, const DeepMemoryBudget &budget, const size_t bytes)
+      : buffer(&device), budget(budget), bytes(bytes)
+  {
+    budget.acquire(bytes);
+  }
+
+  ~BoundedNativeFilm()
+  {
+    buffer.buffer.free();
+    budget.relinquish(bytes);
+  }
+
+  RenderBuffers buffer;
+  DeepMemoryBudget budget;
+  size_t bytes;
+  uint64_t written_pixels = 0;
+};
 
 PathTrace::PathTrace(Device *device,
                      Device *denoise_device,
@@ -204,16 +225,37 @@ void PathTrace::render_pipeline(RenderWork render_work)
   /* NOTE: Only check for "instant" cancel here. The user-requested cancel via progress is
    * checked in Session and the work in the event of cancel is to be finished here. */
 
+  const bool deep_capture_trace = (deep_frame_consumer_ && deep_frame_consumer_->uses_bounded_processing()) &&
+                                  getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE") !=
+                                      nullptr;
+  const double deep_pipeline_start = deep_capture_trace ? time_dt() : 0.0;
+  double deep_stage_start = deep_pipeline_start;
+  const auto trace_stage = [&](const char *stage) {
+    if (deep_capture_trace) {
+      const double now = time_dt();
+      std::fprintf(stderr,
+                   "DEEP_PIPELINE stage=%s total_ms=%.6f\n",
+                   stage,
+                   (now - deep_stage_start) * 1000);
+      deep_stage_start = now;
+    }
+  };
+  SCOPED_DEFER(if (deep_capture_trace) {
+    std::fprintf(stderr,
+                 "DEEP_PIPELINE stage=work_total total_ms=%.6f\n",
+                 (time_dt() - deep_pipeline_start) * 1000);
+  });
+
   render_scheduler_.set_need_schedule_cryptomatte(device_scene_->data.film.cryptomatte_passes !=
                                                   0);
 
   render_scheduler_.report_work_begin(render_work);
 
   init_render_buffers(render_work);
+  trace_stage("init_buffers");
 
   rebalance(render_work);
-  sync_deep_output_buffers();
-
+  trace_stage("rebalance");
   /* Initialize kernel execution after deep buffer sync so that CPU thread-local kernel globals
    * have the updated deep buffer pointers. This is critical for mixed CPU/GPU rendering where
    * rebalance can change slice layouts and deep buffer allocations. Keep the matching deinit
@@ -238,10 +280,18 @@ void PathTrace::render_pipeline(RenderWork render_work)
     render_scheduler_.set_limit_samples_per_update(limit);
   }
 
+  trace_stage("prepare");
+  const double deep_trace_start = deep_capture_trace ? time_dt() : 0.0;
   path_trace(render_work);
+  if (deep_capture_trace) {
+    std::fprintf(stderr, "DEEP_PATH_TRACE total_ms=%.6f\n", (time_dt() - deep_trace_start) * 1000);
+  }
+  trace_stage("path_trace");
   if (render_cancel_.is_requested) {
     return;
   }
+
+  trace_stage("flush_deep");
 
   /* Update the guiding field using the training data/samples collected during the rendering
    * iteration/progression. */
@@ -270,18 +320,100 @@ void PathTrace::render_pipeline(RenderWork render_work)
     return;
   }
 
+  trace_stage("postprocess");
   write_tile_buffer(render_work);
+  trace_stage("write_tile");
   update_display(render_work);
 
   progress_update_if_needed(render_work);
 
+  trace_stage("display_progress");
   finalize_full_buffer_on_disk(render_work);
+  trace_stage("finalize");
 }
 
 void PathTrace::render_init_kernel_execution()
 {
+  const bool multi_deep = deep_frame_consumer_ && deep_frame_consumer_->uses_gpu_processing() &&
+                          path_trace_works_.size() > 1;
+  int64_t window[4] = {};
+  bool admit = false;
+  if (multi_deep) {
+    window[0] = int64_t(big_tile_params_.full_x) + big_tile_params_.window_x;
+    window[1] = int64_t(big_tile_params_.full_y) + big_tile_params_.window_y;
+    window[2] = big_tile_params_.window_width;
+    window[3] = big_tile_params_.window_height;
+    admit = !deep_aggregate_admitted_ ||
+        deep_aggregate_resolution_ != render_state_.resolution_divider ||
+        !std::equal(std::begin(window), std::end(window), std::begin(deep_aggregate_window_));
+  }
+  if (admit)
+  {
+    const auto devices = deep_bounded_admission_devices();
+    const uint64_t pixels = uint64_t(big_tile_params_.window_width) * big_tile_params_.window_height;
+    const auto &budget = deep_frame_consumer_->device_memory_budget();
+    const auto policy = DeepBoundedPolicy(device_->deep_bounded_policy());
+    const uint32_t families = deep_bounded_family_count(deep_frame_consumer_->bounded_consumers());
+    const bool holdout = device_scene_->data.background.transparent != 0;
+    const auto admitted = pixels < (1u << 30) ? deep_bounded_choose_devices(
+        uint32_t(pixels), deep_frame_consumer_->bounded_max_samples(), policy, holdout,
+        families, budget.quota() - budget.used(), devices) : DeepBoundedAdmission{};
+    if (!admitted.roots) {
+      progress_->set_error("Deep aggregate device budget cannot admit this Tile");
+      return;
+    }
+    size_t remaining = budget.quota() - budget.used();
+    /* First reserve every mandatory arena. Optional maps may consume only the
+     * remaining shared and per-device physical capacity, never another Work's minimum. */
+    for (const auto &device : devices) {
+      DeepBoundedAdmission a;
+      size_t cap;
+      if (!DeepBoundedAdmission::calculate(uint32_t(pixels), admitted.packet_samples,
+              device.native_states, policy, holdout, families, a, device.compact_identity) ||
+          !deep_bounded_resident(a, device.retained, cap) ||
+          cap < device.retained.known_total || cap - device.retained.known_total > remaining)
+      {
+        progress_->set_error("Deep aggregate arena reservation changed before initialization");
+        return;
+      }
+      remaining -= cap - device.retained.known_total;
+    }
+    for (size_t i = 0; i < devices.size(); ++i) {
+      DeepBoundedAdmission a;
+      size_t cap;
+      if (!DeepBoundedAdmission::calculate(uint32_t(pixels), admitted.packet_samples,
+              devices[i].native_states, policy, holdout, families, a, devices[i].compact_identity) ||
+          !deep_bounded_resident(a, devices[i].retained, cap))
+      {
+        progress_->set_error("Deep aggregate arena size overflow");
+        return;
+      }
+      const auto &device = devices[i];
+      const size_t growth = cap - device.retained.known_total;
+      const size_t map_growth = device.adaptive_target > device.adaptive_bytes ?
+          device.adaptive_target - device.adaptive_bytes : 0;
+      const bool allow_map = growth <= device.physical_capacity &&
+          map_growth <= device.physical_capacity - growth && map_growth <= remaining;
+      const size_t auxiliary = allow_map ? map_growth : 0;
+      remaining -= auxiliary;
+      path_trace_works_[i]->set_deep_bounded_admission_limit(admitted.packet_samples, cap, auxiliary);
+    }
+  }
   for (auto &&path_trace_work : path_trace_works_) {
     path_trace_work->init_execution();
+  }
+  if (admit && !progress_->get_error()) {
+    for (const auto &work : path_trace_works_) {
+      if (work->get_device()->have_error()) return;
+    }
+    std::copy(std::begin(window), std::end(window), std::begin(deep_aggregate_window_));
+    deep_aggregate_resolution_ = render_state_.resolution_divider;
+    deep_aggregate_admitted_ = true;
+    /* Every mandatory arena is now charged. Later slice rebalance may grow its
+     * optional map using real remaining memory, without another owner's future
+     * mandatory allocation to protect. Work.configure caches the same Tile. */
+    for (auto &work : path_trace_works_)
+      work->set_deep_bounded_admission_limit(UINT32_MAX, SIZE_MAX, SIZE_MAX);
   }
 }
 
@@ -458,6 +590,7 @@ void PathTrace::path_trace(RenderWork &render_work)
       return;
     }
 
+    path_trace_work->set_progress(progress_);
     PathTraceWork::RenderStatistics statistics;
     path_trace_work->render_samples(statistics,
                                     render_work.path_trace.start_sample,
@@ -474,6 +607,19 @@ void PathTrace::path_trace(RenderWork &render_work)
              << work_time / num_samples
              << " seconds per sample), occupancy: " << statistics.occupancy;
   });
+
+  /* render_samples may retire the preceding Tile's copy to reuse scratch.
+   * Publish only here, after all device workers joined; no shared writes inside
+   * their retirement path and no new DMA wait at this checkpoint. */
+  if (deep_frame_consumer_ && deep_frame_consumer_->uses_gpu_processing() &&
+      !is_cancel_requested()) {
+    for (auto &work : path_trace_works_) {
+      if (!work->publish_ready_deep_tiles()) {
+        progress_->set_error("Bounded Deep owner publication failed");
+        return;
+      }
+    }
+  }
 
   float occupancy_accum = 0.0f;
   for (const WorkBalanceInfo &balance_info : work_balance_infos_) {
@@ -734,9 +880,63 @@ void PathTrace::set_display_driver(unique_ptr<DisplayDriver> driver)
   }
 }
 
-void PathTrace::set_deep_output_driver(unique_ptr<DeepOutputDriver> driver)
+
+bool PathTrace::set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer)
 {
-  deep_output_driver_ = std::move(driver);
+  deep_aggregate_admitted_ = false;
+  if (consumer && ((!consumer->uses_bounded_processing() && path_trace_works_.size() != 1) ||
+                   path_trace_works_.empty()))
+  {
+    progress_->set_error("Deep Frame requires compatible native work");
+    return false;
+  }
+  if (!consumer && deep_frame_consumer_ && deep_frame_consumer_->uses_bounded_processing() &&
+      !progress_->get_error() && !progress_->get_cancel())
+  {
+    for (auto &work : path_trace_works_) {
+      if (!work->drain_deep_tiles()) {
+        const string error = deep_frame_consumer_->capture_error_message();
+        progress_->set_error(error.empty() ? "Bounded Deep final readback failed" : error);
+        break;
+      }
+    }
+  }
+  for (auto &work : path_trace_works_) {
+    if (!work->set_deep_frame_capture_consumer(consumer)) {
+      for (auto &bound : path_trace_works_) {
+        bound->set_deep_frame_capture_consumer(nullptr);
+      }
+      deep_frame_consumer_ = nullptr;
+      progress_->set_error("Native work rejected Deep Frame capture");
+      return false;
+    }
+  }
+  deep_frame_consumer_ = consumer;
+  bounded_native_film_.reset();
+  retain_bounded_native_film_ = false;
+  return true;
+}
+
+vector<DeepBoundedDeviceAdmission> PathTrace::deep_bounded_admission_devices() const
+{
+  vector<DeepBoundedDeviceAdmission> result;
+  if (path_trace_works_.size() > 1) {
+    result.reserve(path_trace_works_.size());
+    for (const auto &work : path_trace_works_)
+      result.push_back(work->deep_bounded_admission_snapshot());
+  }
+  return result;
+}
+
+int2 PathTrace::deep_bounded_camera_limits() const
+{
+  int2 limits = make_int2(INT_MAX, 0);
+  for (const auto &work : path_trace_works_) {
+    const int2 local = work->deep_bounded_camera_limits();
+    limits.x = std::min(limits.x, local.x);
+    limits.y = std::max(limits.y, local.y);
+  }
+  return limits;
 }
 
 void PathTrace::zero_display()
@@ -869,6 +1069,15 @@ void PathTrace::rebalance(const RenderWork &render_work)
     return;
   }
 
+  vector<BufferParams> old_slices;
+  if (deep_frame_consumer_ && deep_frame_consumer_->uses_bounded_processing() &&
+      render_scheduler_.get_num_rendered_samples() > render_work.path_trace.num_samples)
+  {
+    old_slices.reserve(num_works);
+    for (const auto &work : path_trace_works_) {
+      old_slices.push_back(work->get_effective_buffer_params());
+    }
+  }
   RenderBuffers big_tile_cpu_buffers(cpu_device_.get());
   big_tile_cpu_buffers.reset(render_state_.effective_big_tile_params);
 
@@ -877,38 +1086,32 @@ void PathTrace::rebalance(const RenderWork &render_work)
   render_state_.need_reset_params = true;
   update_work_buffer_params_if_needed(render_work);
 
+  for (size_t source = 0; source < old_slices.size(); ++source) {
+    const auto &old = old_slices[source];
+    const int old_y = old.full_y + old.window_y;
+    for (size_t destination = 0; destination < old_slices.size(); ++destination) {
+      if (source == destination) {
+        continue;
+      }
+      const auto &now = path_trace_works_[destination]->get_effective_buffer_params();
+      const int new_y = now.full_y + now.window_y;
+      const int y = std::max(old_y, new_y);
+      const int end = std::min(old_y + old.window_height, new_y + now.window_height);
+      if (end > y && !path_trace_works_[source]->migrate_bounded_deep(
+                         *path_trace_works_[destination], now.full_x + now.window_x, y,
+                         now.window_width, end - y))
+      {
+        progress_->set_error("Bounded Deep collector migration failed");
+        return;
+      }
+    }
+  }
+
   copy_from_render_buffers(&big_tile_cpu_buffers);
 
   render_scheduler_.report_rebalance_time(render_work, time_dt() - start_time, true);
 }
 
-void PathTrace::sync_deep_output_buffers()
-{
-  if (!deep_output_driver_ || !deep_output_driver_->is_enabled()) {
-    return;
-  }
-
-  vector<DeepOutputDriver::SliceParams> slices;
-  slices.reserve(path_trace_works_.size());
-
-  for (auto &&path_trace_work : path_trace_works_) {
-    const BufferParams &params = path_trace_work->get_effective_buffer_params();
-    DeepOutputDriver::SliceParams slice;
-    slice.device = path_trace_work->get_device();
-    slice.full_x = params.full_x;
-    slice.full_y = params.full_y;
-    slice.width = params.width;
-    slice.height = params.height;
-    slice.window_x = params.window_x;
-    slice.window_y = params.window_y;
-    slice.window_width = params.window_width;
-    slice.window_height = params.window_height;
-    slices.push_back(slice);
-  }
-
-  deep_output_driver_->sync_device_buffers(slices);
-  deep_output_driver_->update_device_kernel_data(device_scene_->data);
-}
 
 void PathTrace::write_tile_buffer(const RenderWork &render_work)
 {
@@ -922,24 +1125,103 @@ void PathTrace::write_tile_buffer(const RenderWork &render_work)
 
   const bool has_multiple_tiles = tile_manager_.has_multiple_tiles();
 
-  if (deep_output_driver_ && deep_output_driver_->is_enabled() && has_multiple_tiles) {
-    const int2 tile_size = get_render_tile_size();
-    const int2 tile_offset = get_render_tile_offset();
-    vector<float> beauty_pixels(static_cast<size_t>(tile_size.x) * tile_size.y * 4);
-    vector<float> sample_count_pixels(static_cast<size_t>(tile_size.x) * tile_size.y);
-    bool has_beauty = false;
-    bool has_sample_count = false;
-
-    get_deep_tile_pixels(beauty_pixels, has_beauty, sample_count_pixels, has_sample_count);
-
-    deep_output_driver_->accumulate_tile(has_beauty ? beauty_pixels.data() : nullptr,
-                                         has_sample_count ? sample_count_pixels.data() : nullptr,
-                                         float(get_num_render_tile_samples()),
-                                         tile_size.x,
-                                         tile_size.y,
-                                         tile_offset.x,
-                                         tile_offset.y);
+  if (deep_frame_consumer_ && deep_frame_consumer_->uses_bounded_processing() &&
+      !deep_frame_consumer_->capture_cancelled())
+  {
+    if (std::any_of(path_trace_works_.begin(), path_trace_works_.end(), [](const auto &work) {
+          return !work->close_deep_tile();
+        }))
+    {
+      if (render_cancel_.is_requested || progress_->get_cancel()) return;
+      const string message = deep_frame_consumer_->capture_error_message();
+      progress_->set_error(message.empty() ? "Deep final tile processing failed" : message);
+      return;
+    }
   }
+  if (deep_frame_consumer_ && !deep_frame_consumer_->uses_bounded_processing() &&
+      !deep_frame_consumer_->capture_cancelled())
+  {
+    if (!copy_render_tile_from_device()) {
+      progress_->set_error("Failed to copy raw final Deep film counts");
+      return;
+    }
+    RenderBuffers *buffers = path_trace_works_.front()->get_render_buffers();
+    const BufferParams &p = buffers->params;
+    const int offset = p.get_pass_offset(PASS_SAMPLE_COUNT);
+    const char *raw_option = getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_VERIFY_RAW_COMBINED");
+    const bool raw_witness = raw_option && strcmp(raw_option, "1") == 0;
+    const int combined_offset = p.get_pass_offset(PASS_COMBINED);
+    const int2 size = make_int2(p.window_width, p.window_height);
+    const int2 origin = make_int2(p.full_x + p.window_x, p.full_y + p.window_y);
+    try {
+      std::vector<uint32_t, DeepBudgetAllocator<uint32_t>> counts(
+          size_t(size.x) * size.y,
+          0,
+          DeepBudgetAllocator<uint32_t>(deep_frame_consumer_->memory_budget()));
+      if (offset == PASS_UNUSED || p.stride <= 0 || p.pass_stride <= 0 ||
+          (raw_witness && combined_offset == PASS_UNUSED) ||
+          buffers->buffer.size() < size_t(p.stride) * p.height * p.pass_stride)
+      {
+        progress_->set_error("Missing raw SampleCount storage for final Deep tile");
+        return;
+      }
+      for (int y = 0; y < p.window_height; y++) {
+        for (int x = 0; x < p.window_width; x++) {
+          const int lx = p.window_x + x, ly = p.window_y + y;
+          const int dx = p.full_x + lx - origin.x, dy = p.full_y + ly - origin.y;
+          if (lx < 0 || ly < 0 || lx >= p.width || ly >= p.height || dx < 0 || dy < 0 ||
+              dx >= size.x || dy >= size.y)
+          {
+            progress_->set_error("Final Deep tile film layout mismatch");
+            return;
+          }
+          const float *pixel = buffers->buffer.data() +
+                               (size_t(ly) * p.stride + lx) * p.pass_stride;
+          counts[size_t(dy) * size.x + dx] = pass_float_as_uint(pixel[offset]);
+          if (raw_witness) {
+            /* Validation-only independent raw Film witness. Blender's displayed
+             * Combined may redirect to catcher matte. This value never enters
+             * source capture, curve reduction, clamp or encoding. */
+            const uint32_t population = counts[size_t(dy) * size.x + dx];
+            const float scale = population ? 1.0f / float(population) : 0;
+            std::fprintf(
+                stderr,
+                "DEEP_FRAME_RAW_COMBINED x=%d y=%d samples=%u r=%.9g g=%.9g b=%.9g "
+                "a=%.9g\n",
+                origin.x + dx,
+                origin.y + dy,
+                population,
+                double(pixel[combined_offset] * scale * p.exposure),
+                double(pixel[combined_offset + 1] * scale * p.exposure),
+                double(pixel[combined_offset + 2] * scale * p.exposure),
+                double(combined_transparency_to_alpha(pixel[combined_offset + 3] * scale)));
+          }
+        }
+      }
+      auto *reference = deep_frame_consumer_->reference_capture();
+      if (!reference || !reference->close_native_tile(
+                            origin.x, origin.y, size.x, size.y, counts, p.exposure))
+      {
+        const string message = deep_frame_consumer_->capture_error_message();
+        progress_->set_error(message.empty() ?
+                                 "Deep Frame final tile population/curve validation failed" :
+                                 message);
+        return;
+      }
+    }
+    catch (const std::bad_alloc &) {
+      progress_->set_error("Deep Frame raw film count quota exhausted");
+      return;
+    }
+  }
+
+  if (getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_VOLUME_PROFILE") &&
+      getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_RESIDENT_CAPTURE_TRACE"))
+  {
+    std::fprintf(
+        stderr, "DEEP_GPU_PROFILE_ROUTE write_tile multiple=%d\n", int(has_multiple_tiles));
+  }
+
 
   /* Write render tile result, but only if not using tiled rendering.
    *
@@ -950,7 +1232,23 @@ void PathTrace::write_tile_buffer(const RenderWork &render_work)
    * Important thing is: tile should be written to the software via callback only once. */
   if (!has_multiple_tiles) {
     LOG_DEBUG << "Write tile result via buffer write callback.";
-    tile_buffer_write();
+    const bool simple_beauty = deep_frame_consumer_ &&
+                               deep_frame_consumer_->uses_bounded_processing() &&
+                               deep_frame_consumer_->capture_demand().simple_mode &&
+                               deep_frame_consumer_->capture_demand().needs_rgb;
+    if (simple_beauty) {
+      if (!copy_render_tile_from_device()) {
+        progress_->set_error("Cannot share native Film with bounded Deep");
+        return;
+      }
+      for (const auto &work : path_trace_works_) {
+        if (!work->set_bounded_deep_beauty(*work->get_render_buffers())) {
+          progress_->set_error("Cannot attach native Film Beauty to bounded Deep");
+          return;
+        }
+      }
+    }
+    tile_buffer_write(simple_beauty);
   }
   /* Write tile to disk, so that the render work's render buffer can be re-used for the next tile.
    */
@@ -967,6 +1265,26 @@ void PathTrace::finalize_full_buffer_on_disk(const RenderWork &render_work)
   }
 
   LOG_DEBUG << "Handle full-frame render buffer work.";
+
+  if (bounded_native_film_) {
+    auto film = std::move(bounded_native_film_);
+    if (progress_->get_cancel() || progress_->get_error()) {
+      return;
+    }
+    if (film->written_pixels != uint64_t(full_params_.width) * full_params_.height) {
+      progress_->set_error("Bounded Deep native Film has incomplete tile coverage");
+      return;
+    }
+    auto &params = film->buffer.params;
+    params.window_x = params.window_y = 0;
+    params.window_width = params.width;
+    params.window_height = params.height;
+    full_frame_state_.render_buffers = &film->buffer;
+    SCOPED_DEFER(full_frame_state_.render_buffers = nullptr);
+    render_state_.has_denoised_result = false;
+    tile_buffer_write(true);
+    return;
+  }
 
   if (!tile_manager_.has_written_tiles()) {
     LOG_DEBUG << "No tiles on disk.";
@@ -1015,13 +1333,13 @@ bool PathTrace::is_cancel_requested()
   return false;
 }
 
-void PathTrace::tile_buffer_write()
+void PathTrace::tile_buffer_write(const bool copied_from_device)
 {
   if (!output_driver_) {
     return;
   }
 
-  const PathTraceTile tile(*this);
+  const PathTraceTile tile(*this, copied_from_device);
   output_driver_->write_render_tile(tile);
 }
 
@@ -1050,87 +1368,6 @@ void PathTrace::tile_buffer_read()
   }
 }
 
-void PathTrace::get_deep_tile_pixels(vector<float> &beauty_pixels,
-                                     bool &has_beauty_pixels,
-                                     vector<float> &sample_count_pixels,
-                                     bool &has_sample_count_pixels)
-{
-  has_beauty_pixels = false;
-  has_sample_count_pixels = false;
-
-  if (!copy_render_tile_from_device()) {
-    return;
-  }
-
-  const int2 tile_size = get_render_tile_size();
-  const int2 tile_offset = get_render_tile_offset();
-  const int fallback_sample_count = get_num_render_tile_samples();
-
-  for (const unique_ptr<PathTraceWork> &path_trace_work : path_trace_works_) {
-    RenderBuffers *buffers = path_trace_work->get_render_buffers();
-    const BufferParams &params = buffers->params;
-
-    const int combined_offset = params.get_pass_offset(PASS_COMBINED);
-    const int sample_count_offset = params.get_pass_offset(PASS_SAMPLE_COUNT);
-
-    if (params.width <= 0 || params.height <= 0 || params.stride <= 0 || params.pass_stride <= 0 ||
-        buffers->buffer.size() < static_cast<size_t>(params.width) * params.height *
-                                     params.pass_stride)
-    {
-      continue;
-    }
-
-    if (combined_offset == PASS_UNUSED && sample_count_offset == PASS_UNUSED) {
-      continue;
-    }
-
-    const int64_t pass_stride = params.pass_stride;
-    const int64_t row_stride = params.stride * pass_stride;
-    const float *buffer = buffers->buffer.data();
-
-    for (int y = 0; y < params.window_height; y++) {
-      const int local_y = params.window_y + y;
-      const int global_y = params.full_y + local_y;
-      const int tile_y = global_y - tile_offset.y;
-      if (local_y < 0 || local_y >= params.height || tile_y < 0 || tile_y >= tile_size.y) {
-        continue;
-      }
-
-      const float *row = buffer + static_cast<int64_t>(local_y) * row_stride;
-      for (int x = 0; x < params.window_width; x++) {
-        const int local_x = params.window_x + x;
-        const int global_x = params.full_x + local_x;
-        const int tile_x = global_x - tile_offset.x;
-        if (local_x < 0 || local_x >= params.width || tile_x < 0 || tile_x >= tile_size.x) {
-          continue;
-        }
-
-        const float *pixel = row + static_cast<int64_t>(local_x) * pass_stride;
-        const size_t dst_index = static_cast<size_t>(tile_y) * tile_size.x + tile_x;
-
-        uint32_t sample_count = fallback_sample_count;
-        if (sample_count_offset != PASS_UNUSED) {
-          sample_count = pass_float_as_uint(pixel[sample_count_offset]);
-          sample_count_pixels[dst_index] = fallback_sample_count > 0 ?
-                                               float(sample_count) / float(fallback_sample_count) :
-                                               0.0f;
-          has_sample_count_pixels = true;
-        }
-
-        if (combined_offset != PASS_UNUSED) {
-          const float scale = sample_count > 0 ? 1.0f / float(sample_count) : 0.0f;
-          const size_t beauty_index = dst_index * 4;
-          beauty_pixels[beauty_index + 0] = pixel[combined_offset + 0] * scale * params.exposure;
-          beauty_pixels[beauty_index + 1] = pixel[combined_offset + 1] * scale * params.exposure;
-          beauty_pixels[beauty_index + 2] = pixel[combined_offset + 2] * scale * params.exposure;
-          beauty_pixels[beauty_index + 3] = combined_transparency_to_alpha(
-              pixel[combined_offset + 3] * scale);
-          has_beauty_pixels = true;
-        }
-      }
-    }
-  }
-}
 
 void PathTrace::tile_buffer_write_to_disk()
 {
@@ -1159,8 +1396,71 @@ void PathTrace::tile_buffer_write_to_disk()
     buffers = &big_tile_cpu_buffers;
   }
 
+  if (deep_frame_consumer_ && deep_frame_consumer_->uses_bounded_processing() &&
+      deep_frame_consumer_->capture_demand().simple_mode &&
+      deep_frame_consumer_->capture_demand().needs_rgb)
+  {
+    for (const auto &work : path_trace_works_) {
+      if (!work->set_bounded_deep_beauty(*buffers)) {
+        progress_->set_error("Cannot share tiled native Film Beauty with bounded Deep");
+        return;
+      }
+    }
+  }
+  if (retain_bounded_native_film_ && !(denoiser_ && denoiser_->get_params().use)) {
+    if (!stage_bounded_native_film(*buffers)) {
+      progress_->set_error("Failed to stage bounded Deep native Film");
+    }
+    return;
+  }
   if (!tile_manager_.write_tile(*buffers)) {
     device_->set_error("Error writing tile to file");
+  }
+}
+
+bool PathTrace::stage_bounded_native_film(const RenderBuffers &tile)
+{
+  const auto &src = tile.params;
+  const auto &dst = full_params_;
+  const int64_t x = int64_t(src.full_x) + src.window_x - dst.full_x;
+  const int64_t y = int64_t(src.full_y) + src.window_y - dst.full_y;
+  if (x < 0 || y < 0 || src.window_x < 0 || src.window_y < 0 ||
+      src.window_width <= 0 || src.window_height <= 0 ||
+      x + src.window_width > dst.width || y + src.window_height > dst.height ||
+      src.window_x + src.window_width > src.width || src.window_y + src.window_height > src.height ||
+      src.pass_stride <= 0 || src.pass_stride != dst.pass_stride ||
+      !tile.buffer.data() ||
+      tile.buffer.size() < size_t(src.width) * src.height * src.pass_stride ||
+      dst.width > INT_MAX / dst.pass_stride)
+  {
+    return false;
+  }
+
+  try {
+    if (!bounded_native_film_) {
+      const size_t bytes = size_t(dst.width) * dst.height * dst.pass_stride * sizeof(float);
+      auto film = make_unique<BoundedNativeFilm>(
+          *cpu_device_, deep_frame_consumer_->memory_budget(), bytes);
+      film->buffer.reset(dst);
+      bounded_native_film_ = std::move(film);
+    }
+    auto &film = *bounded_native_film_;
+    const size_t dst_stride = size_t(dst.width) * dst.pass_stride;
+    const size_t src_stride = size_t(src.width) * src.pass_stride;
+    const size_t row = size_t(src.window_width) * src.pass_stride;
+    const float *input = tile.buffer.data() + size_t(src.window_y) * src_stride +
+                         size_t(src.window_x) * src.pass_stride;
+    float *output = film.buffer.buffer.data() + size_t(y) * dst_stride +
+                    size_t(x) * dst.pass_stride;
+    for (int j = 0; j < src.window_height; ++j) {
+      std::memcpy(output + size_t(j) * dst_stride, input + size_t(j) * src_stride,
+                  row * sizeof(float));
+    }
+    film.written_pixels += uint64_t(src.window_width) * src.window_height;
+    return true;
+  }
+  catch (const std::bad_alloc &) {
+    return false;
   }
 }
 
@@ -1249,7 +1549,8 @@ static string get_layer_view_name(const RenderBuffers &buffers)
   return result;
 }
 
-void PathTrace::process_full_buffer_from_disk(string_view filename)
+void PathTrace::process_full_buffer_from_disk(string_view filename,
+                                              DeepFrameCaptureConsumer *beauty_consumer)
 {
   LOG_DEBUG << "Processing full frame buffer file " << filename;
 
@@ -1303,6 +1604,10 @@ void PathTrace::process_full_buffer_from_disk(string_view filename)
   full_frame_buffers.params.window_width = full_frame_buffers.params.width;
   full_frame_buffers.params.window_height = full_frame_buffers.params.height;
 
+  if (beauty_consumer && !beauty_consumer->set_final_bounded_beauty(full_frame_buffers)) {
+    progress_->set_error(beauty_consumer->capture_error_message());
+    return;
+  }
   full_frame_state_.render_buffers = &full_frame_buffers;
 
   progress_set_status(layer_view_name, "Finishing");

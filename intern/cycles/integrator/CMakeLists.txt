@@ -11,6 +11,14 @@ set(INC_SYS
 
 set(SRC
   adaptive_sampling.cpp
+  deep_bounded_transport.cpp
+  deep_bounded_work.cpp
+  deep_bounded_cpu.cpp
+  deep_frame_capture.cpp
+  deep_gpu_frame_work.cpp
+  deep_gpu_frame_archive.cpp
+  deep_gpu_frame_witness.cpp
+  deep_optical_work.cpp
   denoiser.cpp
   denoiser_gpu.cpp
   denoiser_oidn.cpp
@@ -35,6 +43,21 @@ set(SRC
 
 set(SRC_HEADERS
   adaptive_sampling.h
+  deep_bounded_publication.h
+  deep_bounded_plan.h
+  deep_bounded_layout.h
+  deep_bounded_work_internal.h
+  deep_bounded_work.h
+  deep_bounded_cpu.h
+  deep_frame_capture.h
+  deep_gpu_frame_work.h
+  deep_control_journal.h
+  deep_expression_journal.h
+  deep_native_capacity.h
+  deep_camera_receipt_writer.h
+  deep_input_receipt_reader.h
+  deep_optical_work.h
+  deep_state_binding.h
   denoiser.h
   denoiser_gpu.h
   denoiser_oidn.h

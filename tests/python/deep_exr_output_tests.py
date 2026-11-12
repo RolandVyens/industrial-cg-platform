@@ -139,7 +139,10 @@ class DeepExrOutputTests(unittest.TestCase):
             for link in list(input_socket.links):
                 node_tree.links.remove(link)
 
-        bpy.ops.render.render()
+        with self.assertRaisesRegex(
+            RuntimeError, "Deep File Output requires exactly one direct Render Layers input"
+        ):
+            bpy.ops.render.render()
 
         self.assertEqual(
             list(output_directory.rglob("*.exr")),

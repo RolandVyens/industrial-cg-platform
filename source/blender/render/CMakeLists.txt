@@ -37,6 +37,7 @@ set(SRC
 
   RE_bake.h
   RE_compositor.hh
+  RE_deep_output.hh
   RE_engine.h
   RE_multires_bake.h
   RE_pipeline.h

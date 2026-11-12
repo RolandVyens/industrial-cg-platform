@@ -20,6 +20,8 @@ bool system_cpu_support_sse42();
 bool system_cpu_support_avx2();
 
 size_t system_physical_ram();
+/* Conservative currently available physical bytes, or zero on query failure. */
+size_t system_available_ram();
 
 /* Get identifier of the currently running process. */
 uint64_t system_self_process_id();

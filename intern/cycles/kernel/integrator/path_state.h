@@ -5,6 +5,7 @@
 #pragma once
 
 #include "kernel/integrator/state.h"
+#include "kernel/integrator/state_flow.h"
 
 #include "kernel/sample/pattern.h"
 
@@ -33,6 +34,16 @@ ccl_device_inline void path_state_init(IntegratorState state,
 
   INTEGRATOR_STATE_WRITE(state, path, render_pixel_index) = render_pixel_index;
   INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) = 0xffffffffu;
+  INTEGRATOR_STATE_WRITE(state, path, deep_volume_radiance_idx) = 0xffffffffu;
+#if defined(__KERNEL_GPU__)
+#  ifdef __DEEP_OUTPUT__
+  if (kernel_integrator_state.deep_native_cameras) {
+    INTEGRATOR_STATE_WRITE(state, path, deep_frame_camera_index) = DEEP_NATIVE_INVALID_INDEX;
+  }
+#  endif
+#else
+  INTEGRATOR_STATE_WRITE(state, path, deep_frame_camera_index) = DEEP_NATIVE_INVALID_INDEX;
+#endif
 
   path_state_init_queues(state);
 }
@@ -46,6 +57,16 @@ ccl_device_inline void path_state_init_integrator(KernelGlobals kg,
 {
   INTEGRATOR_STATE_WRITE(state, path, sample) = sample;
   INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) = 0xffffffffu;
+  INTEGRATOR_STATE_WRITE(state, path, deep_volume_radiance_idx) = 0xffffffffu;
+#if defined(__KERNEL_GPU__)
+#  ifdef __DEEP_OUTPUT__
+  if (kernel_integrator_state.deep_native_cameras) {
+    INTEGRATOR_STATE_WRITE(state, path, deep_frame_camera_index) = DEEP_NATIVE_INVALID_INDEX;
+  }
+#  endif
+#else
+  INTEGRATOR_STATE_WRITE(state, path, deep_frame_camera_index) = DEEP_NATIVE_INVALID_INDEX;
+#endif
   INTEGRATOR_STATE_WRITE(state, path, bounce) = 0;
   INTEGRATOR_STATE_WRITE(state, path, diffuse_bounce) = 0;
   INTEGRATOR_STATE_WRITE(state, path, glossy_bounce) = 0;
@@ -147,6 +168,9 @@ ccl_device_inline void path_state_next(KernelGlobals kg,
     flag |= PATH_RAY_TERMINATE_AFTER_TRANSPARENT;
   }
 
+#if __DEEP_BOUNDED_POLICY__ == 1 || __DEEP_BOUNDED_POLICY__ == 2
+  integrator_deep_camera_close(state);
+#endif
   visibility = PATH_RAY_VISIBILITY_NONE;
   flag &= ~(PATH_RAY_REFLECT | PATH_RAY_SINGULAR | PATH_RAY_TRANSPARENT |
             PATH_RAY_IMPORTANCE_BAKE | PATH_RAY_MIS_SKIP | PATH_RAY_MIS_HAD_TRANSMISSION);

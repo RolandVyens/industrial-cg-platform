@@ -100,6 +100,7 @@ class SVMCompiler {
     requires(std::is_class_v<T> && sizeof(T) % sizeof(int) == 0 && alignof(T) <= sizeof(uint))
   {
     const ShaderNodeType resolved_type = node_type(shader_node, type, use_derivatives);
+    record_volume_emission(shader_node, type);
     current_svm_nodes.push_back_slow(resolved_type);
     const int *data = reinterpret_cast<const int *>(&node);
     svm_node_types_used[resolved_type] = true;
@@ -167,6 +168,8 @@ class SVMCompiler {
   bool background;
 
  protected:
+  void record_volume_emission(ShaderNode *node, ShaderNodeType type);
+
   /* stack */
   struct Stack {
     Stack()

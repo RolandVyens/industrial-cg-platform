@@ -70,14 +70,35 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
   /* Write to render buffer. */
   guiding_record_surface_emission(kg, state, eval, mis_weight);
   const ccl_global KernelLight *klight = &kernel_data_fetch(lights, isect.prim);
-  film_write_surface_emission(
-      kg,
-      state,
-      eval,
-      mis_weight,
-      render_buffer,
-      object_lightgroup(kg, klight->object_id),
-      true);
+  uint32_t deep_root_handle = 0;
+#if __DEEP_BOUNDED_POLICY__ > 0
+  if (deep_bounded_camera_chain(kg, state) && klight->object_id < DEEP_BOUNDED_NONSURFACE) {
+    const float depth = camera_z_depth(kg, ray_P + ray_D * isect.t);
+    const uint32_t normal = deep_bounded_pack_normal(-ray_D.x, -ray_D.y, -ray_D.z);
+    deep_bounded_emissive_point(kg, state, depth, klight->object_id, klight->shader_id, normal);
+  }
+#endif
+#if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (deep_native_is_camera_chain(state)) {
+    /* A visible lamp emits at this real intersection but remains transparent
+     * to continuation. Its immutable source cannot become a camera opacity cut. */
+    deep_root_handle = deep_native_append_root(state,
+                                               DEEP_NATIVE_ROOT_LIGHT,
+                                               camera_z_depth(kg, ray_P + ray_D * isect.t),
+                                               klight->object_id,
+                                               isect.prim,
+                                               klight->shader_id,
+                                               isect.t);
+  }
+#endif
+  film_write_surface_emission(kg,
+                              state,
+                              eval,
+                              mis_weight,
+                              render_buffer,
+                              object_lightgroup(kg, klight->object_id),
+                              true,
+                              deep_root_handle);
   return SHADER_EVAL_OK;
 }
 

@@ -2,7 +2,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-/* CPU kernel entry points */
+/* CPU kernel entry points. This translation unit directly inlines the two-phase camera
+ * optical/Beauty traversal, shader-coordinate evaluation, boundary handling, cache-retry
+ * metadata, and sparse capture shared with GPU kernels. */
 
 /* On x86-64, our minimum is SSE4.2, so avoid the extra kernel and compile this
  * one with SSE4.2 intrinsics.

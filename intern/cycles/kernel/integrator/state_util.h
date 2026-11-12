@@ -20,6 +20,26 @@
 
 CCL_NAMESPACE_BEGIN
 
+/* Called with literal generated field names; disabled fields fold away in the
+ * selected physical module, including the null-pointer branch in Mode0. */
+ccl_device_forceinline bool deep_bounded_copy_field(const char *name, const bool shadow)
+{
+  const bool bounded = name[0] == 'd' && name[1] == 'e' && name[2] == 'e' &&
+                       name[3] == 'p' && name[4] == '_' && name[5] == 'b' &&
+                       name[6] == 'o' && name[7] == 'u' && name[8] == 'n' &&
+                       name[9] == 'd' && name[10] == 'e' && name[11] == 'd';
+  if (!bounded) {
+    return true;
+  }
+#if __DEEP_BOUNDED_POLICY__ == 0
+  return false;
+#elif __DEEP_BOUNDED_POLICY__ != 3
+  return !shadow && name[13] == 's'; /* slot_kind only */
+#else
+  return true;
+#endif
+}
+
 /* Ray */
 
 ccl_device_forceinline void integrator_state_write_ray(IntegratorState state,
@@ -476,7 +496,8 @@ ccl_device_inline void integrator_state_copy_only(KernelGlobals kg,
     do {
 
 #  define KERNEL_STRUCT_MEMBER(parent_struct, type, name, feature) \
-    if (kernel_integrator_state.parent_struct.name != nullptr) { \
+    if (deep_bounded_copy_field(#name, #parent_struct[0] == 's') && \
+        kernel_integrator_state.parent_struct.name != nullptr) { \
       kernel_integrator_state.parent_struct.name[to_state] = \
           kernel_integrator_state.parent_struct.name[state]; \
     }
@@ -551,7 +572,8 @@ ccl_device_inline void integrator_shadow_state_copy_only(KernelGlobals kg,
     do {
 
 #  define KERNEL_STRUCT_MEMBER(parent_struct, type, name, feature) \
-    if (kernel_integrator_state.parent_struct.name != nullptr) { \
+    if (deep_bounded_copy_field(#name, #parent_struct[0] == 's') && \
+        kernel_integrator_state.parent_struct.name != nullptr) { \
       kernel_integrator_state.parent_struct.name[to_state] = \
           kernel_integrator_state.parent_struct.name[state]; \
     }

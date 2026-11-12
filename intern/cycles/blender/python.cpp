@@ -28,6 +28,9 @@
 
 #include "GPU_state.hh"
 
+#include "BKE_global.hh"
+#include "BLI_threads.h"
+
 #include "DNA_screen_types.h"
 
 #include "scene/osl.h"
@@ -90,17 +93,6 @@ void debug_flags_reset()
 }
 
 } /* namespace */
-
-void python_thread_state_save(void **python_thread_state)
-{
-  *python_thread_state = (void *)PyEval_SaveThread();
-}
-
-void python_thread_state_restore(void **python_thread_state)
-{
-  PyEval_RestoreThread((PyThreadState *)*python_thread_state);
-  *python_thread_state = nullptr;
-}
 
 static const char *PyC_UnicodeAsBytes(PyObject *py_str, PyObject **coerce)
 {
@@ -243,9 +235,9 @@ static PyObject *render_func(PyObject * /*self*/, PyObject *args)
       PyLong_AsVoidPtr(pydepsgraph));
 
   /* Allow Blender to execute other Python scripts. */
-  python_thread_state_save(&session->python_thread_state);
+  Py_BEGIN_ALLOW_THREADS;
   session->render(*b_depsgraph);
-  python_thread_state_restore(&session->python_thread_state);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -261,9 +253,9 @@ static PyObject *render_frame_finish_func(PyObject * /*self*/, PyObject *args)
   BlenderSession *session = (BlenderSession *)PyLong_AsVoidPtr(pysession);
 
   /* Allow Blender to execute other Python scripts. */
-  python_thread_state_save(&session->python_thread_state);
+  Py_BEGIN_ALLOW_THREADS;
   session->render_frame_finish();
-  python_thread_state_restore(&session->python_thread_state);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -286,7 +278,11 @@ static PyObject *draw_func(PyObject * /*self*/, PyObject *args)
   blender::SpaceImage *b_space_image = static_cast<blender::SpaceImage *>(
       pylong_as_voidptr_typesafe(py_space_image));
 
+  /* Release GIL, this is required because draw() can indirectly cause
+   * a Python render_stats handler to be run, which can deadlock otheriwse. */
+  Py_BEGIN_ALLOW_THREADS;
   session->draw(blender::id_cast<blender::bScreen &>(*b_screen), *b_space_image);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -321,11 +317,9 @@ static PyObject *bake_func(PyObject * /*self*/, PyObject *args)
       PyLong_AsVoidPtr(pydepsgraph));
   blender::Object *b_object = static_cast<blender::Object *>(PyLong_AsVoidPtr(pyobject));
 
-  python_thread_state_save(&session->python_thread_state);
-
+  Py_BEGIN_ALLOW_THREADS;
   session->bake(*b_depsgraph, *b_object, pass_type, pass_filter, width, height);
-
-  python_thread_state_restore(&session->python_thread_state);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -348,7 +342,9 @@ static PyObject *view_draw_func(PyObject * /*self*/, PyObject *args)
     int viewport[4];
     blender::GPU_viewport_size_get_i(viewport);
 
+    Py_BEGIN_ALLOW_THREADS;
     session->view_draw(viewport[2], viewport[3]);
+    Py_END_ALLOW_THREADS;
   }
 
   Py_RETURN_NONE;
@@ -370,11 +366,9 @@ static PyObject *reset_func(PyObject * /*self*/, PyObject *args)
   blender::Depsgraph *b_depsgraph = static_cast<blender::Depsgraph *>(
       PyLong_AsVoidPtr(pydepsgraph));
 
-  python_thread_state_save(&session->python_thread_state);
-
+  Py_BEGIN_ALLOW_THREADS;
   session->reset_session(*b_data, *b_depsgraph);
-
-  python_thread_state_restore(&session->python_thread_state);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -393,11 +387,9 @@ static PyObject *sync_func(PyObject * /*self*/, PyObject *args)
   blender::Depsgraph *b_depsgraph = static_cast<blender::Depsgraph *>(
       PyLong_AsVoidPtr(pydepsgraph));
 
-  python_thread_state_save(&session->python_thread_state);
-
+  Py_BEGIN_ALLOW_THREADS;
   session->synchronize(*b_depsgraph);
-
-  python_thread_state_restore(&session->python_thread_state);
+  Py_END_ALLOW_THREADS;
 
   Py_RETURN_NONE;
 }
@@ -811,6 +803,24 @@ static PyObject *maketx_func(PyObject * /*self*/, PyObject *args, PyObject *keyw
 #  endif
 #endif
 
+static PyObject *debug_deep_request_cancel_func(PyObject * /*self*/, PyObject * /*args*/)
+{
+  const char *enabled = getenv("CYCLES_EXPERIMENTAL_DEEP_TEST_CANCEL");
+  if (!enabled || strcmp(enabled, "1") != 0) {
+    PyErr_SetString(PyExc_RuntimeError, "Deep render cancellation testing is not enabled");
+    return nullptr;
+  }
+  if (!blender::BLI_thread_is_main()) {
+    PyErr_SetString(PyExc_RuntimeError, "Deep render cancellation must be requested on the main thread");
+    return nullptr;
+  }
+
+  /* Exercise the native render-job cancellation path from an opt-in UI test timer.
+   * Window.event_simulate() bypasses the GHOST key path that sets this same flag. */
+  blender::G.is_break = true;
+  Py_RETURN_NONE;
+}
+
 static PyMethodDef methods[] = {
     {"init", init_func, METH_VARARGS, ""},
     {"exit", exit_func, METH_VARARGS, ""},
@@ -836,6 +846,7 @@ static PyMethodDef methods[] = {
     /* Debugging routines */
     {"debug_flags_update", debug_flags_update_func, METH_VARARGS, ""},
     {"debug_flags_reset", debug_flags_reset_func, METH_NOARGS, ""},
+    {"debug_deep_request_cancel", debug_deep_request_cancel_func, METH_NOARGS, ""},
 
     /* Statistics. */
     {"enable_print_stats", enable_print_stats_func, METH_NOARGS, ""},

@@ -394,7 +394,7 @@ template<typename T> class device_vector : public device_memory {
   {
     size_t new_size = size(width, height);
 
-    if (new_size != data_size) {
+    if (new_size != data_size || (new_size && !host_pointer)) {
       host_and_device_free();
       host_pointer = host_alloc(sizeof(T) * new_size);
       modified = true;
@@ -406,6 +406,22 @@ template<typename T> class device_vector : public device_memory {
     data_height = height;
 
     return data();
+  }
+
+  /* Explicit hostless storage for device-only producers. As with alloc(), the
+   * caller must join all readers before changing the allocation. A later alloc()
+   * restores host backing even when the requested dimensions are unchanged. */
+  void alloc_device_only(const size_t width, const size_t height = 0)
+  {
+    assert(type == MEM_DEVICE_ONLY);
+    const size_t new_size = size(width, height);
+    if (new_size != data_size || host_pointer)
+      host_and_device_free();
+    data_size = new_size;
+    data_width = width;
+    data_height = height;
+    modified = true;
+    alloc_to_device();
   }
 
   /* Host memory resize. Only use this if the original data needs to be
@@ -552,6 +568,15 @@ template<typename T> class device_vector : public device_memory {
   {
     if (data_size != 0) {
       device_copy_to();
+    }
+  }
+
+  /* Allocate the device storage without copying or initializing it. The caller must guarantee
+   * that kernels initialize every element before it becomes observable. */
+  void alloc_to_device()
+  {
+    if (data_size != 0 && !device_pointer) {
+      device_alloc();
     }
   }
 

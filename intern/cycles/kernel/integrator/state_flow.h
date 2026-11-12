@@ -68,6 +68,26 @@ ccl_device_inline void write_optical_depth(KernelGlobals kg,
 
 #ifdef __KERNEL_GPU__
 
+#if __DEEP_BOUNDED_POLICY__ == 1 || __DEEP_BOUNDED_POLICY__ == 2
+ccl_device_forceinline void integrator_deep_camera_close(ConstIntegratorState state)
+{
+  if (!kernel_integrator_state.deep_bounded.packet_device) {
+    return;
+  }
+  const uint32_t source = INTEGRATOR_STATE(state, path, deep_bounded_slot_kind);
+  if ((source >> 30) != uint32_t(DeepBoundedSourceKind::EXCLUDED)) {
+    INTEGRATOR_STATE_WRITE(state, path, deep_bounded_slot_kind) =
+        uint32_t(DeepBoundedSourceKind::EXCLUDED) << 30;
+    const auto *control = reinterpret_cast<const DeepBoundedPacketControl *>(
+        kernel_integrator_state.deep_bounded.packet_device);
+    if (control->track_camera) {
+      atomic_fetch_and_sub_uint32(&kernel_integrator_state.queue_counter->deep_bounded_camera_live,
+                                  1);
+    }
+  }
+}
+#endif
+
 ccl_device_forceinline void integrator_path_init(IntegratorState state,
                                                  const DeviceKernel next_kernel)
 {
@@ -91,6 +111,9 @@ ccl_device_forceinline void integrator_path_terminate(KernelGlobals kg,
                                                       const DeviceKernel current_kernel)
 {
   write_optical_depth(kg, state, render_buffer);
+#if __DEEP_BOUNDED_POLICY__ == 1 || __DEEP_BOUNDED_POLICY__ == 2
+  integrator_deep_camera_close(state);
+#endif
 
   atomic_fetch_and_sub_uint32(&kernel_integrator_state.queue_counter->num_queued[current_kernel],
                               1);
@@ -124,9 +147,37 @@ ccl_device_forceinline IntegratorShadowState integrator_shadow_path_init(
   atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->num_queued[next_kernel], 1);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, queued_kernel) = next_kernel;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = 0xffffffffu;
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_volume_radiance_idx) = 0xffffffffu;
+#  if defined(__DEEP_OUTPUT__)
+  if (kernel_integrator_state.shadow_path.deep_frame_camera_index &&
+      kernel_integrator_state.path.deep_frame_camera_index)
+  {
+    INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_frame_camera_index) = INTEGRATOR_STATE(
+        state, path, deep_frame_camera_index);
+    if (kernel_integrator_state.shadow_path.deep_frame_root_handle) {
+      const uint camera = INTEGRATOR_STATE(state, path, deep_frame_camera_index);
+      const uint32_t current = kernel_integrator_state.path.deep_frame_root_handle ?
+                                   INTEGRATOR_STATE(state, path, deep_frame_root_handle) :
+                                   0;
+      INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_frame_root_handle) =
+          current ? current :
+          camera < kernel_integrator_state.deep_native_camera_capacity ?
+                    kernel_integrator_state.deep_native_cameras[camera].root_handle :
+                    0;
+    }
+  }
+#  endif
 #  if defined(__PATH_GUIDING__)
   if ((kernel_data.kernel_features & KERNEL_FEATURE_PATH_GUIDING)) {
     INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, path_segment) = nullptr;
+  }
+#  endif
+#  if __DEEP_BOUNDED_POLICY__ == 3
+  if (kernel_integrator_state.deep_bounded.packet_device) {
+    INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_slot_kind) =
+        INTEGRATOR_STATE(state, path, deep_bounded_slot_kind);
+    INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_anchor_z) =
+        INTEGRATOR_STATE(state, path, deep_bounded_anchor_z);
   }
 #  endif
   return shadow_state;
@@ -204,6 +255,14 @@ ccl_device_forceinline void integrator_path_next_sorted(KernelGlobals kg,
 
 #else
 
+#  if __DEEP_BOUNDED_POLICY__ == 1 || __DEEP_BOUNDED_POLICY__ == 2
+ccl_device_forceinline void integrator_deep_camera_close(IntegratorState state)
+{
+  INTEGRATOR_STATE_WRITE(
+      state, path, deep_bounded_slot_kind) = uint32_t(DeepBoundedSourceKind::EXCLUDED) << 30;
+}
+#  endif
+
 ccl_device_forceinline void integrator_path_init(IntegratorState state,
                                                  const DeviceKernel next_kernel)
 {
@@ -241,13 +300,13 @@ ccl_device_forceinline void integrator_path_terminate(KernelGlobals kg,
 ccl_device_forceinline void integrator_path_cache_miss(IntegratorState /*state*/,
                                                        const DeviceKernel /*current_kernel*/)
 {
-  assert(!"CPU kernel does not use texture cache miss mechanism");
+  kernel_assert(!"CPU kernel does not use texture cache miss mechanism");
 }
 
 ccl_device_forceinline void integrator_path_cache_miss_sorted(
     IntegratorState /*state*/, const DeviceKernel /*current_kernel*/)
 {
-  assert(!"CPU kernel does not use texture cache miss mechanism");
+  kernel_assert(!"CPU kernel does not use texture cache miss mechanism");
 }
 
 ccl_device_forceinline void integrator_path_next_sorted(KernelGlobals /*kg*/,
@@ -270,6 +329,14 @@ integrator_shadow_path_init(ccl_attr_maybe_unused KernelGlobals kg,
   IntegratorShadowState shadow_state = (is_ao) ? &state->ao : &state->shadow;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, queued_kernel) = next_kernel;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = 0xffffffffu;
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_volume_radiance_idx) = 0xffffffffu;
+#  if __DEEP_BOUNDED_POLICY__ == 3
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_slot_kind) = INTEGRATOR_STATE(
+      state, path, deep_bounded_slot_kind);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_anchor_z) = INTEGRATOR_STATE(
+      state, path, deep_bounded_anchor_z);
+#  endif
+
 #  if defined(__PATH_GUIDING__)
   if ((kernel_data.kernel_features & KERNEL_FEATURE_PATH_GUIDING)) {
     INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, path_segment) = nullptr;
@@ -298,7 +365,7 @@ ccl_device_forceinline void integrator_shadow_path_terminate(IntegratorShadowSta
 ccl_device_forceinline void integrator_shadow_path_cache_miss(
     IntegratorShadowState /*state*/, const DeviceKernel /*current_kernel*/)
 {
-  assert(!"CPU kernel does not use texture cache miss mechanism");
+  kernel_assert(!"CPU kernel does not use texture cache miss mechanism");
 }
 
 #endif

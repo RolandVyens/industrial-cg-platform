@@ -268,6 +268,7 @@ class Scene : public NodeOwner {
 
   bool kernels_loaded;
   uint loaded_kernel_features;
+  uint loaded_deep_bounded_policy = 0;
 
   void update_kernel_features();
 

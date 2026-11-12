@@ -38,4 +38,19 @@ void kernel_global_memory_copy(KernelGlobalsCPU *kg,
 #define KERNEL_ARCH cpu_avx2
 #include "kernel/device/cpu/kernel_arch.h"
 
+/* Dedicated capture variants share native integrator code, not runtime
+ * branches in the ordinary CPU Flat megakernel. */
+#define DECLARE_DEEP_CPU(arch, mode) \
+  bool KERNEL_NAME_EVAL(arch, deep_##mode##_init_from_camera)( \
+      const ThreadKernelGlobalsCPU *, IntegratorStateCPU *, KernelWorkTile *, float *); \
+  void KERNEL_NAME_EVAL(arch, deep_##mode##_megakernel)( \
+      const ThreadKernelGlobalsCPU *, IntegratorStateCPU *, float *);
+DECLARE_DEEP_CPU(cpu, alpha)
+DECLARE_DEEP_CPU(cpu, simple)
+DECLARE_DEEP_CPU(cpu, physical)
+DECLARE_DEEP_CPU(cpu_avx2, alpha)
+DECLARE_DEEP_CPU(cpu_avx2, simple)
+DECLARE_DEEP_CPU(cpu_avx2, physical)
+#undef DECLARE_DEEP_CPU
+
 CCL_NAMESPACE_END

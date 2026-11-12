@@ -147,7 +147,9 @@ CCL_NAMESPACE_BEGIN
 #define __SVM__
 
 /* Deep EXR output - accumulates per-pixel samples with depth. */
-#define __DEEP_OUTPUT__
+#if !defined(__DEEP_BOUNDED_POLICY__) || __DEEP_BOUNDED_POLICY__ == 0
+#  define __DEEP_OUTPUT__
+#endif
 
 /* Device specific features */
 

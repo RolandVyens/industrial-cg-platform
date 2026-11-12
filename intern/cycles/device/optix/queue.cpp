@@ -6,6 +6,8 @@
 
 #  include "device/optix/queue.h"
 #  include "device/optix/device_impl.h"
+#  include <cstdlib>
+#  include <cstring>
 
 #  define __KERNEL_OPTIX__
 #  include "kernel/device/optix/globals.h"
@@ -14,7 +16,62 @@ CCL_NAMESPACE_BEGIN
 
 /* CUDADeviceQueue */
 
-OptiXDeviceQueue::OptiXDeviceQueue(OptiXDevice *device) : CUDADeviceQueue(device) {}
+OptiXDeviceQueue::OptiXDeviceQueue(OptiXDevice *device)
+    : CUDADeviceQueue(device, 64 * 65536 + 64 * sizeof(void *))
+{
+  const char *option = getenv("CYCLES_EXPERIMENTAL_DEEP_GPU_OPTIX_PARAMETER_STAGING");
+  const char *frame = getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_PIPELINE");
+  const bool legacy_route = frame && std::strcmp(frame, "1") == 0;
+  const char *defaults = getenv("CYCLES_TEST_DEEP_DEMAND_DEFAULTS");
+  const bool demand_defaults = !defaults || std::strcmp(defaults, "0") != 0;
+  parameter_staging_ = option ? std::strcmp(option, "1") == 0 :
+                                legacy_route || demand_defaults;
+  parameter_staging_requires_deep_policy_ = !option && !legacy_route;
+}
+
+OptiXDeviceQueue::~OptiXDeviceQueue()
+{
+  if (parameter_block_count_) {
+    const CUDAContextScope scope(cuda_device_);
+    /* Also drain after submission/readback failure before any host snapshot is freed. */
+    cuda_device_assert(cuda_device_, cuStreamSynchronize(cuda_stream_));
+    for (size_t i = 0; i < parameter_block_count_; ++i)
+      free_deep_auxiliary(parameter_blocks_[i], 65536);
+  }
+}
+
+bool OptiXDeviceQueue::synchronize()
+{
+  const bool complete = CUDADeviceQueue::synchronize();
+  if (complete) parameter_cursor_ = 0;
+  return complete;
+}
+
+const void *OptiXDeviceQueue::stage_parameter(const void *source, const size_t bytes)
+{
+  constexpr size_t block_bytes = 65536, max_blocks = 64;
+  if (!bytes || bytes > block_bytes) {
+    cuda_device_->set_error("Invalid Deep OptiX parameter snapshot range"); return nullptr;
+  }
+  const size_t aligned = (bytes + 15) & ~size_t(15);
+  if (parameter_cursor_ % block_bytes + aligned > block_bytes)
+    parameter_cursor_ = (parameter_cursor_ + block_bytes - 1) & ~(block_bytes - 1);
+  const size_t index = parameter_cursor_ / block_bytes;
+  if (index >= max_blocks) {
+    cuda_device_->set_error("Deep OptiX parameter staging exceeds bounded pinned capacity");
+    return nullptr;
+  }
+  if (index == parameter_block_count_) {
+    void *block = allocate_deep_auxiliary(block_bytes);
+    if (!block) return nullptr;
+    /* Fixed metadata registration cannot throw after the allocation. */
+    parameter_blocks_[parameter_block_count_++] = block;
+  }
+  char *destination = static_cast<char *>(parameter_blocks_[index]) + parameter_cursor_ % block_bytes;
+  std::memcpy(destination, source, bytes);
+  parameter_cursor_ += aligned;
+  return destination;
+}
 
 void OptiXDeviceQueue::init_execution()
 {
@@ -68,11 +125,16 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
 
   const device_ptr sbt_data_ptr = optix_device->sbt_data.device_pointer;
   const device_ptr launch_params_ptr = optix_device->launch_params.device_pointer;
+  const bool use_parameter_staging = parameter_staging_ &&
+      (!parameter_staging_requires_deep_policy_ || cuda_device_->deep_bounded_policy());
 
   auto set_launch_param = [&](size_t offset, size_t size, int arg) {
+    if (cuda_device_->have_error()) return;
+    const void *source = use_parameter_staging ? stage_parameter(args.values[arg], size) : args.values[arg];
+    if (!source) return;
     cuda_device_assert(
         cuda_device_,
-        cuMemcpyHtoDAsync(launch_params_ptr + offset, args.values[arg], size, cuda_stream_));
+        cuMemcpyHtoDAsync(launch_params_ptr + offset, source, size, cuda_stream_));
   };
 
   set_launch_param(offsetof(KernelParamsOptiX, path_index_array), sizeof(device_ptr), 0);
@@ -90,12 +152,20 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
   }
 
   if (kernel == DEVICE_KERNEL_INTEGRATOR_INIT_FROM_CAMERA) {
+    /* Tile-less native retries carry compacted state indices in argument four.
+     * Receipt replay also has no tiles, but its wrapper disposition takes precedence. */
+    const int num_tiles = *static_cast<const int *>(args.values[1]);
+    if (num_tiles == 0) {
+      set_launch_param(offsetof(KernelParamsOptiX, path_index_array), sizeof(device_ptr), 4);
+    }
     set_launch_param(offsetof(KernelParamsOptiX, num_tiles), sizeof(int32_t), 1);
     set_launch_param(offsetof(KernelParamsOptiX, render_buffer), sizeof(device_ptr), 2);
     set_launch_param(offsetof(KernelParamsOptiX, max_tile_work_size), sizeof(int32_t), 3);
   }
 
-  cuda_device_assert(cuda_device_, cuStreamSynchronize(cuda_stream_));
+  if (!use_parameter_staging)
+    cuda_device_assert(cuda_device_, cuStreamSynchronize(cuda_stream_));
+  if (cuda_device_->have_error()) return false;
 
   OptixPipeline pipeline = nullptr;
   OptixShaderBindingTable sbt_params = {};
@@ -133,6 +203,10 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
       pipeline = optix_device->pipelines[PIP_SHADE];
       sbt_params.raygenRecord = sbt_data_ptr +
                                 PG_RGEN_SHADE_VOLUME_RAY_MARCHING * sizeof(SbtRecord);
+      break;
+    case DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL:
+      pipeline = optix_device->pipelines[PIP_SHADE];
+      sbt_params.raygenRecord = sbt_data_ptr + PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL * sizeof(SbtRecord);
       break;
     case DEVICE_KERNEL_INTEGRATOR_SHADE_SHADOW:
       pipeline = optix_device->pipelines[PIP_SHADE];
@@ -211,6 +285,7 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
 #  endif
 
   /* Launch the ray generation program. */
+  if (!begin_native_timing(kernel, work_size)) return false;
   optix_device_assert(optix_device,
                       optixLaunch(pipeline,
                                   cuda_stream_,
@@ -220,6 +295,7 @@ bool OptiXDeviceQueue::enqueue(DeviceKernel kernel,
                                   work_size,
                                   1,
                                   1));
+  if (!end_native_timing()) return false;
 
   debug_enqueue_end();
 

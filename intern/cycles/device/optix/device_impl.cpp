@@ -338,7 +338,19 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
   /* Detect existence of OptiX kernel and SDK here early. So we can error out
    * before compiling the CUDA kernels, to avoid failing right after when
    * compiling the OptiX kernel. */
-  string suffix = use_osl_shading ? "_osl" : "";
+  static const char *deep_suffixes[] = {"", "_deep_alpha", "_deep_simple", "_deep_physical"};
+  if (deep_bounded_policy() > 3) {
+    set_error("Invalid frozen Deep capture policy");
+    return false;
+  }
+  const uint32_t bounded_policy = deep_bounded_policy();
+  const char *diagnostic = info.type == DEVICE_OPTIX && bounded_policy == 1 ?
+                               getenv("CYCLES_TEST_DEEP_ALPHA_MODULE_WITHOUT_CAPTURE") :
+                               nullptr;
+  const bool test_compute = diagnostic && std::strncmp(diagnostic, "compute", 7) == 0;
+  const bool test_optix = diagnostic && std::strcmp(diagnostic, "optix") == 0;
+  const string deep_suffix = deep_suffixes[test_compute ? 0 : bounded_policy];
+  string suffix = (use_osl_shading ? "_osl" : string()) + deep_suffix;
   string ptx_filename;
   if (need_optix_kernels) {
     ptx_filename = path_get("lib/kernel_optix" + suffix + ".ptx.zst");
@@ -362,7 +374,14 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
   }
 
   /* Load CUDA modules because we need some of the utility kernels. */
-  if (!CUDADevice::load_kernels(kernel_features)) {
+  if (test_optix) {
+    set_deep_bounded_policy(0);
+  }
+  const bool cuda_loaded = CUDADevice::load_kernels(kernel_features);
+  if (test_optix) {
+    set_deep_bounded_policy(bounded_policy);
+  }
+  if (!cuda_loaded) {
     return false;
   }
 
@@ -487,13 +506,13 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
       return false;
     }
 
-    auto load_optional_module = [this, &kernel_features](const string &name,
+    auto load_optional_module = [this, &kernel_features, &deep_suffix](const string &name,
                                                          string &ptx_data) -> bool {
-      string filename = path_get("lib/" + name + ".ptx.zst");
+      string filename = path_get("lib/" + name + deep_suffix + ".ptx.zst");
       if (use_adaptive_compilation() || path_file_size(filename) == -1) {
         /* Map kernel_optix_foo.ptx to kernel_foo.cu. */
         const char *suffix = "_optix";
-        string source_name = name;
+        string source_name = name + deep_suffix;
         const size_t optix_pos = source_name.find(suffix);
         if (optix_pos != string::npos) {
           source_name.erase(optix_pos, strlen(suffix));
@@ -792,6 +811,10 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
       group_descs[PG_RGEN_SHADE_VOLUME_RAY_MARCHING].raygen.module = osl_volume_module;
       group_descs[PG_RGEN_SHADE_VOLUME_RAY_MARCHING].raygen.entryFunctionName =
           "__raygen__kernel_optix_integrator_shade_volume_ray_marching";
+      group_descs[PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+      group_descs[PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL].raygen.module = osl_volume_module;
+      group_descs[PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL].raygen.entryFunctionName =
+          "__raygen__kernel_optix_integrator_shade_deep_volume_optical";
     }
     group_descs[PG_RGEN_SHADE_SHADOW].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
     group_descs[PG_RGEN_SHADE_SHADOW].raygen.module = optix_module;
@@ -1217,6 +1240,12 @@ bool OptiXDevice::load_osl_kernels()
     if (groups[PG_RGEN_SHADE_VOLUME] != nullptr) {
       pipeline_groups.push_back(groups[PG_RGEN_SHADE_VOLUME]);
     }
+    if (groups[PG_RGEN_SHADE_VOLUME_RAY_MARCHING] != nullptr) {
+      pipeline_groups.push_back(groups[PG_RGEN_SHADE_VOLUME_RAY_MARCHING]);
+    }
+    if (groups[PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL] != nullptr) {
+      pipeline_groups.push_back(groups[PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL]);
+    }
     pipeline_groups.push_back(groups[PG_RGEN_SHADE_SHADOW]);
     pipeline_groups.push_back(groups[PG_RGEN_SHADE_DEDICATED_LIGHT]);
     pipeline_groups.push_back(groups[PG_RGEN_EVAL_DISPLACE]);
@@ -1253,7 +1282,10 @@ bool OptiXDevice::load_osl_kernels()
     vector<OptixStackSizes> osl_stack_size(osl_groups.size());
 
     for (int i = 0; i < NUM_PROGRAM_GROUPS; ++i) {
-      if (groups[i] != nullptr) {
+      if (groups[i] != nullptr &&
+          std::find(pipeline_groups.begin(), pipeline_groups.end(), groups[i]) !=
+              pipeline_groups.end())
+      {
         optix_assert(
             optixProgramGroupGetStackSize(groups[i], &stack_size[i], pipelines[PIP_SHADE]));
       }
@@ -1266,9 +1298,11 @@ bool OptiXDevice::load_osl_kernels()
     }
 
     const unsigned int trace_css = hit_program_continuation_stack_size(stack_size);
-    const unsigned int css = std::max(stack_size[PG_RGEN_SHADE_SURFACE_RAYTRACE].cssRG,
-                                      stack_size[PG_RGEN_INTERSECT_MNEE].cssRG) +
-                             link_options.maxTraceDepth * trace_css;
+    unsigned int raygen_css = 0;
+    for (int i = 0; i < PG_MISS; ++i) {
+      raygen_css = std::max(raygen_css, stack_size[i].cssRG);
+    }
+    const unsigned int css = raygen_css + link_options.maxTraceDepth * trace_css;
     unsigned int dss = std::max(stack_size[PG_CALL_SVM_AO].dssDC,
                                 stack_size[PG_CALL_SVM_BEVEL].dssDC);
     for (unsigned int i = 0; i < osl_stack_size.size(); ++i) {
@@ -2014,6 +2048,17 @@ void OptiXDevice::free_bvh_memory_delayed()
 {
   thread_scoped_lock lock(delayed_free_bvh_mutex);
   delayed_free_bvh_memory.free_memory();
+}
+
+bool OptiXDevice::restore_integrator_state(void *host, const size_t size)
+{
+  if (!CUDADevice::restore_integrator_state(host, size))
+    return false;
+  const CUDAContextScope scope(this);
+  const CUresult copy_result = cuMemcpyHtoD(
+      launch_params.device_pointer + offsetof(KernelParamsOptiX, integrator_state), host, size);
+  cuda_assert(copy_result);
+  return copy_result == CUDA_SUCCESS;
 }
 
 void OptiXDevice::const_copy_to(const char *name, void *host, const size_t size)

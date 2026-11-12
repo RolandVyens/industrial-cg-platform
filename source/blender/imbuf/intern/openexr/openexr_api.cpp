@@ -7,6 +7,7 @@
  */
 
 #include "IMB_filetype.hh"
+#include "openexr_deep_core.hh"
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +21,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <memory_resource>
 #include <set>
 #include <string>
 
@@ -70,8 +72,8 @@
 #include <OpenEXR/ImfTiledOutputPart.h>
 
 /* deep data support */
-#include <OpenEXR/ImfDeepScanLineOutputFile.h>
 #include <OpenEXR/ImfDeepFrameBuffer.h>
+#include <OpenEXR/ImfDeepScanLineOutputFile.h>
 
 #include "DNA_scene_types.h" /* For OpenEXR compression constants */
 
@@ -91,7 +93,6 @@
 #include "BLI_math_base.hh"
 #include "BLI_math_color.h"
 
-#include "IMB_deep_sample_merge.hh"
 #include "BLI_math_half.hh"
 #include "BLI_math_vector_types.hh"
 #include "BLI_mmap.h"
@@ -100,6 +101,7 @@
 #include "BLI_string_utf8.h"
 #include "BLI_task.hh"
 #include "BLI_threads.h"
+#include "IMB_deep_sample_merge.hh"
 
 #include "BKE_blender_version.h"
 #include "BKE_idprop.hh"
@@ -128,6 +130,7 @@ static bool exr_has_multipart_file(MultiPartInputFile &file);
 static bool exr_has_alpha(MultiPartInputFile &file);
 static bool exr_has_channels(MultiPartInputFile &file);
 static const ColorSpace *imb_exr_part_colorspace(const Header &header);
+static const Header &imb_exr_colorspace_header(const MultiPartInputFile &file);
 
 /* XYZ with Illuminant E */
 static Imf::Chromaticities CHROMATICITIES_XYZ_E{
@@ -372,6 +375,17 @@ class OFileStream : public OStream {
     check_error();
   }
 
+  /* Call only after OpenEXR has completed its offset-table backpatch. Destructors cannot
+   * report delayed write errors, so requested Deep output has an explicit success boundary. */
+  void close_checked()
+  {
+    errno = 0;
+    ofs.flush();
+    check_error();
+    ofs.close();
+    check_error();
+  }
+
  private:
   void check_error()
   {
@@ -425,6 +439,15 @@ static float compression_half_max(const int compression, const int quality)
   }
 
   return HALF_MAX;
+}
+
+static int openexr_compression_for_data_colorspace(const int compression)
+{
+  /* Still write data passes lossless when using lossy compression. */
+  if (ELEM(compression, R_IMF_EXR_CODEC_DWAA, R_IMF_EXR_CODEC_DWAB)) {
+    return R_IMF_EXR_CODEC_ZIP;
+  }
+  return compression;
 }
 
 static void openexr_header_compression(Header *header, int compression, int quality)
@@ -525,10 +548,12 @@ static bool openexr_metadata_skip_read(const char *name, const bool is_multi)
 static bool openexr_metadata_skip_write(const char *name, const bool is_multi)
 {
   /* Do not blindly pass along compression or colorInteropID, as they might have changed
-   * and will already be written when appropriate.
+   * and will already be written when appropriate. Same for metadata about the software
+   * that wrote the file and the type (scanline, tiled, deep).
    *
    * Multi-layer name and view are skipped, see #openexr_metadata_skip_read. */
-  return STR_ELEM(name, "compression", "colorInteropID") ||
+  return STR_ELEM(
+             name, "compression", "colorInteropID", "Software", "BlenderMultiChannel", "type") ||
          (is_multi && STR_ELEM(name, "name", "view"));
 }
 
@@ -673,8 +698,8 @@ static void openexr_header_set_display_window(Header *header,
 {
   Box2i display_window;
   display_window.min = V2i(display_offset[0], display_offset[1]);
-  display_window.max = V2i(
-      display_offset[0] + display_size[0] - 1, display_offset[1] + display_size[1] - 1);
+  display_window.max = V2i(display_offset[0] + display_size[0] - 1,
+                           display_offset[1] + display_size[1] - 1);
 
   const int data_window_min_x = display_offset[0] + data_offset[0];
   const int data_window_min_y = display_offset[1] + data_offset[1];
@@ -857,14 +882,13 @@ Vector<uint8_t> imb_save_buffer_openexr(ImBuf *ibuf, ImBufFlags /*flags*/)
 static bool validate_deep_exr_data(const std::vector<std::vector<DeepSample>> &deep_data,
                                    const int width,
                                    const int height,
-                                   const char *filepath)
+                                   const char *filepath,
+                                   const bool use_half_float,
+                                   const bool alpha_only)
 {
   if (width <= 0 || height <= 0) {
-    CLOG_ERROR(&LOG,
-               "Unable to save deep EXR '%s': invalid dimensions %dx%d",
-               filepath,
-               width,
-               height);
+    CLOG_ERROR(
+        &LOG, "Unable to save deep EXR '%s': invalid dimensions %dx%d", filepath, width, height);
     return false;
   }
 
@@ -891,10 +915,22 @@ static bool validate_deep_exr_data(const std::vector<std::vector<DeepSample>> &d
 
   for (const std::vector<DeepSample> &pixel_samples : deep_data) {
     if (pixel_samples.size() > std::numeric_limits<unsigned int>::max()) {
-      CLOG_ERROR(&LOG,
-                 "Unable to save deep EXR '%s': a pixel has too many deep samples",
-                 filepath);
+      CLOG_ERROR(
+          &LOG, "Unable to save deep EXR '%s': a pixel has too many deep samples", filepath);
       return false;
+    }
+    for (const DeepSample &sample : pixel_samples) {
+      if (!std::isfinite(sample.r) || !std::isfinite(sample.g) || !std::isfinite(sample.b) ||
+          !std::isfinite(sample.a) || sample.a < 0.0f || sample.a > 1.0f ||
+          !std::isfinite(sample.z) || !std::isfinite(sample.z_back) || sample.z_back < sample.z ||
+          (use_half_float && !alpha_only &&
+           (std::abs(sample.r) > 65504.0f || std::abs(sample.g) > 65504.0f ||
+            std::abs(sample.b) > 65504.0f)))
+      {
+        CLOG_ERROR(
+            &LOG, "Unable to save deep EXR '%s': invalid or unrepresentable sample", filepath);
+        return false;
+      }
     }
   }
 
@@ -935,25 +971,66 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
                            0.0f);
 }
 
-bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
-                       int width,
-                       int height,
-                       const char *filepath,
-                       int compression,
-                       bool use_half_float,
-                       bool alpha_only,
-                       bool has_display_window,
-                       int display_width,
-                       int display_height,
-                       int display_offset_x,
-                       int display_offset_y,
-                       int data_offset_x,
-                       int data_offset_y,
-                       float deep_merge_tolerance,
-                       float deep_alpha_merge_tolerance)
+class DeepExrMemoryResource : public std::pmr::memory_resource {
+ public:
+  explicit DeepExrMemoryResource(const DeepExrMemoryCallbacks *callbacks) : callbacks_(callbacks)
+  {
+  }
+
+ private:
+  void *do_allocate(const size_t bytes, const size_t alignment) override
+  {
+    if (callbacks_)
+      callbacks_->acquire(bytes);
+    try {
+      return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+    }
+    catch (...) {
+      if (callbacks_)
+        callbacks_->release(bytes);
+      throw;
+    }
+  }
+  void do_deallocate(void *pointer, const size_t bytes, const size_t alignment) override
+  {
+    std::pmr::new_delete_resource()->deallocate(pointer, bytes, alignment);
+    if (callbacks_)
+      callbacks_->release(bytes);
+  }
+  bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override
+  {
+    return this == &other;
+  }
+  const DeepExrMemoryCallbacks *callbacks_;
+};
+
+static bool save_deep_exr_impl(const std::vector<std::vector<DeepSample>> &deep_data,
+                               int width,
+                               int height,
+                               const char *filepath,
+                               int compression,
+                               bool use_half_float,
+                               bool alpha_only,
+                               bool has_display_window,
+                               int display_width,
+                               int display_height,
+                               int display_offset_x,
+                               int display_offset_y,
+                               int data_offset_x,
+                               int data_offset_y,
+                               float deep_merge_tolerance,
+                               float deep_alpha_merge_tolerance,
+                               const DeepExrRowReader *row_reader,
+                               const DeepExrMemoryCallbacks *memory)
 {
   const auto write_started = std::chrono::steady_clock::now();
-  if (!validate_deep_exr_data(deep_data, width, height, filepath)) {
+  if (!filepath || !filepath[0] || width <= 0 || height <= 0 ||
+      size_t(height) > std::numeric_limits<size_t>::max() / size_t(width) ||
+      (!row_reader &&
+       !validate_deep_exr_data(deep_data, width, height, filepath, use_half_float, alpha_only)) ||
+      !std::isfinite(deep_merge_tolerance) || deep_merge_tolerance < 0.0f ||
+      !std::isfinite(deep_alpha_merge_tolerance) || deep_alpha_merge_tolerance < 0.0f)
+  {
     return false;
   }
 
@@ -965,14 +1042,14 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
     return false;
   }
 
-  std::unique_ptr<OStream> file_stream;
+  std::unique_ptr<OFileStream> file_stream;
 
   try {
     const bool use_custom_display_window = has_display_window && display_width > 0 &&
                                            display_height > 0;
-    const Box2i display_window(V2i(display_offset_x, display_offset_y),
-                               V2i(display_offset_x + display_width - 1,
-                                   display_offset_y + display_height - 1));
+    const Box2i display_window(
+        V2i(display_offset_x, display_offset_y),
+        V2i(display_offset_x + display_width - 1, display_offset_y + display_height - 1));
     const Box2i data_window(V2i(data_offset_x, data_offset_y),
                             V2i(data_offset_x + width - 1, data_offset_y + height - 1));
 
@@ -1011,211 +1088,325 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
     }
 
     file_stream = std::make_unique<OFileStream>(filepath);
-    DeepScanLineOutputFile file(*file_stream, header);
+    auto file = std::make_unique<DeepScanLineOutputFile>(*file_stream, header);
 
-    /* Per-scanline buffer approach for memory efficiency.
-     * Only allocate storage for one scanline at a time, reducing
-     * peak memory from O(width*height*samples) to O(width*samples). */
-    std::vector<unsigned int> sampleCount(width);
-    std::vector<float *> dataZ(width), dataZBack(width);
-    std::vector<float *> dataA, dataR, dataG, dataB;
-    std::vector<half *> dataAHalf, dataRHalf, dataGHalf, dataBHalf;
+    /* Bounded scanline blocks let OpenEXR compress multiple independent scanlines in one call.
+     * Keep the one-scanline path as the default. Never materialize the full image's channel
+     * storage, and retain each pixel's sort/merge order and native channel conversion. */
+    int block_rows = 1;
+    if (!row_reader) {
+      if (const char *value = std::getenv("BLENDER_EXPERIMENTAL_DEEP_EXR_SCANLINES")) {
+        block_rows = std::clamp(std::atoi(value), 1, std::min(height, 64));
+      }
+    }
+    DeepExrMemoryResource resource(memory);
+    const size_t block_pixels = size_t(width) * block_rows;
+    std::pmr::vector<unsigned int> sampleCount(block_pixels, &resource);
+    std::pmr::vector<float *> dataZ(block_pixels, &resource), dataZBack(block_pixels, &resource);
+    std::pmr::vector<float *> dataA(&resource), dataR(&resource), dataG(&resource),
+        dataB(&resource);
+    std::pmr::vector<half *> dataAHalf(&resource), dataRHalf(&resource), dataGHalf(&resource),
+        dataBHalf(&resource);
 
-    /* Storage for actual sample values for the current scanline. */
-    std::vector<std::vector<float>> aStorage, zStorage(width), zBackStorage(width);
-    std::vector<std::vector<float>> rStorage, gStorage, bStorage;
-    std::vector<std::vector<half>> aHalfStorage, rHalfStorage, gHalfStorage, bHalfStorage;
-    std::vector<DeepSample> merged_samples;
+    /* Storage remains bounded by the configured number of scanlines. */
+    std::pmr::vector<std::pmr::vector<float>> aStorage(&resource),
+        zStorage(block_pixels, &resource), zBackStorage(block_pixels, &resource);
+    std::pmr::vector<std::pmr::vector<float>> rStorage(&resource), gStorage(&resource),
+        bStorage(&resource);
+    std::pmr::vector<std::pmr::vector<half>> aHalfStorage(&resource), rHalfStorage(&resource),
+        gHalfStorage(&resource), bHalfStorage(&resource);
     size_t input_sample_count = 0;
     size_t output_sample_count = 0;
     size_t max_merge_scratch_bytes = 0;
+    double prepare_seconds = 0.0;
+    double compress_write_seconds = 0.0;
 
     if (use_half_float) {
-      dataAHalf.resize(width);
-      aHalfStorage.resize(width);
+      dataAHalf.resize(block_pixels);
+      aHalfStorage.resize(block_pixels);
     }
     else {
-      dataA.resize(width);
-      aStorage.resize(width);
+      dataA.resize(block_pixels);
+      aStorage.resize(block_pixels);
     }
 
     if (!alpha_only) {
       if (use_half_float) {
-        dataRHalf.resize(width);
-        dataGHalf.resize(width);
-        dataBHalf.resize(width);
-        rHalfStorage.resize(width);
-        gHalfStorage.resize(width);
-        bHalfStorage.resize(width);
+        dataRHalf.resize(block_pixels);
+        dataGHalf.resize(block_pixels);
+        dataBHalf.resize(block_pixels);
+        rHalfStorage.resize(block_pixels);
+        gHalfStorage.resize(block_pixels);
+        bHalfStorage.resize(block_pixels);
       }
       else {
-        dataR.resize(width);
-        dataG.resize(width);
-        dataB.resize(width);
-        rStorage.resize(width);
-        gStorage.resize(width);
-        bStorage.resize(width);
+        dataR.resize(block_pixels);
+        dataG.resize(block_pixels);
+        dataB.resize(block_pixels);
+        rStorage.resize(block_pixels);
+        gStorage.resize(block_pixels);
+        bStorage.resize(block_pixels);
       }
     }
 
-    /* Process and write one scanline at a time. */
-    for (int y = 0; y < height; y++) {
-      /* Y-flip: deep_data is stored top-to-bottom, EXR expects bottom-to-top. */
-      int src_y = height - 1 - y;
+    std::pmr::vector<DeepSample> serial_merge_scratch(&resource);
+    std::vector<std::vector<DeepSample>> streamed_row;
+    struct RowStats {
+      size_t input = 0, output = 0, scratch = 0;
+    };
+    std::pmr::vector<RowStats> row_stats(block_rows, &resource);
+    for (int y = 0; y < height; y += block_rows) {
+      const int rows = std::min(block_rows, height - y);
       const int exr_y = data_window.min.y + y;
-
-      for (int x = 0; x < width; x++) {
-        const std::vector<DeepSample> &source_samples = deep_data[src_y * width + x];
-        const DeepSample *samples = source_samples.data();
-        size_t n = source_samples.size();
-        input_sample_count += n;
-        if (deep_merge_tolerance > 0.0f && n > 1) {
-          merged_samples.assign(source_samples.begin(), source_samples.end());
-          std::sort(merged_samples.begin(),
-                    merged_samples.end(),
-                    [](const DeepSample &a, const DeepSample &b) { return a.z < b.z; });
-          n = imbuf::deep_merge::merge_sorted_deep_samples(merged_samples.data(),
-                                                           merged_samples.size(),
-                                                           deep_merge_tolerance,
-                                                           deep_alpha_merge_tolerance,
-                                                           1e-6f);
-          samples = merged_samples.data();
-          max_merge_scratch_bytes = std::max(max_merge_scratch_bytes,
-                                             merged_samples.capacity() * sizeof(DeepSample));
+      const auto prepare_started = std::chrono::steady_clock::now();
+      if (row_reader) {
+        if (!(*row_reader)(height - 1 - y, streamed_row)) {
+          throw Iex::ArgExc("Deep canonical row reader failed.");
         }
-        output_sample_count += n;
+        if (!validate_deep_exr_data(streamed_row, width, 1, filepath, use_half_float, alpha_only))
+        {
+          throw Iex::ArgExc("Deep canonical row has invalid counts or samples.");
+        }
+      }
+      const auto prepare_row = [&](const int row, std::pmr::vector<DeepSample> &merged_samples) {
+        /* Y-flip: deep_data is stored top-to-bottom, EXR expects bottom-to-top. */
+        const int src_y = height - 1 - y - row;
+        RowStats &stats = row_stats[row];
+        stats = {};
 
-        sampleCount[x] = static_cast<unsigned int>(n);
-
-        zStorage[x].resize(n);
-        zBackStorage[x].resize(n);
-        if (use_half_float) {
-          aHalfStorage[x].resize(n);
-          if (!alpha_only) {
-            rHalfStorage[x].resize(n);
-            gHalfStorage[x].resize(n);
-            bHalfStorage[x].resize(n);
+        for (int x = 0; x < width; x++) {
+          const size_t slot = size_t(row) * width + x;
+          const std::vector<DeepSample> &source_samples = row_reader ?
+                                                              streamed_row[x] :
+                                                              deep_data[src_y * width + x];
+          const DeepSample *samples = source_samples.data();
+          size_t n = source_samples.size();
+          stats.input += n;
+          if (deep_merge_tolerance > 0.0f && n > 1) {
+            merged_samples.assign(source_samples.begin(), source_samples.end());
+            std::sort(merged_samples.begin(),
+                      merged_samples.end(),
+                      [](const DeepSample &a, const DeepSample &b) { return a.z < b.z; });
+            n = imbuf::deep_merge::merge_sorted_deep_samples(merged_samples.data(),
+                                                             merged_samples.size(),
+                                                             deep_merge_tolerance,
+                                                             deep_alpha_merge_tolerance,
+                                                             1e-6f);
+            samples = merged_samples.data();
+            stats.scratch = std::max(stats.scratch,
+                                     merged_samples.capacity() * sizeof(DeepSample));
           }
-        }
-        else {
-          aStorage[x].resize(n);
-          if (!alpha_only) {
-            rStorage[x].resize(n);
-            gStorage[x].resize(n);
-            bStorage[x].resize(n);
-          }
-        }
+          stats.output += n;
 
-        for (size_t s = 0; s < n; s++) {
-          zStorage[x][s] = samples[s].z;
-          zBackStorage[x][s] = samples[s].z_back;
+          sampleCount[slot] = static_cast<unsigned int>(n);
+
+          zStorage[slot].resize(n);
+          zBackStorage[slot].resize(n);
           if (use_half_float) {
-            aHalfStorage[x][s] = samples[s].a;
+            aHalfStorage[slot].resize(n);
             if (!alpha_only) {
-              rHalfStorage[x][s] = samples[s].r;
-              gHalfStorage[x][s] = samples[s].g;
-              bHalfStorage[x][s] = samples[s].b;
+              rHalfStorage[slot].resize(n);
+              gHalfStorage[slot].resize(n);
+              bHalfStorage[slot].resize(n);
             }
           }
           else {
-            aStorage[x][s] = samples[s].a;
+            aStorage[slot].resize(n);
             if (!alpha_only) {
-              rStorage[x][s] = samples[s].r;
-              gStorage[x][s] = samples[s].g;
-              bStorage[x][s] = samples[s].b;
+              rStorage[slot].resize(n);
+              gStorage[slot].resize(n);
+              bStorage[slot].resize(n);
+            }
+          }
+
+          for (size_t s = 0; s < n; s++) {
+            /* Fitting/composition can overflow even when every source fits HALF. */
+            if (!std::isfinite(samples[s].r) || !std::isfinite(samples[s].g) ||
+                !std::isfinite(samples[s].b) || !std::isfinite(samples[s].a) ||
+                (use_half_float && !alpha_only &&
+                 (std::abs(samples[s].r) > 65504.0f || std::abs(samples[s].g) > 65504.0f ||
+                  std::abs(samples[s].b) > 65504.0f)))
+            {
+              throw Iex::ArgExc("Merged Deep sample is not representable in requested channels.");
+            }
+            zStorage[slot][s] = samples[s].z;
+            zBackStorage[slot][s] = samples[s].z_back;
+            if (use_half_float) {
+              aHalfStorage[slot][s] = samples[s].a;
+              if (!alpha_only) {
+                rHalfStorage[slot][s] = samples[s].r;
+                gHalfStorage[slot][s] = samples[s].g;
+                bHalfStorage[slot][s] = samples[s].b;
+              }
+            }
+            else {
+              aStorage[slot][s] = samples[s].a;
+              if (!alpha_only) {
+                rStorage[slot][s] = samples[s].r;
+                gStorage[slot][s] = samples[s].g;
+                bStorage[slot][s] = samples[s].b;
+              }
+            }
+          }
+
+          dataZ[slot] = n > 0 ? zStorage[slot].data() : nullptr;
+          dataZBack[slot] = n > 0 ? zBackStorage[slot].data() : nullptr;
+          if (use_half_float) {
+            dataAHalf[slot] = n > 0 ? aHalfStorage[slot].data() : nullptr;
+            if (!alpha_only) {
+              dataRHalf[slot] = n > 0 ? rHalfStorage[slot].data() : nullptr;
+              dataGHalf[slot] = n > 0 ? gHalfStorage[slot].data() : nullptr;
+              dataBHalf[slot] = n > 0 ? bHalfStorage[slot].data() : nullptr;
+            }
+          }
+          else {
+            dataA[slot] = n > 0 ? aStorage[slot].data() : nullptr;
+            if (!alpha_only) {
+              dataR[slot] = n > 0 ? rStorage[slot].data() : nullptr;
+              dataG[slot] = n > 0 ? gStorage[slot].data() : nullptr;
+              dataB[slot] = n > 0 ? bStorage[slot].data() : nullptr;
             }
           }
         }
-
-        dataZ[x] = n > 0 ? zStorage[x].data() : nullptr;
-        dataZBack[x] = n > 0 ? zBackStorage[x].data() : nullptr;
-        if (use_half_float) {
-          dataAHalf[x] = n > 0 ? aHalfStorage[x].data() : nullptr;
-          if (!alpha_only) {
-            dataRHalf[x] = n > 0 ? rHalfStorage[x].data() : nullptr;
-            dataGHalf[x] = n > 0 ? gHalfStorage[x].data() : nullptr;
-            dataBHalf[x] = n > 0 ? bHalfStorage[x].data() : nullptr;
+      };
+      if (block_rows == 1) {
+        prepare_row(0, serial_merge_scratch);
+      }
+      else {
+        /* Rows own disjoint channel buffers and statistics; each pixel retains its serial
+         * floating-point operation order. Join before OpenEXR reads any pointer storage. */
+        threading::parallel_for(IndexRange(rows), 1, [&](const IndexRange range) {
+          std::pmr::vector<DeepSample> merge_scratch(&resource);
+          for (const int64_t row : range) {
+            prepare_row(int(row), merge_scratch);
           }
-        }
-        else {
-          dataA[x] = n > 0 ? aStorage[x].data() : nullptr;
-          if (!alpha_only) {
-            dataR[x] = n > 0 ? rStorage[x].data() : nullptr;
-            dataG[x] = n > 0 ? gStorage[x].data() : nullptr;
-            dataB[x] = n > 0 ? bStorage[x].data() : nullptr;
-          }
-        }
+        });
+      }
+      prepare_seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                                       prepare_started)
+                             .count();
+      for (int row = 0; row < rows; row++) {
+        input_sample_count += row_stats[row].input;
+        output_sample_count += row_stats[row].output;
+        max_merge_scratch_bytes = std::max(max_merge_scratch_bytes, row_stats[row].scratch);
       }
 
       /* Set up the deep frame buffer for this scanline. */
       DeepFrameBuffer frameBuffer;
 
       /* Sample count slice - points to start of scanline buffer. */
-      frameBuffer.insertSampleCountSlice(
-          Slice(UINT,
-                (char *)(sampleCount.data() - data_window.min.x - exr_y * width),
-                sizeof(unsigned int),           /* xStride */
-                sizeof(unsigned int) * width)); /* yStride (not used for single scanline but required) */
+      frameBuffer.insertSampleCountSlice(Slice(
+          UINT,
+          (char *)(sampleCount.data() - data_window.min.x - exr_y * width),
+          sizeof(unsigned int),           /* xStride */
+          sizeof(unsigned int) * width)); /* yStride (not used for single scanline but required) */
 
       /* Data slices for this scanline. */
-      frameBuffer.insert("Z", DeepSlice(Imf::FLOAT,
-          (char *)(dataZ.data() - data_window.min.x - exr_y * width),
-          sizeof(float *), sizeof(float *) * width, sizeof(float)));
-      frameBuffer.insert("ZBack", DeepSlice(Imf::FLOAT,
-          (char *)(dataZBack.data() - data_window.min.x - exr_y * width),
-          sizeof(float *), sizeof(float *) * width, sizeof(float)));
+      frameBuffer.insert("Z",
+                         DeepSlice(Imf::FLOAT,
+                                   (char *)(dataZ.data() - data_window.min.x - exr_y * width),
+                                   sizeof(float *),
+                                   sizeof(float *) * width,
+                                   sizeof(float)));
+      frameBuffer.insert("ZBack",
+                         DeepSlice(Imf::FLOAT,
+                                   (char *)(dataZBack.data() - data_window.min.x - exr_y * width),
+                                   sizeof(float *),
+                                   sizeof(float *) * width,
+                                   sizeof(float)));
       if (use_half_float) {
-        frameBuffer.insert("A", DeepSlice(Imf::HALF,
-            (char *)(dataAHalf.data() - data_window.min.x - exr_y * width),
-            sizeof(half *), sizeof(half *) * width, sizeof(half)));
+        frameBuffer.insert(
+            "A",
+            DeepSlice(Imf::HALF,
+                      (char *)(dataAHalf.data() - data_window.min.x - exr_y * width),
+                      sizeof(half *),
+                      sizeof(half *) * width,
+                      sizeof(half)));
         if (!alpha_only) {
-          frameBuffer.insert("R", DeepSlice(Imf::HALF,
-              (char *)(dataRHalf.data() - data_window.min.x - exr_y * width),
-              sizeof(half *), sizeof(half *) * width, sizeof(half)));
-          frameBuffer.insert("G", DeepSlice(Imf::HALF,
-              (char *)(dataGHalf.data() - data_window.min.x - exr_y * width),
-              sizeof(half *), sizeof(half *) * width, sizeof(half)));
-          frameBuffer.insert("B", DeepSlice(Imf::HALF,
-              (char *)(dataBHalf.data() - data_window.min.x - exr_y * width),
-              sizeof(half *), sizeof(half *) * width, sizeof(half)));
+          frameBuffer.insert(
+              "R",
+              DeepSlice(Imf::HALF,
+                        (char *)(dataRHalf.data() - data_window.min.x - exr_y * width),
+                        sizeof(half *),
+                        sizeof(half *) * width,
+                        sizeof(half)));
+          frameBuffer.insert(
+              "G",
+              DeepSlice(Imf::HALF,
+                        (char *)(dataGHalf.data() - data_window.min.x - exr_y * width),
+                        sizeof(half *),
+                        sizeof(half *) * width,
+                        sizeof(half)));
+          frameBuffer.insert(
+              "B",
+              DeepSlice(Imf::HALF,
+                        (char *)(dataBHalf.data() - data_window.min.x - exr_y * width),
+                        sizeof(half *),
+                        sizeof(half *) * width,
+                        sizeof(half)));
         }
       }
       else {
-        frameBuffer.insert("A", DeepSlice(Imf::FLOAT,
-            (char *)(dataA.data() - data_window.min.x - exr_y * width),
-            sizeof(float *), sizeof(float *) * width, sizeof(float)));
+        frameBuffer.insert("A",
+                           DeepSlice(Imf::FLOAT,
+                                     (char *)(dataA.data() - data_window.min.x - exr_y * width),
+                                     sizeof(float *),
+                                     sizeof(float *) * width,
+                                     sizeof(float)));
         if (!alpha_only) {
-          frameBuffer.insert("R", DeepSlice(Imf::FLOAT,
-              (char *)(dataR.data() - data_window.min.x - exr_y * width),
-              sizeof(float *), sizeof(float *) * width, sizeof(float)));
-          frameBuffer.insert("G", DeepSlice(Imf::FLOAT,
-              (char *)(dataG.data() - data_window.min.x - exr_y * width),
-              sizeof(float *), sizeof(float *) * width, sizeof(float)));
-          frameBuffer.insert("B", DeepSlice(Imf::FLOAT,
-              (char *)(dataB.data() - data_window.min.x - exr_y * width),
-              sizeof(float *), sizeof(float *) * width, sizeof(float)));
+          frameBuffer.insert("R",
+                             DeepSlice(Imf::FLOAT,
+                                       (char *)(dataR.data() - data_window.min.x - exr_y * width),
+                                       sizeof(float *),
+                                       sizeof(float *) * width,
+                                       sizeof(float)));
+          frameBuffer.insert("G",
+                             DeepSlice(Imf::FLOAT,
+                                       (char *)(dataG.data() - data_window.min.x - exr_y * width),
+                                       sizeof(float *),
+                                       sizeof(float *) * width,
+                                       sizeof(float)));
+          frameBuffer.insert("B",
+                             DeepSlice(Imf::FLOAT,
+                                       (char *)(dataB.data() - data_window.min.x - exr_y * width),
+                                       sizeof(float *),
+                                       sizeof(float *) * width,
+                                       sizeof(float)));
         }
       }
 
-      file.setFrameBuffer(frameBuffer);
+      file->setFrameBuffer(frameBuffer);
 
-      /* Write this single scanline. */
-      file.writePixels(1);
+      /* The buffers remain alive until the complete block is compressed and written. */
+      const auto compress_started = std::chrono::steady_clock::now();
+      file->writePixels(rows);
+      compress_write_seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                                              compress_started)
+                                    .count();
     }
 
-    const double write_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                                               write_started)
-                                     .count();
+    const auto close_started = std::chrono::steady_clock::now();
+    file.reset();
+    file_stream->close_checked();
+    const double close_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - close_started).count();
+    const double write_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - write_started).count();
     CLOG_INFO(&LOG,
               "Wrote deep EXR: %s (%dx%d), input samples %zu, output samples %zu, max merge "
-              "scratch %zu bytes, write %.3f seconds",
+              "scratch %zu bytes, write %.3f seconds, block_rows %d, prepare %.3f seconds, "
+              "compress_write %.3f seconds, close %.3f seconds",
               filepath,
               width,
               height,
               input_sample_count,
               output_sample_count,
               max_merge_scratch_bytes,
-              write_seconds);
+              write_seconds,
+              block_rows,
+              prepare_seconds,
+              compress_write_seconds,
+              close_seconds);
   }
   catch (const std::exception &exc) {
     CLOG_ERROR(&LOG, "%s: %s", __func__, exc.what());
@@ -1227,6 +1418,61 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
   }
 
   return true;
+}
+
+bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> &deep_data,
+                       int width,
+                       int height,
+                       const char *filepath,
+                       int compression,
+                       bool use_half_float,
+                       bool alpha_only,
+                       bool has_display_window,
+                       int display_width,
+                       int display_height,
+                       int display_offset_x,
+                       int display_offset_y,
+                       int data_offset_x,
+                       int data_offset_y,
+                       float deep_merge_tolerance,
+                       float deep_alpha_merge_tolerance)
+{
+  return save_deep_exr_impl(deep_data,
+                            width,
+                            height,
+                            filepath,
+                            compression,
+                            use_half_float,
+                            alpha_only,
+                            has_display_window,
+                            display_width,
+                            display_height,
+                            display_offset_x,
+                            display_offset_y,
+                            data_offset_x,
+                            data_offset_y,
+                            deep_merge_tolerance,
+                            deep_alpha_merge_tolerance,
+                            nullptr,
+                            nullptr);
+}
+
+bool IMB_exr_save_deep_packed_rows(DeepExrPackedRowReader reader,
+                                        const DeepExrWriteParams &params,
+                                        const char *filepath,
+                                        const DeepExrMemoryCallbacks *memory,
+                                        DeepExrWriteReport *report)
+{
+  return imb_exr_save_deep_packed_rows_core(reader, params, filepath, memory, report);
+}
+
+bool IMB_exr_save_deep_rows(DeepExrRowReader reader,
+                            const DeepExrWriteParams &params,
+                            const char *filepath,
+                            const DeepExrMemoryCallbacks *memory,
+                            DeepExrWriteReport *report)
+{
+  return imb_exr_save_deep_rows_core(reader, params, filepath, memory, report);
 }
 
 /* naming rules:
@@ -1455,7 +1701,7 @@ void IMB_exr_add_channels(ExrHandle *handle,
     echan.ystride = ystride;
     /* This is used for writing, the data should not be modified. ????????? */
     echan.rect = const_cast<float *>(rect + channel);
-    echan.use_half_float = use_half_float;
+    echan.use_half_float = use_half_float && !IMB_colormanagement_space_is_data(echan.colorspace);
   }
 
   CLOG_DEBUG(&LOG, "Added pass %s %s", layerpassname.c_str(), channelnames.c_str());
@@ -1557,6 +1803,11 @@ bool IMB_exr_begin_write(ExrHandle *handle,
         }
         part_header.insert("type", StringAttribute(SCANLINEIMAGE));
         openexr_header_metadata_colorspace(&part_header, echan.colorspace);
+
+        if (echan.colorspace && IMB_colormanagement_space_is_data(echan.colorspace)) {
+          openexr_header_compression(
+              &part_header, openexr_compression_for_data_colorspace(compress), quality);
+        }
       }
 
       part_headers.append(std::move(part_header));
@@ -2114,7 +2365,7 @@ static Vector<ExrChannel> exr_channels_in_multi_part_file(const MultiPartInputFi
                                                           const bool parse_layers)
 {
   Vector<ExrChannel> channels;
-  const ColorSpace *global_colorspace = imb_exr_part_colorspace(file.header(0));
+  const ColorSpace *global_colorspace = imb_exr_part_colorspace(imb_exr_colorspace_header(file));
 
   /* Get channels from each part. */
   for (int p = 0; p < file.parts(); p++) {
@@ -2437,9 +2688,9 @@ static const char *exr_unknown_channel_name(MultiPartInputFile &file)
   return header.channels().begin().name();
 }
 
-static bool exr_is_half_float(MultiPartInputFile &file)
+static bool exr_is_half_float(const Header &header)
 {
-  const ChannelList &channels = file.header(0).channels();
+  const ChannelList &channels = header.channels();
   for (ChannelList::ConstIterator i = channels.begin(); i != channels.end(); ++i) {
     const Channel &channel = i.channel();
     if (channel.type != HALF) {
@@ -2574,6 +2825,26 @@ static const ColorSpace *imb_exr_part_colorspace(const Header &header)
   return IMB_colormanagement_space_get_named(colorspace.metadata_colorspace);
 }
 
+static const Header &imb_exr_colorspace_header(const MultiPartInputFile &file)
+{
+  /* For multi-part files, find the first header with a non-data colorspace,
+   * and use that as the colorspace for all color passes.
+   *
+   * The color interop forum recommendation say the colorInteropID of later
+   * parts should not be different than the first part, except if it's missing
+   * or set to data. This fits for Blender image datablocks, which also have
+   * one colorspace but individual passes may be marked as data. */
+  for (int p = 0; p < file.parts(); p++) {
+    const ColorSpace *colorspace = imb_exr_part_colorspace(file.header(p));
+    if (colorspace && !IMB_colormanagement_space_is_data(colorspace)) {
+      return file.header(p);
+    }
+  }
+
+  /* No representative colorspace found, fall back to the first header. */
+  return file.header(0);
+}
+
 static bool exr_get_ppm(MultiPartInputFile &file, double ppm[2])
 {
   const Header &header = file.header(0);
@@ -2654,18 +2925,19 @@ ImBuf *imb_load_openexr(const uchar *mem,
     }
     else {
       const bool is_alpha = exr_has_alpha(*file);
+      const Header &colorspace_header = imb_exr_colorspace_header(*file);
 
       ibuf = IMB_allocImBuf(width, height, ImBufFlags::Zero);
       ibuf->color_mode = is_alpha ? ImColorMode::RGBA : ImColorMode::RGB;
-      ibuf->foptions.flag |= exr_is_half_float(*file) ? OPENEXR_HALF : 0;
-      ibuf->foptions.flag |= openexr_header_get_compression(file_header);
+      ibuf->foptions.flag |= exr_is_half_float(colorspace_header) ? OPENEXR_HALF : 0;
+      ibuf->foptions.flag |= openexr_header_get_compression(colorspace_header);
 
       ibuf->flags |= ImBufFlags::HasDisplayWindow;
       get_exr_display_window(*file, ibuf->display_size, ibuf->display_offset, ibuf->data_offset);
 
       exr_get_ppm(*file, ibuf->ppm);
 
-      imb_exr_set_known_colorspace(file_header, r_colorspace);
+      imb_exr_set_known_colorspace(colorspace_header, r_colorspace);
 
       ibuf->ftype = IMB_FTYPE_OPENEXR;
 

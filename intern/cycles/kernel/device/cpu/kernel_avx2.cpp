@@ -2,9 +2,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-/* Optimized CPU kernel entry points. This file is compiled with AVX2
- * optimization flags and nearly all functions inlined, while kernel.cpp
- * is compiled without for other CPU's. */
+/* Optimized CPU kernel entry points. This translation unit directly inlines the two-phase camera
+ * optical/Beauty traversal, shader-coordinate evaluation, boundary handling, cache-retry
+ * metadata, and sparse capture shared with GPU kernels. AVX2 optimization flags are enabled here,
+ * while kernel.cpp is compiled without them for other CPU's. */
 
 #include "util/optimization.h"
 

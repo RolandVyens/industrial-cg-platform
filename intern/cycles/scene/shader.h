@@ -112,6 +112,8 @@ class Shader : public Node {
   bool has_surface_transparent;
   bool has_surface_raytrace;
   bool has_volume;
+  /* Conservative until the compiled volume program proves it cannot emit. */
+  bool has_volume_emission;
   bool has_displacement;
   bool has_surface_bssrdf;
   bool has_bump_from_surface;

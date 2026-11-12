@@ -8,6 +8,7 @@
 
 #include "kernel/film/denoising_passes.h"
 #include "kernel/film/light_passes.h"
+#include "kernel/integrator/deep_optical_capture.h"
 
 #include "kernel/integrator/guiding.h"
 #include "kernel/integrator/intersect_closest.h"
@@ -33,11 +34,13 @@ enum VolumeIntegrateEvent {
   VOLUME_PATH_SCATTERED = 0,
   VOLUME_PATH_ATTENUATED = 1,
   VOLUME_PATH_MISSED = 2,
-  VOLUME_PATH_CACHE_MISS = 3
+  VOLUME_PATH_CACHE_MISS = 3,
+  VOLUME_PATH_PAUSED = 4
 };
 
 #ifdef __VOLUME__
 
+namespace {
 struct VolumeIntegrateResult {
   /* Throughput and offset for direct light scattering. */
   bool direct_scatter;
@@ -53,7 +56,11 @@ struct VolumeIntegrateResult {
   Spectrum indirect_throughput;
   float indirect_t;
   ShaderVolumePhases indirect_phases;
+#  if __DEEP_BOUNDED_POLICY__ == 3
+  bool bounded_colour_permit;
+#  endif
 };
+}  // namespace
 
 /* We use both volume octree and volume stack, sometimes they disagree on whether a point is inside
  * a volume or not. We accept small numerical precision issues, above this threshold the volume
@@ -62,6 +69,44 @@ struct VolumeIntegrateResult {
 #  define OVERLAP_EXP 5e-4f
 /* Restrict the number of steps in case of numerical problems */
 #  define VOLUME_MAX_STEPS 1024
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+ccl_device_inline void volume_capture_primary_emission_span(KernelGlobals kg,
+                                                            ConstIntegratorState state,
+                                                            const ccl_private Ray *ray,
+                                                            const float tmin,
+                                                            const float tmax,
+                                                            const Spectrum emission,
+                                                            const Spectrum optical_depth,
+                                                            const float alpha,
+                                                            const uint32_t kind)
+{
+  if (!kernel_integrator_state.deep_volume_emission_spans ||
+      INTEGRATOR_STATE(state, path, bounce) != 0 || is_zero(emission))
+  {
+    return;
+  }
+  DeepVolumeEmissionSpan span = {};
+  span.root = INTEGRATOR_STATE(state, path, deep_volume_radiance_idx);
+  span.pixel = INTEGRATOR_STATE(state, path, render_pixel_index);
+  span.sample = INTEGRATOR_STATE(state, path, sample);
+  span.kind = kind;
+  span.path_flags = INTEGRATOR_STATE(state, path, flag);
+  span.z = camera_z_depth(kg, ray->P + ray->D * tmin);
+  span.zback = camera_z_depth(kg, ray->P + ray->D * tmax);
+  span.alpha = alpha;
+  span.time = ray->time;
+  const float3 rgb = spectrum_to_rgb(emission);
+  const float3 tau = spectrum_to_rgb(optical_depth);
+  span.rgb[0] = rgb.x;
+  span.rgb[1] = rgb.y;
+  span.rgb[2] = rgb.z;
+  span.tau[0] = tau.x;
+  span.tau[1] = tau.y;
+  span.tau[2] = tau.z;
+  film_append_volume_emission_span(span);
+}
+#  endif
 /* Number of mantissa bits of floating-point numbers. */
 #  define MANTISSA_BITS 23
 
@@ -108,6 +153,11 @@ ccl_device_inline bool volume_shader_sample(KernelGlobals kg,
   const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
   volume_shader_eval<false>(kg, state, sd, path_visibility, path_flag);
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_native_cameras && (sd->flag & SD_CACHE_MISS))
+    return false;
+#  endif
 
   if (!(sd->flag & (SD_EXTINCTION | SD_SCATTER | SD_EMISSION))) {
     return false;
@@ -821,7 +871,11 @@ ccl_device Spectrum volume_emission_integrate(ccl_private VolumeShaderCoefficien
 
 /* Volume Integration */
 
+namespace {
 struct VolumeIntegrateState {
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  DeepBoundedBridge bounded;
+#  endif
   /* Random number. */
   float rscatter;
 
@@ -856,6 +910,9 @@ struct VolumeIntegrateState {
 
   /* Extra fields for path guiding and denoising. */
   PackedSpectrum emission;
+  /* Private token for this exact homogeneous source and its later native film call. */
+  uint32_t deep_native_segment;
+  uint32_t deep_expression_head;
 #  ifdef __DENOISING_FEATURES__
   PackedSpectrum albedo;
 #  endif
@@ -865,6 +922,7 @@ struct VolumeIntegrateState {
   /* `dt` at equiangular scatter position. Used to compute the pdf. */
   float sample_dt;
 };
+}  // namespace
 
 /* Accumulate transmittance for equiangular distance sampling without MIS. Using telescoping to
  * reduce noise. */
@@ -1005,6 +1063,7 @@ struct VolumeSampleCandidate {
 #  endif
   /* Remember the random number so that we sample the sample point for stochastic evaluation. */
   uint lcg_state;
+  uint32_t deep_expression_head = DEEP_NATIVE_INVALID_INDEX;
 };
 
 /* Sample reservoir for VSPG. */
@@ -1017,7 +1076,8 @@ struct VolumeSampleReservoir {
 
   /* Stream the candidate samples through the reservoir. */
   ccl_device_inline_method void add_sample(const float weight,
-                                           const VolumeSampleCandidate new_candidate)
+                                           const VolumeSampleCandidate new_candidate,
+                                           const uint32_t emission_head)
   {
     if (!(weight > 0.0f)) {
       return;
@@ -1029,6 +1089,11 @@ struct VolumeSampleReservoir {
     if ((rand <= thresh) || (total_weight == weight)) {
       /* Explicitly select the first candidate in case of numerical issues. */
       candidate = new_candidate;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      /* Heads name immutable append-only prefixes. The actual native selection
+       * already decides which prefix survives; no Snapshot/Select records are needed. */
+      candidate.deep_expression_head = emission_head;
+#  endif
       rand /= thresh;
     }
     else {
@@ -1045,6 +1110,129 @@ struct VolumeSampleReservoir {
     return total_weight == 0.0f;
   }
 };
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+struct DeepNativeVolumeShaderState {
+  float3 P;
+  int flag, object, prim, shader, type;
+  uint object_flag, lcg_state;
+};
+
+ccl_device_inline DeepNativeVolumeShaderState
+deep_native_volume_shader_state(const ccl_private ShaderData *sd)
+{
+  return {
+      sd->P, sd->flag, sd->object, sd->prim, sd->shader, sd->type, sd->object_flag, sd->lcg_state};
+}
+ccl_device_inline void deep_native_restore_volume_shader(ccl_private ShaderData *sd,
+                                                         const DeepNativeVolumeShaderState saved)
+{
+  sd->P = saved.P;
+  sd->flag = saved.flag;
+  sd->object = saved.object;
+  sd->prim = saved.prim;
+  sd->shader = saved.shader;
+  sd->type = saved.type;
+  sd->object_flag = saved.object_flag;
+  sd->lcg_state = saved.lcg_state;
+}
+
+struct DeepNativeNullCheckpoint {
+  uint active = 0, cache_miss, kind, sample, bounce;
+  uint64_t domain;
+  Ray ray;
+  DeepNativeVolumeShaderState shader;
+  EquiangularCoefficients equiangular;
+  LightSample light;
+  VolumeIntegrateState state;
+  VolumeIntegrateResult result;
+  RNGState rng;
+  OctreeTracing octree;
+  VolumeSampleReservoir reservoir;
+  uint phase;
+};
+static_assert(sizeof(DeepNativeNullCheckpoint) <= DEEP_NATIVE_VOLUME_CHECKPOINT_BYTES,
+              "Native null checkpoint exceeds its charged slot");
+
+ccl_device_inline ccl_global DeepNativeNullCheckpoint *deep_native_null_checkpoint(
+    ConstIntegratorState state)
+{
+  if (!kernel_integrator_state.deep_native_volume_checkpoints ||
+      !deep_native_path_writes_combined(INTEGRATOR_STATE(state, path, flag)))
+    return nullptr;
+  const uint camera = INTEGRATOR_STATE(state, path, deep_frame_camera_index);
+  if (camera >= kernel_integrator_state.deep_native_volume_checkpoint_capacity) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+    return nullptr;
+  }
+  return reinterpret_cast<ccl_global DeepNativeNullCheckpoint *>(
+      static_cast<ccl_global char *>(kernel_integrator_state.deep_native_volume_checkpoints) +
+      size_t(camera) * DEEP_NATIVE_VOLUME_CHECKPOINT_BYTES);
+}
+
+ccl_device_inline bool deep_native_null_checkpoint_matches(
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    const ccl_global DeepNativeNullCheckpoint *checkpoint)
+{
+  const Ray previous = checkpoint->ray;
+  return checkpoint->kind == 2 &&
+         checkpoint->domain == kernel_integrator_state.deep_native_domain_id &&
+         checkpoint->sample == INTEGRATOR_STATE(state, path, sample) &&
+         checkpoint->bounce == INTEGRATOR_STATE(state, path, bounce) && previous.P.x == ray->P.x &&
+         previous.P.y == ray->P.y && previous.P.z == ray->P.z && previous.D.x == ray->D.x &&
+         previous.D.y == ray->D.y && previous.D.z == ray->D.z && previous.tmin == ray->tmin &&
+         previous.tmax == ray->tmax && previous.time == ray->time;
+}
+
+ccl_device_inline void deep_native_store_null_checkpoint(
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    ccl_global DeepNativeNullCheckpoint *checkpoint,
+    const DeepNativeVolumeShaderState shader,
+    const ccl_private VolumeIntegrateState &vstate,
+    const ccl_private VolumeIntegrateResult &result,
+    const ccl_private RNGState &rng,
+    const ccl_private OctreeTracing &octree,
+    const ccl_private VolumeSampleReservoir &reservoir,
+    const uint phase,
+    const bool cache_miss)
+{
+  checkpoint->kind = 2;
+  checkpoint->domain = kernel_integrator_state.deep_native_domain_id;
+  checkpoint->sample = INTEGRATOR_STATE(state, path, sample);
+  checkpoint->bounce = INTEGRATOR_STATE(state, path, bounce);
+  checkpoint->ray.P = ray->P;
+  checkpoint->ray.D = ray->D;
+  checkpoint->ray.tmin = ray->tmin;
+  checkpoint->ray.tmax = ray->tmax;
+  checkpoint->ray.time = ray->time;
+#    ifdef __RAY_DIFFERENTIALS__
+  checkpoint->ray.dP = ray->dP;
+  checkpoint->ray.dD = ray->dD;
+#    endif
+  checkpoint->ray.self = {PRIM_NONE, OBJECT_NONE, PRIM_NONE, OBJECT_NONE};
+  checkpoint->shader = shader;
+  checkpoint->state = vstate;
+  checkpoint->result = result;
+  checkpoint->rng = rng;
+  checkpoint->octree = octree;
+  checkpoint->reservoir = reservoir;
+  if (reservoir.is_empty())
+    checkpoint->reservoir.candidate = {};
+  checkpoint->phase = phase;
+  checkpoint->cache_miss = cache_miss;
+  if (!checkpoint->active)
+    atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_pending,
+                                1);
+  checkpoint->active = 1;
+  atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_yields,
+                              1);
+  if (cache_miss)
+    atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_retries,
+                                1);
+}
+#  endif
 
 /* Estimate volume majorant optical depth `\sum\sigma_{max}t` along the ray, by accumulating the
  * result from previous samples in a render buffer. */
@@ -1134,6 +1322,10 @@ ccl_device_inline void volume_distance_sampling_finalize(
   if (!vstate.vspg) {
     result.indirect_throughput = reservoir.candidate.throughput;
     vstate.emission = reservoir.candidate.emission;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (vstate.deep_expression_head != DEEP_NATIVE_INVALID_INDEX)
+      vstate.deep_expression_head = reservoir.candidate.deep_expression_head;
+#  endif
 #  ifdef __DENOISING_FEATURES__
     vstate.albedo = reservoir.candidate.albedo;
 #  endif
@@ -1162,6 +1354,16 @@ ccl_device_inline void volume_distance_sampling_finalize(
 
   /* We only guide scatter decisions, no need to apply on emission and albedo. */
   vstate.emission = mix(vstate.emission, reservoir.candidate.emission, reservoir.total_weight);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (vstate.deep_expression_head != DEEP_NATIVE_INVALID_INDEX)
+    vstate.deep_expression_head = deep_native_expression_node(
+        state,
+        DEEP_NATIVE_EXPR_MIX,
+        vstate.deep_expression_head,
+        reservoir.candidate.deep_expression_head,
+        0,
+        make_spectrum(reservoir.total_weight));
+#  endif
 #  ifdef __DENOISING_FEATURES__
   vstate.albedo = mix(vstate.albedo, reservoir.candidate.albedo, reservoir.total_weight);
 #  endif
@@ -1186,7 +1388,8 @@ ccl_device_inline void volume_distance_sampling_finalize(
 #  else
         {vstate.emission, reservoir.candidate.t, result.indirect_throughput, 0.0f}
 #  endif
-    );
+        ,
+        vstate.deep_expression_head);
   }
 
   const bool scatter = (reservoir.candidate.distance_pdf > 0.0f);
@@ -1204,6 +1407,10 @@ ccl_device_inline void volume_distance_sampling_finalize(
   sd->lcg_state = lcg_state;
   VolumeShaderCoefficients coeff ccl_optional_struct_init;
   if (!volume_shader_sample(kg, state, sd, &coeff)) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_native_cameras && (sd->flag & SD_CACHE_MISS))
+      return;
+#  endif
     kernel_assert(false);
     return;
   }
@@ -1267,6 +1474,11 @@ ccl_device_inline bool volume_russian_roulette_termination(
   /* Randomly stop indirect scatter. */
   if (absorption_only || has_scatter_samples) {
     if (reservoir.rand > thresh) {
+#  if __DEEP_BOUNDED_POLICY__ > 0
+      if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING) {
+        vstate.bounded = {vstate.t, BOUNDED_VOLUME_ZERO_EVENT};
+      }
+#  endif
       result.indirect_throughput = zero_spectrum();
       if (equiangular || (vstate.direct_sample_method == VOLUME_SAMPLE_DISTANCE)) {
         /* Direct throughput depends on the indirect throughput, set to 0 for early termination. */
@@ -1337,6 +1549,7 @@ ccl_device_inline float volume_scatter_probability(
 
 /* Decide between real and null scatter events at the current position. */
 ccl_device_inline void volume_sample_indirect_scatter(
+    ConstIntegratorState state,
     const float sigma_max,
     const float prob_s,
     const Spectrum sigma_s,
@@ -1356,9 +1569,11 @@ ccl_device_inline void volume_sample_indirect_scatter(
         weight,
         {vstate.emission, vstate.t, throughput, weight * sigma_max, vstate.albedo, lcg_state}
 #  else
-        weight, {vstate.emission, vstate.t, throughput, weight * sigma_max, lcg_state}
+        weight,
+        {vstate.emission, vstate.t, throughput, weight * sigma_max, lcg_state}
 #  endif
-    );
+        ,
+        vstate.deep_expression_head);
   }
   else if (!result.indirect_scatter) {
     /* If no guiding and indirect scatter position has not been found, decide between real and null
@@ -1375,9 +1590,11 @@ ccl_device_inline void volume_sample_indirect_scatter(
           weight,
           {vstate.emission, vstate.t, throughput, weight * sigma_max, vstate.albedo, lcg_state}
 #  else
-          weight, {vstate.emission, vstate.t, throughput, weight * sigma_max, lcg_state}
+          weight,
+          {vstate.emission, vstate.t, throughput, weight * sigma_max, lcg_state}
 #  endif
-      );
+          ,
+          vstate.deep_expression_head);
 
       if (vstate.direct_sample_method == VOLUME_SAMPLE_DISTANCE) {
         result.direct_scatter = true;
@@ -1429,6 +1646,11 @@ ccl_device void volume_integrate_step_scattering(
     return;
   }
 
+#  if __DEEP_BOUNDED_POLICY__ >= 2
+  if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING) {
+    vstate.bounded.has_extinction |= !is_zero(coeff.sigma_t);
+  }
+#  endif
   kernel_assert(sigma_max != 0.0f);
 
   /* Null scattering coefficients. */
@@ -1456,6 +1678,15 @@ ccl_device void volume_integrate_step_scattering(
   if (sd->flag & SD_EMISSION) {
     /* Emission = inv_sigma * (L_e + sigma_n * (inv_sigma * (L_e + sigma_n * ···))). */
     vstate.emission += result.indirect_throughput * coeff.emission;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (vstate.deep_expression_head != DEEP_NATIVE_INVALID_INDEX) {
+      const Spectrum raw = result.indirect_throughput * coeff.emission;
+      const uint32_t term = deep_native_expression_term(
+          kg, state, ray, sd, vstate.t, vstate.t, raw, zero_spectrum(), true);
+      vstate.deep_expression_head = deep_native_expression_node(
+          state, DEEP_NATIVE_EXPR_ADD, vstate.deep_expression_head, term);
+    }
+#  endif
     if (!result.indirect_scatter) {
       /* Record emission until scatter position. */
       guiding_record_volume_emission(kg, state, coeff.emission);
@@ -1466,6 +1697,11 @@ ccl_device void volume_integrate_step_scattering(
     /* Absorption only. Deterministically choose null scattering and estimate the transmittance
      * of the current ray segment. */
     result.indirect_throughput *= sigma_n;
+#  if __DEEP_BOUNDED_POLICY__ > 0
+    if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING && is_zero(result.indirect_throughput)) {
+      vstate.bounded = {vstate.t, BOUNDED_VOLUME_ZERO_EVENT};
+    }
+#  endif
     return;
   }
 
@@ -1479,12 +1715,17 @@ ccl_device void volume_integrate_step_scattering(
   /* Indirect scatter. */
   const float prob_s = volume_scatter_probability(coeff, sigma_n, result.indirect_throughput);
   volume_sample_indirect_scatter(
-      sigma_max, prob_s, coeff.sigma_s, sd, vstate, result, lcg_state, reservoir);
+      state, sigma_max, prob_s, coeff.sigma_s, sd, vstate, result, lcg_state, reservoir);
 
   /* Null scattering. Accumulate weight and continue. */
   const float prob_n = 1.0f - prob_s;
   result.indirect_throughput *= safe_divide(sigma_n, prob_n);
   vstate.transmittance *= prob_n;
+#  if __DEEP_BOUNDED_POLICY__ > 0
+    if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING && is_zero(result.indirect_throughput)) {
+      vstate.bounded = {vstate.t, BOUNDED_VOLUME_ZERO_EVENT};
+    }
+#  endif
 }
 
 /* Evaluate coefficients at the equiangular scatter position, and update the direct throughput. */
@@ -1503,6 +1744,14 @@ ccl_device_inline void volume_equiangular_direct_scatter(
   sd->P = ray->P + ray->D * result.direct_t;
   VolumeShaderCoefficients coeff ccl_optional_struct_init;
   if (volume_shader_sample(kg, state, sd, &coeff) && (sd->flag & SD_SCATTER)) {
+#  if __DEEP_BOUNDED_POLICY__ == 2
+    /* This direct-light sample can find real medium even when distance sampling
+     * found no extinction. Its native coefficients also qualify Simple support.
+     * The distance walk has already changed TRACKING to INTERVAL at this point. */
+    if (vstate.bounded.reason != BOUNDED_VOLUME_INACTIVE) {
+      vstate.bounded.has_extinction |= !is_zero(coeff.sigma_t);
+    }
+#  endif
     volume_shader_copy_phases(&result.direct_phases, sd);
 
     if (vstate.use_mis) {
@@ -1618,6 +1867,8 @@ ccl_device_inline void volume_integrate_state_init(KernelGlobals kg,
   vstate.majorant_scale = 1.0f;
   vstate.direct_rr_scale = 1.0f;
   vstate.emission = zero_spectrum();
+  vstate.deep_native_segment = DEEP_NATIVE_INVALID_INDEX;
+  vstate.deep_expression_head = DEEP_NATIVE_INVALID_INDEX;
 #  ifdef __DENOISING_FEATURES__
   vstate.albedo = zero_spectrum();
 #  endif
@@ -1705,6 +1956,122 @@ volume_scatter_probability_homogeneous(KernelGlobals kg,
  * Decide the indirect scatter probability, and sample an indirect scatter position inside the
  * volume or transmit through the volume.
  * Direct scatter is always sampled, if possible. */
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+ccl_device_inline bool volume_native_world_support(KernelGlobals kg,
+                                                   ConstIntegratorState state,
+                                                   const float physical_t)
+{
+  return deep_native_world_support(kg, state, physical_t);
+}
+
+ccl_device_inline uint32_t
+volume_capture_native_homogeneous(KernelGlobals kg,
+                                  ConstIntegratorState state,
+                                  const ccl_private Ray *ray,
+                                  const ccl_private ShaderData *sd,
+                                  const ccl_private VolumeShaderCoefficients &coeff)
+{
+  if (!deep_native_colour_capture_enabled() || !kernel_integrator_state.deep_native_homogeneous_capacity) {
+    return DEEP_NATIVE_INVALID_INDEX;
+  }
+  if (sd->flag & SD_CACHE_MISS) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_SHADER_RETRY);
+    return DEEP_NATIVE_INVALID_INDEX;
+  }
+  ccl_global DeepNativeCameraRecord *camera = deep_native_camera(state);
+  if (!camera) {
+    return DEEP_NATIVE_INVALID_INDEX;
+  }
+  ccl_global DeepNativeRootRecord *root = deep_native_root(
+      INTEGRATOR_STATE(state, path, deep_frame_camera_index));
+  if (root && root->kind != DEEP_NATIVE_ROOT_NONE) {
+    /* An existing first source owns all later radiance. A bent descendant
+     * volume segment is not a primary camera optical/emission span. */
+    return DEEP_NATIVE_INVALID_INDEX;
+  }
+  uint32_t unsupported = 0;
+  const bool original_camera_support = ray->P.x == camera->origin[0] &&
+                                       ray->P.y == camera->origin[1] &&
+                                       ray->P.z == camera->origin[2] &&
+                                       ray->D.x == camera->direction[0] &&
+                                       ray->D.y == camera->direction[1] &&
+                                       ray->D.z == camera->direction[2] &&
+                                       ray->time == camera->time;
+  if (!original_camera_support) {
+    unsupported |= DEEP_NATIVE_ERROR_IDENTITY;
+  }
+  const bool world_support = volume_native_world_support(kg, state, ray->tmax);
+  if ((INTEGRATOR_STATE(state, path, bounce) != 0 || !is_zero(coeff.sigma_s)) &&
+      !kernel_integrator_state.deep_native_full_optical)
+  {
+    unsupported |= DEEP_NATIVE_ERROR_SCATTERING;
+  }
+  if (kernel_data.volume_stack_size > 1 &&
+      INTEGRATOR_STATE_ARRAY(state, volume_stack, 1, shader) != SHADER_NONE &&
+      !kernel_integrator_state.deep_native_full_optical)
+  {
+    unsupported |= DEEP_NATIVE_ERROR_HETEROGENEOUS;
+  }
+  if (!(camera->flags & (DEEP_NATIVE_CAMERA_AFFINE_DEPTH | DEEP_NATIVE_CAMERA_RADIAL_DEPTH)) ||
+      ray->tmin < camera->tmin || (ray->tmax > camera->tmax && !world_support) ||
+      ray->tmax <= ray->tmin)
+  {
+    unsupported |= DEEP_NATIVE_ERROR_INCOMPLETE;
+  }
+  if (unsupported) {
+    camera->unsupported_features |= unsupported;
+    deep_native_capture_error(unsupported);
+  }
+  if (deep_native_validation_deny(DEEP_NATIVE_FAULT_HOMOGENEOUS_DENY))
+    return DEEP_NATIVE_INVALID_INDEX;
+  const uint index = atomic_fetch_and_add_uint32(
+      &kernel_integrator_state.queue_counter->deep_native_homogeneous_reserved, 1);
+  if (index >= kernel_integrator_state.deep_native_homogeneous_capacity) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_OVERFLOW);
+    return DEEP_NATIVE_INVALID_INDEX;
+  }
+  DeepNativeHomogeneousRecord segment = {};
+  segment.camera_index = INTEGRATOR_STATE(state, path, deep_frame_camera_index);
+  segment.pixel = camera->pixel;
+  segment.sample = camera->sample;
+  segment.ordinal = INTEGRATOR_STATE(state, path, volume_bounds_bounce);
+  segment.path_flags = INTEGRATOR_STATE(state, path, flag);
+  segment.flags = DEEP_NATIVE_HOMOGENEOUS_OPTICAL;
+  if (world_support)
+    segment.flags |= DEEP_NATIVE_HOMOGENEOUS_WORLD_SUPPORT;
+  if (original_camera_support &&
+      (camera->flags & (DEEP_NATIVE_CAMERA_AFFINE_DEPTH | DEEP_NATIVE_CAMERA_RADIAL_DEPTH)))
+  {
+    segment.flags |= DEEP_NATIVE_HOMOGENEOUS_CAMERA_SUPPORT_VERIFIED;
+  }
+  segment.unsupported_features = unsupported;
+  segment.z = camera_z_depth(kg, ray->P + ray->D * ray->tmin);
+  if (!world_support)
+    segment.zback = camera_z_depth(kg, ray->P + ray->D * ray->tmax);
+  if (world_support) {
+    /* The frozen camera definition avoids an overflowing intermediate world point.
+     * The host proof charges endpoint quantization; physical support is unchanged. */
+    const double end = deep_native_promoted_camera_depth(kg, camera, ray->tmax);
+    if (!(end > segment.z) ||
+        !deep_native_world_span_depth(
+            end, bool(camera->flags & DEEP_NATIVE_CAMERA_RADIAL_DEPTH), segment.zback))
+      deep_native_capture_error(DEEP_NATIVE_ERROR_INCOMPLETE);
+  }
+  segment.tmin = ray->tmin;
+  segment.tmax = ray->tmax;
+  const double native_length = double(ray->tmax) - double(ray->tmin);
+  segment.tau[0] = double(coeff.sigma_t.x) * native_length;
+  segment.tau[1] = double(coeff.sigma_t.y) * native_length;
+  segment.tau[2] = double(coeff.sigma_t.z) * native_length;
+  segment.source_object = sd->object;
+  segment.source_shader = INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, shader);
+  kernel_integrator_state.deep_native_homogeneous[index] = segment;
+  atomic_fetch_and_add_uint32(
+      &kernel_integrator_state.queue_counter->deep_native_homogeneous_written, 1);
+  return index;
+}
+#  endif
+
 ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
                                                          const IntegratorState state,
                                                          const ccl_private Ray *ccl_restrict ray,
@@ -1716,14 +2083,47 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
                                                          const Interval<float> interval,
                                                          ccl_private VolumeIntegrateResult &result)
 {
+#  ifdef __DEEP_OUTPUT__
+  ccl_global KernelDeepSample *deep_samples = nullptr;
+  uint32_t deep_pixel_index = 0;
+  uint32_t deep_sample_idx = DEEP_INVALID_SAMPLE_INDEX;
+#  endif
   sd->P = ray->P + ray->D * ray->tmin;
   VolumeShaderCoefficients coeff ccl_optional_struct_init;
   if (!volume_shader_sample(kg, state, sd, &coeff)) {
+    if (sd->flag & SD_CACHE_MISS)
+      return; /* No segment, guiding receipt or Film write has been committed. */
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    deep_compact_save_stack(kg, state);
+    if (deep_compact_camera_chain(state)) {
+      const uint i = deep_compact_camera_index(state);
+      deep_compact_cell(kg, state, ray->tmin, ray->tmax, 0.0,
+                        kernel_integrator_state.deep_compact_rays[i].reserved);
+    }
+    if (kernel_integrator_state.deep_native_cameras) {
+      const VolumeShaderCoefficients clear_coeff = {};
+      vstate.deep_native_segment = volume_capture_native_homogeneous(
+          kg, state, ray, sd, clear_coeff);
+    }
+#  endif
     return;
   }
 
   const float ray_length = ray->tmax - ray->tmin;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  deep_compact_save_stack(kg, state);
+  if (deep_compact_camera_chain(state)) {
+    const uint i = deep_compact_camera_index(state);
+    deep_compact_cell(kg, state, ray->tmin, ray->tmax,
+                      (double(coeff.sigma_t.x) + coeff.sigma_t.y + coeff.sigma_t.z) / 3.0,
+                      kernel_integrator_state.deep_compact_rays[i].reserved);
+  }
+#  endif
   vstate.optical_depth = reduce_max(coeff.sigma_t) * ray_length;
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  vstate.deep_native_segment = volume_capture_native_homogeneous(kg, state, ray, sd, coeff);
+#  endif
 
   /* Emission. */
   const Spectrum throughput = INTEGRATOR_STATE(state, path, throughput);
@@ -1734,18 +2134,34 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
   }
 
   /* Deep output: homogeneous volume sample. */
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_volume_emission_spans) {
+    const float span_alpha = saturatef(
+        1.0f - average(volume_color_transmittance(coeff.sigma_t, ray_length)));
+    volume_capture_primary_emission_span(
+        kg,
+        state,
+        ray,
+        ray->tmin,
+        ray->tmax,
+        vstate.emission,
+        coeff.sigma_t * ray_length,
+        span_alpha,
+        DEEP_EMISSION_HOMOGENEOUS |
+            (!is_zero(coeff.sigma_t) ? DEEP_EMISSION_LEGACY_OPACITY_ELIGIBLE : 0u));
+  }
+#  endif
 #  ifdef __DEEP_OUTPUT__
   /* Write deep sample for homogeneous volume (alpha-only, RGB=0).
    * Volume color is applied via deep recolor in compositing. */
-  if (kernel_data.film.use_deep_output && (INTEGRATOR_STATE(state, path, bounce) == 0)) {
+  if (kernel_data.film.use_deep_output == 1 && (INTEGRATOR_STATE(state, path, bounce) == 0)) {
     /* Only write if volume has extinction (opacity). */
     if (!is_zero(coeff.sigma_t)) {
-      ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
-                                                      kernel_data.film.deep_samples_ptr;
+      deep_samples = (ccl_global KernelDeepSample *)kernel_data.film.deep_samples_ptr;
       ccl_global uint32_t *deep_sample_counts = (ccl_global uint32_t *)
                                                     kernel_data.film.deep_sample_counts_ptr;
       if (deep_samples && deep_sample_counts) {
-        const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
+        deep_pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
 
         /* Calculate front and back Z depths from ray entry/exit positions. */
         float3 P_front = ray->P + ray->D * ray->tmin;
@@ -1759,8 +2175,16 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
         alpha = saturatef(alpha);
 
         /* Write alpha-only sample (RGB=0), color applied via deep recolor. */
-        film_write_deep_sample_volume(
-            kg, pixel_index, deep_samples, deep_sample_counts, alpha, z_front, z_back);
+        deep_sample_idx = film_write_deep_sample_volume(kg,
+                                                        deep_pixel_index,
+                                                        deep_samples,
+                                                        deep_sample_counts,
+                                                        alpha,
+                                                        z_front,
+                                                        z_back,
+                                                        INTEGRATOR_STATE(state, path, sample),
+                                                        vstate.emission,
+                                                        coeff.sigma_t * ray_length);
       }
     }
   }
@@ -1768,6 +2192,13 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
 
   /* Transmittance of the complete ray segment. */
   const Spectrum transmittance = volume_color_transmittance(coeff.sigma_t, ray_length);
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING) {
+    vstate.bounded = {ray->tmax, BOUNDED_VOLUME_INTERVAL,
+                      __DEEP_BOUNDED_POLICY__ >= 2 && ray_length > 0.0f &&
+                          !is_zero(coeff.sigma_t)};
+  }
+#  endif
   if ((INTEGRATOR_STATE(state, path, flag) & PATH_RAY_TERMINATE) || is_zero(coeff.sigma_s)) {
     /* Attenuation only. */
     result.indirect_throughput *= transmittance;
@@ -1815,6 +2246,17 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
     }
   }
 
+#  ifdef __DEEP_OUTPUT__
+  if (deep_sample_idx != DEEP_INVALID_SAMPLE_INDEX) {
+    uint32_t deep_ray_flags = DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_COMPLETE;
+    if (result.indirect_scatter) {
+      deep_ray_flags |= DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_TERMINATED;
+    }
+    film_mark_deep_volume_primary_ray_flag(
+        kg, deep_pixel_index, deep_sample_idx, deep_samples, deep_ray_flags);
+  }
+#  endif
+
   /* Direct scatter. */
   if (vstate.direct_sample_method == VOLUME_SAMPLE_NONE) {
     return;
@@ -1853,7 +2295,7 @@ ccl_device_forceinline void volume_integrate_homogeneous(KernelGlobals kg,
  * volume until we reach the end, get absorbed entirely, or run out of
  * iterations. this does probabilistically scatter or get transmitted through
  * for path tracing where we don't want to branch. */
-ccl_device_forceinline void volume_integrate_heterogeneous(
+ccl_device_forceinline bool volume_integrate_heterogeneous(
     KernelGlobals kg,
     const IntegratorState state,
     const ccl_private Ray *ccl_restrict ray,
@@ -1864,36 +2306,72 @@ ccl_device_forceinline void volume_integrate_heterogeneous(
     ccl_private VolumeIntegrateResult &result)
 {
   OctreeTracing octree(ray->tmin);
+  VolumeSampleReservoir reservoir(0.0f);
   const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
   const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
-  if (!volume_octree_setup<false>(
-          kg, ray, sd, state, &rng_state, path_visibility, path_flag, octree))
-  {
-    return;
+  uint phase = 0;
+  bool resumed = false;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  auto *checkpoint = deep_native_null_checkpoint(state);
+  resumed = checkpoint && checkpoint->active;
+  if (resumed) {
+    rng_state = checkpoint->rng;
+    octree = checkpoint->octree;
+    reservoir = checkpoint->reservoir;
+    phase = checkpoint->phase;
   }
-
-  /* Prepare struct for guiding. */
-  vstate.optical_depth = octree.sigma.max * octree.t.length();
-  volume_scatter_probability_heterogeneous(kg, state, render_buffer, vstate);
-
-  /* Initialize reservoir for sampling scatter position. */
-  VolumeSampleReservoir reservoir = path_state_rng_1D(kg, &rng_state, PRNG_VOLUME_RESERVOIR);
-
-  /* Scramble for stepping through volume. */
-  path_state_rng_scramble(&rng_state, 0xe35fad82);
-
-  volume_equiangular_transmittance(
-      kg, state, ray, octree.sigma, octree.t, sd, &rng_state, vstate, result);
+#  endif
+  if (!resumed) {
+    if (!volume_octree_setup<false>(
+            kg, ray, sd, state, &rng_state, path_visibility, path_flag, octree))
+      return !(sd->flag & SD_CACHE_MISS);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_native_expression_nodes &&
+        kernel_integrator_state.deep_native_full_optical && deep_native_is_camera_chain(state))
+      vstate.deep_expression_head = 0;
+#  endif
+    vstate.optical_depth = octree.sigma.max * octree.t.length();
+    volume_scatter_probability_heterogeneous(kg, state, render_buffer, vstate);
+    reservoir = VolumeSampleReservoir(path_state_rng_1D(kg, &rng_state, PRNG_VOLUME_RESERVOIR));
+    path_state_rng_scramble(&rng_state, 0xe35fad82);
+  }
+  if (!resumed || phase == 2) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const auto before_shader = deep_native_volume_shader_state(sd);
+    const VolumeIntegrateResult before_result = result;
+#  endif
+    volume_equiangular_transmittance(
+        kg, state, ray, octree.sigma, octree.t, sd, &rng_state, vstate, result);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (checkpoint && (sd->flag & SD_CACHE_MISS)) {
+      deep_native_store_null_checkpoint(state,
+                                        ray,
+                                        checkpoint,
+                                        before_shader,
+                                        vstate,
+                                        before_result,
+                                        rng_state,
+                                        octree,
+                                        reservoir,
+                                        2,
+                                        true);
+      return false;
+    }
+#  endif
+    phase = 0;
+  }
 
   /* Deep output: unbiased volume segments. */
 #  ifdef __DEEP_OUTPUT__
   /* Track accumulated transmittance for deep output. */
   float prev_transmittance = vstate.transmittance;
-  const bool write_deep = kernel_data.film.use_deep_output &&
+  /* Legacy Deep capture remains active outside the experimental optical-profile mode. */
+  const bool write_deep = kernel_data.film.use_deep_output == 1 &&
                           (INTEGRATOR_STATE(state, path, bounce) == 0);
   ccl_global KernelDeepSample *deep_samples = nullptr;
   ccl_global uint32_t *deep_sample_counts = nullptr;
   uint32_t pixel_index = 0;
+  uint32_t last_deep_sample_idx = DEEP_INVALID_SAMPLE_INDEX;
 
   if (write_deep) {
     deep_samples = (ccl_global KernelDeepSample *)kernel_data.film.deep_samples_ptr;
@@ -1902,11 +2380,48 @@ ccl_device_forceinline void volume_integrate_heterogeneous(
   }
 #  endif
 
-  while (volume_integrate_advance(
-      kg, ray, sd, state, &rng_state, path_visibility, path_flag, octree, vstate, result))
-  {
-    const float sigma_max = octree.sigma.max * vstate.majorant_scale;
-    volume_integrate_step_scattering(kg, state, ray, sigma_max, sd, vstate, result, reservoir);
+  uint operation_steps = 0;
+  while (phase == 0) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const VolumeIntegrateState before_state = vstate;
+    const VolumeIntegrateResult before_result = result;
+    const RNGState before_rng = rng_state;
+    const OctreeTracing before_octree = octree;
+    const VolumeSampleReservoir before_reservoir = reservoir;
+    const auto before_shader = deep_native_volume_shader_state(sd);
+#  endif
+    const bool advanced = volume_integrate_advance(
+        kg, ray, sd, state, &rng_state, path_visibility, path_flag, octree, vstate, result);
+    if (advanced) {
+      const float sigma_max = octree.sigma.max * vstate.majorant_scale;
+      volume_integrate_step_scattering(kg, state, ray, sigma_max, sd, vstate, result, reservoir);
+    }
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (checkpoint && (sd->flag & SD_CACHE_MISS)) {
+      deep_native_store_null_checkpoint(state,
+                                        ray,
+                                        checkpoint,
+                                        before_shader,
+                                        before_state,
+                                        before_result,
+                                        before_rng,
+                                        before_octree,
+                                        before_reservoir,
+                                        0,
+                                        true);
+      return false;
+    }
+#  endif
+    if (!advanced) {
+#  if __DEEP_BOUNDED_POLICY__ > 0
+      if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING &&
+          vstate.step <= VOLUME_MAX_STEPS + 1 && !(sd->flag & SD_CACHE_MISS))
+      {
+        vstate.bounded.event_t = min(octree.t.max, ray->tmax);
+      }
+#  endif
+      break;
+    }
 
     /* Deep output: per-segment samples. */
 #  ifdef __DEEP_OUTPUT__
@@ -1929,8 +2444,17 @@ ccl_device_forceinline void volume_integrate_heterogeneous(
         float z_front = camera_z_depth(kg, P_front);
         float z_back = camera_z_depth(kg, P_back);
 
-        film_write_deep_sample_volume(
-            kg, pixel_index, deep_samples, deep_sample_counts, segment_alpha, z_front, z_back);
+        last_deep_sample_idx = film_write_deep_sample_volume(
+            kg,
+            pixel_index,
+            deep_samples,
+            deep_sample_counts,
+            segment_alpha,
+            z_front,
+            z_back,
+            INTEGRATOR_STATE(state, path, sample),
+            zero_spectrum(),
+            make_spectrum(-logf(max(1.0f - segment_alpha, 1.0e-20f))));
       }
 
       /* Update previous transmittance for next segment. */
@@ -1941,10 +2465,68 @@ ccl_device_forceinline void volume_integrate_heterogeneous(
     if (volume_integrate_should_stop(result)) {
       break;
     }
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (checkpoint && ++operation_steps >= kernel_integrator_state.deep_native_volume_step_limit) {
+      deep_native_store_null_checkpoint(state,
+                                        ray,
+                                        checkpoint,
+                                        deep_native_volume_shader_state(sd),
+                                        vstate,
+                                        result,
+                                        rng_state,
+                                        octree,
+                                        reservoir,
+                                        0,
+                                        false);
+      return false;
+    }
+#  endif
   }
 
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  /* Both finalizers only update private results and append immutable DAG candidates.
+   * A failed candidate never has a Film receipt and may remain unreferenced. */
+  const VolumeIntegrateState before_state = vstate;
+  const VolumeIntegrateResult before_result = result;
+  const VolumeSampleReservoir before_reservoir = reservoir;
+  const auto before_shader = deep_native_volume_shader_state(sd);
+#  endif
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING && !(sd->flag & SD_CACHE_MISS)) {
+    vstate.bounded.event_t = max(vstate.t, vstate.bounded.event_t);
+    vstate.bounded.reason = BOUNDED_VOLUME_INTERVAL;
+  }
+#  endif
   volume_distance_sampling_finalize(kg, state, ray, sd, vstate, result, reservoir);
-  volume_equiangular_direct_scatter(kg, state, ray, sd, vstate, result);
+  if (!(sd->flag & SD_CACHE_MISS))
+    volume_equiangular_direct_scatter(kg, state, ray, sd, vstate, result);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (checkpoint && (sd->flag & SD_CACHE_MISS)) {
+    deep_native_store_null_checkpoint(state,
+                                      ray,
+                                      checkpoint,
+                                      before_shader,
+                                      before_state,
+                                      before_result,
+                                      rng_state,
+                                      octree,
+                                      before_reservoir,
+                                      1,
+                                      true);
+    return false;
+  }
+#  endif
+#  ifdef __DEEP_OUTPUT__
+  if (last_deep_sample_idx != DEEP_INVALID_SAMPLE_INDEX) {
+    uint32_t deep_ray_flags = DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_COMPLETE;
+    if (result.indirect_scatter) {
+      deep_ray_flags |= DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_TERMINATED;
+    }
+    film_mark_deep_volume_primary_ray_flag(
+        kg, pixel_index, last_deep_sample_idx, deep_samples, deep_ray_flags);
+  }
+#  endif
+  return true;
 }
 
 /* Path tracing: sample point on light using equiangular sampling. */
@@ -2016,7 +2598,7 @@ volume_direct_sample_method(KernelGlobals kg,
 }
 
 /* Shared function of integrating homogeneous and heterogeneous volume. */
-ccl_device void volume_integrate_null_scattering(KernelGlobals kg,
+ccl_device bool volume_integrate_null_scattering(KernelGlobals kg,
                                                  const IntegratorState state,
                                                  const ccl_private Ray *ccl_restrict ray,
                                                  ccl_private ShaderData *ccl_restrict sd,
@@ -2028,25 +2610,82 @@ ccl_device void volume_integrate_null_scattering(KernelGlobals kg,
   PROFILING_INIT(kg, PROFILING_SHADE_VOLUME_INTEGRATE);
 
   EquiangularCoefficients equiangular_coeffs = {zero_float3(), {ray->tmin, ray->tmax}};
-  const VolumeSampleMethod direct_sample_method = volume_direct_sample_method(
-      kg, state, ray, sd, rng_state, &equiangular_coeffs, ls);
-
-  /* Initialize volume integration state. */
   VolumeIntegrateState vstate ccl_optional_struct_init;
-  volume_integrate_state_init(kg, state, direct_sample_method, rng_state, ray->tmin, vstate);
+  bool resumed = false;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  auto *checkpoint = deep_native_null_checkpoint(state);
+  resumed = checkpoint && checkpoint->active;
+  if (resumed && !deep_native_null_checkpoint_matches(state, ray, checkpoint)) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+    return false;
+  }
+  if (resumed) {
+    equiangular_coeffs = checkpoint->equiangular;
+    *ls = checkpoint->light;
+    vstate = checkpoint->state;
+    result = checkpoint->result;
+    deep_native_restore_volume_shader(sd, checkpoint->shader);
+  }
+#  endif
+  if (!resumed) {
+    const VolumeSampleMethod direct_sample_method = volume_direct_sample_method(
+        kg, state, ray, sd, rng_state, &equiangular_coeffs, ls);
+    volume_integrate_state_init(kg, state, direct_sample_method, rng_state, ray->tmin, vstate);
+    volume_integrate_result_init(state, ray, vstate, equiangular_coeffs, result);
+  }
 
-  /* Initialize volume integration result. */
-  volume_integrate_result_init(state, ray, vstate, equiangular_coeffs, result);
-
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  vstate.bounded = {ray->tmin,
+                    deep_bounded_camera_chain(kg, state) ? BOUNDED_VOLUME_TRACKING :
+                                                           BOUNDED_VOLUME_INACTIVE};
+#  endif
   if (volume_is_homogeneous<false>(kg, state)) {
     volume_integrate_homogeneous(
         kg, state, ray, sd, rng_state, render_buffer, vstate, equiangular_coeffs.t_range, result);
   }
   else {
-    volume_integrate_heterogeneous(kg, state, ray, sd, *rng_state, render_buffer, vstate, result);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    deep_compact_save_stack(kg, state);
+    if (deep_compact_camera_chain(state))
+      kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)].flags |=
+          DEEP_COMPACT_STOP_SHARING;
+    if (deep_native_is_camera_chain(state) && !kernel_integrator_state.deep_native_full_optical) {
+      deep_native_capture_error(DEEP_NATIVE_ERROR_HETEROGENEOUS);
+    }
+#  endif
+    if (!volume_integrate_heterogeneous(
+            kg, state, ray, sd, *rng_state, render_buffer, vstate, result))
+    {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      if (checkpoint && checkpoint->active) {
+        checkpoint->equiangular = equiangular_coeffs;
+        checkpoint->light = *ls;
+      }
+#  endif
+      return false;
+    }
   }
+  /* A homogeneous cache miss has no checkpoint and restarts before all Film side effects. */
+  if (sd->flag & SD_CACHE_MISS)
+    return false;
 
   volume_direct_scatter_mis(ray, vstate, equiangular_coeffs, result);
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  [[maybe_unused]] const bool bounded_permit = !(sd->flag & SD_CACHE_MISS) &&
+      deep_bounded_commit_volume(kg,
+                                 state,
+                                 ray,
+                                 sd,
+                                 vstate.bounded,
+                                 result.indirect_throughput,
+                                 result.indirect_scatter,
+                                 result.indirect_t,
+                                 __DEEP_BOUNDED_POLICY__ >= 2 &&
+                                     (!is_zero(vstate.emission) || result.direct_scatter));
+#    if __DEEP_BOUNDED_POLICY__ == 3
+  result.bounded_colour_permit = bounded_permit;
+#    endif
+#  endif
 
   /* Write accumulated emission. */
   if (!is_zero(vstate.emission)) {
@@ -2059,13 +2698,18 @@ ccl_device void volume_integrate_null_scattering(KernelGlobals kg,
         volume_depth = camera_z_depth(kg, P);
       }
 #  endif
-      film_write_volume_emission(
-          kg,
-          state,
-          vstate.emission,
-          render_buffer,
-          volume_depth,
-          object_lightgroup(kg, sd->object));
+      film_write_volume_emission(kg,
+                                 state,
+                                 vstate.emission,
+                                 render_buffer,
+                                 volume_depth,
+                                 object_lightgroup(kg, sd->object),
+                                 vstate.deep_native_segment,
+                                 vstate.deep_expression_head
+#  if __DEEP_BOUNDED_POLICY__ == 3
+                                 , false, bounded_permit
+#  endif
+                                 );
     }
   }
 
@@ -2080,6 +2724,14 @@ ccl_device void volume_integrate_null_scattering(KernelGlobals kg,
   if (INTEGRATOR_STATE(state, path, bounce) == 0) {
     INTEGRATOR_STATE_WRITE(state, path, optical_depth) += vstate.optical_depth;
   }
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (checkpoint && checkpoint->active) {
+    checkpoint->active = 0;
+    atomic_fetch_and_sub_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_pending,
+                                1);
+  }
+#  endif
+  return true;
 }
 
 /* -------------------------------------------------------------------- */
@@ -2104,6 +2756,38 @@ struct VolumeStep {
   /* Current active segment. */
   Interval<float> t;
 };
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+ccl_device_inline void deep_owned_store_optical_checkpoint(
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    ccl_global DeepOpticalCheckpoint *checkpoint,
+    const ccl_private VolumeStep &step,
+    const int next_step,
+    const uint lcg_state,
+    const bool cache_miss)
+{
+  checkpoint->active = 1;
+  checkpoint->segment = kernel_integrator_state.deep_optical_ledger[state].segments;
+  checkpoint->sample = INTEGRATOR_STATE(state, path, sample);
+  checkpoint->ray_tmin = ray->tmin;
+  checkpoint->ray_tmax = ray->tmax;
+  checkpoint->next_step = next_step;
+  checkpoint->lcg_state = lcg_state;
+  checkpoint->step_min = step.t.min;
+  checkpoint->step_max = step.t.max;
+  checkpoint->size = step.size;
+  checkpoint->offset = step.offset;
+  checkpoint->shade_offset = step.shade_offset;
+  checkpoint->max_steps = step.max_steps;
+  if (checkpoint->yields == UINT32_MAX || (cache_miss && checkpoint->retries == UINT32_MAX)) {
+    deep_owned_optical_error(DEEP_OPTICAL_ERROR_COMPLETION);
+    return;
+  }
+  ++checkpoint->yields;
+  checkpoint->retries += uint(cache_miss);
+}
+#  endif
 
 template<const bool shadow>
 ccl_device_forceinline void volume_step_init(KernelGlobals kg,
@@ -2167,6 +2851,34 @@ ccl_device_inline bool volume_ray_marching_advance(const int step,
   return step < vstep.max_steps;
 }
 
+/* Complete camera Optical includes the jittered terminal remainder even when
+ * native Beauty stops at its maximum step count. Evaluate extinction there;
+ * this does not add an emission/Beauty step or substitute an opacity tail. */
+ccl_device_inline bool volume_owned_optical_advance(const int step,
+                                                    const ccl_private Ray *ray,
+                                                    ccl_private float3 *shade_P,
+                                                    ccl_private VolumeStep &vstep)
+{
+  if (vstep.t.max == ray->tmax)
+    return false;
+  const bool native_step = volume_ray_marching_advance(step, ray, shade_P, vstep);
+  return native_step ||
+         (step == vstep.max_steps && vstep.t.min < vstep.t.max && vstep.t.max == ray->tmax);
+}
+
+ccl_device_inline bool volume_deep_warp_step(const int step,
+                                             const ccl_private Ray *ccl_restrict ray,
+                                             ccl_private float3 *shade_P,
+                                             ccl_private VolumeStep &vstep)
+{
+  /* Reconstruct the previous bound using the same expression as the preceding serial step.
+   *
+   * This changes execution ownership, not jitter, grid spacing or the evaluated positions. */
+  vstep.t.max = step == 0 ? ray->tmin :
+                            min(ray->tmax, ray->tmin + ((step - 1) + vstep.offset) * vstep.size);
+  return volume_ray_marching_advance(step, ray, shade_P, vstep);
+}
+
 ccl_device void volume_shadow_ray_marching(KernelGlobals kg,
                                            IntegratorShadowState state,
                                            ccl_private Ray *ccl_restrict ray,
@@ -2216,7 +2928,11 @@ ccl_device void volume_shadow_ray_marching(KernelGlobals kg,
   *throughput = tp;
 }
 
+namespace {
 struct VolumeRayMarchingState {
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  DeepBoundedBridge bounded;
+#  endif
   /* Random numbers for scattering. */
   float rscatter;
   float rchannel;
@@ -2227,6 +2943,109 @@ struct VolumeRayMarchingState {
   float distance_pdf;
   float equiangular_pdf;
 };
+}  // namespace
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+struct DeepNativeMarchCheckpoint {
+  uint active, cache_miss, kind, sample, bounce;
+  uint64_t domain;
+  Ray ray;
+  DeepNativeVolumeShaderState shader;
+  EquiangularCoefficients equiangular;
+  LightSample light;
+  VolumeStep step;
+  VolumeRayMarchingState state;
+  VolumeIntegrateResult result;
+  Spectrum emission, albedo;
+  uint expression_head;
+  int next_step;
+};
+static_assert(sizeof(DeepNativeMarchCheckpoint) <= DEEP_NATIVE_VOLUME_CHECKPOINT_BYTES,
+              "Native march checkpoint exceeds its charged slot");
+
+ccl_device_inline ccl_global DeepNativeMarchCheckpoint *deep_native_march_checkpoint(
+    ConstIntegratorState state)
+{
+  if (!kernel_integrator_state.deep_native_volume_checkpoints ||
+      !deep_native_path_writes_combined(INTEGRATOR_STATE(state, path, flag)))
+    return nullptr;
+  const uint camera = INTEGRATOR_STATE(state, path, deep_frame_camera_index);
+  if (camera >= kernel_integrator_state.deep_native_volume_checkpoint_capacity) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+    return nullptr;
+  }
+  return reinterpret_cast<ccl_global DeepNativeMarchCheckpoint *>(
+      static_cast<ccl_global char *>(kernel_integrator_state.deep_native_volume_checkpoints) +
+      size_t(camera) * DEEP_NATIVE_VOLUME_CHECKPOINT_BYTES);
+}
+
+ccl_device_inline bool deep_native_march_checkpoint_matches(
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    const ccl_global DeepNativeMarchCheckpoint *checkpoint)
+{
+  const Ray previous = checkpoint->ray;
+  return checkpoint->kind == 1 &&
+         checkpoint->domain == kernel_integrator_state.deep_native_domain_id &&
+         checkpoint->sample == INTEGRATOR_STATE(state, path, sample) &&
+         checkpoint->bounce == INTEGRATOR_STATE(state, path, bounce) && previous.P.x == ray->P.x &&
+         previous.P.y == ray->P.y && previous.P.z == ray->P.z && previous.D.x == ray->D.x &&
+         previous.D.y == ray->D.y && previous.D.z == ray->D.z && previous.tmin == ray->tmin &&
+         previous.tmax == ray->tmax && previous.time == ray->time;
+}
+
+ccl_device_inline void deep_native_store_march_checkpoint(
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    ccl_global DeepNativeMarchCheckpoint *checkpoint,
+    const DeepNativeVolumeShaderState shader,
+    const ccl_private EquiangularCoefficients &equiangular,
+    const ccl_private LightSample &light,
+    const ccl_private VolumeStep &step,
+    const ccl_private VolumeRayMarchingState &vstate,
+    const ccl_private VolumeIntegrateResult &result,
+    Spectrum emission,
+    Spectrum albedo,
+    uint head,
+    int next_step,
+    bool cache_miss)
+{
+  checkpoint->kind = 1;
+  checkpoint->domain = kernel_integrator_state.deep_native_domain_id;
+  checkpoint->sample = INTEGRATOR_STATE(state, path, sample);
+  checkpoint->bounce = INTEGRATOR_STATE(state, path, bounce);
+  checkpoint->ray.P = ray->P;
+  checkpoint->ray.D = ray->D;
+  checkpoint->ray.tmin = ray->tmin;
+  checkpoint->ray.tmax = ray->tmax;
+  checkpoint->ray.time = ray->time;
+#    ifdef __RAY_DIFFERENTIALS__
+  checkpoint->ray.dP = ray->dP;
+  checkpoint->ray.dD = ray->dD;
+#    endif
+  checkpoint->ray.self = {PRIM_NONE, OBJECT_NONE, PRIM_NONE, OBJECT_NONE};
+  checkpoint->shader = shader;
+  checkpoint->equiangular = equiangular;
+  checkpoint->light = light;
+  checkpoint->step = step;
+  checkpoint->state = vstate;
+  checkpoint->result = result;
+  checkpoint->emission = emission;
+  checkpoint->albedo = albedo;
+  checkpoint->expression_head = head;
+  checkpoint->next_step = next_step;
+  checkpoint->cache_miss = cache_miss;
+  if (!checkpoint->active)
+    atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_pending,
+                                1);
+  checkpoint->active = 1;
+  atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_yields,
+                              1);
+  if (cache_miss)
+    atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_retries,
+                                1);
+}
+#  endif
 
 ccl_device_inline void volume_ray_marching_state_init(
     KernelGlobals kg,
@@ -2389,7 +3208,7 @@ ccl_device_forceinline void volume_ray_marching_step_scattering(
  * volume until we reach the end, get absorbed entirely, or run out of
  * iterations. this does probabilistically scatter or get transmitted through
  * for path tracing where we don't want to branch. */
-ccl_device_forceinline void volume_integrate_ray_marching(
+ccl_device_forceinline bool volume_integrate_ray_marching(
     KernelGlobals kg,
     const IntegratorState state,
     const ccl_private Ray *ccl_restrict ray,
@@ -2401,32 +3220,68 @@ ccl_device_forceinline void volume_integrate_ray_marching(
     ccl_private VolumeIntegrateResult &result)
 {
   PROFILING_INIT(kg, PROFILING_SHADE_VOLUME_INTEGRATE);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  deep_compact_save_stack(kg, state);
+#  endif
 
   EquiangularCoefficients equiangular_coeffs = {zero_float3(), {ray->tmin, ray->tmax}};
-  const VolumeSampleMethod direct_sample_method = volume_direct_sample_method(
-      kg, state, ray, sd, rng_state, &equiangular_coeffs, ls);
-
-  /* Prepare for stepping. */
-  VolumeStep vstep;
-  volume_step_init<false>(kg, rng_state, object_step_size, ray->tmin, ray->tmax, &vstep);
-
-  /* Initialize volume integration state. */
+  VolumeStep vstep ccl_optional_struct_init;
   VolumeRayMarchingState vstate ccl_optional_struct_init;
-  volume_ray_marching_state_init(kg, rng_state, direct_sample_method, vstate);
-
-  /* Initialize volume integration result. */
-  const Spectrum throughput = INTEGRATOR_STATE(state, path, throughput);
-  result.direct_throughput = (vstate.direct_sample_method == VOLUME_SAMPLE_NONE) ?
-                                 zero_spectrum() :
-                                 throughput;
-  result.indirect_throughput = throughput;
+  bool resumed = false;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  auto *checkpoint = deep_native_march_checkpoint(state);
+  resumed = checkpoint && checkpoint->active;
+  if (resumed && !deep_native_march_checkpoint_matches(state, ray, checkpoint)) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_IDENTITY);
+    return false;
+  }
+  if (resumed) {
+    equiangular_coeffs = checkpoint->equiangular;
+    *ls = checkpoint->light;
+    vstep = checkpoint->step;
+    vstate = checkpoint->state;
+    result = checkpoint->result;
+    deep_native_restore_volume_shader(sd, checkpoint->shader);
+  }
+#  endif
+  if (!resumed) {
+    const VolumeSampleMethod direct_sample_method = volume_direct_sample_method(
+        kg, state, ray, sd, rng_state, &equiangular_coeffs, ls);
+    volume_step_init<false>(kg, rng_state, object_step_size, ray->tmin, ray->tmax, &vstep);
+    volume_ray_marching_state_init(kg, rng_state, direct_sample_method, vstate);
+#  if __DEEP_BOUNDED_POLICY__ > 0
+    vstate.bounded = {ray->tmin,
+                      deep_bounded_camera_chain(kg, state) ? BOUNDED_VOLUME_TRACKING :
+                                                             BOUNDED_VOLUME_INACTIVE};
+#  endif
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_compact_emission && deep_native_is_camera_chain(state)) {
+      DeepCompactEmissionState emission = {};
+      emission.front = emission.back = ray->tmin;
+      emission.flags = volume_is_homogeneous<false>(kg, state) ? 1u : 0u;
+      kernel_integrator_state.deep_compact_emission[
+          INTEGRATOR_STATE(state, path, deep_frame_camera_index)] = emission;
+    }
+#  endif
+    const Spectrum throughput = INTEGRATOR_STATE(state, path, throughput);
+    result.direct_throughput = (vstate.direct_sample_method == VOLUME_SAMPLE_NONE) ?
+                                   zero_spectrum() :
+                                   throughput;
+    result.indirect_throughput = throughput;
+  }
 #  ifdef __DEEP_OUTPUT__
-  const bool write_deep = kernel_data.film.use_deep_output &&
+  const bool write_deep = kernel_data.film.use_deep_output == 1 &&
                           (INTEGRATOR_STATE(state, path, bounce) == 0);
+  ccl_global KernelDeepSample *deep_samples =
+      write_deep ? (ccl_global KernelDeepSample *)kernel_data.film.deep_samples_ptr : nullptr;
+  ccl_global uint32_t *deep_sample_counts =
+      write_deep ? (ccl_global uint32_t *)kernel_data.film.deep_sample_counts_ptr : nullptr;
+  const uint32_t deep_pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
+  uint32_t last_deep_sample_idx = DEEP_INVALID_SAMPLE_INDEX;
 #  endif
 
   /* Equiangular sampling: compute distance and PDF in advance. */
-  if (vstate.direct_sample_method == VOLUME_SAMPLE_EQUIANGULAR) {
+  if (!resumed && vstate.direct_sample_method == VOLUME_SAMPLE_EQUIANGULAR) {
     result.direct_t = volume_equiangular_sample(
         ray, equiangular_coeffs, vstate.rscatter, &vstate.equiangular_pdf);
   }
@@ -2440,11 +3295,68 @@ ccl_device_forceinline void volume_integrate_ray_marching(
   Spectrum accum_albedo = zero_spectrum();
 #  endif
   Spectrum accum_emission = zero_spectrum();
+  uint32_t deep_expression_head = DEEP_NATIVE_INVALID_INDEX;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_native_expression_nodes && deep_native_is_camera_chain(state))
+    deep_expression_head = 0;
+#  endif
 
-  for (int step = 0; volume_ray_marching_advance(step, ray, &sd->P, vstep); step++) {
-    /* compute segment */
+  int first_step = 0;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  int completed_steps = 0;
+  if (resumed) {
+    accum_emission = checkpoint->emission;
+#    ifdef __DENOISING_FEATURES__
+    accum_albedo = checkpoint->albedo;
+#    endif
+    deep_expression_head = checkpoint->expression_head;
+    first_step = checkpoint->next_step;
+  }
+#  endif
+  for (int step = first_step;; step++) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const VolumeStep before_step = vstep;
+#  endif
+    if (!volume_ray_marching_advance(step, ray, &sd->P, vstep))
+      break;
+    /* Evaluate before changing any emission, throughput or Film transaction. */
     VolumeShaderCoefficients coeff ccl_optional_struct_init;
-    if (volume_shader_sample(kg, state, sd, &coeff)) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const DeepNativeVolumeShaderState before_shader = deep_native_volume_shader_state(sd);
+#  endif
+    const bool has_coefficients = volume_shader_sample(kg, state, sd, &coeff);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (checkpoint && (sd->flag & SD_CACHE_MISS)) {
+      deep_native_store_march_checkpoint(state,
+                                         ray,
+                                         checkpoint,
+                                         before_shader,
+                                         equiangular_coeffs,
+                                         *ls,
+                                         before_step,
+                                         vstate,
+                                         result,
+                                         accum_emission,
+#    ifdef __DENOISING_FEATURES__
+                                         accum_albedo,
+#    else
+                                         zero_spectrum(),
+#    endif
+                                         deep_expression_head,
+                                         step,
+                                         true);
+      return false;
+    }
+#  endif
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (deep_compact_camera_chain(state)) {
+      const uint i = deep_compact_camera_index(state);
+      deep_compact_cell(kg, state, vstep.t.min, vstep.t.max,
+                        has_coefficients ? (double(coeff.sigma_t.x) + coeff.sigma_t.y + coeff.sigma_t.z) / 3.0 : 0.0,
+                        kernel_integrator_state.deep_compact_rays[i].reserved);
+    }
+#  endif
+    if (has_coefficients) {
       const int closure_flag = sd->flag;
 
       /* Evaluate transmittance over segment. */
@@ -2454,17 +3366,72 @@ ccl_device_forceinline void volume_integrate_ray_marching(
                                          one_spectrum();
 
       /* Emission. */
+      Spectrum segment_emission = zero_spectrum();
       if (closure_flag & SD_EMISSION) {
         /* Only write emission before indirect light scatter position, since we terminate
          * stepping at that point if we have already found a direct light scatter position. */
         if (!result.indirect_scatter) {
           const Spectrum emission = volume_emission_integrate(&coeff, closure_flag, dt);
-          accum_emission += result.indirect_throughput * emission;
+          segment_emission = result.indirect_throughput * emission;
+          accum_emission += segment_emission;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+          if (kernel_integrator_state.deep_compact_emission && deep_native_is_camera_chain(state) &&
+              !is_zero(segment_emission)) {
+            auto &source = kernel_integrator_state.deep_compact_emission[
+                INTEGRATOR_STATE(state, path, deep_frame_camera_index)];
+            /* A previous stochastic distance-PDF update changes the step
+             * weights. A material's constant sigma alone cannot certify G. */
+            if (source.flags & 8u) source.flags &= ~1u;
+            if (!(source.flags & 2u)) {
+              source.sigma[0] = coeff.sigma_t.x; source.sigma[1] = coeff.sigma_t.y;
+              source.sigma[2] = coeff.sigma_t.z;
+            }
+            else if (source.sigma[0] != coeff.sigma_t.x || source.sigma[1] != coeff.sigma_t.y ||
+                     source.sigma[2] != coeff.sigma_t.z)
+              source.flags &= ~1u;
+            source.flags |= 2u;
+            source.back = vstep.t.max;
+            if (-expm1(-(double(coeff.sigma_t.x) + coeff.sigma_t.y + coeff.sigma_t.z) * dt / 3.0) > 0)
+              source.flags |= 4u;
+          }
+#  endif
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+          if (deep_expression_head != DEEP_NATIVE_INVALID_INDEX) {
+            const uint32_t term = deep_native_expression_term(kg,
+                                                              state,
+                                                              ray,
+                                                              sd,
+                                                              vstep.t.min,
+                                                              vstep.t.max,
+                                                              segment_emission,
+                                                              coeff.sigma_t * dt,
+                                                              false,
+                                                              coeff.sigma_t);
+            deep_expression_head = deep_native_expression_node(
+                state, DEEP_NATIVE_EXPR_ADD, deep_expression_head, term);
+          }
+#  endif
           guiding_record_volume_emission(kg, state, emission);
         }
       }
 
       /* Deep output: ray-marched segments. */
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      if (kernel_integrator_state.deep_volume_emission_spans) {
+        const float span_alpha = 1.0f - saturatef(average(transmittance));
+        volume_capture_primary_emission_span(
+            kg,
+            state,
+            ray,
+            vstep.t.min,
+            vstep.t.max,
+            segment_emission,
+            coeff.sigma_t * dt,
+            span_alpha,
+            DEEP_EMISSION_MARCHED |
+                (span_alpha > 1e-6f ? DEEP_EMISSION_LEGACY_OPACITY_ELIGIBLE : 0u));
+      }
+#  endif
 #  ifdef __DEEP_OUTPUT__
       /* Write deep sample for this volume segment (alpha-only, RGB=0).
        * Volume color is applied via deep recolor in compositing.
@@ -2478,16 +3445,9 @@ ccl_device_forceinline void volume_integrate_ray_marching(
          * the Combined alpha. */
         float segment_alpha = 1.0f - saturatef(average(transmittance));
 
-        /* Only write deep sample if segment has meaningful opacity. */
         const float deep_segment_alpha_epsilon = 1e-6f;
         if (segment_alpha > deep_segment_alpha_epsilon) {
-          ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
-                                                          kernel_data.film.deep_samples_ptr;
-          ccl_global uint32_t *deep_sample_counts = (ccl_global uint32_t *)
-                                                        kernel_data.film.deep_sample_counts_ptr;
           if (deep_samples && deep_sample_counts) {
-            const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
-
             /* Calculate front and back Z depths from ray positions. */
             float3 P_front = ray->P + ray->D * vstep.t.min;
             float3 P_back = ray->P + ray->D * vstep.t.max;
@@ -2495,14 +3455,28 @@ ccl_device_forceinline void volume_integrate_ray_marching(
             float z_back = camera_z_depth(kg, P_back);
 
             /* Write per-segment alpha (RGB=0), color applied via deep recolor. */
-            film_write_deep_sample_volume(
-                kg, pixel_index, deep_samples, deep_sample_counts, segment_alpha, z_front, z_back);
+            last_deep_sample_idx = film_write_deep_sample_volume(
+                kg,
+                deep_pixel_index,
+                deep_samples,
+                deep_sample_counts,
+                segment_alpha,
+                z_front,
+                z_back,
+                INTEGRATOR_STATE(state, path, sample),
+                segment_emission,
+                coeff.sigma_t * dt);
           }
         }
       }
 #  endif
 
       if (closure_flag & SD_SCATTER) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+        if (kernel_integrator_state.deep_compact_emission && deep_native_is_camera_chain(state))
+          kernel_integrator_state.deep_compact_emission[
+              INTEGRATOR_STATE(state, path, deep_frame_camera_index)].flags |= 8u;
+#  endif
 #  ifdef __DENOISING_FEATURES__
         /* Accumulate albedo for denoising features. */
         if (write_denoising_features && (closure_flag & SD_SCATTER)) {
@@ -2521,18 +3495,115 @@ ccl_device_forceinline void volume_integrate_ray_marching(
         result.direct_throughput *= transmittance;
       }
 
+#  if __DEEP_BOUNDED_POLICY__ > 0
+      if (vstate.bounded.reason == BOUNDED_VOLUME_TRACKING) {
+        vstate.bounded.event_t = vstep.t.max;
+#    if __DEEP_BOUNDED_POLICY__ >= 2
+        vstate.bounded.has_extinction |= (closure_flag & SD_EXTINCTION) && dt > 0.0f &&
+                                         !is_zero(coeff.sigma_t);
+#    endif
+      }
+#  endif
       if (volume_integrate_should_stop(result)) {
         break;
       }
     }
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (checkpoint &&
+        ++completed_steps >= int(kernel_integrator_state.deep_native_volume_step_limit) &&
+        vstep.t.max != ray->tmax && step + 1 < vstep.max_steps)
+    {
+      deep_native_store_march_checkpoint(state,
+                                         ray,
+                                         checkpoint,
+                                         deep_native_volume_shader_state(sd),
+                                         equiangular_coeffs,
+                                         *ls,
+                                         vstep,
+                                         vstate,
+                                         result,
+                                         accum_emission,
+#    ifdef __DENOISING_FEATURES__
+                                         accum_albedo,
+#    else
+                                         zero_spectrum(),
+#    endif
+                                         deep_expression_head,
+                                         step + 1,
+                                         false);
+      return false;
+    }
+#  endif
   }
 
-  /* Write accumulated emission (deep samples already written per-step above). */
+#  ifdef __DEEP_OUTPUT__
+  if (last_deep_sample_idx != DEEP_INVALID_SAMPLE_INDEX) {
+    uint32_t deep_ray_flags = DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_COMPLETE;
+    if (result.indirect_scatter) {
+      deep_ray_flags |= DEEP_SAMPLE_FLAG_VOLUME_PRIMARY_RAY_TERMINATED;
+    }
+    film_mark_deep_volume_primary_ray_flag(
+        kg, deep_pixel_index, last_deep_sample_idx, deep_samples, deep_ray_flags);
+  }
+#  endif
+
+#  if __DEEP_BOUNDED_POLICY__ > 0
+  const bool bounded_success = !(sd->flag & SD_CACHE_MISS);
+  if (bounded_success && vstate.bounded.reason == BOUNDED_VOLUME_TRACKING) {
+    vstate.bounded.reason = BOUNDED_VOLUME_INTERVAL;
+  }
+  [[maybe_unused]] const bool bounded_permit = bounded_success &&
+      deep_bounded_commit_volume(kg,
+                                 state,
+                                 ray,
+                                 sd,
+                                 vstate.bounded,
+                                 result.indirect_throughput,
+                                 result.indirect_scatter,
+                                 result.indirect_t,
+                                 __DEEP_BOUNDED_POLICY__ >= 2 &&
+                                     (!is_zero(accum_emission) || result.direct_scatter));
+#    if __DEEP_BOUNDED_POLICY__ == 3
+  result.bounded_colour_permit = bounded_permit;
+#    endif
+#  endif
+  /* Write accumulated emission. */
   if (!is_zero(accum_emission)) {
     if (light_link_object_match(kg, light_link_receiver_forward(kg, state), sd->object)) {
-      /* Pass -1 depth to skip deep sample writing - already handled per-step. */
-      film_write_volume_emission(
-          kg, state, accum_emission, render_buffer, -1.0f, object_lightgroup(kg, sd->object));
+      /* Capture the supported native uniform span only after its actual support closes. */
+      uint32_t native_uniform = DEEP_NATIVE_INVALID_INDEX;
+      bool discard_deep_emission = false;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      if (kernel_integrator_state.deep_compact_emission && deep_native_is_camera_chain(state)) {
+        const auto &source = kernel_integrator_state.deep_compact_emission[
+            INTEGRATOR_STATE(state, path, deep_frame_camera_index)];
+        if ((source.flags & 3u) == 3u && source.back > source.front) {
+          const double sigma = (double(source.sigma[0]) + source.sigma[1] + source.sigma[2]) / 3.0;
+          discard_deep_emission = -expm1(-sigma * (double(source.back) - source.front)) == 0;
+          if (!discard_deep_emission) {
+            Ray span = *ray;
+            span.tmin = source.front; span.tmax = source.back;
+            VolumeShaderCoefficients uniform = {};
+            uniform.sigma_t = make_float3(source.sigma[0], source.sigma[1], source.sigma[2]);
+            native_uniform = volume_capture_native_homogeneous(kg, state, &span, sd, uniform);
+          }
+        }
+        else discard_deep_emission = !(source.flags & 4u);
+      }
+#  endif
+      film_write_volume_emission(kg,
+                                 state,
+                                 accum_emission,
+                                 render_buffer,
+                                 -1.0f,
+                                 object_lightgroup(kg, sd->object),
+                                 native_uniform,
+                                 deep_expression_head,
+                                 discard_deep_emission
+#  if __DEEP_BOUNDED_POLICY__ == 3
+                                 , bounded_permit
+#  endif
+                                 );
     }
   }
 
@@ -2543,7 +3614,315 @@ ccl_device_forceinline void volume_integrate_ray_marching(
         kg, state, accum_albedo, result.indirect_scatter, render_buffer);
   }
 #  endif /* __DENOISING_FEATURES__ */
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (checkpoint && checkpoint->active) {
+    atomic_fetch_and_add_uint32(&kernel_integrator_state.queue_counter->deep_native_volume_pending,
+                                uint32_t(-1));
+    checkpoint->active = 0;
+  }
+#  endif
+  return true;
 }
+
+#  ifdef __DEEP_OUTPUT__
+/* Capture extinction for one geometry-bounded segment of the dedicated camera optical traversal.
+
+ * * The integrator kernels advance that traversal across all volume boundaries before restarting
+
+ * * the regular Beauty path. */
+ccl_device_forceinline uint32_t
+volume_integrate_deep_optical_profile(KernelGlobals kg,
+                                      const IntegratorState state,
+                                      const ccl_private Ray *ccl_restrict ray,
+                                      ccl_private ShaderData *ccl_restrict sd,
+                                      const ccl_private RNGState *ccl_restrict rng_state)
+{
+#    ifdef __KERNEL_GPU__
+  if (kernel_integrator_state.deep_optical_inputs) {
+    const float step_size = volume_stack_step_size<false>(kg, state);
+    VolumeStep vstep;
+    volume_step_init<false>(kg, rng_state, step_size, ray->tmin, ray->tmax, &vstep);
+    const uint segment = kernel_integrator_state.deep_optical_ledger[state].segments;
+    if (kernel_integrator_state.deep_compact_rays) {
+      uint hash = 2166136261u;
+      for (int i = 0; i < kernel_data.volume_stack_size; i++) {
+        const int shader = INTEGRATOR_STATE_ARRAY(state, volume_stack, i, shader);
+        if (shader == SHADER_NONE) break;
+        const int object = INTEGRATOR_STATE_ARRAY(state, volume_stack, i, object);
+        if (shader != SHADER_NONE && object == OBJECT_NONE) {
+          deep_owned_optical_error(DEEP_OPTICAL_ERROR_STACK);
+          return DEEP_INVALID_SAMPLE_INDEX;
+        }
+        hash = (hash ^ uint(object)) * 16777619u;
+        hash = (hash ^ uint(shader)) * 16777619u;
+      }
+      kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)].reserved = hash;
+    }
+    auto *checkpoint = kernel_integrator_state.deep_owned_optical_checkpoints ?
+                           &kernel_integrator_state.deep_owned_optical_checkpoints[state] :
+                           nullptr;
+    int first_step = 0;
+    if (checkpoint && checkpoint->active) {
+      if (checkpoint->segment != segment ||
+          checkpoint->sample != INTEGRATOR_STATE(state, path, sample) ||
+          checkpoint->ray_tmin != ray->tmin || checkpoint->ray_tmax != ray->tmax)
+      {
+        deep_owned_optical_error(DEEP_OPTICAL_ERROR_COMPLETION);
+        return DEEP_INVALID_SAMPLE_INDEX;
+      }
+      vstep.t = {checkpoint->step_min, checkpoint->step_max};
+      vstep.size = checkpoint->size;
+      vstep.offset = checkpoint->offset;
+      vstep.shade_offset = checkpoint->shade_offset;
+      vstep.max_steps = checkpoint->max_steps;
+      first_step = checkpoint->next_step;
+      sd->lcg_state = checkpoint->lcg_state;
+    }
+    if (kernel_integrator_state.deep_compact_rays) {
+      auto &scalar = kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)];
+      if (scalar.flags & DEEP_COMPACT_PENDING_CELL) {
+        const float pending_back = scalar.pending_back;
+        if (!deep_compact_cell(kg, state, scalar.pending_front, pending_back,
+                               scalar.pending_sigma, scalar.pending_phase))
+          return DEEP_INVALID_SAMPLE_INDEX;
+        auto &coverage = kernel_integrator_state.deep_owned_optical_coverage[state];
+        coverage.cursor_t = pending_back;
+        coverage.z_back = deep_compact_depth(kg,
+            &kernel_integrator_state.deep_compact_cameras[deep_compact_camera_index(state)], pending_back);
+      }
+    }
+    float integrated_end = vstep.t.max;
+    uint completed_steps = 0;
+    /* Same native grid/extinction/RNG, independent tau sink with no alpha-threshold deletion. */
+    for (int step = first_step;; ++step) {
+      const VolumeStep before_step = vstep;
+      const uint before_lcg = sd->lcg_state;
+      if (!volume_owned_optical_advance(step, ray, &sd->P, vstep))
+        break;
+      const Spectrum sigma_t = volume_shader_eval_extinction<false>(
+          kg,
+          state,
+          sd,
+          INTEGRATOR_STATE(state, path, visibility),
+          INTEGRATOR_STATE(state, path, flag));
+      if (sd->flag & SD_CACHE_MISS) {
+        if (checkpoint) {
+          deep_owned_store_optical_checkpoint(
+              state, ray, checkpoint, before_step, step, before_lcg, true);
+          return DEEP_INVALID_SAMPLE_INDEX;
+        }
+        break; /* Diagnostic-only traversals have no retry checkpoint. */
+      }
+      if (is_zero(sigma_t) && !kernel_integrator_state.deep_owned_optical_pieces &&
+          !kernel_integrator_state.deep_compact_rays) {
+        continue;
+      }
+      const Spectrum tau = sigma_t * vstep.t.length();
+      if (kernel_integrator_state.deep_owned_optical_pieces || kernel_integrator_state.deep_compact_rays) {
+        if (!deep_owned_optical_piece(
+                kg, state, vstep.t.min, vstep.t.max, tau, DEEP_OWNED_OPTICAL_MEDIUM,
+                double(average(sigma_t))))
+        {
+          if (checkpoint && kernel_integrator_state.deep_compact_rays &&
+              !kernel_integrator_state.queue_counter->deep_native_capture_error) {
+            deep_owned_store_optical_checkpoint(
+                state, ray, checkpoint, vstep, step + 1, sd->lcg_state, false);
+            return DEEP_INVALID_SAMPLE_INDEX;
+          }
+          break;
+        }
+        integrated_end = vstep.t.max;
+        if (checkpoint &&
+            ++completed_steps >= kernel_integrator_state.deep_owned_optical_operation_steps &&
+            integrated_end != ray->tmax)
+        {
+          deep_owned_store_optical_checkpoint(
+              state, ray, checkpoint, vstep, step + 1, sd->lcg_state, false);
+          return DEEP_INVALID_SAMPLE_INDEX;
+        }
+        continue;
+      }
+      const float z = camera_z_depth(kg, ray->P + ray->D * vstep.t.min);
+      const float zback = camera_z_depth(kg, ray->P + ray->D * vstep.t.max);
+      if (!isfinite_safe(tau.x) || !isfinite_safe(tau.y) || !isfinite_safe(tau.z) ||
+          !isfinite_safe(z) || !isfinite_safe(zback) || tau.x < 0.0f || tau.y < 0.0f ||
+          tau.z < 0.0f || zback < z)
+      {
+        atomic_fetch_and_or_uint32(&kernel_integrator_state.queue_counter->deep_optical_error,
+                                   DEEP_OPTICAL_ERROR_NONFINITE);
+        break;
+      }
+      const uint index = atomic_fetch_and_add_uint32(
+          &kernel_integrator_state.queue_counter->deep_optical_event_count, 1);
+      if (index >= kernel_integrator_state.deep_optical_event_capacity) {
+        atomic_fetch_and_or_uint32(&kernel_integrator_state.queue_counter->deep_optical_error,
+                                   DEEP_OPTICAL_ERROR_CAPACITY);
+        break;
+      }
+      DeepOpticalEvent event = {};
+      event.receipt = state;
+      event.segment = segment;
+      event.z = z;
+      event.zback = zback;
+      event.tau[0] = tau.x;
+      event.tau[1] = tau.y;
+      event.tau[2] = tau.z;
+      kernel_integrator_state.deep_optical_events[index] = event;
+      ++kernel_integrator_state.deep_optical_ledger[state].events;
+      integrated_end = vstep.t.max;
+    }
+    if (checkpoint)
+      checkpoint->active = 0;
+    if (integrated_end != ray->tmax && !(sd->flag & SD_CACHE_MISS) &&
+        !kernel_integrator_state.queue_counter->deep_optical_error)
+    {
+      deep_owned_optical_bounds(
+          kg, state, 6, integrated_end, ray->tmax, first_step, vstep.max_steps, zero_spectrum());
+    }
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+#    endif
+  if (kernel_data.film.use_deep_output < 2 || INTEGRATOR_STATE(state, path, bounce) != 0) {
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+
+  ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
+                                                  kernel_data.film.deep_samples_ptr;
+  ccl_global uint32_t *deep_sample_counts = (ccl_global uint32_t *)
+                                                kernel_data.film.deep_sample_counts_ptr;
+  if (!deep_samples || !deep_sample_counts) {
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+
+  const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
+  const PathRayVisibility path_visibility = INTEGRATOR_STATE(state, path, visibility);
+  const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
+
+  const float step_size = volume_stack_step_size<false>(kg, state);
+  VolumeStep vstep;
+  volume_step_init<false>(kg, rng_state, step_size, ray->tmin, ray->tmax, &vstep);
+
+  uint32_t last_deep_sample_idx = DEEP_INVALID_SAMPLE_INDEX;
+  for (int step = 0; volume_ray_marching_advance(step, ray, &sd->P, vstep); step++) {
+    const Spectrum sigma_t = volume_shader_eval_extinction<false>(
+        kg, state, sd, path_visibility, path_flag);
+    if (is_zero(sigma_t)) {
+      continue;
+    }
+
+    const Spectrum transmittance = volume_color_transmittance(sigma_t, vstep.t.length());
+    const float segment_alpha = 1.0f - saturatef(average(transmittance));
+    /* Store finite nonzero extinction before production compaction. A per-step opacity floor
+     * can delete an arbitrarily large accumulated prefix over many weak steps. */
+
+    const float3 P_front = ray->P + ray->D * vstep.t.min;
+    const float3 P_back = ray->P + ray->D * vstep.t.max;
+    last_deep_sample_idx = film_write_deep_sample_volume(kg,
+                                                         pixel_index,
+                                                         deep_samples,
+                                                         deep_sample_counts,
+                                                         segment_alpha,
+                                                         camera_z_depth(kg, P_front),
+                                                         camera_z_depth(kg, P_back),
+                                                         INTEGRATOR_STATE(state, path, sample),
+                                                         zero_spectrum(),
+                                                         sigma_t * vstep.t.length());
+  }
+
+  return last_deep_sample_idx;
+}
+
+#    if defined(__KERNEL_CUDA__) && !defined(__KERNEL_OPTIX__)
+ccl_device_forceinline uint32_t
+volume_integrate_deep_optical_profile_warp(KernelGlobals kg,
+                                           const IntegratorState state,
+                                           const ccl_private Ray *ccl_restrict ray,
+                                           ccl_private ShaderData *ccl_restrict sd,
+                                           const ccl_private RNGState *ccl_restrict rng_state,
+                                           bool &cache_miss)
+{
+  constexpr uint32_t mask = 0xffffffffu;
+  const uint32_t lane = threadIdx.x & 31u;
+  cache_miss = false;
+  ccl_global KernelDeepSample *deep_samples = (ccl_global KernelDeepSample *)
+                                                  kernel_data.film.deep_samples_ptr;
+  ccl_global uint32_t *counts = (ccl_global uint32_t *)kernel_data.film.deep_sample_counts_ptr;
+  const uint32_t pixels = kernel_data.film.deep_width * kernel_data.film.deep_height;
+  const uint32_t pixel = INTEGRATOR_STATE(state, path, render_pixel_index);
+  if (kernel_data.film.use_deep_output < 2 || INTEGRATOR_STATE(state, path, bounce) != 0 ||
+      !deep_samples || !counts || pixel >= pixels)
+  {
+    return DEEP_INVALID_SAMPLE_INDEX;
+  }
+  const uint64_t capacity = uint64_t(pixels) * kernel_data.film.deep_max_samples;
+  const PathRayVisibility visibility = INTEGRATOR_STATE(state, path, visibility);
+  const uint32_t path_flag = INTEGRATOR_STATE(state, path, flag);
+  VolumeStep vstep;
+  volume_step_init<false>(
+      kg, rng_state, volume_stack_step_size<false>(kg, state), ray->tmin, ray->tmax, &vstep);
+
+  uint32_t last_sample = DEEP_INVALID_SAMPLE_INDEX;
+  for (int base = 0; base < vstep.max_steps; base += 32) {
+    bool keep = false;
+    Spectrum sigma_t = zero_spectrum();
+    float alpha = 0.0f;
+    const bool active = volume_deep_warp_step(base + int(lane), ray, &sd->P, vstep);
+    if (!__any_sync(mask, active)) {
+      break;
+    }
+    if (active) {
+      sigma_t = volume_shader_eval_extinction<false>(kg, state, sd, visibility, path_flag);
+      if (!is_zero(sigma_t)) {
+        const Spectrum transmittance = volume_color_transmittance(sigma_t, vstep.t.length());
+        alpha = 1.0f - saturatef(average(transmittance));
+        keep = true;
+      }
+    }
+
+    const uint32_t kept = __ballot_sync(mask, keep);
+    uint32_t sample = DEEP_INVALID_SAMPLE_INDEX;
+    if (kept) {
+      const uint32_t length = __popc(kept);
+      uint32_t first = 0;
+      if (lane == 0) {
+        first = atomic_fetch_and_add_uint32(counts + pixels, length);
+        const uint32_t valid = uint64_t(first) < capacity ?
+                                   uint32_t(min(uint64_t(length), capacity - first)) :
+                                   0;
+        atomic_fetch_and_add_uint32(counts + pixel, valid);
+        if (valid != length) {
+          atomic_fetch_and_or_uint32(counts + pixel, DEEP_SAMPLE_COUNT_OVERFLOW);
+        }
+      }
+      first = __shfl_sync(mask, first, 0);
+      if (keep) {
+        const uint32_t rank = __popc(kept & ((1u << lane) - 1u));
+        sample = film_write_deep_sample_volume<true>(
+            kg,
+            pixel,
+            deep_samples,
+            counts,
+            alpha,
+            camera_z_depth(kg, ray->P + ray->D * vstep.t.min),
+            camera_z_depth(kg, ray->P + ray->D * vstep.t.max),
+            INTEGRATOR_STATE(state, path, sample),
+            zero_spectrum(),
+            sigma_t * vstep.t.length(),
+            first + rank);
+      }
+    }
+    const uint32_t written = __ballot_sync(mask, sample != DEEP_INVALID_SAMPLE_INDEX);
+    if (written) {
+      last_sample = __shfl_sync(mask, sample, 31 - __clz(written));
+    }
+    /* Complete every group's stores before another group can be reserved or marked finished. */
+    __syncwarp(mask);
+  }
+  cache_miss = __any_sync(mask, (sd->flag & SD_CACHE_MISS) != 0);
+  return last_sample;
+}
+#    endif
+#  endif
 
 /** \} */
 
@@ -2560,7 +3939,12 @@ ccl_device_forceinline void integrate_volume_direct_light(
     const ccl_private Spectrum unlit_throughput,
 #  endif
     const ccl_private Spectrum throughput,
-    ccl_private LightSample &ccl_restrict ls)
+    ccl_private LightSample &ccl_restrict ls,
+    const float deep_source_t
+#  if __DEEP_BOUNDED_POLICY__ == 3
+    , const bool bounded_colour_permit
+#  endif
+    )
 {
   PROFILING_INIT(kg, PROFILING_SHADE_VOLUME_DIRECT_LIGHT);
 
@@ -2625,6 +4009,30 @@ ccl_device_forceinline void integrate_volume_direct_light(
                                    DEVICE_KERNEL_INTEGRATOR_SHADE_LIGHT_NEE,
       false);
 
+#  if __DEEP_BOUNDED_POLICY__ == 3
+  if (deep_bounded_active(kg) && !bounded_colour_permit) {
+    INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_bounded_slot_kind) =
+        deep_bounded_source(0, DeepBoundedSourceKind::EXCLUDED);
+  }
+#  endif
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (deep_native_is_camera_chain(state)) {
+    const uint root = deep_native_append_root(
+        state,
+        DEEP_NATIVE_ROOT_VOLUME_DIRECT,
+        camera_z_depth(kg, P),
+        sd->object,
+        sd->prim,
+        sd->shader,
+        deep_source_t,
+        0,
+        true,
+        false,
+        volume_native_world_support(kg, state, deep_source_t));
+    INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_frame_root_handle) = root;
+  }
+#  endif
+
   /* Write shadow ray and associated state to global memory. */
   integrator_state_write_shadow_ray(shadow_state, &ray);
   integrator_state_write_shadow_ray_self(shadow_state, &ray);
@@ -2677,6 +4085,8 @@ ccl_device_forceinline void integrate_volume_direct_light(
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, visibility) = path_visibility;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_surface_sample_idx) = INTEGRATOR_STATE(
       state, path, deep_surface_sample_idx);
+  INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, deep_volume_radiance_idx) = INTEGRATOR_STATE(
+      state, path, deep_volume_radiance_idx);
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, flag) = shadow_flag;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, bounce) = bounce;
   INTEGRATOR_STATE_WRITE(shadow_state, shadow_path, transparent_bounce) = transparent_bounce;
@@ -2907,7 +4317,12 @@ volume_integrate_event(KernelGlobals kg,
                                   unlit_throughput,
 #  endif
                                   result.direct_throughput,
-                                  ls);
+                                  ls,
+                                  result.direct_t
+#  if __DEEP_BOUNDED_POLICY__ == 3
+                                  , result.bounded_colour_permit
+#  endif
+                                  );
   }
 
   /* Indirect light.
@@ -2927,7 +4342,30 @@ volume_integrate_event(KernelGlobals kg,
   INTEGRATOR_STATE_WRITE(state, path, throughput) = result.indirect_throughput;
 
   if (result.indirect_scatter) {
+#  if __DEEP_BOUNDED_POLICY__ == 3
+    if (deep_bounded_active(kg) && !result.bounded_colour_permit &&
+        deep_bounded_kind(INTEGRATOR_STATE(state, path, deep_bounded_slot_kind)) ==
+            DeepBoundedSourceKind::UNBOUND)
+    {
+      /* A camera path scattered by an excluded Volume has no eligible Deep
+       * anchor. Existing surface or volume anchors survive indirect scattering. */
+      INTEGRATOR_STATE_WRITE(state, path, deep_bounded_slot_kind) =
+          deep_bounded_source(0, DeepBoundedSourceKind::EXCLUDED);
+    }
+#  endif
     sd->P = ray->P + result.indirect_t * ray->D;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (deep_native_is_camera_chain(state))
+      deep_native_set_root(state,
+                           DEEP_NATIVE_ROOT_VOLUME_SCATTER,
+                           camera_z_depth(kg, sd->P),
+                           sd->object,
+                           sd->prim,
+                           sd->shader,
+                           result.indirect_t,
+                           0,
+                           volume_native_world_support(kg, state, result.indirect_t));
+#  endif
 
 #  if defined(__PATH_GUIDING__)
     if ((kernel_data.kernel_features & KERNEL_FEATURE_PATH_GUIDING)) {
@@ -2962,6 +4400,36 @@ volume_integrate_event(KernelGlobals kg,
   return VOLUME_PATH_ATTENUATED;
 }
 
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+ccl_device_inline void integrator_ensure_volume_radiance_receipt(IntegratorState state,
+                                                                 const ccl_private Ray *ray)
+{
+  if (!kernel_integrator_state.deep_volume_radiance_receipts ||
+      INTEGRATOR_STATE(state, path, deep_volume_radiance_idx) != 0xffffffffu)
+  {
+    return;
+  }
+  DeepVolumeRadianceReceipt receipt = {};
+  receipt.pixel = INTEGRATOR_STATE(state, path, render_pixel_index);
+  receipt.sample = INTEGRATOR_STATE(state, path, sample);
+  receipt.rng_pixel = INTEGRATOR_STATE(state, path, rng_pixel);
+  receipt.rng_offset = INTEGRATOR_STATE(state, path, rng_offset);
+  receipt.path_flags = INTEGRATOR_STATE(state, path, flag);
+  receipt.bounce = INTEGRATOR_STATE(state, path, bounce);
+  receipt.tmin = ray->tmin;
+  receipt.tmax = ray->tmax;
+  receipt.time = ray->time;
+  receipt.origin[0] = ray->P.x;
+  receipt.origin[1] = ray->P.y;
+  receipt.origin[2] = ray->P.z;
+  receipt.direction[0] = ray->D.x;
+  receipt.direction[1] = ray->D.y;
+  receipt.direction[2] = ray->D.z;
+  INTEGRATOR_STATE_WRITE(
+      state, path, deep_volume_radiance_idx) = film_append_volume_radiance_receipt(receipt);
+}
+#  endif
+
 /* get the volume attenuation and emission over line segment defined by
  * ray, with the assumption that there are no surfaces blocking light
  * between the endpoints. distance sampling is used to decide if we will
@@ -2976,6 +4444,10 @@ ccl_device VolumeIntegrateEvent volume_integrate(KernelGlobals kg,
   if (integrator_state_volume_stack_is_empty(kg, state)) {
     return VOLUME_PATH_ATTENUATED;
   }
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  integrator_ensure_volume_radiance_receipt(state, ray);
+#  endif
 
   ShaderData sd;
   /* FIXME: `object` is used for light linking. We read the bottom of the stack for simplicity, but
@@ -2994,10 +4466,17 @@ ccl_device VolumeIntegrateEvent volume_integrate(KernelGlobals kg,
 
   /* TODO: expensive to zero closures? */
   VolumeIntegrateResult result = {};
-  volume_integrate_null_scattering(kg, state, ray, &sd, &rng_state, render_buffer, &ls, result);
-
-  if (sd.flag & SD_CACHE_MISS) {
-    return VOLUME_PATH_CACHE_MISS;
+  if (!volume_integrate_null_scattering(
+          kg, state, ray, &sd, &rng_state, render_buffer, &ls, result))
+  {
+    if (sd.flag & SD_CACHE_MISS)
+      return VOLUME_PATH_CACHE_MISS;
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const auto *checkpoint = deep_native_null_checkpoint(state);
+    if (checkpoint && checkpoint->cache_miss)
+      return VOLUME_PATH_CACHE_MISS;
+#  endif
+    return VOLUME_PATH_PAUSED;
   }
 
   return volume_integrate_event(kg, state, ray, &sd, &rng_state, ls, result);
@@ -3011,9 +4490,19 @@ volume_integrate_ray_marching(KernelGlobals kg,
 {
   kernel_assert(kernel_data.integrator.volume_ray_marching);
 
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (deep_native_is_camera_chain(state) && !kernel_integrator_state.deep_native_full_optical) {
+    deep_native_capture_error(DEEP_NATIVE_ERROR_HETEROGENEOUS);
+  }
+#  endif
+
   if (integrator_state_volume_stack_is_empty(kg, state)) {
     return VOLUME_PATH_ATTENUATED;
   }
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  integrator_ensure_volume_radiance_receipt(state, ray);
+#  endif
 
   ShaderData sd;
   /* FIXME: `object` is used for light linking. We read the bottom of the stack for simplicity, but
@@ -3034,10 +4523,22 @@ volume_integrate_ray_marching(KernelGlobals kg,
   VolumeIntegrateResult result = {};
 
   const float step_size = volume_stack_step_size<false>(kg, state);
-  volume_integrate_ray_marching(
-      kg, state, ray, &sd, &rng_state, render_buffer, step_size, &ls, result);
+  if (!volume_integrate_ray_marching(
+          kg, state, ray, &sd, &rng_state, render_buffer, step_size, &ls, result))
+  {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    const auto *checkpoint = deep_native_march_checkpoint(state);
+    if (checkpoint && checkpoint->cache_miss)
+      return VOLUME_PATH_CACHE_MISS;
+#  endif
+    return VOLUME_PATH_PAUSED;
+  }
 
   if (sd.flag & SD_CACHE_MISS) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (kernel_integrator_state.deep_native_cameras)
+      deep_native_capture_error(DEEP_NATIVE_ERROR_SHADER_RETRY);
+#  endif
     return VOLUME_PATH_CACHE_MISS;
   }
 
@@ -3060,10 +4561,38 @@ ccl_device_inline void integrator_shade_volume_setup(KernelGlobals kg,
 
   /* Set ray length to current segment. */
   ray->tmax = (isect->prim != PRIM_NONE) ? isect->t : FLT_MAX;
+#  ifdef __KERNEL_GPU__
+  if (kernel_integrator_state.deep_optical_inputs) {
+    ray->tmax = min(ray->tmax, kernel_integrator_state.deep_optical_inputs[state].tmax);
+  }
+#  endif
+
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_owned_optical_coverage) {
+    /* Optical covers physical boundaries; the trace-only intersection offset
+     * must not punch an artificial vacuum gap in an active medium. */
+    ray->tmin = kernel_integrator_state.deep_owned_optical_coverage[state].cursor_t;
+    if (kernel_integrator_state.deep_owned_optical_checkpoints &&
+        kernel_integrator_state.deep_owned_optical_checkpoints[state].active)
+      ray->tmin = kernel_integrator_state.deep_owned_optical_checkpoints[state].ray_tmin;
+  }
+#  endif
 
   /* Clean volume stack for background rays. */
   if (isect->prim == PRIM_NONE) {
-    volume_stack_clean(kg, state);
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (!kernel_integrator_state.deep_native_full_optical && deep_native_is_camera_chain(state) &&
+        INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, shader) != SHADER_NONE)
+    {
+      /* Native stack cleaning cannot certify an omitted camera optical tail.
+       * Complete independent Optical owns that coverage without changing native Beauty. */
+      deep_native_capture_error(DEEP_NATIVE_ERROR_INCOMPLETE);
+    }
+#  endif
+#  ifdef __KERNEL_GPU__
+    if (!kernel_integrator_state.deep_optical_inputs)
+#  endif
+      volume_stack_clean(kg, state);
   }
 
   /* Assign flag to transmitted volume rays for scattering probability guiding. */
@@ -3105,6 +4634,174 @@ ccl_device_inline void integrator_next_kernel_after_shade_volume(
   integrator_path_next(state, volume_kernel, DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
 }
 
+#if defined(__DEEP_OUTPUT__) && defined(__VOLUME__)
+template<DeviceKernel volume_kernel>
+ccl_device_inline void integrator_finish_deep_volume_optical_segment(
+    KernelGlobals kg,
+    IntegratorState state,
+    ccl_global float *ccl_restrict render_buffer,
+    const ccl_private Intersection *ccl_restrict isect,
+    const uint32_t sample_idx,
+    const bool cache_miss)
+{
+#  ifdef __KERNEL_GPU__
+  if (kernel_integrator_state.deep_optical_inputs) {
+    if (cache_miss) {
+      integrator_path_cache_miss(state, volume_kernel);
+    }
+    else {
+      ++kernel_integrator_state.deep_optical_ledger[state].segments;
+      integrator_intersect_next_kernel_after_volume<volume_kernel>(kg, state, isect, nullptr);
+    }
+    return;
+  }
+#  endif
+  if (cache_miss) {
+    film_mark_deep_volume_primary_ray_flag(
+        kg,
+        INTEGRATOR_STATE(state, path, render_pixel_index),
+        sample_idx,
+        (ccl_global KernelDeepSample *)kernel_data.film.deep_samples_ptr,
+        DEEP_SAMPLE_FLAG_VOLUME_OPTICAL_ATTEMPT_ABORTED);
+    integrator_path_cache_miss(state, volume_kernel);
+    return;
+  }
+  if (sample_idx != DEEP_INVALID_SAMPLE_INDEX) {
+    film_mark_deep_volume_primary_ray_flag(
+        kg,
+        INTEGRATOR_STATE(state, path, render_pixel_index),
+        sample_idx,
+        (ccl_global KernelDeepSample *)kernel_data.film.deep_samples_ptr,
+        DEEP_SAMPLE_FLAG_VOLUME_OPTICAL_SEGMENT_COMPLETE);
+    INTEGRATOR_STATE_WRITE(state, path, deep_surface_sample_idx) = sample_idx;
+  }
+  integrator_intersect_next_kernel_after_volume<volume_kernel>(kg, state, isect, render_buffer);
+}
+
+template<DeviceKernel volume_kernel>
+ccl_device_inline bool integrator_shade_deep_volume_optical_segment(
+    KernelGlobals kg,
+    IntegratorState state,
+    ccl_global float *ccl_restrict render_buffer,
+    const ccl_private Ray *ccl_restrict ray,
+    const ccl_private Intersection *ccl_restrict isect,
+    ccl_private ShaderData *ccl_restrict sd)
+{
+  if (!(INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL)) {
+    return false;
+  }
+
+  shader_setup_from_volume(sd, ray, INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, object));
+
+  RNGState rng_state;
+  path_state_rng_load(state, &rng_state);
+  sd->lcg_state = lcg_state_init(
+      rng_state.rng_pixel, rng_state.rng_offset, rng_state.sample, 0x15b4f88d);
+
+  const uint32_t sample_idx = volume_integrate_deep_optical_profile(
+      kg, state, ray, sd, &rng_state);
+#  if defined(__KERNEL_GPU__)
+  if (kernel_integrator_state.deep_owned_optical_checkpoints &&
+      kernel_integrator_state.deep_owned_optical_checkpoints[state].active &&
+      !(sd->flag & SD_CACHE_MISS))
+    return true; /* Keep the actual Optical queued kernel; no segment completion yet. */
+#  endif
+
+  integrator_finish_deep_volume_optical_segment<volume_kernel>(
+      kg, state, render_buffer, isect, sample_idx, (sd->flag & SD_CACHE_MISS) != 0);
+  return true;
+}
+
+template<DeviceKernel volume_kernel>
+ccl_device_inline bool integrator_shade_deep_volume_optical_segment(
+    KernelGlobals kg,
+    IntegratorState state,
+    ccl_global float *ccl_restrict render_buffer,
+    const ccl_private Ray *ccl_restrict ray,
+    const ccl_private Intersection *ccl_restrict isect)
+{
+  ShaderData sd;
+  return integrator_shade_deep_volume_optical_segment<volume_kernel>(
+      kg, state, render_buffer, ray, isect, &sd);
+}
+#endif
+
+ccl_device void integrator_shade_deep_volume_optical(KernelGlobals kg,
+                                                     IntegratorState state,
+                                                     ccl_global float *ccl_restrict render_buffer)
+{
+#if defined(__DEEP_OUTPUT__) && defined(__VOLUME__)
+  /* Optical traversal shares exactly the original setup, RNG, extinction and retry logic.
+   *
+   * Keeping this entry separate avoids reserving Beauty integration's private state per ray. */
+  kernel_assert(INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL);
+#  ifdef __KERNEL_GPU__
+  if (kernel_integrator_state.deep_compact_rays) {
+    auto &scalar = kernel_integrator_state.deep_compact_rays[deep_compact_camera_index(state)];
+    if (scalar.flags & DEEP_COMPACT_TRANSFER_PENDING) {
+      if (!deep_compact_cell(kg, state, scalar.pending_front, scalar.pending_back,
+                             scalar.pending_sigma, scalar.pending_phase))
+        return;
+      scalar.flags &= ~DEEP_COMPACT_TRANSFER_PENDING;
+      auto &coverage = kernel_integrator_state.deep_owned_optical_coverage[state];
+      coverage.front_t = coverage.cursor_t = scalar.cursor;
+      INTEGRATOR_STATE_WRITE(state, ray, tmin) = scalar.cursor;
+      integrator_path_next(state, DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL,
+                           DEVICE_KERNEL_INTEGRATOR_INTERSECT_CLOSEST);
+      return;
+    }
+  }
+#  endif
+  Ray ray ccl_optional_struct_init;
+  Intersection isect ccl_optional_struct_init;
+  integrator_shade_volume_setup(kg, state, &ray, &isect);
+  /* Extinction evaluation always sets PATH_RAY_EMISSION and allocates zero closures. */
+  ShaderDataTinyStorage sd_storage;
+  integrator_shade_deep_volume_optical_segment<DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL>(
+      kg, state, render_buffer, &ray, &isect, AS_SHADER_DATA(&sd_storage));
+#endif
+}
+
+ccl_device void integrator_shade_deep_volume_optical_warp(
+    KernelGlobals kg, IntegratorState state, ccl_global float *ccl_restrict render_buffer)
+{
+#if defined(__DEEP_OUTPUT__) && defined(__VOLUME__) && defined(__KERNEL_CUDA__) && \
+    !defined(__KERNEL_OPTIX__)
+  constexpr uint32_t mask = 0xffffffffu;
+  const uint32_t lane = threadIdx.x & 31u;
+  kernel_assert(INTEGRATOR_STATE(state, path, flag) & PATH_RAY_DEEP_VOLUME_OPTICAL);
+  Ray ray ccl_optional_struct_init;
+  Intersection isect ccl_optional_struct_init;
+  /* Only one lane mutates the integrator state; all lanes then read its completed setup. */
+  if (lane == 0) {
+    integrator_shade_volume_setup(kg, state, &ray, &isect);
+  }
+  __syncwarp(mask);
+  integrator_state_read_ray(state, &ray);
+  integrator_state_read_isect(state, &isect);
+  ray.tmax = (isect.prim != PRIM_NONE) ? isect.t : FLT_MAX;
+
+  ShaderDataTinyStorage sd_storage;
+  ccl_private ShaderData *sd = AS_SHADER_DATA(&sd_storage);
+  shader_setup_from_volume(sd, &ray, INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, object));
+  RNGState rng_state;
+  path_state_rng_load(state, &rng_state);
+  sd->lcg_state = lcg_state_init(
+      rng_state.rng_pixel, rng_state.rng_offset, rng_state.sample, 0x15b4f88d);
+  bool cache_miss = false;
+  const uint32_t sample_idx = volume_integrate_deep_optical_profile_warp(
+      kg, state, &ray, sd, &rng_state, cache_miss);
+  if (lane == 0) {
+    integrator_finish_deep_volume_optical_segment<
+        DEVICE_KERNEL_INTEGRATOR_SHADE_DEEP_VOLUME_OPTICAL_WARP>(
+        kg, state, render_buffer, &isect, sample_idx, cache_miss);
+  }
+#else
+  /* This entry is never scheduled on other backends; keep their kernel registry complete. */
+  integrator_shade_deep_volume_optical(kg, state, render_buffer);
+#endif
+}
+
 ccl_device void integrator_shade_volume(KernelGlobals kg,
                                         IntegratorState state,
                                         ccl_global float *ccl_restrict render_buffer)
@@ -3114,7 +4811,17 @@ ccl_device void integrator_shade_volume(KernelGlobals kg,
   Intersection isect ccl_optional_struct_init;
   integrator_shade_volume_setup(kg, state, &ray, &isect);
 
+#  ifdef __DEEP_OUTPUT__
+  if (integrator_shade_deep_volume_optical_segment<DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME>(
+          kg, state, render_buffer, &ray, &isect))
+  {
+    return;
+  }
+#  endif
+
   const VolumeIntegrateEvent event = volume_integrate(kg, state, &ray, render_buffer);
+  if (event == VOLUME_PATH_PAUSED)
+    return; /* Keep the queued null-tracking operation until its checkpoint completes. */
   if (event == VOLUME_PATH_CACHE_MISS) {
     integrator_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME);
     return;
@@ -3134,7 +4841,18 @@ ccl_device void integrator_shade_volume_ray_marching(KernelGlobals kg,
   Intersection isect ccl_optional_struct_init;
   integrator_shade_volume_setup(kg, state, &ray, &isect);
 
+#  ifdef __DEEP_OUTPUT__
+  if (integrator_shade_deep_volume_optical_segment<
+          DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING>(
+          kg, state, render_buffer, &ray, &isect))
+  {
+    return;
+  }
+#  endif
+
   const VolumeIntegrateEvent event = volume_integrate_ray_marching(kg, state, &ray, render_buffer);
+  if (event == VOLUME_PATH_PAUSED)
+    return; /* Preserve this real queued kernel until its checkpoint completes. */
   if (event == VOLUME_PATH_CACHE_MISS) {
     integrator_path_cache_miss(state, DEVICE_KERNEL_INTEGRATOR_SHADE_VOLUME_RAY_MARCHING);
     return;

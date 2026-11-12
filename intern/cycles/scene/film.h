@@ -57,6 +57,7 @@ class Film : public Node {
 
   /* Deep EXR output settings. */
   NODE_SOCKET_API(bool, use_deep_output)
+  NODE_SOCKET_API(bool, deep_simple_mode)
   NODE_SOCKET_API(int, deep_max_samples)
 
   void set_deep_samples_ptr(uint64_t ptr)

@@ -529,11 +529,9 @@ static void wm_init_userdef(Main *bmain)
   /* Needed so loading a file from the command line respects user-pref #26156. */
   SET_FLAG_FROM_TEST(G.fileflags, U.flag & USER_FILENOUI, G_FILE_NO_UI);
 
-  /* Set the python auto-execute setting from user prefs. */
-  /* Enabled by default, unless explicitly enabled in the command line which overrides. */
-  if ((G.f & G_FLAG_SCRIPT_OVERRIDE_PREF) == 0) {
-    SET_FLAG_FROM_TEST(G.f, (U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0, G_FLAG_SCRIPT_AUTOEXEC);
-  }
+  SET_FLAG_FROM_TEST(G.f,
+                     G.autoexec_override.value_or((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0),
+                     G_FLAG_SCRIPT_AUTOEXEC);
 
   /* Only reset "offline mode" if they weren't passes via command line arguments. */
   if ((G.f & G_FLAG_INTERNET_OVERRIDE_PREF_ANY) == 0) {
@@ -615,12 +613,12 @@ static int wm_read_exotic(const char *filepath)
 
 void WM_file_autoexec_init(const char *filepath)
 {
-  if (G.f & G_FLAG_SCRIPT_OVERRIDE_PREF) {
+  if (G.autoexec_override.has_value()) {
     return;
   }
-
   if (G.f & G_FLAG_SCRIPT_AUTOEXEC) {
-    if (BKE_autoexec_match(filepath, false, true)) {
+    /* Recovering a session that was never saved has no path to check. */
+    if ((filepath[0] != '\0') && BKE_autoexec_match(filepath, false, true)) {
       G.f &= ~G_FLAG_SCRIPT_AUTOEXEC;
     }
   }
@@ -1268,9 +1266,9 @@ void wm_homefile_read_ex(bContext *C,
   /* Options exclude each other. */
   BLI_assert((use_factory_settings && filepath_startup_override) == 0);
 
-  if ((G.f & G_FLAG_SCRIPT_OVERRIDE_PREF) == 0) {
-    SET_FLAG_FROM_TEST(G.f, (U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0, G_FLAG_SCRIPT_AUTOEXEC);
-  }
+  SET_FLAG_FROM_TEST(G.f,
+                     G.autoexec_override.value_or((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0),
+                     G_FLAG_SCRIPT_AUTOEXEC);
 
   if (use_data) {
     if (reset_app_template) {
@@ -2480,21 +2478,63 @@ void wm_open_init_load_ui(wmOperator *op, bool use_prefs)
   }
 }
 
-bool wm_open_init_use_scripts(wmOperator *op, bool use_prefs)
+/** How #wm_open_init_use_scripts resolves the default for "use_scripts". */
+enum class OpenTrust {
+  /** The default trust for the operator's "filepath" property. */
+  FilePath,
+  /** Keep the trust of the current session. */
+  CurrentSession,
+  /** The path this operator holds isn't the path the recovered file will have. */
+  Recover,
+};
+
+/**
+ * Return true if the script auto-execution should be cleared based on #WM_file_autoexec_init.
+ */
+[[nodiscard]] static bool wm_open_init_use_scripts(wmOperator *op, const OpenTrust source_of_trust)
 {
   PropertyRNA *prop = RNA_struct_find_property(op->ptr, "use_scripts");
-  bool use_scripts_autoexec_check = false;
-  if (!RNA_property_is_set(op->ptr, prop)) {
-    /* Use #G_FLAG_SCRIPT_AUTOEXEC rather than the userpref because this means if
-     * the flag has been disabled from the command line, then opening
-     * from the menu won't enable this setting. */
-    bool value = use_prefs ? ((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0) :
-                             ((G.f & G_FLAG_SCRIPT_AUTOEXEC) != 0);
-
-    RNA_property_boolean_set(op->ptr, prop, value);
-    use_scripts_autoexec_check = true;
+  if (RNA_property_is_set(op->ptr, prop)) {
+    return false;
   }
-  return use_scripts_autoexec_check;
+
+  bool value = false;
+  switch (source_of_trust) {
+    case OpenTrust::FilePath: {
+      char filepath[FILE_MAX] = "";
+      if (PropertyRNA *prop_filepath = RNA_struct_find_property(op->ptr, "filepath")) {
+        RNA_property_string_get(op->ptr, prop_filepath, filepath);
+      }
+
+      if (filepath[0] == '\0') {
+        /* The file selector before a file is chosen, excluded paths are checked once it's set. */
+        value = G.autoexec_override.value_or((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0);
+      }
+      else {
+        value = BKE_autoexec_default_trust_source(filepath,
+                                                  {
+                                                      .skip_overrides = false,
+                                                      .canonicalize = true,
+                                                      .strip_filename = true,
+                                                  });
+      }
+      break;
+    }
+    case OpenTrust::CurrentSession: {
+      /* Keep the trust of the current session rather than the preference. */
+      value = (G.f & G_FLAG_SCRIPT_AUTOEXEC) != 0;
+      break;
+    }
+    case OpenTrust::Recover: {
+      /* It may be in an excluded path so disable auto-execution,
+       * the user may still opt-in. */
+      value = G.autoexec_override.value_or(false);
+      break;
+    }
+  }
+
+  RNA_property_boolean_set(op->ptr, prop, value);
+  return true;
 }
 
 /** \} */
@@ -3230,7 +3270,7 @@ static wmOperatorStatus wm_open_mainfile__select_file_path_exec(bContext *C, wmO
 
   RNA_string_set(op->ptr, "filepath", blendfile_path);
   wm_open_init_load_ui(op, true);
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, true);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::FilePath);
   UNUSED_VARS(use_scripts_autoexec_check); /* The user can set this in the UI. */
   op->customdata = nullptr;
 
@@ -3252,7 +3292,7 @@ static wmOperatorStatus wm_open_mainfile__open(bContext *C, wmOperator *op)
 
   /* Re-use last loaded setting so we can reload a file without changing. */
   wm_open_init_load_ui(op, false);
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, false);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::CurrentSession);
 
   SET_FLAG_FROM_TEST(G.fileflags, !RNA_boolean_get(op->ptr, "load_ui"), G_FILE_NO_UI);
   SET_FLAG_FROM_TEST(G.f, RNA_boolean_get(op->ptr, "use_scripts"), G_FLAG_SCRIPT_AUTOEXEC);
@@ -3347,8 +3387,9 @@ static bool wm_open_mainfile_check(bContext * /*C*/, wmOperator *op)
 
   RNA_string_get(op->ptr, "filepath", filepath);
 
-  if ((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0) {
-    if (BKE_autoexec_match(filepath, true, true) == true) {
+  /* Excluded paths can't be trusted, unless the command line overrides the preference. */
+  if (((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0) && !G.autoexec_override.has_value()) {
+    if (BKE_autoexec_match(filepath, true, true)) {
       RNA_property_boolean_set(op->ptr, prop, false);
       is_untrusted = true;
     }
@@ -3456,7 +3497,7 @@ static wmOperatorStatus wm_revert_mainfile_exec(bContext *C, wmOperator *op)
   bool success;
   char filepath[FILE_MAX];
 
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, false);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::CurrentSession);
 
   SET_FLAG_FROM_TEST(G.f, RNA_boolean_get(op->ptr, "use_scripts"), G_FLAG_SCRIPT_AUTOEXEC);
 
@@ -3525,7 +3566,7 @@ static wmOperatorStatus wm_recover_last_session_impl(bContext *C,
 
 static wmOperatorStatus wm_recover_last_session_exec(bContext *C, wmOperator *op)
 {
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, true);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::Recover);
   return wm_recover_last_session_impl(C, op, use_scripts_autoexec_check);
 }
 
@@ -3542,9 +3583,7 @@ static wmOperatorStatus wm_recover_last_session_invoke(bContext *C,
                                                        wmOperator *op,
                                                        const wmEvent * /*event*/)
 {
-  /* Keep the current setting instead of using the preferences since a file selector
-   * doesn't give us the option to change the setting. */
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, false);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::Recover);
 
   if (wm_operator_close_file_dialog_if_needed(
           C, op, wm_recover_last_session_after_dialog_callback))
@@ -3580,7 +3619,7 @@ static wmOperatorStatus wm_recover_auto_save_exec(bContext *C, wmOperator *op)
   RNA_string_get(op->ptr, "filepath", filepath);
   BLI_path_canonicalize_native(filepath, sizeof(filepath));
 
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, true);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::Recover);
   SET_FLAG_FROM_TEST(G.f, RNA_boolean_get(op->ptr, "use_scripts"), G_FLAG_SCRIPT_AUTOEXEC);
 
   G.fileflags |= G_FILE_RECOVER_READ;
@@ -3609,7 +3648,7 @@ static wmOperatorStatus wm_recover_auto_save_invoke(bContext *C,
 
   wm_autosave_location(filepath);
   RNA_string_set(op->ptr, "filepath", filepath);
-  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, true);
+  const bool use_scripts_autoexec_check = wm_open_init_use_scripts(op, OpenTrust::Recover);
   UNUSED_VARS(use_scripts_autoexec_check); /* The user can set this in the UI. */
   WM_event_add_fileselect(C, op);
 
@@ -4390,12 +4429,6 @@ static void wm_block_autorun_warning_reload_with_scripts(bContext *C, ui::Block 
 
   popup_block_close(C, win, block);
 
-  /* Save user preferences for permanent execution. */
-  if ((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0) {
-    WM_operator_name_call(
-        C, "WM_OT_save_userpref", wm::OpCallContext::ExecDefault, nullptr, nullptr);
-  }
-
   /* Load file again with scripts enabled.
    * The reload is necessary to allow scripts to run when the files loads. */
   wm_test_autorun_revert_action_exec(C);
@@ -4407,12 +4440,6 @@ static void wm_block_autorun_warning_enable_scripts(bContext *C, ui::Block *bloc
   Main *bmain = CTX_data_main(C);
 
   popup_block_close(C, win, block);
-
-  /* Save user preferences for permanent execution. */
-  if ((U.flag & USER_SCRIPT_AUTOEXEC_DISABLE) == 0) {
-    WM_operator_name_call(
-        C, "WM_OT_save_userpref", wm::OpCallContext::ExecDefault, nullptr, nullptr);
-  }
 
   /* Force a full refresh, but without reloading the file. */
   for (Scene &scene : bmain->scenes) {
@@ -4435,8 +4462,7 @@ static ui::Block *block_create_autorun_warning(bContext *C, ARegion *region, voi
   const char *title = RPT_(
       "For security reasons, automatic execution of Python scripts "
       "in this file was disabled:");
-  const char *message = RPT_("This may lead to unexpected behavior");
-  const char *checkbox_text = RPT_("Permanently allow execution of scripts");
+  const char *message = RPT_("This may lead to unexpected behavior. Allow at your own risk.");
 
   /* Measure strings to find the longest. */
   const uiStyle *style = ui::style_get_dpi();
@@ -4444,12 +4470,8 @@ static ui::Block *block_create_autorun_warning(bContext *C, ARegion *region, voi
   int text_width = int(BLF_width(style->widget.uifont_id, title, BLF_DRAW_STR_DUMMY_MAX));
   text_width = std::max(text_width,
                         int(BLF_width(style->widget.uifont_id, message, BLF_DRAW_STR_DUMMY_MAX)));
-  text_width = std::max(
-      text_width,
-      int(BLF_width(style->widget.uifont_id, checkbox_text, BLF_DRAW_STR_DUMMY_MAX) +
-          (UI_SCALE_FAC * 25.0f)));
 
-  const int dialog_width = std::max(int(400.0f * UI_SCALE_FAC),
+  const int dialog_width = std::max(int(500.0f * UI_SCALE_FAC),
                                     text_width + int(style->columnspace * 2.5));
   const short icon_size = 40 * UI_SCALE_FAC;
   ui::Layout &layout = *uiItemsAlertBox(
@@ -4460,11 +4482,6 @@ static ui::Block *block_create_autorun_warning(bContext *C, ARegion *region, voi
   uiItemL_ex(&col, title, ICON_NONE, true, false);
   uiItemL_ex(&col, G.autoexec_fail, ICON_NONE, false, true);
   col.label(message, ICON_NONE);
-
-  layout.separator();
-
-  PointerRNA pref_ptr = RNA_pointer_create_discrete(nullptr, RNA_PreferencesFilePaths, &U);
-  layout.prop(&pref_ptr, "use_scripts_auto_execute", UI_ITEM_NONE, checkbox_text, ICON_NONE);
 
   layout.separator(2.0f);
 
@@ -4504,7 +4521,7 @@ static ui::Block *block_create_autorun_warning(bContext *C, ARegion *region, voi
                            50,
                            UI_UNIT_Y,
                            nullptr,
-                           TIP_("Enable scripts"));
+                           TIP_("Run potentially unsafe scripts in this blend file"));
     button_func_set(but,
                     [block](bContext &C) { wm_block_autorun_warning_enable_scripts(&C, block); });
   }
@@ -4514,7 +4531,7 @@ static ui::Block *block_create_autorun_warning(bContext *C, ARegion *region, voi
   but = uiDefIconTextBut(block,
                          ui::ButtonType::But,
                          ICON_NONE,
-                         IFACE_("Ignore"),
+                         IFACE_("Continue Safely"),
                          0,
                          0,
                          50,

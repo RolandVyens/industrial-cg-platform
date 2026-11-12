@@ -124,6 +124,7 @@ set(SRC_OPTIX
 )
 
 set(SRC_HEADERS
+  deep_queue_memory.h
   device.h
   denoise.h
   graphics_interop.h
@@ -253,3 +254,8 @@ source_group("metal" FILES ${SRC_METAL})
 source_group("optix" FILES ${SRC_OPTIX})
 source_group("oneapi" FILES ${SRC_ONEAPI})
 source_group("common" FILES ${SRC_BASE} ${SRC_HEADERS})
+
+# Only the optional legacy loader needs this flag; do not rebuild native kernels.
+if(WITH_CYCLES_DEEP_REFERENCE_GPU)
+  target_compile_definitions(cycles_device PRIVATE WITH_CYCLES_DEEP_REFERENCE_GPU)
+endif()

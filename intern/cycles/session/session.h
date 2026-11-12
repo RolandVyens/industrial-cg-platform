@@ -20,9 +20,9 @@
 #include "util/unique_ptr.h"
 
 CCL_NAMESPACE_BEGIN
+class DeepFrameCaptureConsumer;
 
 class BufferParams;
-class DeepOutputDriver;
 class Device;
 class DeviceScene;
 class DisplayDriver;
@@ -63,6 +63,7 @@ class SessionParams {
   int tile_size;
   /* Deep EXR buffer budget per device (MB); 0 disables tile-size clamping. */
   int deep_tile_budget_mb;
+  bool deep_simple_mode;
 
   bool use_resolution_divider;
 
@@ -89,6 +90,7 @@ class SessionParams {
     use_auto_tile = true;
     tile_size = 2048;
     deep_tile_budget_mb = 1024;
+    deep_simple_mode = true;
 
     use_resolution_divider = true;
 
@@ -105,6 +107,7 @@ class SessionParams {
              use_auto_tile == params.use_auto_tile && tile_size == params.tile_size &&
              use_resolution_divider == params.use_resolution_divider &&
              deep_tile_budget_mb == params.deep_tile_budget_mb &&
+             deep_simple_mode == params.deep_simple_mode &&
              shadingsystem == params.shadingsystem);
   }
 };
@@ -153,10 +156,7 @@ class Session {
 
   void set_output_driver(unique_ptr<OutputDriver> driver);
   void set_display_driver(unique_ptr<DisplayDriver> driver);
-  void set_deep_output_driver(unique_ptr<DeepOutputDriver> driver);
-
-  /* Get deep output driver (for finalization). */
-  DeepOutputDriver *get_deep_output_driver();
+  bool set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer);
 
   double get_estimated_remaining_time() const;
 
@@ -174,7 +174,8 @@ class Session {
 
   /* Read given full-frame file from disk, perform needed processing and write it to the software
    * via the write callback. */
-  void process_full_buffer_from_disk(string_view filename);
+  void process_full_buffer_from_disk(string_view filename,
+                                     DeepFrameCaptureConsumer *beauty_consumer = nullptr);
 
  protected:
   struct DelayedReset {
@@ -263,6 +264,7 @@ class Session {
    * Is a single full-frame path tracer for interactive viewport rendering.
    * A path tracer for the current big-tile for an offline rendering. */
   unique_ptr<PathTrace> path_trace_;
+  DeepFrameCaptureConsumer *deep_frame_capture_consumer_ = nullptr;
 };
 
 CCL_NAMESPACE_END

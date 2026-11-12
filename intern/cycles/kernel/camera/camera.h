@@ -453,7 +453,8 @@ ccl_device_inline Spectrum camera_sample(KernelGlobals kg,
                                          const float time,
                                          const float2 lens_uv,
                                          ccl_private Ray *ray,
-                                         ccl_private int &r_cache_miss)
+                                         ccl_private int &r_cache_miss,
+                                         ccl_private float2 *deep_raster = nullptr)
 {
   float2 raster = make_float2(x, y);
 
@@ -468,6 +469,7 @@ ccl_device_inline Spectrum camera_sample(KernelGlobals kg,
   }
 
   /* motion blur */
+  if (deep_raster) *deep_raster = raster;
   if (kernel_data.cam.shuttertime == -1.0f) {
     ray->time = 0.5f;
   }

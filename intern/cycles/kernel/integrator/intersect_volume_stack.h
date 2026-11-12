@@ -151,6 +151,14 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
             break;
           }
         }
+        if (need_add && stack_index >= volume_stack_size - 1) {
+#    ifdef __KERNEL_GPU__
+          if (kernel_integrator_state.deep_optical_inputs) {
+            atomic_fetch_and_or_uint32(&kernel_integrator_state.queue_counter->deep_optical_error,
+                                       DEEP_OPTICAL_ERROR_STACK);
+          }
+#    endif
+        }
         if (need_add && stack_index < volume_stack_size - 1) {
           const VolumeStack new_entry = {stack_sd->object, stack_sd->shader};
           integrator_state_write_volume_stack(state, stack_index, new_entry);
@@ -170,11 +178,19 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
   int enclosed_volumes[MAX_VOLUME_STACK_SIZE];
   int step = 0;
 
-  while (stack_index < volume_stack_size - 1 && enclosed_index < MAX_VOLUME_STACK_SIZE - 1 &&
-         step < 2 * volume_stack_size)
+#    ifdef __KERNEL_GPU__
+  const bool owned_optical = kernel_integrator_state.deep_optical_inputs != nullptr;
+#    else
+  constexpr bool owned_optical = false;
+#    endif
+  bool traversal_complete = false, stack_denied = false;
+
+  while ((owned_optical || stack_index < volume_stack_size - 1) &&
+         enclosed_index < MAX_VOLUME_STACK_SIZE - 1 && step < 2 * volume_stack_size)
   {
     Intersection isect;
     if (!scene_intersect_volume(kg, &volume_ray, &isect, visibility)) {
+      traversal_complete = true;
       break;
     }
 
@@ -201,6 +217,10 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
         }
       }
       if (need_add) {
+        if (owned_optical && stack_index >= volume_stack_size - 1) {
+          stack_denied = true;
+          break;
+        }
         const VolumeStack new_entry = {stack_sd->object, stack_sd->shader};
         integrator_state_write_volume_stack(state, stack_index, new_entry);
         ++stack_index;
@@ -219,8 +239,27 @@ ccl_device void integrator_volume_stack_init(KernelGlobals kg, IntegratorState s
     volume_ray.self.prim = isect.prim;
     ++step;
   }
+  /* A full active set can be complete. Prove the miss rather than treating
+   * occupancy as overflow; never write or evaluate an unseen owner here. */
+  if (owned_optical && !traversal_complete && !stack_denied) {
+    Intersection remaining;
+    traversal_complete = !scene_intersect_volume(kg, &volume_ray, &remaining, visibility);
+  }
 #  endif
 
+#  ifdef __KERNEL_GPU__
+  if (kernel_integrator_state.deep_optical_inputs) {
+#    ifdef __VOLUME_RECORD_ALL__
+    const bool exhausted = num_hits >= 2 * volume_stack_size;
+#    else
+    const bool exhausted = stack_denied || !traversal_complete;
+#    endif
+    if (exhausted) {
+      atomic_fetch_and_or_uint32(&kernel_integrator_state.queue_counter->deep_optical_error,
+                                 DEEP_OPTICAL_ERROR_STACK);
+    }
+  }
+#  endif
   /* Write terminator. */
   const VolumeStack new_entry = {OBJECT_NONE, SHADER_NONE};
   integrator_state_write_volume_stack(state, stack_index, new_entry);

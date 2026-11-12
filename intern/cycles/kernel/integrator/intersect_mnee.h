@@ -76,6 +76,15 @@ integrate_surface_mnee(KernelGlobals kg,
   /* Store MNEE state in a shadow state, to avoid increasing path state size.
    * This is then turned into an actual shadow ray state in shade_surface, or discarded. */
   if (mnee_vertex_count > 0) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    if (deep_native_validation_once(DEEP_NATIVE_FAULT_MNEE_RETRY))
+      return SHADER_EVAL_CACHE_MISS;
+#  endif
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+    /* MNEE precedes ordinary receiver SVM evaluation. Capture only its actual
+     * geometry source here; independent Optical supplies all t/q semantics. */
+    deep_native_prepare_surface_candidate(kg, state, sd, true);
+#  endif
     Ray ray ccl_optional_struct_init;
     light_sample_to_surface_shadow_ray(kg, emission_sd, &ls, &ray);
 

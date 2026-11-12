@@ -23,6 +23,7 @@
 #include "util/colorspace.h"
 #include "util/log.h"
 #include "util/murmurhash.h"
+#include "util/progress.h"
 #include "util/transform.h"
 
 #include "scene/shader.tables"
@@ -92,6 +93,7 @@ Shader::Shader() : Node(get_node_type())
   has_surface_raytrace = false;
   has_surface_bssrdf = false;
   has_volume = false;
+  has_volume_emission = true;
   has_displacement = false;
   has_bump_from_displacement = false;
   has_bump_from_surface = false;
@@ -561,6 +563,7 @@ void ShaderManager::device_update_pre(Device * /*device*/,
       shader->has_surface_bssrdf = false;
       shader->has_surface_spatial_varying = false;
       shader->has_volume = output->input("Volume")->link != nullptr;
+      shader->has_volume_emission = true;
       shader->has_volume_spatial_varying = false;
       shader->has_volume_attribute_dependency = false;
       shader->has_displacement = output->input("Displacement")->link != nullptr;
@@ -603,6 +606,16 @@ void ShaderManager::device_update_post(Device *device,
                                        Progress &progress)
 {
   device_update_specific(device, dscene, scene, progress);
+
+  /* Publish only after the compiler has completed. Uncompiled backends retain
+   * the conservative per-shader default. This is host admission metadata. */
+  dscene->volume_may_emit = progress.get_cancel() || device->have_error();
+  if (!dscene->volume_may_emit) {
+    for (const Shader *shader : scene->shaders) {
+      dscene->volume_may_emit |= shader->reference_count() && shader->has_volume &&
+                                 shader->has_volume_emission;
+    }
+  }
 
   /* This runs after kernels have been loaded, so can copy to device. */
   dscene->shaders.copy_to_device_if_modified();

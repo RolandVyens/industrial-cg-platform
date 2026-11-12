@@ -20,6 +20,12 @@ CPUKernels::CPUKernels()
       REGISTER_KERNEL(integrator_init_from_camera),
       REGISTER_KERNEL(integrator_init_from_bake),
       REGISTER_KERNEL(integrator_megakernel),
+      deep_init{{KERNEL_FUNCTIONS(deep_alpha_init_from_camera)},
+                {KERNEL_FUNCTIONS(deep_simple_init_from_camera)},
+                {KERNEL_FUNCTIONS(deep_physical_init_from_camera)}},
+      deep_megakernel{{KERNEL_FUNCTIONS(deep_alpha_megakernel)},
+                      {KERNEL_FUNCTIONS(deep_simple_megakernel)},
+                      {KERNEL_FUNCTIONS(deep_physical_megakernel)}},
       /* Shader evaluation. */
       REGISTER_KERNEL(shader_eval_displace),
       REGISTER_KERNEL(shader_eval_background),

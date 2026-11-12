@@ -15,6 +15,7 @@
 #include "session/buffers.h"
 
 #include "kernel/types.h"
+#include "util/progress.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -49,6 +50,19 @@ PathTraceWork::PathTraceWork(Device *device,
 }
 
 PathTraceWork::~PathTraceWork() = default;
+
+void PathTraceWork::set_progress(Progress *progress)
+{
+  progress_ = progress;
+  progress_cancel_requested_ = false;
+}
+
+bool PathTraceWork::poll_cancel_requested()
+{
+  if (progress_ && progress_->get_cancel())
+    progress_cancel_requested_ = true;
+  return is_cancel_requested();
+}
 
 RenderBuffers *PathTraceWork::get_render_buffers()
 {

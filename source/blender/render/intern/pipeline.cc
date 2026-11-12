@@ -9,9 +9,11 @@
 #include <fmt/format.h>
 
 #include <cerrno>
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <forward_list>
+#include <limits>
 #include <memory>
 
 #include "DNA_anim_types.h"
@@ -29,6 +31,7 @@
 #include "BLI_fileops.h"
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
+#include "BLI_memory_utils.hh"
 #include "BLI_mutex.hh"
 #include "BLI_rect.h"
 #include "BLI_set.hh"
@@ -53,6 +56,7 @@
 #include "BKE_layer.hh"
 #include "BKE_main.hh"
 #include "BKE_node_legacy_types.hh"
+#include "BKE_node.hh"
 #include "BKE_node_runtime.hh"
 #include "BKE_pointcache.h"
 #include "BKE_report.hh"
@@ -77,7 +81,9 @@
 #include "MOV_write.hh"
 
 #include "RE_compositor.hh"
+#include "RE_deep_data.hh"
 #include "RE_engine.h"
+#include "RE_deep_output.hh"
 #include "RE_pipeline.h"
 
 #include "SEQ_relations.hh"
@@ -1012,18 +1018,14 @@ static bool render_result_has_display_window(const RenderResult *render_result)
   }
 
   for (const RenderView &render_view : render_result->views) {
-    if (render_view.ibuf &&
-        flag_is_set(render_view.ibuf->flags, ImBufFlags::HasDisplayWindow))
-    {
+    if (render_view.ibuf && flag_is_set(render_view.ibuf->flags, ImBufFlags::HasDisplayWindow)) {
       return true;
     }
   }
 
   for (const RenderLayer &render_layer : render_result->layers) {
     for (const RenderPass &render_pass : render_layer.passes) {
-      if (render_pass.ibuf &&
-          flag_is_set(render_pass.ibuf->flags, ImBufFlags::HasDisplayWindow))
-      {
+      if (render_pass.ibuf && flag_is_set(render_pass.ibuf->flags, ImBufFlags::HasDisplayWindow)) {
         return true;
       }
     }
@@ -1127,6 +1129,13 @@ static void do_render_compositor_scene(Render *re, Scene *sce, int cfra)
   /* still unsure entity this... */
   resc->main = re->main;
   resc->scene = sce;
+
+  /* The parent compositor owns consumers that may target this Scene. Keep the
+   * authored tree/key source alive only for this synchronous engine invocation;
+   * persistent child renders must not retain it for an unrelated later render. */
+  Scene *previous_deep_output_scene = resc->deep_output_scene;
+  resc->deep_output_scene = re->deep_output_scene ? re->deep_output_scene : re->scene;
+  BLI_SCOPED_DEFER([&]() { resc->deep_output_scene = previous_deep_output_scene; });
 
   RE_display_share(resc, re);
 
@@ -1328,6 +1337,24 @@ static void do_render_compositor(Render *re)
                                 needed_outputs);
         }
         compositor_render_context.save_file_outputs(re->pipeline_scene_eval);
+        const std::string output_error = compositor_render_context.output_error();
+        if (!output_error.empty()) {
+          BKE_report(re->reports, RPT_ERROR, output_error.c_str());
+          G.is_break = true;
+        }
+      }
+    }
+  }
+
+  /* Join canonical Deep consumers even when a node was skipped or rejected before writing. */
+  if (re->result) {
+    for (RenderLayer &layer : re->result->layers) {
+      if (layer.deep_data && layer.deep_data->canonical_source) {
+        std::string error;
+        if (!layer.deep_data->canonical_source->finish(error)) {
+          BKE_report(re->reports, RPT_ERROR, error.c_str());
+          G.is_break = true;
+        }
       }
     }
   }
@@ -1687,10 +1714,13 @@ static int check_valid_camera(const Main &bmain,
   return true;
 }
 
-static bool node_tree_has_deep_exr_output(const bNodeTree *node_tree, const Scene &default_scene)
+static void foreach_deep_exr_output(const bNodeTree *node_tree,
+                                    const Scene &default_scene,
+                                    const bNodeInstanceKey parent_key,
+                                    FunctionRef<void(const RenderDeepOutputConsumer &)> callback)
 {
   if (!node_tree) {
-    return false;
+    return;
   }
 
   node_tree->ensure_topology_cache();
@@ -1701,11 +1731,22 @@ static bool node_tree_has_deep_exr_output(const bNodeTree *node_tree, const Scen
     /* Check node format for DEEP_EXR. */
     const NodeCompositorFileOutput *storage = static_cast<const NodeCompositorFileOutput *>(
         node->storage);
+    const Scene *target = nullptr;
+    int view_layer = 0;
+    bool alpha_only = false;
     if (storage->format.imtype == R_IMF_IMTYPE_DEEP_EXR &&
         bke::compositor::deep_output_target_from_node(
-            *node, default_scene, nullptr, nullptr, nullptr))
+            *node, default_scene, &target, &view_layer, &alpha_only))
     {
-      return true;
+      callback({uint64_t(bke::node_instance_key(parent_key, node_tree, node).value) + 1,
+                target,
+                view_layer,
+                storage->format.exr_codec,
+                storage->format.depth == R_IMF_CHAN_DEPTH_16,
+                alpha_only,
+                storage->format.deep_merge_tolerance,
+                storage->format.deep_alpha_merge_tolerance,
+                storage->format.views_format});
     }
   }
 
@@ -1714,13 +1755,11 @@ static bool node_tree_has_deep_exr_output(const bNodeTree *node_tree, const Scen
       continue;
     }
 
-    if (node_tree_has_deep_exr_output(reinterpret_cast<const bNodeTree *>(node->id), default_scene))
-    {
-      return true;
-    }
+    foreach_deep_exr_output(reinterpret_cast<const bNodeTree *>(node->id),
+                            default_scene,
+                            bke::node_instance_key(parent_key, node_tree, node),
+                            callback);
   }
-
-  return false;
 }
 
 static bool node_tree_has_exr_output(const bNodeTree *node_tree)
@@ -1747,11 +1786,10 @@ static bool node_tree_has_exr_output(const bNodeTree *node_tree)
 
     for (const int item_index : IndexRange(storage->items_count)) {
       const NodeCompositorFileOutputItem &item = storage->items[item_index];
-      if (!item.override_node_format ||
-          !ELEM(item.format.imtype,
-                R_IMF_IMTYPE_OPENEXR,
-                R_IMF_IMTYPE_MULTILAYER,
-                R_IMF_IMTYPE_DEEP_EXR))
+      if (!item.override_node_format || !ELEM(item.format.imtype,
+                                              R_IMF_IMTYPE_OPENEXR,
+                                              R_IMF_IMTYPE_MULTILAYER,
+                                              R_IMF_IMTYPE_DEEP_EXR))
       {
         continue;
       }
@@ -1801,7 +1839,53 @@ bool RE_scene_has_deep_exr_file_output(Scene *scene)
   if (!scene->compositing_node_group) {
     return false;
   }
-  return node_tree_has_deep_exr_output(scene->compositing_node_group, *scene);
+  bool found = false;
+  RE_scene_foreach_deep_exr_file_output(scene,
+                                        [&](const RenderDeepOutputConsumer &) { found = true; });
+  return found;
+}
+
+bool RE_scene_deep_exr_file_output_min_alpha_tolerance(Scene *scene, float *minimum)
+{
+  if (!minimum || !scene || !(scene->r.scemode & R_DOCOMP) || !scene->compositing_node_group) {
+    return false;
+  }
+  *minimum = std::numeric_limits<float>::infinity();
+  bool found = false;
+  RE_scene_foreach_deep_exr_file_output(scene, [&](const RenderDeepOutputConsumer &output) {
+    found = true;
+    const float alpha = output.alpha_tolerance;
+    *minimum = std::isfinite(alpha) && alpha >= 0 ? std::min(*minimum, alpha) :
+                                                    std::numeric_limits<float>::quiet_NaN();
+  });
+  return found;
+}
+
+void RE_scene_foreach_deep_exr_file_output(
+    Scene *scene, FunctionRef<void(const RenderDeepOutputConsumer &)> callback)
+{
+  if (!scene || !(scene->r.scemode & R_DOCOMP) || !scene->compositing_node_group)
+    return;
+  foreach_deep_exr_output(
+      scene->compositing_node_group, *scene, bke::NODE_INSTANCE_KEY_BASE, callback);
+}
+
+void RE_engine_foreach_deep_exr_file_output(
+    const RenderEngine *engine,
+    Scene *scene,
+    FunctionRef<void(const RenderDeepOutputConsumer &)> callback)
+{
+  /* Preserve local consumers and add only the active compositor invocation's
+   * external consumers. Enumerating Main would capture unrelated/dead outputs. */
+  RE_scene_foreach_deep_exr_file_output(scene, callback);
+  Scene *owner = engine && engine->re ? engine->re->deep_output_scene : nullptr;
+  if (owner && owner != scene) {
+    RE_scene_foreach_deep_exr_file_output(owner, [&](const RenderDeepOutputConsumer &output) {
+      if (output.scene == scene) {
+        callback(output);
+      }
+    });
+  }
 }
 
 bool RE_scene_has_exr_file_output(Scene *scene)

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "BLI_function_ref.hh"
+
 #include "DNA_ID.h"
 #include "DNA_listBase.h"
 #include "DNA_vec_types.h"
@@ -534,6 +536,18 @@ bool RE_is_rendering_allowed(const Main &bmain,
  * Used by Cycles to know when to generate deep data for compositor passthrough.
  */
 bool RE_scene_has_deep_exr_file_output(struct Scene *scene);
+struct RenderDeepOutputConsumer {
+  uint64_t source_key = 0;
+  const Scene *scene = nullptr;
+  int view_layer_id = 0, compression = 0;
+  bool half = false, alpha_only = false;
+  float depth_tolerance = 0, alpha_tolerance = 0;
+  int views_format = 0;
+};
+void RE_scene_foreach_deep_exr_file_output(
+    Scene *scene, FunctionRef<void(const RenderDeepOutputConsumer &)> callback);
+/** Minimum authored alpha tolerance among reachable valid Deep outputs; no default floor. */
+bool RE_scene_deep_exr_file_output_min_alpha_tolerance(struct Scene *scene, float *minimum);
 bool RE_scene_has_exr_file_output(struct Scene *scene);
 
 bool RE_allow_render_generic_object(struct Object *ob);

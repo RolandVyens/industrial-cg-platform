@@ -26,6 +26,14 @@
  * INTEGRATOR_STATE_ARRAY_WRITE(state, x, index, y): write x[index].y
  */
 
+#include "kernel/integrator/deep_camera_receipt.h"
+#include "kernel/integrator/deep_compact_types.h"
+#include "kernel/integrator/deep_frame_capture.h"
+#include "kernel/integrator/deep_bounded_types.h"
+#include "kernel/integrator/deep_optical_event.h"
+#include "kernel/integrator/deep_surface_receipt.h"
+#include "kernel/integrator/deep_volume_emission_span.h"
+#include "kernel/integrator/deep_volume_radiance_receipt.h"
 #include "kernel/types.h"
 
 #include "util/types.h"
@@ -100,6 +108,37 @@ struct IntegratorStateCPU {
 struct IntegratorQueueCounter {
   int num_queued[DEVICE_GPU_KERNEL_INTEGRATOR_NUM];
   int cache_miss;
+  uint deep_camera_receipt_count;
+  uint deep_camera_receipt_overflow;
+  uint deep_surface_receipt_count;
+  uint deep_surface_receipt_overflow;
+  uint deep_volume_radiance_receipt_count;
+  uint deep_volume_radiance_receipt_error;
+  uint deep_volume_emission_span_count;
+  uint deep_volume_emission_span_error;
+  uint deep_optical_event_count;
+  uint deep_optical_error;
+  uint deep_optical_completed;
+  uint deep_native_camera_reserved;
+  uint deep_native_camera_written;
+  uint deep_compact_reserved, deep_compact_written;
+  uint deep_native_homogeneous_reserved;
+  uint deep_native_homogeneous_written;
+  uint deep_native_emission_calls;
+  uint deep_native_auxiliary_film_calls;
+  uint deep_native_volume_yields, deep_native_volume_retries;
+  uint deep_native_volume_pending;
+  uint deep_native_root_reserved;
+  uint deep_native_root_written;
+  uint deep_native_point_reserved;
+  uint deep_native_point_written;
+  uint deep_native_expression_source_reserved, deep_native_expression_source_written;
+  uint deep_native_expression_node_reserved, deep_native_expression_node_written;
+  uint deep_native_expression_call_reserved, deep_native_expression_call_written;
+  uint deep_owned_optical_visibility_count;
+  uint deep_bounded_camera_live;
+  uint deep_native_capture_error;
+  uint deep_native_validation_seen;
 };
 
 #if defined(__INTEGRATOR_GPU_PACKED_STATE__) && defined(__KERNEL_GPU__)
@@ -210,6 +249,67 @@ struct IntegratorStateGPU {
 
   /* Divisor used to partition active indices by locality when sorting by material. */
   uint sort_partition_divisor;
+
+  /* Optional camera-input capture. No Optical traversal lives in these Beauty states. */
+  ccl_global DeepCameraReceipt *deep_camera_receipts;
+  uint deep_camera_receipt_capacity;
+  /* Addresses remain stable until every main/shadow/MNEE queue in the domain is dead. */
+  ccl_global DeepSurfaceReceipt *deep_surface_receipts;
+  uint deep_surface_receipt_capacity;
+  ccl_global DeepVolumeRadianceReceipt *deep_volume_radiance_receipts;
+  uint deep_volume_radiance_receipt_capacity;
+  ccl_global DeepVolumeEmissionSpan *deep_volume_emission_spans;
+  uint deep_volume_emission_span_capacity;
+  /* These pointers are populated ONLY in the separately allocated Optical descriptor. */
+  ccl_global DeepCameraReceipt *deep_optical_inputs;
+  ccl_global DeepOpticalEvent *deep_optical_events;
+  ccl_global DeepOpticalLedger *deep_optical_ledger;
+  uint deep_optical_event_capacity;
+  /* Separate production arrays. No legacy receipt, Optical READY or Deep Film buffer owns them. */
+  ccl_global DeepNativeCameraRecord *deep_native_cameras;
+  ccl_global DeepNativeHomogeneousRecord *deep_native_homogeneous;
+  ccl_global DeepNativeRootRecord *deep_native_roots;
+  ccl_global DeepNativeRootRecord *deep_native_root_resident;
+  uint deep_native_root_base, deep_native_root_resident_count;
+  ccl_global DeepNativePointRecord *deep_native_points;
+  ccl_global DeepNativeExpressionSource *deep_native_expression_sources;
+  ccl_global DeepNativeExpressionNode *deep_native_expression_nodes;
+  ccl_global DeepNativeExpressionCall *deep_native_expression_calls;
+  uint deep_native_camera_capacity;
+  uint deep_native_homogeneous_capacity;
+  uint deep_native_root_capacity;
+  uint deep_native_point_capacity;
+  uint deep_native_homogeneous_base, deep_native_point_base;
+  uint deep_native_validation_faults;
+  uint deep_native_expression_source_capacity, deep_native_expression_node_capacity;
+  uint deep_native_expression_call_capacity;
+  uint deep_native_expression_source_base, deep_native_expression_node_base;
+  uint deep_native_expression_call_base;
+  ccl_global void *deep_native_volume_checkpoints;
+  uint deep_native_volume_checkpoint_capacity, deep_native_volume_step_limit;
+  uint64_t deep_native_domain_id;
+  ccl_global DeepOwnedOpticalPiece *deep_owned_optical_pieces;
+  ccl_global DeepOwnedOpticalVisibility *deep_owned_optical_visibility;
+  ccl_global DeepOwnedOpticalCoverage *deep_owned_optical_coverage;
+  ccl_global DeepOpticalCheckpoint *deep_owned_optical_checkpoints;
+  uint deep_owned_optical_operation_steps;
+  uint deep_owned_optical_visibility_capacity;
+  uint deep_native_full_optical;
+  uint deep_native_capture_rgb;
+  const DeepCompactWitnessParameters *deep_compact_witness;
+  const DeepCompactTraceParameters *deep_compact_trace;
+  ccl_global DeepCompactPrimitive *deep_compact_primitives;
+  ccl_global DeepCompactRayState *deep_compact_rays;
+  uint deep_compact_capacity;
+  uint deep_compact_has_volume;
+  ccl_global DeepCompactStackEntry *deep_compact_stacks;
+  ccl_global DeepNativeCameraRecord *deep_compact_cameras;
+  uint deep_compact_camera_base, deep_compact_stack_stride;
+  ccl_global DeepCompactRootColour *deep_compact_root_colours;
+  uint deep_compact_root_colour_capacity;
+  ccl_global DeepCompactEmissionState *deep_compact_emission;
+  /* Immutable packet binding, replaced only after all native queues and AA join. */
+  DeepBoundedBinding deep_bounded;
 };
 
 /* Abstraction

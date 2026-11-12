@@ -13,8 +13,10 @@
 
 #include "kernel/integrator/path_state.h"
 
+#include "integrator/deep_bounded_cpu.h"
 #include "integrator/pass_accessor_cpu.h"
 #include "integrator/path_trace_display.h"
+#include "util/transform.h"
 
 #include "scene/scene.h"
 #include "session/buffers.h"
@@ -54,14 +56,114 @@ PathTraceWorkCPU::PathTraceWorkCPU(Device *device,
   DCHECK_EQ(device->info.type, DEVICE_CPU);
 }
 
+PathTraceWorkCPU::~PathTraceWorkCPU() = default;
+
+bool PathTraceWorkCPU::deep_cpu_result(const bool ok, const char *phase)
+{
+  if (!ok && !is_cancel_requested() && !device_->have_error()) {
+    const uint32_t flags = deep_cpu_work_ ? deep_cpu_work_->error_flags() : 0;
+    device_->set_error(string("Bounded CPU Deep failed: ") + phase +
+                       " (flags=" + std::to_string(flags) + ")");
+  }
+  return ok;
+}
+
+bool PathTraceWorkCPU::set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer)
+{
+  if (!consumer) {
+    deep_cpu_work_.reset();
+    return true;
+  }
+  if (device_->info.type != DEVICE_CPU || !consumer->uses_cpu_processing() || has_multiple_works())
+    return false;
+  try {
+    deep_cpu_work_ = make_unique<DeepBoundedCPUWork>(*device_, *consumer);
+    return true;
+  }
+  catch (const std::bad_alloc &) {
+    return deep_cpu_result(false, "owner allocation exceeds host quota");
+  }
+}
+
+bool PathTraceWorkCPU::prepare_deep_tile()
+{
+  try {
+    return !deep_cpu_work_ || deep_cpu_result(deep_cpu_work_->prepare_tile(), "prepare");
+  }
+  catch (const std::bad_alloc &) {
+    return deep_cpu_result(false, "prepare allocation");
+  }
+}
+bool PathTraceWorkCPU::close_deep_tile()
+{
+  try {
+    return !deep_cpu_work_ || deep_cpu_result(deep_cpu_work_->close_tile(), "encode");
+  }
+  catch (const std::bad_alloc &) {
+    return deep_cpu_result(false, "encoded payload quota");
+  }
+}
+bool PathTraceWorkCPU::drain_deep_tiles()
+{
+  try {
+    return !deep_cpu_work_ || deep_cpu_result(deep_cpu_work_->drain(), "publish");
+  }
+  catch (const std::bad_alloc &) {
+    return deep_cpu_result(false, "publication quota");
+  }
+}
+bool PathTraceWorkCPU::set_bounded_deep_beauty(const RenderBuffers &buffers)
+{
+  try {
+    return !deep_cpu_work_ || deep_cpu_result(deep_cpu_work_->set_tile_beauty(buffers), "Beauty");
+  }
+  catch (const std::bad_alloc &) {
+    return deep_cpu_result(false, "Beauty quota");
+  }
+}
+
 void PathTraceWorkCPU::init_execution()
 {
   /* Acquire thread globals, updating all data pointers. */
   kernel_thread_globals_ = device_->acquire_cpu_kernel_thread_globals();
+  if (deep_cpu_work_) {
+    if (device_scene_->data.bake.use) {
+      deep_cpu_result(false, "bake is not a bounded camera render");
+      return;
+    }
+    float projection = 0;
+    const auto &cam = device_scene_->data.cam;
+    if (cam.type == CAMERA_PERSPECTIVE) {
+      const float3 origin = transform_perspective(&cam.rastertocamera, make_float3(0, 0, 0));
+      const float3 dx = transform_perspective(&cam.rastertocamera, make_float3(1, 0, 0));
+      const float3 dy = transform_perspective(&cam.rastertocamera, make_float3(0, 1, 0));
+      if (origin.z != 0 && dx.z != 0 && dy.z != 0) {
+        const float scale = .5f * std::min(std::abs(dx.x / dx.z - origin.x / origin.z),
+                                           std::abs(dy.y / dy.z - origin.y / origin.z));
+        if (std::isfinite(scale) && scale > 0)
+          projection = scale;
+      }
+    }
+    try {
+      deep_cpu_result(deep_cpu_work_->configure(effective_big_tile_params_,
+                                                effective_buffer_params_,
+                                                uint32_t(kernel_thread_globals_->size()),
+                                                device_scene_->data.background.transparent != 0,
+                                                projection),
+                      "Tile working budget or raster layout");
+    }
+    catch (const std::bad_alloc &) {
+      deep_cpu_result(false, "Tile working allocation");
+    }
+  }
 }
 
 void PathTraceWorkCPU::deinit_execution()
 {
+  if (kernel_thread_globals_) {
+    for (auto &kg : *kernel_thread_globals_)
+      kg.deep_bounded = nullptr;
+  }
   device_->release_cpu_kernel_thread_globals();
   kernel_thread_globals_ = nullptr;
 }
@@ -71,6 +173,8 @@ void PathTraceWorkCPU::render_samples(RenderStatistics &statistics,
                                       const int samples_num,
                                       const int sample_offset)
 {
+  if (device_->have_error())
+    return;
   const int64_t image_width = effective_buffer_params_.width;
   const int64_t image_height = effective_buffer_params_.height;
   const int64_t total_pixels_num = image_width * image_height;
@@ -81,32 +185,51 @@ void PathTraceWorkCPU::render_samples(RenderStatistics &statistics,
     }
   }
 
-  tbb::task_arena local_arena = local_tbb_arena_create(device_);
-  local_arena.execute([&]() {
-    parallel_for(int64_t(0), total_pixels_num, [&](int64_t work_index) {
-      if (is_cancel_requested()) {
-        return;
-      }
+  const auto render = [&]<bool Bounded>() {
+    tbb::task_arena local_arena = local_tbb_arena_create(device_);
+    local_arena.execute([&]() {
+      parallel_for(int64_t(0), total_pixels_num, [&](int64_t work_index) {
+        if (is_cancel_requested()) {
+          return;
+        }
 
-      const int y = work_index / image_width;
-      const int x = work_index - y * image_width;
+        const int y = work_index / image_width;
+        const int x = work_index - y * image_width;
 
-      KernelWorkTile work_tile;
-      work_tile.x = effective_buffer_params_.full_x + x;
-      work_tile.y = effective_buffer_params_.full_y + y;
-      work_tile.w = 1;
-      work_tile.h = 1;
-      work_tile.start_sample = start_sample;
-      work_tile.sample_offset = sample_offset;
-      work_tile.num_samples = 1;
-      work_tile.offset = effective_buffer_params_.offset;
-      work_tile.stride = effective_buffer_params_.stride;
+        KernelWorkTile work_tile;
+        work_tile.x = effective_buffer_params_.full_x + x;
+        work_tile.y = effective_buffer_params_.full_y + y;
+        work_tile.w = 1;
+        work_tile.h = 1;
+        work_tile.start_sample = start_sample;
+        work_tile.sample_offset = sample_offset;
+        work_tile.num_samples = 1;
+        work_tile.offset = effective_buffer_params_.offset;
+        work_tile.stride = effective_buffer_params_.stride;
 
-      ThreadKernelGlobalsCPU *kernel_globals = kernel_thread_globals_get(*kernel_thread_globals_);
+        ThreadKernelGlobalsCPU *kernel_globals = kernel_thread_globals_get(
+            *kernel_thread_globals_);
 
-      render_samples_full_pipeline(kernel_globals, work_tile, samples_num);
+        if constexpr (Bounded)
+          render_samples_full_pipeline<true>(kernel_globals, work_tile, samples_num);
+        else
+          render_samples_full_pipeline<false>(kernel_globals, work_tile, samples_num);
+      });
     });
-  });
+  };
+  try {
+    if (deep_cpu_work_)
+      render.template operator()<true>();
+    else
+      render.template operator()<false>();
+  }
+  catch (const std::exception &error) {
+    device_->set_error(string("CPU render work failed: ") + error.what());
+  }
+  for (auto &kg : *kernel_thread_globals_)
+    kg.deep_bounded = nullptr;
+  if (deep_cpu_work_ && !is_cancel_requested())
+    deep_cpu_result(deep_cpu_work_->good(), "native capture or AA");
   if (device_->profiler.active()) {
     for (ThreadKernelGlobalsCPU &kernel_globals : *kernel_thread_globals_) {
       kernel_globals.stop_profiling();
@@ -116,11 +239,21 @@ void PathTraceWorkCPU::render_samples(RenderStatistics &statistics,
   statistics.occupancy = 1.0f;
 }
 
+template<bool Bounded>
 void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kernel_globals,
                                                     const KernelWorkTile &work_tile,
                                                     const int samples_num)
 {
   const bool has_bake = device_scene_->data.bake.use;
+  bool owned = false;
+  if constexpr (Bounded)
+    owned = deep_cpu_work_->owns(work_tile.x, work_tile.y);
+  const uint32_t policy = Bounded && owned ? deep_cpu_work_->policy() : 0;
+  const auto &camera_kernel = policy ? kernels_.deep_init[policy - 1] :
+                                       kernels_.integrator_init_from_camera;
+  const auto &megakernel = policy ? kernels_.deep_megakernel[policy - 1] :
+                                    kernels_.integrator_megakernel;
+  const uint32_t worker = Bounded ? uint32_t(tbb::this_task_arena::current_thread_index()) : 0;
 
   IntegratorStateCPU integrator_states[2];
 
@@ -142,6 +275,15 @@ void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kern
       break;
     }
 
+    if constexpr (Bounded) {
+      if (owned) {
+        kernel_globals->deep_bounded = deep_cpu_work_->begin_sample(
+            worker, work_tile.x, work_tile.y, sample_work_tile.start_sample);
+        if (!kernel_globals->deep_bounded)
+          break;
+      }
+    }
+
     if (has_bake) {
       if (!kernels_.integrator_init_from_bake(
               kernel_globals, state, &sample_work_tile, render_buffer))
@@ -150,9 +292,7 @@ void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kern
       }
     }
     else {
-      if (!kernels_.integrator_init_from_camera(
-              kernel_globals, state, &sample_work_tile, render_buffer))
-      {
+      if (!camera_kernel(kernel_globals, state, &sample_work_tile, render_buffer)) {
         break;
       }
     }
@@ -162,7 +302,7 @@ void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kern
       assert(kernel_globals->opgl_path_segment_storage);
       assert(kernel_globals->opgl_path_segment_storage->GetNumSegments() == 0);
 
-      kernels_.integrator_megakernel(kernel_globals, state, render_buffer);
+      megakernel(kernel_globals, state, render_buffer);
 
       /* Push the generated sample data to the global sample data storage. */
       guiding_push_sample_data_to_global_storage(kernel_globals, state, render_buffer);
@@ -170,16 +310,24 @@ void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kern
       /* No training for shadow catcher paths. */
       if (shadow_catcher_state) {
         kernel_globals->data.integrator.train_guiding = false;
-        kernels_.integrator_megakernel(kernel_globals, shadow_catcher_state, render_buffer);
+        megakernel(kernel_globals, shadow_catcher_state, render_buffer);
         kernel_globals->data.integrator.train_guiding = true;
       }
     }
     else
 #endif
     {
-      kernels_.integrator_megakernel(kernel_globals, state, render_buffer);
+      megakernel(kernel_globals, state, render_buffer);
       if (shadow_catcher_state) {
-        kernels_.integrator_megakernel(kernel_globals, shadow_catcher_state, render_buffer);
+        megakernel(kernel_globals, shadow_catcher_state, render_buffer);
+      }
+    }
+
+    if constexpr (Bounded) {
+      if (owned) {
+        kernel_globals->deep_bounded = nullptr;
+        if (!deep_cpu_work_->end_sample(worker))
+          break;
       }
     }
 
@@ -193,6 +341,8 @@ void PathTraceWorkCPU::render_samples_full_pipeline(ThreadKernelGlobalsCPU *kern
     }
     ++sample_work_tile.start_sample;
   }
+  if constexpr (Bounded)
+    kernel_globals->deep_bounded = nullptr;
 }
 
 void PathTraceWorkCPU::copy_to_display(PathTraceDisplay *display,

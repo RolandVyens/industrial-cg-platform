@@ -4,6 +4,8 @@
 
 #ifdef WITH_CUDA
 
+#  include <atomic>
+
 #  include "device/cuda/kernel.h"
 #  include "device/cuda/queue.h"
 #  include "device/cuda/util.h"
@@ -28,6 +30,13 @@ class CUDADevice : public GPUDevice {
   CUdevice cuDevice;
   CUcontext cuContext;
   CUmodule cuModule;
+  CUmodule deep_policy_modules_[4] = {};
+  CUmodule volume_policy_modules_[4] = {};
+  CUdeviceptr volume_policy_params_[4] = {};
+  CUmodule cuVolumeModule = nullptr;
+  uint32_t loaded_deep_policy_ = UINT32_MAX;
+  const char *deep_module_test_group_ = nullptr;
+  CUdeviceptr deep_module_test_params_ = 0;
   int pitch_alignment;
   int cuDevId;
   int cuDevArchitecture;
@@ -56,6 +65,7 @@ class CUDADevice : public GPUDevice {
   string compile_kernel(const string &cflags, const char *name, bool optix = false);
 
   bool load_kernels(const uint kernel_features) override;
+  bool load_volume_kernels(const uint kernel_features);
   void reserve_local_memory(const uint kernel_features);
 
   /* All memory types. */
@@ -92,6 +102,7 @@ class CUDADevice : public GPUDevice {
   /* Memory copy. */
   void copy_host_to_device(void *device_pointer, void *host_pointer, const size_t size) override;
   void const_copy_to(const char *name, void *host, const size_t size) override;
+  bool restore_integrator_state(void *host, const size_t size) override;
 
   bool should_use_graphics_interop(const GraphicsInteropDevice &interop_device,
                                    const bool log) override;
@@ -102,6 +113,9 @@ class CUDADevice : public GPUDevice {
   int get_max_num_threads_per_multiprocessor();
 
  protected:
+  /* Static device attributes may be requested by more than one queue. */
+  std::atomic<int> cached_num_multiprocessors_{0};
+  std::atomic<int> cached_max_threads_per_multiprocessor_{0};
   bool get_device_attribute(CUdevice_attribute attribute, int *value);
   int get_device_default_attribute(CUdevice_attribute attribute, const int default_value);
 };

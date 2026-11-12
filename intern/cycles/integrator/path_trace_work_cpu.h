@@ -20,6 +20,7 @@ struct ThreadKernelGlobalsCPU;
 struct IntegratorStateCPU;
 
 class CPUKernels;
+class DeepBoundedCPUWork;
 
 /* Implementation of PathTraceWork which schedules work on to queues pixel-by-pixel,
  * for CPU devices.
@@ -32,6 +33,13 @@ class PathTraceWorkCPU : public PathTraceWork {
                    Film *film,
                    DeviceScene *device_scene,
                    const bool *cancel_requested_flag);
+
+  ~PathTraceWorkCPU() override;
+  bool set_deep_frame_capture_consumer(DeepFrameCaptureConsumer *consumer) override;
+  bool prepare_deep_tile() override;
+  bool close_deep_tile() override;
+  bool drain_deep_tiles() override;
+  bool set_bounded_deep_beauty(const RenderBuffers &buffers) override;
 
   void init_execution() override;
   void deinit_execution() override;
@@ -72,12 +80,15 @@ class PathTraceWorkCPU : public PathTraceWork {
 
  protected:
   /* Core path tracing routine. Renders given work time on the given queue. */
+  template<bool Bounded>
   void render_samples_full_pipeline(ThreadKernelGlobalsCPU *kernel_globals,
                                     const KernelWorkTile &work_tile,
                                     const int samples_num);
 
   /* CPU kernels. */
   const CPUKernels &kernels_;
+  unique_ptr<DeepBoundedCPUWork> deep_cpu_work_;
+  bool deep_cpu_result(bool ok, const char *phase);
 
   /* Pointer to device-owned kernel globals which is suitable for concurrent access from multiple
    * threads. This allows dynamic updates to image_info when textures are loaded on demand. */

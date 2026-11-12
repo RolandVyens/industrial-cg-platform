@@ -224,6 +224,15 @@ ccl_device_inline TransparentShadowEvalResult integrate_transparent_shadow(
 
     /* Surface shaders. */
     if (hit < num_recorded_hits) {
+#  if defined(__DEEP_OUTPUT__) && defined(__KERNEL_GPU__)
+      if (hit > 0 && deep_native_validation_once(DEEP_NATIVE_FAULT_SHADOW_RETRY)) {
+        /* Earlier accepted hits already own their throughput and RNG advance.
+         * Retry this surface, retaining the completed volume prefix. */
+        INTEGRATOR_STATE_WRITE(state, shadow_path, packed_num_hits) = shadow_num_hits_pack(
+            num_hits, hit, true);
+        return TRANSPARENT_SHADOW_EVAL_CACHE_MISS;
+      }
+#  endif
       ShaderEvalResult result = SHADER_EVAL_EMPTY;
       const Spectrum shadow = integrate_transparent_surface_shadow(kg, state, hit, result);
       if (result == SHADER_EVAL_CACHE_MISS) {
@@ -271,10 +280,7 @@ ccl_device void integrator_shade_shadow(KernelGlobals kg,
   const uint packed_num_hits = INTEGRATOR_STATE(state, shadow_path, packed_num_hits);
   const uint32_t path_flag = INTEGRATOR_STATE(state, shadow_path, flag);
   const Spectrum shadow_color = integrator_shadow_color(
-      kg,
-      state,
-      path_flag,
-      kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR);
+      kg, state, path_flag, kernel_data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR);
   const bool apply_shadow_color = !is_zero(shadow_color);
   bool opaque = false;
 

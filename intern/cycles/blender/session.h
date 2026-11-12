@@ -4,7 +4,12 @@
 
 #pragma once
 
+#include "device/deep_queue_memory.h"
+
+#include <optional>
+
 #include "device/device.h"
+#include "session/deep_memory_budget.h"
 
 #include "scene/scene.h"
 #include "session/session.h"
@@ -34,6 +39,19 @@ class BlenderSync;
 class ImageMetaData;
 class Scene;
 class Session;
+
+class BlenderDeepOutputAddresses;
+
+struct BlenderDeepFrameBudgets {
+  DeepQueueFrameReservation auxiliary;
+  DeepMemoryBudget host, device;
+  std::shared_ptr<BlenderDeepOutputAddresses> outputs;
+  BlenderDeepFrameBudgets(const size_t host_quota, const size_t device_quota)
+      : auxiliary(host_quota), host(auxiliary.payload_quota()), device(device_quota)
+  {
+    auxiliary.bind_payload_budget(host);
+  }
+};
 
 class BlenderSession {
  public:
@@ -118,10 +136,9 @@ class BlenderSession {
   float pixelsize;
   bool preview_osl;
   double start_resize_time;
+  std::optional<BlenderDeepFrameBudgets> deep_frame_budgets_;
   bool direct_deep_without_compositor_ = false;
   bool skip_full_buffer_readback_for_background_direct_deep_ = false;
-
-  void *python_thread_state;
 
   bool use_developer_ui;
 
@@ -165,6 +182,18 @@ class BlenderSession {
   BlenderDisplayDriver *display_driver_ = nullptr;
 
   vector<string> full_buffer_files_;
+  struct DeepDeferredView {
+    size_t file_index;
+    std::shared_ptr<class DeepFrameProduction> production;
+  };
+  struct DeepDeferredDirect {
+    std::shared_ptr<class BlenderDeepFrameViews> views;
+    int compression;
+    bool half;
+    float depth, alpha;
+  };
+  vector<DeepDeferredView> deep_deferred_views_;
+  vector<DeepDeferredDirect> deep_deferred_direct_;
 
   int bake_id = 0;
 };

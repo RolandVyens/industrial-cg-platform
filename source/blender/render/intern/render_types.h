@@ -169,6 +169,9 @@ struct Render : public BaseRender {
   /* main, scene, and its full copy of renderdata and world */
   struct Main *main = nullptr;
   Scene *scene = nullptr;
+  /* Borrowed only during a compositor's synchronous render of another Scene.
+   * Its File Output consumers belong to that invocation, not every Scene in Main. */
+  Scene *deep_output_scene = nullptr;
   RenderData r = {};
   char single_view_layer[MAX_NAME] = "";
   struct Object *camera_override = nullptr;

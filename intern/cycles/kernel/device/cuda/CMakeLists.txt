@@ -12,6 +12,13 @@ set(INC_SYS
 
 set(SRC_KERNEL_DEVICE_CUDA
   kernel.cu
+  kernel_deep_alpha.cu
+  kernel_deep_simple.cu
+  kernel_deep_physical.cu
+  kernel_volume.cu
+  kernel_deep_alpha_volume.cu
+  kernel_deep_simple_volume.cu
+  kernel_deep_physical_volume.cu
 )
 
 set(SRC_KERNEL_DEVICE_CUDA_HEADERS
@@ -128,6 +135,10 @@ if(WITH_CYCLES_CUDA_BINARIES)
       -o ${CMAKE_CURRENT_BINARY_DIR}/${cuda_file})
 
     cuda_add_common_flags(${cuda_version} ${arch} "${cuda_flags}" cuda_flags)
+    if(name MATCHES "_volume$")
+      list(APPEND cuda_flags --fmad=false
+        --entries=kernel_gpu_integrator_shade_volume,kernel_gpu_integrator_shade_volume_ray_marching)
+    endif()
 
     set(_cuda_nvcc_args
       -arch=${arch}
@@ -209,6 +220,16 @@ if(WITH_CYCLES_CUDA_BINARIES)
     if(DEFINED cuda_nvcc_executable AND DEFINED cuda_toolkit_root_dir)
       # Compile regular kernel
       cycles_cuda_kernel_add(${arch} ${prev_arch} kernel "" "${cuda_sources}" FALSE)
+      if(WITH_CYCLES_DEVICE_OPTIX)
+        cycles_cuda_kernel_add(${arch} none kernel_volume ""
+          "${cuda_sources};kernel_volume.cu" FALSE)
+        foreach(deep_mode alpha simple physical)
+          cycles_cuda_kernel_add(${arch} none kernel_deep_${deep_mode} ""
+            "${cuda_sources};kernel_deep_${deep_mode}.cu" FALSE)
+          cycles_cuda_kernel_add(${arch} none kernel_deep_${deep_mode}_volume ""
+            "${cuda_sources};kernel_deep_${deep_mode}_volume.cu" FALSE)
+        endforeach()
+      endif()
 
       if(WITH_CYCLES_CUDA_BUILD_SERIAL)
         set(prev_arch ${arch})

@@ -616,29 +616,29 @@ class Context : public compositor::Context {
     }
 
     if (!scene) {
-      return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+      return false;
     }
 
     const Scene *lookup_scene = reinterpret_cast<const Scene *>(DEG_get_original_id(&scene->id));
     if (!lookup_scene) {
-      return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+      return false;
     }
 
     ViewLayer *view_layer = static_cast<ViewLayer *>(
         BLI_findlink(&lookup_scene->view_layers, view_layer_id));
     if (!view_layer) {
-      return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+      return false;
     }
 
     Render *render = RE_GetSceneRender(lookup_scene);
     if (!render) {
-      return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+      return false;
     }
 
     RenderResult *render_result = RE_AcquireResultRead(render);
     if (!render_result) {
       RE_ReleaseResult(render);
-      return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+      return false;
     }
 
     RenderLayer *render_layer = RE_GetRenderLayer(render_result, view_layer->name);
@@ -657,7 +657,7 @@ class Context : public compositor::Context {
     }
 
     RE_ReleaseResult(render);
-    return compositor::Context::get_deep_data(scene, view_layer_id, r_data, r_width, r_height);
+    return false;
   }
 
   StringRef get_view_name() const override

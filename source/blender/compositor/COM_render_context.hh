@@ -5,6 +5,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "BLI_map.hh"
@@ -118,6 +119,11 @@ class RenderContext {
    * information. */
   Map<std::string, std::unique_ptr<FileOutput>> file_outputs_;
 
+  /* Requested Deep output failures survive node execution until the render pipeline joins
+   * all views. Keep the first failure; successful sibling outputs must not clear it. */
+  mutable std::mutex output_error_mutex_;
+  std::string output_error_;
+
   /* Deep EXR data from Cycles rendering, for compositor File Output passthrough.
    * Owned by RenderResult. */
   RenderDeepData *deep_data_ = nullptr;
@@ -125,6 +131,20 @@ class RenderContext {
   int deep_height_ = 0;
 
  public:
+  void set_output_error(const std::string &message)
+  {
+    const std::lock_guard lock(output_error_mutex_);
+    if (output_error_.empty()) {
+      output_error_ = message;
+    }
+  }
+
+  std::string output_error() const
+  {
+    const std::lock_guard lock(output_error_mutex_);
+    return output_error_;
+  }
+
   /* Check if there is an available file output with the given path in the context, if one exists,
    * return it, otherwise, return a newly created one from the given parameters and add it to the
    * context. The arguments are ignored if the file output already exist. This method is typically

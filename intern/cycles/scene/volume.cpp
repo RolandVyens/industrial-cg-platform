@@ -5,6 +5,7 @@
 #include "scene/volume.h"
 #include "scene/attribute.h"
 #include "scene/background.h"
+#include "scene/film.h"
 #include "scene/geometry.h"
 #include "scene/image_vdb.h"
 #include "scene/integrator.h"
@@ -1217,17 +1218,30 @@ std::string VolumeManager::visualize_octree(const char *filename) const
   return filename_full;
 }
 
+/* Independent camera Optical uses the object/material quadrature spacing even when
+ * Beauty uses null-collision tracking. It must not depend on Beauty's algorithm
+ * having uploaded the otherwise optional ray-marching step array. */
+static bool deep_owned_optical_step_size_needed(const Scene *scene)
+{
+  const char *pipeline = getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_PIPELINE");
+  return scene->film->get_use_deep_output() && pipeline && strcmp(pipeline, "1") == 0;
+}
+
 void VolumeManager::update_step_size(const Scene *scene, DeviceScene *dscene, Progress &progress)
 {
-  assert(scene->integrator->get_volume_ray_marching());
+  assert(scene->integrator->get_volume_ray_marching() ||
+         deep_owned_optical_step_size_needed(scene));
 
-  if (!need_update_step_size && !dscene->volume_step_size.is_modified() &&
+  if (dscene->volume_step_size.size() == scene->objects.size() && !need_update_step_size &&
+      !dscene->volume_step_size.is_modified() &&
       !scene->integrator->volume_step_rate_is_modified() && !algorithm_modified_)
   {
     return;
   }
 
-  if (dscene->volume_step_size.need_realloc()) {
+  if (dscene->volume_step_size.size() != scene->objects.size() ||
+      dscene->volume_step_size.need_realloc())
+  {
     dscene->volume_step_size.alloc(scene->objects.size());
   }
 
@@ -1291,10 +1305,13 @@ void VolumeManager::device_update(Device *device,
     update_visualization_ = false;
   }
 
-  if (algorithm_modified_) {
-    dscene->volume_step_size.free();
-    algorithm_modified_ = false;
+  if (deep_owned_optical_step_size_needed(scene)) {
+    update_step_size(scene, dscene, progress);
   }
+  else if (algorithm_modified_) {
+    dscene->volume_step_size.free();
+  }
+  algorithm_modified_ = false;
 }
 
 void VolumeManager::device_free(DeviceScene *dscene)

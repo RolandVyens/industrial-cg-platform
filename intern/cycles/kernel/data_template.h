@@ -167,6 +167,8 @@ KERNEL_STRUCT_MEMBER(film, int, pass_guiding_probability)
 KERNEL_STRUCT_MEMBER(film, int, pass_guiding_avg_roughness)
 /* Deep Output */
 KERNEL_STRUCT_MEMBER(film, int, use_deep_output)
+KERNEL_STRUCT_MEMBER(film, int, deep_simple_mode)
+KERNEL_STRUCT_MEMBER(film, int, deep_optical_only_kernel)
 KERNEL_STRUCT_MEMBER(film, int, deep_max_samples)
 KERNEL_STRUCT_MEMBER(film, int, deep_width)
 KERNEL_STRUCT_MEMBER(film, int, deep_height)

@@ -9,6 +9,7 @@ endif()
 
 set(INC
   ..
+  ../../../extern/json/include
 )
 
 set(LIB
@@ -27,7 +28,11 @@ cycles_external_libraries_append(LIB)
 include_directories(${INC})
 
 set(SRC
+  session_deep_robustness_test.cpp
+  integrator_deep_bounded_cpu_test.cpp
+  device_deep_launch_test.cpp
   integrator_adaptive_sampling_test.cpp
+  integrator_deep_camera_receipt_test.cpp
   integrator_render_scheduler_test.cpp
   integrator_tile_test.cpp
   kernel_camera_projection_test.cpp
@@ -35,7 +40,18 @@ set(SRC
   render_graph_finalize_test.cpp
   scene_lightgroup_pass_test.cpp
   scene_shadow_color_test.cpp
+  scene_volume_emission_test.cpp
+  session_deep_bounded_merge_test.cpp
   session_deep_camera_sample_set_test.cpp
+  session_deep_frame_pipeline_test.cpp
+  session_deep_exr_decode_test.cpp
+  session_deep_camera_depth_test.cpp
+  session_deep_depth_support_test.cpp
+  session_deep_homogeneous_curve_test.cpp
+  session_deep_native_curve_test.cpp
+  session_deep_emission_expression_test.cpp
+  session_deep_canonical_encode_test.cpp
+  session_deep_volume_profile_test.cpp
   util_aligned_malloc_test.cpp
   util_boundbox_test.cpp
   util_cache_limiter_test.cpp
@@ -56,6 +72,12 @@ set(SRC
   util_types_base_test.cpp
 )
 
+# Reference GPU fixture has a real optional module dependency. Ordinary host
+# reference mathematics/ownership tests remain available independently.
+if(WITH_CYCLES_DEEP_REFERENCE_GPU)
+  list(APPEND SRC session_deep_gpu_frame_test.cpp)
+endif()
+
 # Disable AVX tests on macOS. Rosetta has problems running them, and other
 # platforms should be enough to verify AVX operations are implemented correctly.
 if(NOT APPLE)
@@ -72,4 +94,13 @@ endif()
 if(WITH_GTESTS)
   set(INC_SYS "")
   blender_add_test_suite_executable(cycles "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME cycles_deep_schema_check
+      COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/integrator/generate_deep_bounded_schema.py"
+        --check
+    )
+    set_tests_properties(cycles_deep_schema_check PROPERTIES LABELS "cycles;deep;source-contract")
+  endif()
 endif()

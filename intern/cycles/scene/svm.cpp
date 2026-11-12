@@ -433,8 +433,41 @@ void SVMCompiler::stack_clear_temporary(ShaderNode *node)
 
 void SVMCompiler::add_node(ShaderNodeType type)
 {
+  record_volume_emission(nullptr, type);
   svm_node_types_used[type] = true;
   current_svm_nodes.push_back_slow(type);
+}
+
+void SVMCompiler::record_volume_emission(ShaderNode *node, const ShaderNodeType type)
+{
+  if (current_type != SHADER_TYPE_VOLUME || !current_shader) {
+    return;
+  }
+  if (type == NODE_CLOSURE_EMISSION || type == NODE_CLOSURE_BACKGROUND) {
+    current_shader->has_volume_emission = true;
+  }
+  else if (type == NODE_PRINCIPLED_VOLUME) {
+    /* Only exact, unlinked zeros are a proof. Dynamic inputs and unknown
+     * callers remain eligible even when one evaluation happens to be dark. */
+    if (!node) {
+      current_shader->has_volume_emission = true;
+      return;
+    }
+    const ShaderInput *emission = node->input("Emission Strength");
+    const ShaderInput *blackbody = node->input("Blackbody Intensity");
+    current_shader->has_volume_emission |= emission->link || blackbody->link ||
+                                           node->get_float(emission->socket_type) != 0.0f ||
+                                           node->get_float(blackbody->socket_type) != 0.0f;
+  }
+  else if (type == NODE_VOLUME_COEFFICIENTS) {
+    if (!node) {
+      current_shader->has_volume_emission = true;
+      return;
+    }
+    const ShaderInput *emission = node->input("Emission Coefficients");
+    current_shader->has_volume_emission |= emission->link ||
+                                           !is_zero(node->get_float3(emission->socket_type));
+  }
 }
 
 static ShaderNodeType svm_node_type_with_derivatives(ShaderNodeType type)
@@ -1173,6 +1206,7 @@ void SVMCompiler::compile_type(Shader *shader, ShaderGraph *graph, ShaderType ty
 
 void SVMCompiler::compile(Shader *shader, array<int> &svm_nodes, const int index, Summary *summary)
 {
+  shader->has_volume_emission = false;
   svm_node_types_used[NODE_SHADER_JUMP] = true;
   add_node(nullptr, NODE_SHADER_JUMP, SVMNodeShaderJump{0, 0, 0});
   svm_nodes.append(current_svm_nodes);

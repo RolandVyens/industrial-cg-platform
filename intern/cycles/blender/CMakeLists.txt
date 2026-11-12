@@ -15,6 +15,7 @@ set(INC_SYS
 set(SRC
   camera.cpp
   device.cpp
+  deep_frame_output.cpp
   display_driver.cpp
   image.cpp
   implicit_sharing.cpp
@@ -40,6 +41,7 @@ set(SRC
   attribute_convert.h
   CCL_api.h
   device.h
+  deep_frame_output.h
   display_driver.h
   id_map.h
   image.h

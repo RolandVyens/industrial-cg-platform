@@ -197,12 +197,21 @@ wmEvent *WM_event_add(wmWindow *win, const wmEvent *event_to_add)
   return wm_event_add_intern(win, event_to_add);
 }
 
+/* Cancellation must also work before modal handlers consume an Esc event. */
+static void wm_event_update_break(const wmEvent &event)
+{
+  if ((event.type == EVT_ESCKEY) && (event.val == KM_PRESS) && (event.modifier == 0)) {
+    G.is_break = true;
+  }
+}
+
 wmEvent *WM_event_add_simulate(wmWindow *win, const wmEvent *event_to_add)
 {
   if ((G.f & G_FLAG_EVENT_SIMULATE) == 0) {
     BLI_assert_unreachable();
     return nullptr;
   }
+  wm_event_update_break(*event_to_add);
   wmEvent *event = WM_event_add(win, event_to_add);
 
   /* Logic for setting previous value is documented on the #wmEvent struct,
@@ -4146,7 +4155,9 @@ static void wm_event_handle_xrevent(wmWindowManager *wm,
   }
 
   /* The undo operator may have re-allocated the XR context Scene and Main data pointers.
-   * Prevent dangling pointers in the main Blender context by re-assigning them as needed. */
+   * Prevent dangling pointers in the main Blender context by re-assigning them as needed.
+   *
+   * This is the inverse of the re-anchoring in #WM_xr_session_context_ensure(). */
   CTX_data_main_set(main_context, CTX_data_main(xr_context));
   if (ctx_xr_main_scene_match) {
     CTX_data_scene_set(main_context, CTX_data_scene(xr_context));
@@ -6414,9 +6425,7 @@ void wm_event_add_ghostevent(wmWindowManager *wm,
        * event handling should be managed by the event handling loop.
        * Make an exception for `G.is_break` as it ensures we can always cancel operations
        * such as rendering or baking no matter which operation is currently handling events. */
-      if ((event.type == EVT_ESCKEY) && (event.val == KM_PRESS) && (event.modifier == 0)) {
-        G.is_break = true;
-      }
+      wm_event_update_break(event);
 
       if (!wm_event_is_ignorable_key_press(win, event)) {
         wm_event_add_intern(win, &event);

@@ -138,4 +138,26 @@ bool IMB_exr_save_deep(const std::vector<std::vector<DeepSample>> & /*deep_data*
   return false;
 }
 
+bool IMB_exr_save_deep_packed_rows(DeepExrPackedRowReader /*reader*/,
+                                        const DeepExrWriteParams &params,
+                                        const char *filepath,
+                                        const DeepExrMemoryCallbacks *memory,
+                                        DeepExrWriteReport *report)
+{
+  return false;
+}
+
+bool IMB_exr_save_deep_rows(DeepExrRowReader /*reader*/,
+                            const DeepExrWriteParams & /*params*/,
+                            const char * /*filepath*/,
+                            const DeepExrMemoryCallbacks * /*memory*/,
+                            DeepExrWriteReport *report)
+{
+  if (report) {
+    *report = {};
+    report->failure = DeepExrWriteFailure::Codec;
+  }
+  return false;
+}
+
 }  // namespace blender

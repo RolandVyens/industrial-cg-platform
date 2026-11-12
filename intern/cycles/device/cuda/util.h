@@ -19,19 +19,23 @@ class CUDADevice;
 /* Utility to push/pop CUDA context. */
 class CUDAContextScope {
  public:
-  CUDAContextScope(CUDADevice *device);
+  CUDAContextScope(CUDADevice *device, bool enable_nested_queries = false);
+  CUDAContextScope(const CUDAContextScope &) = delete;
+  CUDAContextScope &operator=(const CUDAContextScope &) = delete;
   ~CUDAContextScope();
 
  private:
   CUDADevice *device;
+  bool query_scope_ = false;
+  bool pushed_ = false;
 };
 
 /* Utility for checking return values of CUDA function calls. */
 #  define cuda_device_assert(cuda_device, stmt) \
     { \
-      CUresult result = stmt; \
-      if (result != CUDA_SUCCESS) { \
-        const char *name = cuewErrorString(result); \
+      const CUresult cuda_assert_status_ = (stmt); \
+      if (cuda_assert_status_ != CUDA_SUCCESS) { \
+        const char *name = cuewErrorString(cuda_assert_status_); \
         cuda_device->set_error( \
             string_printf("%s in %s (%s:%d)", name, #stmt, __FILE__, __LINE__)); \
       } \

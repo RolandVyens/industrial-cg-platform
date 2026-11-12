@@ -1225,9 +1225,14 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
         min=8,
         max=8192,
     )
+    deep_simple_mode: BoolProperty(
+        name="Simple Mode",
+        description="Reconstruct Deep surface and volume colors from undenoised Beauty instead of capturing native depth colors",
+        default=True,
+    )
     deep_tile_budget_mb: IntProperty(
         name="Deep Tile Budget",
-        description="Limit Deep EXR tile buffer memory per device in megabytes. Set to 0 to disable the limit.",
+        description="Working memory budget for Deep tile processing on the rendering device",
         default=1024,
         min=0,
         max=65536,

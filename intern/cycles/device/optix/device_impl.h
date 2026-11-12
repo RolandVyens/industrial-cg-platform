@@ -34,6 +34,7 @@ enum {
   PG_RGEN_SHADE_SURFACE_RAYTRACE,
   PG_RGEN_SHADE_VOLUME,
   PG_RGEN_SHADE_VOLUME_RAY_MARCHING,
+  PG_RGEN_SHADE_DEEP_VOLUME_OPTICAL,
   PG_RGEN_SHADE_SHADOW,
   PG_RGEN_SHADE_DEDICATED_LIGHT,
   PG_RGEN_EVAL_DISPLACE,
@@ -151,6 +152,7 @@ class OptiXDevice : public CUDADevice {
   void free_bvh_memory_delayed();
 
   void const_copy_to(const char *name, void *host, const size_t size) override;
+  bool restore_integrator_state(void *host, const size_t size) override;
 
   void update_launch_params(const size_t offset, void *data, const size_t data_size);
 

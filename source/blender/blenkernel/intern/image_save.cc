@@ -42,6 +42,7 @@
 #include "BKE_report.hh"
 #include "BKE_scene.hh"
 
+#include "RE_deep_data.hh"
 #include "RE_pipeline.h"
 
 #include "CLG_log.h"
@@ -49,6 +50,101 @@
 namespace blender {
 
 static CLG_LogRef LOG_RENDER = {"render"};
+
+/* Deep data remains linear and render-owned; never pass it through the flat image writer. */
+static bool image_save_deep(ReportList *reports,
+                            Image *image,
+                            ImageUser *iuser,
+                            const ImageSaveOptions *opts)
+{
+  RenderResult *rr = BKE_image_acquire_renderresult(opts->scene, image);
+  const auto fail = [&](const char *message) {
+    BKE_report(reports, RPT_ERROR, message);
+    BKE_image_release_renderresult(opts->scene, image, rr);
+    return false;
+  };
+  if (!rr || image->type != IMA_TYPE_R_RESULT)
+    return fail("Deep EXR saving requires a completed Render Result");
+
+  RenderLayer *layer = nullptr;
+  const int combined = RE_HasCombinedLayer(rr) ? 1 : 0;
+  if (iuser && iuser->layer >= combined) {
+    layer = static_cast<RenderLayer *>(BLI_findlink(&rr->layers, iuser->layer - combined));
+    if (!layer)
+      return fail("Missing selected render layer for Deep EXR saving");
+  }
+  else {
+    for (RenderLayer &candidate : rr->layers) {
+      if (!candidate.deep_data)
+        continue;
+      if (layer)
+        return fail("Deep EXR saving requires one selected render layer");
+      layer = &candidate;
+    }
+  }
+  if (!layer || !layer->deep_data || layer->deep_width <= 0 || layer->deep_height <= 0)
+    return fail("Missing complete Deep data for saving; render a new frame");
+  RenderDeepData &data = *layer->deep_data;
+  const ImageFormatData &format = opts->im_format;
+  if (rr->views.is_empty())
+    return fail("Missing native Deep render views");
+  for (const RenderView &view : rr->views) {
+    if (view.name[0] && format.views_format != R_IMF_VIEWS_INDIVIDUAL)
+      return fail("Deep EXR saving requires individual view files");
+    if (!data.canonical_source && rr->views.count() != 1)
+      return fail("Deep EXR saving requires retained per-view sources");
+    char path[FILE_MAX];
+    BKE_scene_multiview_view_filepath_get(&opts->scene->r, opts->filepath, view.name, path);
+    for (const RenderView &previous : rr->views) {
+      if (&previous == &view)
+        break;
+      char previous_path[FILE_MAX];
+      BKE_scene_multiview_view_filepath_get(
+          &opts->scene->r, opts->filepath, previous.name, previous_path);
+      if (BLI_path_cmp_normalized(path, previous_path) == 0)
+        return fail("Deep views require distinct manual output paths");
+    }
+  }
+  for (const RenderView &view : rr->views) {
+    char path[FILE_MAX];
+    BKE_scene_multiview_view_filepath_get(&opts->scene->r, opts->filepath, view.name, path);
+    bool ok = false;
+    if (data.canonical_source) {
+      std::string error;
+      ok = data.canonical_source->save_direct(path,
+                                              format.exr_codec,
+                                              format.depth == R_IMF_CHAN_DEPTH_16,
+                                              format.deep_merge_tolerance,
+                                              format.deep_alpha_merge_tolerance,
+                                              error,
+                                              view.name);
+      if (!ok)
+        return fail(error.c_str());
+    }
+    else {
+      ok = IMB_exr_save_deep(data.pixels,
+                             layer->deep_width,
+                             layer->deep_height,
+                             path,
+                             format.exr_codec,
+                             format.depth == R_IMF_CHAN_DEPTH_16,
+                             false,
+                             data.has_display_window,
+                             data.display_size[0],
+                             data.display_size[1],
+                             data.display_offset[0],
+                             data.display_offset[1],
+                             data.data_offset[0],
+                             data.data_offset[1],
+                             format.deep_merge_tolerance,
+                             format.deep_alpha_merge_tolerance);
+      if (!ok)
+        return fail("Deep EXR saving failed during checked file output");
+    }
+  }
+  BKE_image_release_renderresult(opts->scene, image, rr);
+  return true;
+}
 
 bool BKE_image_save_options_init(ImageSaveOptions *opts,
                                  Main *bmain,
@@ -73,6 +169,25 @@ bool BKE_image_save_options_init(ImageSaveOptions *opts,
   opts->save_as_render = ima->source == IMA_SRC_VIEWER || save_as_render;
 
   BKE_image_format_init(&opts->im_format);
+
+  /* Direct background renders may intentionally omit the flat Film readback. */
+  if (opts->save_as_render && ima->type == IMA_TYPE_R_RESULT &&
+      scene->r.im_format.imtype == R_IMF_IMTYPE_DEEP_EXR)
+  {
+    RenderResult *rr = BKE_image_acquire_renderresult(scene, ima);
+    const bool has_result = rr != nullptr;
+    BKE_image_release_renderresult(scene, ima, rr);
+    if (has_result) {
+      BKE_image_format_init_for_write(&opts->im_format, scene, nullptr);
+      BKE_image_user_file_path_ex(bmain, iuser, ima, opts->filepath, false, false);
+      if (guess_path && !opts->filepath[0])
+        STRNCPY(opts->filepath, scene->r.pic);
+      opts->orig_imtype = opts->prev_imtype = opts->im_format.imtype;
+      opts->prev_save_as_render = opts->save_as_render;
+      STRNCPY(opts->orig_colorspace, opts->im_format.linear_colorspace_settings.name);
+      return true;
+    }
+  }
 
   void *lock;
   ImBuf *ibuf = BKE_image_acquire_ibuf(ima, iuser, &lock);
@@ -644,6 +759,9 @@ static bool image_save_single(ReportList *reports,
 bool BKE_image_save(
     ReportList *reports, Main *bmain, Image *ima, ImageUser *iuser, const ImageSaveOptions *opts)
 {
+  if (opts->im_format.imtype == R_IMF_IMTYPE_DEEP_EXR)
+    return image_save_deep(reports, ima, iuser, opts);
+
   /* For saving a tiled image we need an iuser, so use a local one if there isn't already one. */
   ImageUser save_iuser;
   if (iuser == nullptr) {

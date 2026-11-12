@@ -102,6 +102,14 @@ ccl_device void volume_stack_enter_exit(KernelGlobals kg,
 
     /* If we exceed the stack limit, ignore. */
     if (i >= kernel_data.volume_stack_size - 1) {
+#  ifdef __KERNEL_GPU__
+      if constexpr (!shadow) {
+        if (kernel_integrator_state.deep_optical_inputs) {
+          atomic_fetch_and_or_uint32(&kernel_integrator_state.queue_counter->deep_optical_error,
+                                     DEEP_OPTICAL_ERROR_STACK);
+        }
+      }
+#  endif
       return;
     }
 
@@ -188,7 +196,12 @@ ccl_device_inline bool volume_is_homogeneous(KernelGlobals kg, const IntegratorG
 template<const bool shadow, typename IntegratorGenericState>
 ccl_device float volume_stack_step_size(KernelGlobals kg, const IntegratorGenericState state)
 {
+#  ifdef __KERNEL_GPU__
+  kernel_assert(kernel_data.integrator.volume_ray_marching ||
+                kernel_integrator_state.deep_optical_inputs);
+#  else
   kernel_assert(kernel_data.integrator.volume_ray_marching);
+#  endif
 
   float step_size = FLT_MAX;
 
