@@ -120,6 +120,73 @@ TEST(DeepRobustness, bounded_rejects_unsupported_rgb_but_reference_accepts)
   EXPECT_TRUE(reference.error());
 }
 
+TEST(DeepRobustness, bounded_fixed_storage_scales_by_two_indices_only)
+{
+  auto config = consumer();
+  DeepFrameProduction small(robust_frame(), {0, 0, 64, 1}, 4 << 20, ids,
+                               false, {}, DeepProductionRoute::Bounded);
+  DeepFrameProduction larger(robust_frame(), {0, 0, 128, 1}, 4 << 20, ids,
+                                false, {}, DeepProductionRoute::Bounded);
+  ASSERT_TRUE(small.configure_consumers({&config, 1}));
+  ASSERT_TRUE(larger.configure_consumers({&config, 1}));
+  EXPECT_EQ(larger.pipeline().bytes_used() - small.pipeline().bytes_used(), 64u * 16u);
+  ASSERT_TRUE(larger.enable_cpu_processing());
+  EXPECT_EQ(larger.pipeline().bytes_used() - small.pipeline().bytes_used(), 64u * 16u);
+}
+
+TEST(DeepRobustness, bounded_rows_generate_window_identity_and_keep_lease_alive)
+{
+  DeepCanonicalRowLease rows;
+  {
+    DeepFramePipeline pipeline(4 << 20);
+    ASSERT_TRUE(pipeline.begin_frame(robust_frame(), {-2, 4, 2, 1}, ids, true));
+    ASSERT_TRUE(pipeline.enable_device_encoding());
+    ASSERT_TRUE(pipeline.close_bounded_device_tile(robust_frame(), 1, {-2, 4, 2, 1}));
+    ASSERT_TRUE(pipeline.acquire_closed_rows(ids[0], 4, 1, rows));
+    ASSERT_EQ(rows.pixels().size(), 2u);
+  }
+  EXPECT_EQ(rows.pixels()[0].x, -2);
+  EXPECT_EQ(rows.pixels()[1].x, -1);
+  EXPECT_EQ(rows.pixels()[1].y, 4);
+  EXPECT_EQ(rows.pixels()[1].native_population, 0u);
+  EXPECT_FALSE(rows.pixels()[1].knots);
+}
+
+TEST(DeepRobustness, actual_encoding_demand_and_asymmetric_retained_banks)
+{
+  auto config = consumer();
+  config.config.alpha_only = true;
+  config.config.precision = DeepCanonicalPrecision::Half;
+  const auto plan = deep_bounded_encoding_plan({&config, 1}, DeepBoundedPolicy::ALPHA);
+  EXPECT_EQ(plan.banks, 1u);
+  DeepBoundedAdmission a;
+  ASSERT_TRUE(DeepBoundedAdmission::calculate(128 * 128, 1, 1966080,
+      DeepBoundedPolicy::ALPHA, true, 1, a, false, plan));
+  EXPECT_EQ(a.encoded, 5308432u);
+  EXPECT_EQ(a.encoded_b, 0u);
+  EXPECT_LT(a.collector, 13u << 20);
+  DeepBoundedDeviceAdmission device;
+  device.native_states = 1966080;
+  device.retained = a;
+  /* A previously allocated B remains charged at its own capacity, without
+   * pretending A also grew to B's size. */
+  device.retained.encoded_b = 16u << 20;
+  device.retained.known_total += device.retained.encoded_b;
+  size_t resident;
+  ASSERT_TRUE(deep_bounded_resident(a, device.retained, resident));
+  EXPECT_EQ(resident, device.retained.known_total);
+  EXPECT_TRUE(deep_bounded_choose_devices(128 * 128, 1, DeepBoundedPolicy::ALPHA,
+      true, 1, 0, std::span(&device, 1), plan).roots);
+
+  std::array<DeepFrozenConsumer, 2> mixed{config, config};
+  mixed[0].config.alpha_only = false; /* RGBA HALF:8B component payload. */
+  mixed[1].config.precision = DeepCanonicalPrecision::Float; /* Alpha FLOAT:4B. */
+  const auto formats = deep_bounded_encoding_plan(mixed, DeepBoundedPolicy::PHYSICAL);
+  EXPECT_EQ(formats.banks, 2u);
+  EXPECT_EQ(formats.rgba_bytes, 8u);
+  EXPECT_EQ(formats.summary_bytes, 0u);
+}
+
 TEST(DeepRobustness, two_producers_handoff_to_real_single_owner_exactly_once)
 {
   DeepFrameProduction production(robust_frame(), {0, 0, 2, 1}, 4 << 20, ids,
@@ -163,7 +230,7 @@ TEST(DeepRobustness, aggregate_admission_rejects_oversized_tile_and_accepts_smal
     return deep_bounded_choose_devices(p, 512, DeepBoundedPolicy::SIMPLE, true, 1,
                                        size_t(1) << 30, devices);
   };
-  EXPECT_FALSE(admit(256 * 256).roots);
+  EXPECT_FALSE(admit(1024 * 1024).roots);
   EXPECT_TRUE(admit(128 * 128).roots);
   devices[1].physical_capacity = 1;
   EXPECT_FALSE(admit(128 * 128).roots);
@@ -185,7 +252,7 @@ TEST(DeepRobustness, retained_admission_does_not_charge_existing_arenas_twice)
   EXPECT_TRUE(deep_bounded_choose_devices(128 * 128, 1, DeepBoundedPolicy::SIMPLE,
                                            true, 1, 0, devices).roots);
   EXPECT_FALSE(deep_bounded_choose_devices(256 * 256, 1, DeepBoundedPolicy::SIMPLE,
-      true, 1, (size_t(1) << 30) - used, devices).roots);
+      true, 1, 0, devices).roots);
 }
 
 TEST(DeepRobustness, family_owner_respects_format_and_alpha_dominance)

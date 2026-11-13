@@ -86,9 +86,9 @@ template<bool Physical> struct CPUShape {
 
   CPUShape(const uint64_t base, const uint32_t p, const uint32_t threads, const uint32_t families)
   {
-    collector = layout.planes(base, size_t(p) * DEEP_BOUNDED_BUCKETS * DEEP_BOUNDED_K, Physical);
-    counts = base + layout.reserve(size_t(p) * DEEP_BOUNDED_BUCKETS, 4, 64);
-    populations = base + layout.reserve(size_t(p) * DEEP_BOUNDED_BUCKETS, 4, 64);
+    collector = layout.planes(base, size_t(p) * DEEP_BOUNDED_K, Physical);
+    counts = base + layout.reserve(size_t(p), 4, 64);
+    populations = base + layout.reserve(size_t(p), 4, 64);
     for (uint32_t i = 0; i < std::min(families, 2u); ++i) {
       models[i] = layout.planes(base, size_t(p) * DEEP_BOUNDED_K, Physical);
       model_counts[i] = base + layout.reserve(p, 4);
@@ -343,8 +343,8 @@ template<bool Physical> class CPUStorage final : public DeepBoundedCPUStorage {
     auto *populations = deep_bounded_ptr<uint32_t>(shape->populations);
     /* CPU ownership is pixel-major: each owner updates its own cache lines,
      * rather than adjacent pixels fighting over every GPU-transposed plane. */
-    std::fill_n(counts, size_t(pixels) * DEEP_BOUNDED_BUCKETS, 0u);
-    std::fill_n(populations, size_t(pixels) * DEEP_BOUNDED_BUCKETS, 0u);
+    std::fill_n(counts, size_t(pixels), 0u);
+    std::fill_n(populations, size_t(pixels), 0u);
     for (uint32_t i = 0; i < threads; ++i) {
       auto *root = new (deep_bounded_ptr<CPURoot<Physical>>(shape->roots) + i) CPURoot<Physical>;
       root->bind(strict, holdout, policy);
@@ -395,8 +395,7 @@ template<bool Physical> class CPUStorage final : public DeepBoundedCPUStorage {
         return fail(DEEP_BOUNDED_NO_SOURCE);
     }
     const uint32_t count = r.header & DEEP_BOUNDED_COUNT_MASK;
-    const uint32_t bucket = (r.header >> DEEP_BOUNDED_BUCKET_SHIFT) & 15u;
-    const uint64_t index = uint64_t(r.pixel) * DEEP_BOUNDED_BUCKETS + bucket;
+    const uint64_t index = r.pixel;
     uint32_t &n = deep_bounded_ptr<uint32_t>(shape->populations)[index];
     uint32_t &old_count = deep_bounded_ptr<uint32_t>(shape->counts)[index];
     if (count > DEEP_BOUNDED_K || old_count > DEEP_BOUNDED_K || n == UINT32_MAX)
@@ -417,32 +416,19 @@ template<bool Physical> class CPUStorage final : public DeepBoundedCPUStorage {
     if (!good() || !shape || !pixels)
       return false;
     parallel([&](const uint32_t pixel) {
-      uint32_t population = 0, local_status = 0;
-      Chain model{shape->models[0], uint64_t(pixel) * DEEP_BOUNDED_K, 1, 0};
-      for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-        const uint64_t h = uint64_t(pixel) * DEEP_BOUNDED_BUCKETS + b;
-        const uint32_t n = deep_bounded_ptr<const uint32_t>(shape->populations)[h];
-        if (!n)
-          continue;
-        const uint32_t count = deep_bounded_ptr<const uint32_t>(shape->counts)[h];
-        if (count > DEEP_BOUNDED_K || n > UINT32_MAX - population) {
-          local_status |= DEEP_BOUNDED_POPULATION;
-          break;
-        }
-        const float inverse = 1.0f / float(population + n);
-        const Chain src{shape->collector, h * DEEP_BOUNDED_K, 1, count};
-        model.count = merge_chains<Physical>(model,
-                                             src,
-                                             model,
-                                             float(population) * inverse,
-                                             float(n) * inverse,
-                                             strict,
-                                             addr(&local_status));
-        population += n;
-      }
-      if (!population)
+      uint32_t local_status = 0;
+      const uint32_t population = deep_bounded_ptr<const uint32_t>(shape->populations)[pixel];
+      const uint32_t count = deep_bounded_ptr<const uint32_t>(shape->counts)[pixel];
+      uint32_t result = 0;
+      if (!population || count > DEEP_BOUNDED_K) {
         local_status |= DEEP_BOUNDED_POPULATION;
-      deep_bounded_ptr<uint32_t>(shape->model_counts[0])[pixel] = model.count;
+      }
+      else {
+        const Chain src{shape->collector, uint64_t(pixel) * DEEP_BOUNDED_K, 1, count};
+        const Chain dst{shape->models[0], uint64_t(pixel) * DEEP_BOUNDED_K, 1, 0};
+        result = scale_chain<Physical>(src, dst, 1.0f, addr(&local_status));
+      }
+      deep_bounded_ptr<uint32_t>(shape->model_counts[0])[pixel] = result;
       if (local_status)
         fail(local_status);
     });

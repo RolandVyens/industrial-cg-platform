@@ -418,21 +418,11 @@ ccl_device_inline Spectrum integrate_camera_sample(KernelGlobals kg,
                                                    ccl_private Ray *ray,
                                                    ccl_private int &r_cache_miss,
                                                    ccl_private float2 *deep_raster = nullptr
-#if __DEEP_BOUNDED_POLICY__ > 0
-                                                   , ccl_private uint32_t *bounded_bucket = nullptr
-#endif
                                                    )
 {
   /* Filter sampling. */
   const float2 rand_filter = (sample == 0) ? make_float2(0.5f, 0.5f) :
                                              path_rng_2D(kg, rng_pixel, sample, PRNG_FILTER);
-#if __DEEP_BOUNDED_POLICY__ > 0
-  if (bounded_bucket) {
-    const uint32_t bx = min(uint32_t(rand_filter.x * 4.0f), 3u);
-    const uint32_t by = min(uint32_t(rand_filter.y * 4.0f), 3u);
-    *bounded_bucket = by * 4 + bx;
-  }
-#endif
 
   /* Motion blur (time) and depth of field (lens) sampling. (time, lens_x, lens_y) */
   const bool use_motionblur = kernel_data.cam.shuttertime != -1.0f;
@@ -532,9 +522,8 @@ ccl_device bool integrator_init_from_camera(KernelGlobals kg,
   if (kernel_integrator_state.deep_native_cameras) deep_raster_output = &deep_raster;
 #endif
 #if __DEEP_BOUNDED_POLICY__ > 0
-  uint32_t bounded_bucket = 0;
   Spectrum T = integrate_camera_sample(
-      kg, sample, x, y, rng_pixel, &ray, cache_miss, nullptr, &bounded_bucket);
+      kg, sample, x, y, rng_pixel, &ray, cache_miss);
 #else
   Spectrum T = integrate_camera_sample(
       kg, sample, x, y, rng_pixel, &ray, cache_miss, deep_raster_output);
@@ -549,7 +538,7 @@ ccl_device bool integrator_init_from_camera(KernelGlobals kg,
   }
 
 #if __DEEP_BOUNDED_POLICY__ > 0
-  deep_bounded_camera_success(kg, state, bounded_bucket);
+  deep_bounded_camera_success(kg, state);
 #endif
 #ifdef __KERNEL_GPU__
   /* Cache attempts do not contribute twice. Failed camera evaluation still contributes one

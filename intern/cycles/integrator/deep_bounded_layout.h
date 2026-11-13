@@ -69,9 +69,16 @@ struct DeepBoundedArenaLayout {
   }
 };
 
+/* Cold frozen-output demand. Zero rgba_bytes retains conservative standalone
+ * admission for callers without a consumer plan; production always supplies it. */
+struct DeepBoundedEncodingPlan {
+  uint32_t rgba_bytes = 0, summary_bytes = 0, banks = 2;
+};
+
 struct DeepBoundedAdmission {
   uint32_t pixels = 0, packet_samples = 0, roots = 0;
-  size_t collector = 0, phase = 0, encoded = 0, source = 0, control = sizeof(DeepBoundedPacketControl), known_total = 0;
+  size_t collector = 0, phase = 0, encoded = 0, encoded_b = 0, source = 0,
+         control = sizeof(DeepBoundedPacketControl), known_total = 0;
 
   static bool calculate(const uint32_t pixels,
                         const uint32_t samples,
@@ -80,15 +87,17 @@ struct DeepBoundedAdmission {
                         const bool holdout,
                         const uint32_t families,
                         DeepBoundedAdmission &out,
-                        const bool compact_identity = false)
+                        const bool compact_identity = false,
+                        const DeepBoundedEncodingPlan encoding = {})
   {
-    if (!pixels || !samples || !families || policy == DeepBoundedPolicy::NONE) {
+    if (!pixels || !samples || !families || policy == DeepBoundedPolicy::NONE ||
+        encoding.banks < 1 || encoding.banks > 2) {
       return false;
     }
     size_t roots, slots, total;
     if (!deep_bounded_mul(pixels, samples, roots) || roots >= (size_t(1) << 30) ||
         (!compact_identity && roots > std::max(size_t(pixels), size_t(native_states))) ||
-        !deep_bounded_mul(pixels, 512, slots))
+        !deep_bounded_mul(pixels, DEEP_BOUNDED_K, slots))
     {
       return false;
     }
@@ -99,8 +108,8 @@ struct DeepBoundedAdmission {
     r.roots = uint32_t(roots);
     DeepBoundedArenaLayout c, raw, final, encoded, source;
     c.planes(0, slots, physical, compact_identity);
-    c.reserve(size_t(pixels) * 16, 4);
-    c.reserve(size_t(pixels) * 16, 4);
+    c.reserve(pixels, 4);
+    c.reserve(pixels, 4);
     c.reserve(size_t(pixels) * 2 + 2, sizeof(uint32_t));
     raw.planes(0, roots * 32, physical, compact_identity);
     raw.reserve(roots, 4);
@@ -113,9 +122,6 @@ struct DeepBoundedAdmission {
     final.planes(0, size_t(pixels) * 32 * std::min(families, 2u), physical, compact_identity);
     final.reserve(size_t(pixels) * std::min(families, 2u), 4);
     final.reserve(pixels, 8, 8);
-    /* A bounded list and count for cooperative final pressure trials. */
-    final.reserve(pixels, 4);
-    final.reserve(1, 4);
     /* Recursive scan totals/offsets include every level and uniform-add input. */
     for (size_t n = (size_t(pixels) + 255) / 256; n; n = n == 1 ? 0 : (n + 255) / 256) {
       final.reserve(n, 8, 8);
@@ -125,8 +131,9 @@ struct DeepBoundedAdmission {
     encoded.reserve(pixels, 4);
     encoded.reserve(size_t(pixels) * 32, 4); /* Z */
     encoded.reserve(size_t(pixels) * 32, 4); /* ZBack */
-    encoded.reserve(size_t(pixels) * 32, physical ? 16 : 4);
-    if (policy == DeepBoundedPolicy::SIMPLE) {
+    encoded.reserve(size_t(pixels) * DEEP_BOUNDED_K,
+                    encoding.rgba_bytes ? encoding.rgba_bytes : (physical ? 16 : 4));
+    if (encoding.rgba_bytes ? encoding.summary_bytes != 0 : policy == DeepBoundedPolicy::SIMPLE) {
       encoded.reserve(pixels, 4);
     }
     source.reserve(native_states, 4);
@@ -139,13 +146,16 @@ struct DeepBoundedAdmission {
       return false;
     }
     r.collector = c.bytes;
-    r.phase = std::max({raw.bytes, final.bytes, physical ? size_t(18560) : size_t(12416)});
+    /* Migration stages one full-identity collector pixel at minimum. */
+    const size_t migration_pixel = size_t(DEEP_BOUNDED_K) * (physical ? 36 : 24) + 8;
+    r.phase = std::max({raw.bytes, final.bytes, migration_pixel});
     r.encoded = encoded.bytes;
+    r.encoded_b = encoding.banks == 2 ? encoded.bytes : 0;
     r.source = source.bytes;
     if (!deep_bounded_add(r.collector, r.phase, total) ||
         !deep_bounded_add(total, r.source, total) ||
         !deep_bounded_add(total, r.encoded, total) ||
-        !deep_bounded_add(total, r.encoded, total) ||
+        !deep_bounded_add(total, r.encoded_b, total) ||
         !deep_bounded_add(total, r.control, r.known_total))
     {
       return false;
@@ -164,7 +174,8 @@ inline DeepBoundedAdmission deep_bounded_choose_packet(const uint32_t pixels,
                                                        const size_t available,
                                                        const DeepBoundedAdmission &retained = {},
                                                        const bool exact = false,
-                                                       const bool compact_identity = false)
+                                                       const bool compact_identity = false,
+                                                       const DeepBoundedEncodingPlan encoding = {})
 {
   DeepBoundedAdmission best;
   uint32_t lo = 1;
@@ -173,7 +184,7 @@ inline DeepBoundedAdmission deep_bounded_choose_packet(const uint32_t pixels,
     const uint32_t b = exact ? lo + (hi - lo) / 2 : lo;
     DeepBoundedAdmission candidate;
     if (!DeepBoundedAdmission::calculate(pixels, b, native_states, policy, holdout, families,
-                                         candidate, compact_identity))
+                                         candidate, compact_identity, encoding))
     {
       if (!exact) {
         break;
@@ -187,11 +198,12 @@ inline DeepBoundedAdmission deep_bounded_choose_packet(const uint32_t pixels,
     const size_t collector = std::max(candidate.collector, retained.collector);
     const size_t phase = std::max(candidate.phase, retained.phase);
     const size_t encoded = std::max(candidate.encoded, retained.encoded);
+    const size_t encoded_b = std::max(candidate.encoded_b, retained.encoded_b);
     const size_t control = std::max(candidate.control, retained.control);
     if (!deep_bounded_add(resident, collector, resident) ||
         !deep_bounded_add(resident, phase, resident) ||
         !deep_bounded_add(resident, encoded, resident) ||
-        !deep_bounded_add(resident, encoded, resident) ||
+        !deep_bounded_add(resident, encoded_b, resident) ||
         !deep_bounded_add(resident, control, resident) || resident > available)
     {
       if (!exact) {
@@ -214,7 +226,7 @@ inline DeepBoundedAdmission deep_bounded_choose_packet(const uint32_t pixels,
  * twice or assumed absent just because the current slice is empty. */
 struct DeepBoundedDeviceAdmission {
   uint32_t native_states = 0;
-  DeepBoundedAdmission retained = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  DeepBoundedAdmission retained = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   size_t physical_capacity = SIZE_MAX;
   size_t adaptive_bytes = 0, adaptive_target = 0;
   bool compact_identity = false;
@@ -229,7 +241,7 @@ inline bool deep_bounded_resident(const DeepBoundedAdmission &a,
   return deep_bounded_add(bytes, std::max(a.collector, retained.collector), bytes) &&
          deep_bounded_add(bytes, std::max(a.phase, retained.phase), bytes) &&
          deep_bounded_add(bytes, std::max(a.encoded, retained.encoded), bytes) &&
-         deep_bounded_add(bytes, std::max(a.encoded, retained.encoded), bytes) &&
+         deep_bounded_add(bytes, std::max(a.encoded_b, retained.encoded_b), bytes) &&
          deep_bounded_add(bytes, std::max(a.control, retained.control), bytes);
 }
 
@@ -242,7 +254,8 @@ inline DeepBoundedAdmission deep_bounded_choose_devices(
     const bool holdout,
     const uint32_t families,
     const size_t shared_remaining,
-    const std::span<const DeepBoundedDeviceAdmission> devices)
+    const std::span<const DeepBoundedDeviceAdmission> devices,
+    const DeepBoundedEncodingPlan encoding = {})
 {
   DeepBoundedAdmission best;
   uint32_t lo = 1, hi = max_samples;
@@ -255,7 +268,7 @@ inline DeepBoundedAdmission deep_bounded_choose_devices(
       size_t before, after;
       before = device.retained.known_total;
       if (!DeepBoundedAdmission::calculate(pixels, samples, device.native_states, policy,
-                                           holdout, families, candidate, device.compact_identity) ||
+                                           holdout, families, candidate, device.compact_identity, encoding) ||
           !deep_bounded_resident(candidate, device.retained, after))
       {
         fits = false;
@@ -291,7 +304,7 @@ struct DeepBoundedMigrationChunk {
                   const uint64_t target_arena)
   {
     pixels = count;
-    bytes_per_pixel = physical ? 18560 : 12416;
+    bytes_per_pixel = uint64_t(DEEP_BOUNDED_K) * (physical ? 36 : 24) + 8;
     if (!count) {
       pixels_per_chunk = payload_bytes = chunks = 0;
       return true;

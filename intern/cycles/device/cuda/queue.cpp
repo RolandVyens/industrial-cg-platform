@@ -1355,19 +1355,6 @@ bool CUDADeviceQueue::enqueue_deep_bounded(const DeepBoundedOperation operation,
       return false;
     }
   }
-  const bool warp_final = operation == DeepBoundedOperation::FINALIZE &&
-                          (parameters.first & DeepBoundedFinalizeFlags::WARP);
-  const bool warp_aa = operation == DeepBoundedOperation::ACCUMULATE &&
-                       (parameters.first & DeepBoundedAccumulateFlags::WARP);
-  if (warp_final || warp_aa) {
-    if (!parameters.scan_input || !parameters.scan_output) {
-      cuda_device_->set_error("Missing bounded final pressure queue");
-      return false;
-    }
-    assert_success(cuMemsetD32Async(CUdeviceptr(parameters.scan_output), 0, 1, stream()),
-                   "reset bounded final pressure count");
-    if (cuda_device_->have_error()) return false;
-  }
   void *args[] = {const_cast<DeepBoundedDispatch *>(&parameters)};
   if (native_timings_enabled_) {
     if (!begin_native_timing(DEVICE_KERNEL_NUM,
@@ -1388,26 +1375,6 @@ bool CUDADeviceQueue::enqueue_deep_bounded(const DeepBoundedOperation operation,
   const CUresult result = cuLaunchKernel(function, launch_blocks, 1, 1,
                                          launch_threads, 1, 1, 0, stream(), args, nullptr);
   assert_success(result, "enqueue bounded Deep operation");
-  if (result == CUDA_SUCCESS && (warp_final || warp_aa)) {
-    CUfunction &cooperative = warp_final ? bounded_warp_finalize_[policy - 1] :
-                                          bounded_warp_accumulate_[policy - 1];
-    if (!cooperative) {
-      const string name = string("kernel_deep_bounded_") + modes[policy - 1] +
-                          (warp_final ? "_finalize_warp" : "_accumulate_warp");
-      assert_success(cuModuleGetFunction(&cooperative, deep_bounded_module_, name.c_str()),
-                       name.c_str());
-    }
-    if (!cooperative || cuda_device_->have_error()) return false;
-    const uint32_t work = warp_final ? parameters.model.pixels : parameters.size;
-    const uint32_t warp_threads = policy == 3 ? 128 : 256;
-    const uint32_t warps = warp_threads / 32;
-    const uint32_t warp_blocks = uint32_t(std::min((uint64_t(work) + warps - 1) / warps,
-        uint64_t(std::max(1, cuda_device_->get_num_multiprocessors())) * 4));
-    const CUresult second = cuLaunchKernel(cooperative, warp_blocks, 1, 1, warp_threads, 1, 1,
-                                           0, stream(), args, nullptr);
-    assert_success(second, "enqueue cooperative final pressure");
-    if (second != CUDA_SUCCESS) return false;
-  }
   return (!native_timings_enabled_ || end_native_timing()) && result == CUDA_SUCCESS;
 }
 

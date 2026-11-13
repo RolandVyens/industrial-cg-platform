@@ -615,18 +615,25 @@ int2 Session::get_effective_tile_size() const
       const auto policy = DeepBoundedPolicy(device->deep_bounded_policy());
       const auto &budget = deep_frame_capture_consumer_->device_memory_budget();
       const uint32_t families = deep_bounded_family_count(deep_frame_capture_consumer_->bounded_consumers());
+      const auto encoding = deep_bounded_encoding_plan(deep_frame_capture_consumer_->bounded_consumers(), policy);
       size_t total = 0, free = 0;
       device->get_device_memory_info(total, free);
       const size_t quota = budget.quota() - budget.used();
       const size_t available = total ? std::min(quota, free) : quota;
-      const uint32_t max_samples = deep_frame_capture_consumer_->bounded_max_samples();
+      uint32_t max_samples = deep_frame_capture_consumer_->bounded_max_samples();
+      if (params.background) {
+        const int work_samples = RenderScheduler::get_max_num_samples_per_work(
+            scene->integrator->get_adaptive_sampling(),
+            min(params.samples, Integrator::MAX_SAMPLES));
+        max_samples = std::min(max_samples, uint32_t(max(work_samples, 1)));
+      }
       const auto devices = path_trace_->deep_bounded_admission_devices();
       const auto admit = [&](const uint32_t pixels) {
         return devices.empty() ? deep_bounded_choose_packet(
             pixels, max_samples, uint32_t(limits.x), policy,
-            buffer_params_.use_transparent_background, families, available) :
+            buffer_params_.use_transparent_background, families, available, {}, false, false, encoding) :
             deep_bounded_choose_devices(pixels, max_samples, policy,
-                buffer_params_.use_transparent_background, families, quota, devices);
+                buffer_params_.use_transparent_background, families, quota, devices, encoding);
       };
       const int block = TileManager::IMAGE_TILE_SIZE;
       const auto prefer_rectangular = [&](const int2 square) {

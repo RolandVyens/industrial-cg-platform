@@ -111,6 +111,7 @@ struct DeepFrameOwnerState {
   BudgetMap<uint64_t, BoundDomain> in_flight;
   BudgetVector<DomainSourcePages> source_pages;
   bool device_encoding = false;
+  bool bounded_identity = false;
   uint64_t next_lease = 1;
   bool canonical_retired = false;
 
@@ -217,7 +218,8 @@ DeepStatus DeepFramePipeline::active() const
 
 DeepStatus DeepFramePipeline::begin_frame(const DeepFrameKey &frame,
                                           const DeepRasterWindow &window,
-                                          const std::span<const uint32_t> consumers)
+                                          const std::span<const uint32_t> consumers,
+                                          const bool bounded_identity)
 {
   if (owner_ || !startup_error_)
     return DeepStatus::fail(DeepErrorCode::InvalidState, "Deep owner cannot begin a second frame");
@@ -228,11 +230,14 @@ DeepStatus DeepFramePipeline::begin_frame(const DeepFrameKey &frame,
         DeepBudgetAllocator<DeepFrameOwnerState>(budget_), budget_);
     owner_->frame = frame;
     owner_->window = window;
+    owner_->bounded_identity = bounded_identity;
     owner_->pages = std::allocate_shared<DeepPageStore>(
         DeepBudgetAllocator<DeepPageStore>(budget_), frame, budget_);
     const size_t pixel_count = size_t(window.width) * window.height;
-    owner_->pixels.resize(pixel_count);
-    owner_->counts.resize(pixel_count, 0);
+    if (!bounded_identity) {
+      owner_->pixels.resize(pixel_count);
+      owner_->counts.resize(pixel_count, 0);
+    }
     owner_->tile_owners.resize(pixel_count, 0);
     for (const uint32_t id : consumers) {
       if (owner_->consumer(id))
@@ -274,7 +279,7 @@ DeepStatus DeepFramePipeline::enable_device_encoding()
 DeepStatus DeepFramePipeline::commit_device_domain(const DeepDomainCompletion &domain)
 {
   if (const auto status = active(); !status) return status;
-  if (!owner_->device_encoding || owner_->state != DeepFrameState::Capturing ||
+  if (owner_->bounded_identity || !owner_->device_encoding || owner_->state != DeepFrameState::Capturing ||
       !(domain.frame == owner_->frame) || owner_->domains.contains(domain.domain))
     return fail(DeepErrorCode::InvalidState, "Invalid device-only Deep domain commit");
   const auto bound = owner_->in_flight.find(domain.domain);
@@ -297,7 +302,7 @@ DeepStatus DeepFramePipeline::close_device_encoded_tile(const DeepFrameKey &fram
                                                          const std::span<const DeepCanonicalPixel> pixels)
 {
   if (const auto status = active(); !status) return status;
-  if (!owner_->device_encoding || owner_->state != DeepFrameState::Capturing ||
+  if (owner_->bounded_identity || !owner_->device_encoding || owner_->state != DeepFrameState::Capturing ||
       !(frame == owner_->frame) || !token || owner_->tiles.contains(token) || !valid_window(tile) ||
       uint64_t(tile.width) * tile.height != pixels.size())
     return fail(DeepErrorCode::InvalidState, "Invalid device-encoded final Deep tile");
@@ -356,8 +361,10 @@ DeepStatus DeepFramePipeline::close_bounded_device_tile(const DeepFrameKey &fram
   for (uint32_t y = 0; y < tile.height; ++y) {
     for (uint32_t x = 0; x < tile.width; ++x) {
       const size_t index = first + size_t(y) * owner_->window.width + x;
-      owner_->pixels[index].x = int64_t(tile.x) + x;
-      owner_->pixels[index].y = int64_t(tile.y) + y;
+      if (!owner_->bounded_identity) {
+        owner_->pixels[index].x = int64_t(tile.x) + x;
+        owner_->pixels[index].y = int64_t(tile.y) + y;
+      }
       owner_->tile_owners[index] = token;
     }
   }
@@ -369,6 +376,8 @@ DeepStatus DeepFramePipeline::bind_native_domain(const DeepDomainCompletion &dom
 {
   if (const DeepStatus status = active(); !status)
     return status;
+  if (owner_->bounded_identity)
+    return fail(DeepErrorCode::InvalidState, "Bounded identity storage has no reference population");
   if (owner_->state != DeepFrameState::Capturing || !(domain.frame == owner_->frame))
     return fail(DeepErrorCode::InvalidFrame, "Foreign or sealed Deep domain binding");
   size_t first, last;
@@ -403,7 +412,7 @@ DeepStatus DeepFramePipeline::commit_native_domain(
 {
   if (const DeepStatus status = active(); !status)
     return status;
-  if (owner_->device_encoding)
+  if (owner_->bounded_identity || owner_->device_encoding)
     return fail(DeepErrorCode::InvalidState, "Device Deep cannot commit host numerical samples");
   if (owner_->state != DeepFrameState::Capturing || !(domain.frame == owner_->frame))
     return fail(DeepErrorCode::InvalidFrame, "Foreign or sealed Deep domain");
@@ -497,7 +506,7 @@ DeepStatus DeepFramePipeline::close_render_tile(const DeepFrameKey &frame,
 {
   if (const DeepStatus status = active(); !status)
     return status;
-  if (owner_->device_encoding)
+  if (owner_->bounded_identity || owner_->device_encoding)
     return fail(DeepErrorCode::InvalidState, "Device Deep cannot publish CPU canonical curves");
   if (owner_->state != DeepFrameState::Capturing || !(frame == owner_->frame))
     return fail(DeepErrorCode::InvalidFrame, "Foreign or sealed Deep final tile");
@@ -594,7 +603,7 @@ DeepStatus DeepFramePipeline::retire_canonical_tile(const DeepRasterWindow &tile
 {
   if (const auto status = active(); !status)
     return status;
-  if (owner_->state != DeepFrameState::Capturing || !valid_window(tile))
+  if (owner_->bounded_identity || owner_->state != DeepFrameState::Capturing || !valid_window(tile))
     return fail(DeepErrorCode::InvalidState,
                 "Canonical retirement requires a closed capture tile");
   for (uint32_t y = 0; y < tile.height; y++)
@@ -669,8 +678,17 @@ DeepStatus DeepFramePipeline::acquire_closed_rows(const uint32_t consumer_id,
     rows->owner = owner_;
     rows->first = first_row;
     rows->count = row_count;
-    const auto begin = owner_->pixels.begin() + size_t(first) * owner_->window.width;
-    rows->pixels.assign(begin, begin + size_t(row_count) * owner_->window.width);
+    if (owner_->bounded_identity) {
+      rows->pixels.resize(size_t(row_count) * owner_->window.width);
+      for (size_t i = 0; i < rows->pixels.size(); ++i) {
+        rows->pixels[i].x = int32_t(int64_t(owner_->window.x) + i % owner_->window.width);
+        rows->pixels[i].y = int32_t(int64_t(first_row) + i / owner_->window.width);
+      }
+    }
+    else {
+      const auto begin = owner_->pixels.begin() + size_t(first) * owner_->window.width;
+      rows->pixels.assign(begin, begin + size_t(row_count) * owner_->window.width);
+    }
     lease.rows_ = rows;
     lease.consumer_ = consumer_id;
     lease.serial_ = owner_->next_lease++;
@@ -687,7 +705,7 @@ DeepStatus DeepFramePipeline::canonical_view(DeepCanonicalRowLease &lease)
 {
   if (const DeepStatus status = active(); !status)
     return status;
-  if (owner_->canonical_retired)
+  if (owner_->bounded_identity || owner_->canonical_retired)
     return DeepStatus::fail(DeepErrorCode::InvalidState,
                             "Canonical reference retired after all consumer encodings");
   if (owner_->state != DeepFrameState::InputsSealed)

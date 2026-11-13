@@ -159,8 +159,7 @@ ccl_device_forceinline void deep_bounded_retry_raster(KernelGlobals kg,
 }
 
 ccl_device_forceinline void deep_bounded_camera_success(KernelGlobals kg,
-                                                        ConstIntegratorState state,
-                                                        const uint32_t bucket)
+                                                        ConstIntegratorState state)
 {
   if (!deep_bounded_active(kg)) {
     return;
@@ -169,7 +168,7 @@ ccl_device_forceinline void deep_bounded_camera_success(KernelGlobals kg,
   if (deep_bounded_kind(source) == DeepBoundedSourceKind::UNBOUND) {
     uint32_t &header = deep_bounded_ptr<uint32_t>(
         deep_bounded_binding(kg).headers)[deep_bounded_slot(source)];
-    header = DEEP_BOUNDED_VALID | (bucket << DEEP_BOUNDED_BUCKET_SHIFT);
+    header = DEEP_BOUNDED_VALID;
   }
 }
 

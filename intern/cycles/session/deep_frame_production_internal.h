@@ -142,6 +142,15 @@ struct DeepFrameProductionStorage {
     index = size_t(dy) * window.width + size_t(dx);
     return true;
   }
+  size_t pixel_count() const
+  {
+    return size_t(window.width) * window.height;
+  }
+  bool pixel_closed(const size_t index) const
+  {
+    return index < pixel_cache_tiles.size() && pixel_cache_tiles[index] != deep_production_detail::no_index &&
+           (pixels.empty() || pixels[index].closed);
+  }
   bool tile(const int x, const int y, const int width, const int height, size_t &first) const
   {
     if (width <= 0 || height <= 0 || int64_t(x) + width - 1 > INT32_MAX ||

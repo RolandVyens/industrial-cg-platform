@@ -83,7 +83,7 @@ void DeepFrameProduction::initialize(const DeepFrameKey &frame,
                                      const DeepRasterWindow &window,
                                      const std::span<const uint32_t> consumers)
 {
-  if (!pipeline_.begin_frame(frame, window, consumers))
+  if (!pipeline_.begin_frame(frame, window, consumers, route_ == DeepProductionRoute::Bounded))
     return;
   try {
     storage_ = std::allocate_shared<DeepFrameProductionStorage>(
@@ -96,8 +96,8 @@ void DeepFrameProduction::initialize(const DeepFrameKey &frame,
       return;
     }
     const size_t count = size_t(window.width) * window.height;
-    storage_->pixels.resize(count);
     if (route_ == DeepProductionRoute::Reference) {
+      storage_->pixels.resize(count);
       storage_->reference = std::allocate_shared<ReferenceStorage>(
           DeepBudgetAllocator<ReferenceStorage>(memory_budget()), memory_budget(), *this);
       storage_->reference->curves.resize(count);
@@ -149,7 +149,7 @@ DeepStatus DeepFrameProduction::configure_consumers(
   }
   try {
     storage_->consumers.assign(consumers.begin(), consumers.end());
-    storage_->pixel_cache_tiles.assign(storage_->pixels.size(), no_index);
+    storage_->pixel_cache_tiles.assign(storage_->pixel_count(), no_index);
     storage_->encoding_reports.resize(consumers.size());
   }
   catch (const std::bad_alloc &) {
@@ -222,9 +222,12 @@ DeepStatus DeepFrameProduction::encoding_report(const DeepConsumerToken &token,
   report = {};
   if (const auto status = validate_consumer_token(token); !status)
     return status;
-  if (std::any_of(storage_->pixels.begin(), storage_->pixels.end(), [](const PixelState &pixel) {
-        return !pixel.closed;
-      }))
+  if (storage_->pixels.empty() ?
+          std::find(storage_->pixel_cache_tiles.begin(), storage_->pixel_cache_tiles.end(), no_index) !=
+              storage_->pixel_cache_tiles.end() :
+          std::any_of(storage_->pixels.begin(), storage_->pixels.end(), [](const PixelState &pixel) {
+            return !pixel.closed;
+          }))
     return DeepStatus::fail(DeepErrorCode::Incomplete,
                             "Deep encoding report requires complete pixels");
   for (size_t i = 0; i < storage_->consumers.size(); i++)
@@ -342,7 +345,7 @@ bool DeepFrameProduction::enable_bounded_processing(const bool cpu)
   }
   if (const auto status = pipeline_.enable_device_encoding(); !status) return false;
   storage_->reference.reset();
-  storage_->pixel_cache_tiles.resize(storage_->pixels.size(), no_index);
+  storage_->pixel_cache_tiles.resize(storage_->pixel_count(), no_index);
   bounded_processing_ = true;
   cpu_processing_ = cpu;
   return true;
@@ -454,7 +457,7 @@ bool DeepFrameProduction::publish_bounded_tile(DeepBoundedHostTile &&source)
     for (uint32_t y = 0; y < encoded->window.height; ++y) {
       for (uint32_t x = 0; x < encoded->window.width; ++x) {
         const size_t pixel = first + size_t(y) * storage_->window.width + x;
-        storage_->pixels[pixel].closed = true;
+        if (!storage_->pixels.empty()) storage_->pixels[pixel].closed = true;
         storage_->pixel_cache_tiles[pixel] = tile_index;
       }
     }

@@ -10,17 +10,15 @@
 #endif
 
 constexpr uint32_t DEEP_BOUNDED_K = 32;
-constexpr uint32_t DEEP_BOUNDED_BUCKETS = 16;
 constexpr uint32_t DEEP_BOUNDED_SLOT_MASK = 0x3fffffffu;
 constexpr uint32_t DEEP_BOUNDED_ELIGIBLE = 0x80000000u;
 constexpr uint32_t DEEP_BOUNDED_NONSURFACE = 0x7fffffffu;
 constexpr uint32_t DEEP_BOUNDED_VALID = 1u << 31;
 constexpr uint32_t DEEP_BOUNDED_COUNT_MASK = 63u;
-constexpr uint32_t DEEP_BOUNDED_BUCKET_SHIFT = 6;
-/* Raw-only proof bit; count/bucket and the later AA links leave bit 10 idle. */
+/* Raw-only proof bit, separate from the count and camera validity. */
 constexpr uint32_t DEEP_BOUNDED_ORDERED_ENDS = 1u << 10;
-static_assert((DEEP_BOUNDED_ORDERED_ENDS & (DEEP_BOUNDED_VALID | DEEP_BOUNDED_COUNT_MASK |
-                                            (15u << DEEP_BOUNDED_BUCKET_SHIFT))) == 0);
+static_assert((DEEP_BOUNDED_ORDERED_ENDS &
+               (DEEP_BOUNDED_VALID | DEEP_BOUNDED_COUNT_MASK)) == 0);
 
 enum DeepBoundedError : uint32_t {
   DEEP_BOUNDED_RANGE = 1u,
@@ -97,7 +95,7 @@ struct DeepBoundedEncoding {
   uint64_t header = 0, counts = 0, z = 0, z_back = 0, rgba = 0, summary = 0;
   uint64_t capacity_records = 0;
   uint32_t half = 1, alpha_only = 0;
-  uint32_t inline_summary = 0, layout = 0;
+  uint32_t layout = 0;
 };
 
 /* Numeric operations do not extend the native DeviceKernel/counter enum. */
@@ -115,16 +113,9 @@ enum class DeepBoundedOperation : uint32_t {
   COUNT,
 };
 
-/* first is operation-local: BEGIN_PACKET flags, ACCUMULATE flags,
- * FINALIZE flags, or a numeric first pixel for MIGRATION. Never combine ops. */
+/* first is operation-local: BEGIN_PACKET flags or a first pixel for MIGRATION. */
 namespace DeepBoundedBeginFlags {
-constexpr uint32_t TILE = 1u, FRAME = 2u, BUCKET_INDEX = 32u;
-}
-namespace DeepBoundedAccumulateFlags {
-constexpr uint32_t PARALLEL_BUCKETS = 1u, WARP = 4u, INDEXED = 64u;
-}
-namespace DeepBoundedFinalizeFlags {
-constexpr uint32_t WARP = 4u;
+constexpr uint32_t TILE = 1u, FRAME = 2u;
 }
 
 struct DeepBoundedDispatch {

@@ -51,6 +51,8 @@ bool deep_bounded_admit_host(DeepFrameCaptureConsumer &consumer,
   const size_t film_pixels = size_t(frame.width) * frame.height;
   const auto configs = consumer.bounded_consumers();
   const auto demand = consumer.capture_demand();
+  const auto encoding = deep_bounded_encoding_plan(configs, demand.simple_mode ?
+      DeepBoundedPolicy::SIMPLE : DeepBoundedPolicy::PHYSICAL);
   size_t needed = 0, largest_record = 0, maximum_planes = 0;
   for (size_t i = 0; i < configs.size(); ++i) {
     if (deep_bounded_encoding_owner(configs, i) != i) {
@@ -78,12 +80,12 @@ bool deep_bounded_admit_host(DeepFrameCaptureConsumer &consumer,
   size_t pinned = 0, row = 0, beauty = 0, film = 0, row_views = 0;
   if (!largest_record ||
       !deep_bounded_mul(consumer.uses_cpu_processing() ? 0 : std::min(pixels, tile_pixels),
-                        maximum_planes * 2,
+                        maximum_planes * encoding.banks,
                         pinned) ||
       !deep_bounded_mul(pinned, devices, pinned) ||
       !deep_bounded_add(
           pinned,
-          consumer.uses_cpu_processing() ? 0 : devices * 2 * sizeof(DeepBoundedEncodedHeader),
+          consumer.uses_cpu_processing() ? 0 : devices * encoding.banks * sizeof(DeepBoundedEncodedHeader),
           pinned) ||
       !deep_bounded_mul(frame.window_width, largest_record * DEEP_BOUNDED_K + 4, row) ||
       /* Each private codec holds its input, result and temporary byte buffers. */
@@ -144,7 +146,8 @@ DeepBoundedDeviceAdmission DeepBoundedWork::admission_snapshot(
   result.retained.source = o.resources.source_charge;
   result.retained.collector = o.resources.collector_mem.bytes();
   result.retained.phase = o.resources.phase.bytes();
-  result.retained.encoded = std::max(o.resources.encoded_a.bytes(), o.resources.encoded_b.bytes());
+  result.retained.encoded = o.resources.encoded_a.bytes();
+  result.retained.encoded_b = o.resources.encoded_b.bytes();
   result.retained.control = o.resources.control.bytes();
   /* Credit only bytes this owner actually charged, even if its banks differ. */
   result.retained.known_total = o.resources.source_charge + o.resources.collector_mem.bytes() +
@@ -306,21 +309,24 @@ bool DeepBoundedWork::configure(const BufferParams &logical,
     retained.source = o.resources.source_charge;
     retained.collector = o.resources.collector_mem.bytes();
     retained.phase = o.resources.phase.bytes();
-    retained.encoded = std::max(o.resources.encoded_a.bytes(), o.resources.encoded_b.bytes());
+    retained.encoded = o.resources.encoded_a.bytes();
+    retained.encoded_b = o.resources.encoded_b.bytes();
     retained.control = o.resources.control.bytes();
     o.admission = deep_bounded_choose_packet(uint32_t(pixels), std::min(max_samples, o.admitted_samples), native_states,
                                              o.policy, has_holdout, o.families,
-                                             std::min({quota, available, o.admitted_bytes}), retained, o.exact_admission, o.compact_identity);
+                                             std::min({quota, available, o.admitted_bytes}), retained,
+                                             o.exact_admission, o.compact_identity, o.encoding_plan);
     if (!o.admission.roots) {
       o.device.set_error("Deep Budget cannot admit this Tile and one camera sample");
       return false;
     }
-    if (o.admission.encoded > o.resources.encoded_a.bytes() && !drain()) {
+    if ((o.admission.encoded > o.resources.encoded_a.bytes() ||
+         o.admission.encoded_b > o.resources.encoded_b.bytes()) && !drain()) {
       return false;
     }
     try {
       if (!o.resources.collector_mem.reserve(o.admission.collector) || !o.resources.phase.reserve(o.admission.phase) ||
-          !o.resources.encoded_a.reserve(o.admission.encoded) || !o.resources.encoded_b.reserve(o.admission.encoded) ||
+          !o.resources.encoded_a.reserve(o.admission.encoded) || !o.resources.encoded_b.reserve(o.admission.encoded_b) ||
           !o.resources.control.reserve(o.admission.control))
       {
         return false;
@@ -340,7 +346,6 @@ bool DeepBoundedWork::configure(const BufferParams &logical,
     }
     o.tile = tile;
     o.prepared = false;
-    o.warp_scratch_ready = false;
     o.first_tile_packet = true;
     o.collector.x = int(tile[0]);
     o.collector.y = int(tile[1]);
@@ -349,9 +354,9 @@ bool DeepBoundedWork::configure(const BufferParams &logical,
     o.collector.capacity_pixels = uint32_t(pixels);
     DeepBoundedArenaLayout collector_layout;
     const uint64_t collector_base = o.resources.collector_mem.address();
-    o.collector.planes = collector_layout.planes(collector_base, size_t(pixels) * 512, physical, o.compact_identity);
-    o.collector.counts = collector_base + collector_layout.reserve(size_t(pixels) * 16, 4);
-    o.collector.populations = collector_base + collector_layout.reserve(size_t(pixels) * 16, 4);
+    o.collector.planes = collector_layout.planes(collector_base, size_t(pixels) * DEEP_BOUNDED_K, physical, o.compact_identity);
+    o.collector.counts = collector_base + collector_layout.reserve(pixels, 4);
+    o.collector.populations = collector_base + collector_layout.reserve(pixels, 4);
     o.capture = {};
     o.capture.policy = uint32_t(o.policy);
     o.capture.has_holdout = has_holdout;
@@ -463,7 +468,7 @@ bool DeepBoundedWork::migrate(DeepBoundedWork &destination,
   for (uint64_t offset = 0; offset < shape.pixels; offset += shape.pixels_per_chunk) {
     const uint32_t pixels = uint32_t(std::min(shape.pixels_per_chunk, shape.pixels - offset));
     const size_t bytes = pixels * shape.bytes_per_pixel;
-    const uint32_t blocks = blocks_for(pixels * DEEP_BOUNDED_BUCKETS * DEEP_BOUNDED_K);
+    const uint32_t blocks = blocks_for(pixels * DEEP_BOUNDED_K);
     DeepBoundedDispatch dispatch;
     dispatch.capture = src.capture;
     dispatch.collector = src.collector;
@@ -656,63 +661,11 @@ bool DeepBoundedWork::accumulate_packet()
   dispatch.capture = o.capture;
   dispatch.collector = o.collector;
   dispatch.merge = o.strict;
-  /* A single camera sample has no independent bucket sequences to overlap.
-   * Avoid the extra header/index work on the smallest native updates. */
-  dispatch.first = o.parallel_buckets && o.capture.packet.num_samples >= 4;
+  /* One owner per pixel preserves camera order across packets. Native filter
+   * sampling already supplies the pixel reconstruction distribution. */
   dispatch.root_pitch = o.root_pitch;
-  const uint64_t work = uint64_t(o.root_pitch) *
-                        ((dispatch.first & DeepBoundedAccumulateFlags::PARALLEL_BUCKETS) ? DEEP_BOUNDED_BUCKETS : 1);
-  if (work > UINT32_MAX) {
-    o.device.set_error("Bounded Deep accumulation dispatch exceeds its index range");
-    return false;
-  }
-  const bool use_warp = o.warp_accumulate && o.capture.packet.num_samples >= 4;
-  if (use_warp) {
-    /* The encoded A lease is idle during capture. Retire its preceding Tile
-     * copy before temporarily borrowing it for bounded numeric continuations. */
-    if (!o.warp_scratch_ready) {
-      if (!drain()) return false;
-      o.warp_scratch_ready = true;
-    }
-    if (16 + 8 * work > o.resources.encoded_a.bytes()) {
-      o.device.set_error("Bounded AA continuation queue exceeds its idle encoded arena");
-      return false;
-    }
-    dispatch.first |= DeepBoundedAccumulateFlags::WARP;
-    dispatch.scan_output = o.resources.encoded_a.address();
-    dispatch.scan_input = o.resources.encoded_a.address() + 16;
-    dispatch.size = uint32_t(work);
-  }
-  if (o.bucket_index && (dispatch.first & DeepBoundedAccumulateFlags::PARALLEL_BUCKETS)) {
-    constexpr uint32_t maximum_sample_next = (1u << 19) - 1u;
-    if ((o.bucket_index & 1u) && o.capture.packet.num_samples <= maximum_sample_next) {
-      const uint64_t bytes = uint64_t(o.root_pitch) * DEEP_BOUNDED_BUCKETS * sizeof(uint32_t);
-      const uint64_t heads_offset = use_warp ? 16 + 8 * work : 0;
-      if (heads_offset + bytes > o.resources.encoded_a.bytes()) {
-        o.device.set_error("Deep bucket sample heads exceed the idle encoded arena");
-        return false;
-      }
-      if (!o.warp_scratch_ready) {
-        if (!drain()) return false;
-        o.warp_scratch_ready = true;
-      }
-      const uint64_t heads = o.resources.encoded_a.address() + heads_offset;
-      if (use_warp) {
-        dispatch.scan_totals = heads;
-      }
-      else {
-        dispatch.scan_input = heads;
-      }
-      DeepBoundedDispatch index = dispatch;
-      index.first = DeepBoundedBeginFlags::BUCKET_INDEX;
-      index.scan_input = heads;
-      if (!o.queue.enqueue_deep_bounded(DeepBoundedOperation::BEGIN_PACKET, index,
-                                       blocks_for(o.root_pitch))) return false;
-      dispatch.first |= DeepBoundedAccumulateFlags::INDEXED;
-    }
-  }
   return o.queue.enqueue_deep_bounded(DeepBoundedOperation::ACCUMULATE, dispatch,
-                                      blocks_for(uint32_t(work)));
+                                      blocks_for(o.root_pitch));
 }
 
 static bool scan_model(DeepBoundedWorkStorage &o, const DeepBoundedModel &model)
@@ -779,8 +732,6 @@ bool DeepBoundedWork::prepare_tile()
   const auto planes = layout.planes(base, stride * model_count, physical, o.compact_identity);
   const uint64_t counts = base + layout.reserve(size_t(pixels) * model_count, 4);
   const uint64_t offsets = base + layout.reserve(pixels, 8, 8);
-  const uint64_t final_queue = base + layout.reserve(pixels, 4);
-  const uint64_t final_counter = base + layout.reserve(1, 4);
   o.scan_scratch = base + layout.reserve(0, 8, 8);
   for (uint32_t i = 0; i < model_count; ++i) {
     const uint64_t offset = i * stride * 4;
@@ -794,10 +745,6 @@ bool DeepBoundedWork::prepare_tile()
   dispatch.collector = o.collector;
   dispatch.model = o.models[0];
   dispatch.merge = o.strict;
-  dispatch.first = o.warp_finalize ? DeepBoundedFinalizeFlags::WARP : 0u;
-  /* FINALIZE uses the operation-local queue before recursive scan begins. */
-  dispatch.scan_input = final_queue;
-  dispatch.scan_output = final_counter;
   o.prepared = o.queue.enqueue_deep_bounded(DeepBoundedOperation::FINALIZE, dispatch,
                                            blocks_for(pixels));
   return o.prepared;

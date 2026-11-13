@@ -123,7 +123,6 @@ class CUDADeviceQueue : public DeviceQueue {
   CUfunction deep_frame_encode_operations_[4] = {};
   CUstream deep_copy_stream_ = nullptr;
   CUevent deep_compact_done_[2] = {}, deep_header_done_[2] = {}, deep_copy_done_[2] = {};
-  CUfunction bounded_warp_finalize_[3] = {}, bounded_warp_accumulate_[3] = {};
   CUmodule deep_bounded_module_ = nullptr;
   CUfunction deep_shader_prefix_sum_ = nullptr;
   bool bounded_parallel_shader_prefix_ = true;

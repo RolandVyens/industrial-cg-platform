@@ -137,6 +137,22 @@ class RenderScheduler {
    * [start_sample, start_sample + num_samples - 1], inclusively. */
   int get_num_samples() const;
 
+  /* Maximum samples in one full-resolution Work. The first adaptive interval
+   * may be longer than adaptive_step, so use the native filter alignment. */
+  static int get_max_num_samples_per_work(const AdaptiveSampling &adaptive_sampling,
+                                          const int num_samples)
+  {
+    return num_samples > 0 ? adaptive_sampling.align_samples(0, num_samples) : 0;
+  }
+
+  int get_max_num_samples_per_work() const
+  {
+    /* Navigation may bypass adaptive alignment. Only offline renders have a
+     * full-resolution bound for their entire scheduling lifetime. */
+    return background_ ? get_max_num_samples_per_work(adaptive_sampling_, num_samples_) :
+                         num_samples_;
+  }
+
   /* For sample subset rendering, extra offset to be added to sample index
    * for the sampling pattern to be shifted. */
   int get_sample_offset() const;

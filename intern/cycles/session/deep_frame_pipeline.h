@@ -86,7 +86,8 @@ class DeepFramePipeline {
 
   DeepStatus begin_frame(const DeepFrameKey &frame,
                          const DeepRasterWindow &window,
-                         std::span<const uint32_t> consumers);
+                         std::span<const uint32_t> consumers,
+                         bool bounded_identity = false);
   DeepPageStore *pages();
   DeepStatus check_producer_status(const DeepStatus &status);
   DeepStatus enable_device_encoding();

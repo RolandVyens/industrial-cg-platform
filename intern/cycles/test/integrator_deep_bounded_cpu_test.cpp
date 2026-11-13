@@ -27,7 +27,6 @@ inline uint32_t atomicOr(uint32_t *p, const uint32_t value)
 
 template<bool Physical>
 void point(const DeepBoundedBinding &b,
-           const uint32_t bucket,
            const float depth,
            const float red = 3)
 {
@@ -43,8 +42,7 @@ void point(const DeepBoundedBinding &b,
     r.rgb[2] = 1;
   }
   deep_bounded_store(b.raw, 0, r);
-  *deep_bounded_ptr<uint32_t>(b.headers) = DEEP_BOUNDED_VALID |
-                                           (bucket << DEEP_BOUNDED_BUCKET_SHIFT) | 1;
+  *deep_bounded_ptr<uint32_t>(b.headers) = DEEP_BOUNDED_VALID | 1;
 }
 float value(const ccl::DeepBoundedHostPayload &p, const size_t offset)
 {
@@ -205,7 +203,7 @@ TEST_F(DeepBoundedCPU, HighSampleSurfaceRemainsOneGroupedPointWithoutRGBCache)
     const auto *b = w.begin_sample(0, 0, 0, sample);
     ASSERT_TRUE(b);
     EXPECT_EQ(b->no_anchor, 0u);
-    point<false>(*b, sample % 16, 8 + float(sample % 10) * .0001f);
+    point<false>(*b, 8 + float(sample % 10) * .0001f);
     ASSERT_TRUE(w.end_sample(0));
   }
   ASSERT_TRUE(w.prepare_tile());
@@ -219,6 +217,22 @@ TEST_F(DeepBoundedCPU, HighSampleSurfaceRemainsOneGroupedPointWithoutRGBCache)
   EXPECT_FLOAT_EQ(value(p, 8), 1);
   EXPECT_FLOAT_EQ(value(p, 12), 1);
   EXPECT_FALSE(c.legacy);
+}
+
+TEST_F(DeepBoundedCPU, SingleCollectorFitsBoundedWorkBudget)
+{
+  CPUConsumer c(false, 1u << 20);
+  params.width = params.window_width = 128;
+  const size_t before = c.work.used();
+  {
+    DeepBoundedCPUWork w(*device, c);
+    /* The former16 collectors exceed this quota before any sample history.
+     * Exercise the real allocation/charge seam, not just a byte formula. */
+    ASSERT_TRUE(w.configure(params, params, 2, false, 0));
+    EXPECT_GT(c.work.used(), before);
+    EXPECT_LT(c.work.used() - before, 1u << 20);
+  }
+  EXPECT_EQ(c.work.used(), before);
 }
 
 TEST_F(DeepBoundedCPU, SimpleZeroOpacityVolumeRetainsBeautyCarrierWithoutRGBCache)
@@ -235,8 +249,7 @@ TEST_F(DeepBoundedCPU, SimpleZeroOpacityVolumeRetainsBeautyCarrierWithoutRGBCach
     r.z_back = 12.3965368271f;
     r.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
     deep_bounded_store(b->raw, 0, r);
-    *deep_bounded_ptr<uint32_t>(b->headers) = DEEP_BOUNDED_VALID |
-                                             ((sample % 16) << DEEP_BOUNDED_BUCKET_SHIFT) | 1;
+    *deep_bounded_ptr<uint32_t>(b->headers) = DEEP_BOUNDED_VALID | 1;
     ASSERT_TRUE(w.end_sample(0));
   }
   ASSERT_TRUE(w.close_tile());
@@ -266,7 +279,7 @@ TEST_F(DeepBoundedCPU, PhysicalRGBAndAlphaConsumerShareTypedPayload)
     const auto *b = w.begin_sample(0, 0, 0, s);
     ASSERT_TRUE(b);
     ASSERT_NE(b->no_anchor, 0u);
-    point<true>(*b, s % 16, 8, (s & 1) ? 4 : 2);
+    point<true>(*b, 8, (s & 1) ? 4 : 2);
     ASSERT_TRUE(w.end_sample(0));
   }
   ASSERT_TRUE(w.close_tile());
@@ -283,18 +296,22 @@ TEST_F(DeepBoundedCPU, PhysicalRGBAndAlphaConsumerShareTypedPayload)
   EXPECT_FLOAT_EQ(value(*a, 20), 1);
 }
 
-TEST_F(DeepBoundedCPU, ValidEmptyCameraDilutesPopulation)
+TEST_F(DeepBoundedCPU, ValidEmptyCameraDilutesPopulationButSkippedCameraDoesNot)
 {
   CPUConsumer c;
   DeepBoundedCPUWork w(*device, c);
   ASSERT_TRUE(w.configure(params, params, 2, false, 0));
   const auto *b = w.begin_sample(0, 0, 0, 0);
   ASSERT_TRUE(b);
-  point<false>(*b, 0, 8);
+  point<false>(*b, 8);
   ASSERT_TRUE(w.end_sample(0));
   b = w.begin_sample(0, 0, 0, 1);
   ASSERT_TRUE(b);
   *deep_bounded_ptr<uint32_t>(b->headers) = DEEP_BOUNDED_VALID;
+  ASSERT_TRUE(w.end_sample(0));
+  b = w.begin_sample(0, 0, 0, 2);
+  ASSERT_TRUE(b);
+  /* No camera-success header: adaptive skip contributes no population. */
   ASSERT_TRUE(w.end_sample(0));
   ASSERT_TRUE(w.close_tile());
   ASSERT_TRUE(w.drain());
@@ -341,7 +358,7 @@ TEST_F(DeepBoundedCPU, CancellationRetiresUnpublishedWorkingMemory)
     ASSERT_TRUE(w.configure(params, params, 2, false, 0));
     const auto *b = w.begin_sample(0, 0, 0, 0);
     ASSERT_TRUE(b);
-    point<false>(*b, 0, 8);
+    point<false>(*b, 8);
     ASSERT_TRUE(w.end_sample(0));
     ASSERT_TRUE(w.close_tile());
     c.cancelled = true;
@@ -352,7 +369,7 @@ TEST_F(DeepBoundedCPU, CancellationRetiresUnpublishedWorkingMemory)
   EXPECT_EQ(c.work.used(), work);
 }
 
-TEST_F(DeepBoundedCPU, TwoPixelOwnersHaveIndependentRawAndBucketStorage)
+TEST_F(DeepBoundedCPU, TwoPixelOwnersHaveIndependentRawAndCollectorStorage)
 {
   CPUConsumer c;
   params.width = params.window_width = 2;
@@ -364,7 +381,7 @@ TEST_F(DeepBoundedCPU, TwoPixelOwnersHaveIndependentRawAndBucketStorage)
       EXPECT_TRUE(b);
       if (!b)
         return;
-      point<false>(*b, s % 16, 8 + float(worker));
+      point<false>(*b, 8 + float(worker));
       EXPECT_TRUE(w.end_sample(worker));
     }
   };

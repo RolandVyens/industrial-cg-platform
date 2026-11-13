@@ -334,6 +334,17 @@ void PathTrace::render_pipeline(RenderWork render_work)
 
 void PathTrace::render_init_kernel_execution()
 {
+  uint32_t bounded_samples = UINT32_MAX;
+  if (deep_frame_consumer_ && deep_frame_consumer_->uses_gpu_processing()) {
+    bounded_samples = std::min(
+        deep_frame_consumer_->bounded_max_samples(),
+        uint32_t(max(render_scheduler_.get_max_num_samples_per_work(), 1)));
+    /* Cold Tile selection and real allocation must score the same native
+     * Work capacity, including on a single GPU. Frame spp is not a batch. */
+    for (auto &work : path_trace_works_) {
+      work->set_deep_bounded_admission_limit(bounded_samples, SIZE_MAX, SIZE_MAX);
+    }
+  }
   const bool multi_deep = deep_frame_consumer_ && deep_frame_consumer_->uses_gpu_processing() &&
                           path_trace_works_.size() > 1;
   int64_t window[4] = {};
@@ -354,10 +365,11 @@ void PathTrace::render_init_kernel_execution()
     const auto &budget = deep_frame_consumer_->device_memory_budget();
     const auto policy = DeepBoundedPolicy(device_->deep_bounded_policy());
     const uint32_t families = deep_bounded_family_count(deep_frame_consumer_->bounded_consumers());
+    const auto encoding = deep_bounded_encoding_plan(deep_frame_consumer_->bounded_consumers(), policy);
     const bool holdout = device_scene_->data.background.transparent != 0;
     const auto admitted = pixels < (1u << 30) ? deep_bounded_choose_devices(
-        uint32_t(pixels), deep_frame_consumer_->bounded_max_samples(), policy, holdout,
-        families, budget.quota() - budget.used(), devices) : DeepBoundedAdmission{};
+        uint32_t(pixels), bounded_samples, policy, holdout,
+        families, budget.quota() - budget.used(), devices, encoding) : DeepBoundedAdmission{};
     if (!admitted.roots) {
       progress_->set_error("Deep aggregate device budget cannot admit this Tile");
       return;
@@ -369,7 +381,7 @@ void PathTrace::render_init_kernel_execution()
       DeepBoundedAdmission a;
       size_t cap;
       if (!DeepBoundedAdmission::calculate(uint32_t(pixels), admitted.packet_samples,
-              device.native_states, policy, holdout, families, a, device.compact_identity) ||
+              device.native_states, policy, holdout, families, a, device.compact_identity, encoding) ||
           !deep_bounded_resident(a, device.retained, cap) ||
           cap < device.retained.known_total || cap - device.retained.known_total > remaining)
       {
@@ -382,7 +394,7 @@ void PathTrace::render_init_kernel_execution()
       DeepBoundedAdmission a;
       size_t cap;
       if (!DeepBoundedAdmission::calculate(uint32_t(pixels), admitted.packet_samples,
-              devices[i].native_states, policy, holdout, families, a, devices[i].compact_identity) ||
+              devices[i].native_states, policy, holdout, families, a, devices[i].compact_identity, encoding) ||
           !deep_bounded_resident(a, devices[i].retained, cap))
       {
         progress_->set_error("Deep aggregate arena size overflow");
@@ -413,7 +425,7 @@ void PathTrace::render_init_kernel_execution()
      * optional map using real remaining memory, without another owner's future
      * mandatory allocation to protect. Work.configure caches the same Tile. */
     for (auto &work : path_trace_works_)
-      work->set_deep_bounded_admission_limit(UINT32_MAX, SIZE_MAX, SIZE_MAX);
+      work->set_deep_bounded_admission_limit(bounded_samples, SIZE_MAX, SIZE_MAX);
   }
 }
 

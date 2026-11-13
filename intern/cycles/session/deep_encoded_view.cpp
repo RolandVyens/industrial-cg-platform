@@ -221,7 +221,7 @@ DeepStatus DeepFrameProduction::encoded_pixels(const DeepConsumerToken &token,
 {
   if (const auto status = validate_consumer_token(token); !status)
     return status;
-  if (first > storage_->pixels.size() || leases.size() > storage_->pixels.size() - first)
+  if (first > storage_->pixel_count() || leases.size() > storage_->pixel_count() - first)
     return DeepStatus::fail(DeepErrorCode::InvalidLayout, "Deep encoded range outside frame");
   size_t consumer = 0;
   while (consumer < storage_->consumers.size() && storage_->consumers[consumer].id != token.id)
@@ -241,7 +241,7 @@ DeepStatus DeepFrameProduction::encoded_row(const DeepConsumerToken &token,
   row.release();
   if (const auto status = validate_consumer_token(token); !status)
     return status;
-  if (first > storage_->pixels.size() || count > storage_->pixels.size() - first)
+  if (first > storage_->pixel_count() || count > storage_->pixel_count() - first)
     return DeepStatus::fail(DeepErrorCode::InvalidLayout, "Deep encoded row outside frame");
   struct Rollback {
     DeepEncodedRowLease &row;
@@ -260,8 +260,7 @@ DeepStatus DeepFrameProduction::encoded_row(const DeepConsumerToken &token,
   uint32_t column = uint32_t(first % storage_->window.width);
   for (size_t i = 0; i < count; ++i) {
     const size_t index = first + i;
-    if (!storage_->pixels[index].closed || index >= storage_->pixel_cache_tiles.size() ||
-        storage_->pixel_cache_tiles[index] == no_index)
+    if (!storage_->pixel_closed(index))
       return DeepStatus::fail(DeepErrorCode::Incomplete, "Deep encoded pixel not yet published");
     const size_t tile_index = storage_->pixel_cache_tiles[index];
     const auto &tile = storage_->encoded_tiles[tile_index];
@@ -306,9 +305,7 @@ DeepStatus DeepFrameProduction::encoded_pixel_for_consumer(const size_t consumer
                                                           DeepEncodedPixelLease &lease) const
 {
   lease = {};
-  if (index >= storage_->pixels.size() || !storage_->pixels[index].closed ||
-      index >= storage_->pixel_cache_tiles.size() ||
-      storage_->pixel_cache_tiles[index] == no_index)
+  if (!storage_->pixel_closed(index))
     return DeepStatus::fail(DeepErrorCode::Incomplete, "Deep encoded pixel not yet published");
   const auto &tile = storage_->encoded_tiles[storage_->pixel_cache_tiles[index]];
   const auto &window = tile->window;

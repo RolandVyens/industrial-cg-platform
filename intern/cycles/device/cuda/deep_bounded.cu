@@ -70,42 +70,8 @@ __device__ void map_active_pixels(const DeepBoundedDispatch &p)
   }
 }
 
-constexpr uint32_t sample_next_mask = (1u << 19) - 1u;
-constexpr uint32_t sample_next_shift = 12u;
-
-/* Camera producers have joined. Use only otherwise idle header bits, and
- * prepend in reverse camera order to keep every bucket's original fold. */
-__device__ void index_bucket_samples(uint32_t *headers, const uint32_t samples,
-                                     uint32_t *heads, const uint32_t pitch,
-                                     const uint32_t rank)
-{
-  uint32_t first[DEEP_BOUNDED_BUCKETS] = {};
-  for (uint32_t sample = samples; sample > 0; --sample) {
-    uint32_t &header = headers[uint64_t(rank) * samples + sample - 1];
-    const uint32_t original = header;
-    if (!(original & DEEP_BOUNDED_VALID)) continue;
-    const uint32_t bucket = (original >> DEEP_BOUNDED_BUCKET_SHIFT) & 15u;
-    header = (original & ~(sample_next_mask << sample_next_shift)) |
-             (first[bucket] << sample_next_shift);
-    first[bucket] = sample;
-  }
-  for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-    heads[uint64_t(b) * pitch + rank] = first[b];
-  }
-}
-
 template<bool Physical> __device__ void begin_packet(const DeepBoundedDispatch &p)
 {
-  if (p.first & DeepBoundedBeginFlags::BUCKET_INDEX) {
-    const uint32_t rank = thread_index();
-    if (rank < p.root_pitch) {
-      index_bucket_samples(deep_bounded_ptr<uint32_t>(p.capture.headers),
-                            p.capture.packet.num_samples,
-                            deep_bounded_ptr<uint32_t>(p.scan_input), p.root_pitch, rank);
-    }
-    return;
-  }
-
   const uint32_t i = thread_index();
   if (i == 0) {
     auto &control = *deep_bounded_ptr<DeepBoundedPacketControl>(p.capture.packet_device);
@@ -143,11 +109,8 @@ template<bool Physical> __device__ void begin_packet(const DeepBoundedDispatch &
   }
   if ((p.first & DeepBoundedBeginFlags::TILE) && i < p.capture.packet.plane_pitch) {
     const uint64_t pixel = logical_pixel(p, i);
-    for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-      const uint64_t h = pixel + uint64_t(b) * p.collector.capacity_pixels;
-      deep_bounded_ptr<uint32_t>(p.collector.counts)[h] = 0;
-      deep_bounded_ptr<uint32_t>(p.collector.populations)[h] = 0;
-    }
+    deep_bounded_ptr<uint32_t>(p.collector.counts)[pixel] = 0;
+    deep_bounded_ptr<uint32_t>(p.collector.populations)[pixel] = 0;
   }
 }
 
@@ -177,37 +140,24 @@ __device__ __forceinline__ bool pending_source_valid(
 template<bool Physical> __device__ void accumulate(const DeepBoundedDispatch &p)
 {
   const auto &packet = p.capture.packet;
-  const uint32_t work = thread_index();
-  const bool parallel_buckets = (p.first & DeepBoundedAccumulateFlags::PARALLEL_BUCKETS) != 0;
-  if (work >= uint64_t(p.root_pitch) * (parallel_buckets ? DEEP_BOUNDED_BUCKETS : 1)) {
+  const uint32_t rank = thread_index();
+  if (rank >= p.root_pitch) {
     return;
   }
-  const uint32_t rank = parallel_buckets ? work % p.root_pitch : work;
-  const uint32_t owned_bucket = parallel_buckets ? work / p.root_pitch : UINT32_MAX;
   const uint32_t pixel = p.root_pitch == packet.plane_pitch ?
                              rank :
                              deep_bounded_ptr<const uint32_t>(p.capture.active_map)[
                                  2 + uint64_t(packet.plane_pitch) + rank];
   const uint64_t collector_pixel = logical_pixel(p, pixel);
   const uint64_t stride = p.collector.capacity_pixels;
-  const bool indexed = (p.first & DeepBoundedAccumulateFlags::INDEXED) != 0;
-  const uint64_t heads = p.scan_totals ? p.scan_totals : p.scan_input;
-  uint32_t next_sample = indexed ? deep_bounded_ptr<const uint32_t>(heads)[
-      uint64_t(owned_bucket) * p.root_pitch + rank] - 1u : 0u;
-  while (next_sample < packet.num_samples) {
-    const uint32_t s = next_sample;
+  for (uint32_t s = 0; s < packet.num_samples; ++s) {
     const uint32_t root = rank * packet.num_samples + s;
     const uint32_t h = deep_bounded_ptr<const uint32_t>(p.capture.headers)[root];
-    next_sample = indexed ? ((h >> sample_next_shift) & sample_next_mask) - 1u : s + 1u;
     if (!(h & DEEP_BOUNDED_VALID)) {
       continue;
     }
     const uint32_t count = h & DEEP_BOUNDED_COUNT_MASK;
-    const uint32_t bucket = (h >> DEEP_BOUNDED_BUCKET_SHIFT) & 15u;
-    if (parallel_buckets && bucket != owned_bucket) {
-      continue;
-    }
-    const uint64_t index = uint64_t(bucket) * stride + collector_pixel;
+    const uint64_t index = collector_pixel;
     uint32_t &population = deep_bounded_ptr<uint32_t>(p.collector.populations)[index];
     uint32_t &old_count = deep_bounded_ptr<uint32_t>(p.collector.counts)[index];
     if (count > DEEP_BOUNDED_K || old_count > DEEP_BOUNDED_K || population == UINT32_MAX) {
@@ -217,19 +167,8 @@ template<bool Physical> __device__ void accumulate(const DeepBoundedDispatch &p)
     if (!pending_source_valid<Physical>(p, root, pixel, s, count)) {
       return;
     }
-    if ((p.first & DeepBoundedAccumulateFlags::WARP) && old_count && count && old_count + count > 4) {
-      const uint32_t task = atomicAdd(deep_bounded_ptr<uint32_t>(p.scan_output), 1u);
-      if (task >= p.size) {
-        deep_bounded_error(packet.status_ptr, DEEP_BOUNDED_CAPACITY);
-        return;
-      }
-      uint32_t *tasks = deep_bounded_ptr<uint32_t>(p.scan_input) + uint64_t(task) * 2;
-      tasks[0] = work;
-      tasks[1] = s;
-      return;
-    }
     const float inverse = 1.0f / float(population + 1);
-    const Chain dst{p.collector.planes, uint64_t(bucket) * DEEP_BOUNDED_K * stride + collector_pixel,
+    const Chain dst{p.collector.planes, collector_pixel,
                     stride, old_count};
     const Chain src{p.capture.raw, root, packet.root_capacity, count, true};
     old_count = merge_chains<Physical>(dst, src, dst, float(population) * inverse, inverse,
@@ -246,242 +185,20 @@ template<bool Physical> __device__ void finalize(const DeepBoundedDispatch &p)
   }
   const uint64_t cp = logical_pixel(p, pixel);
   const uint64_t stride = p.collector.capacity_pixels;
-  if (p.first & DeepBoundedAccumulateFlags::WARP) {
-    bool complex = false;
-    for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-      complex |= deep_bounded_ptr<const uint32_t>(p.collector.counts)[uint64_t(b) * stride + cp] > 1;
-    }
-    const uint32_t lanes = __activemask();
-    const uint32_t selected = __ballot_sync(lanes, complex);
-    if (selected) {
-      const uint32_t lane = threadIdx.x & 31u;
-      const uint32_t leader = uint32_t(__ffs(selected) - 1);
-      uint32_t base = 0;
-      if (lane == leader) base = atomicAdd(deep_bounded_ptr<uint32_t>(p.scan_output), __popc(selected));
-      base = __shfl_sync(lanes, base, leader);
-      if (complex) {
-        const uint32_t rank = __popc(selected & ((1u << lane) - 1u));
-        deep_bounded_ptr<uint32_t>(p.scan_input)[base + rank] = pixel;
-      }
-    }
-    if (complex) return;
-  }
-  uint32_t population = 0;
-  Chain model{p.model.planes, pixel, p.model.pixels, 0};
-  for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-    const uint64_t h = uint64_t(b) * stride + cp;
-    const uint32_t n = deep_bounded_ptr<const uint32_t>(p.collector.populations)[h];
-    if (!n) {
-      continue;
-    }
-    const uint32_t count = deep_bounded_ptr<const uint32_t>(p.collector.counts)[h];
-    if (count > DEEP_BOUNDED_K || n > UINT32_MAX - population) {
-      deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_POPULATION);
-      break;
-    }
-    const float inverse = 1.0f / float(population + n);
-    const Chain src{p.collector.planes, uint64_t(b) * DEEP_BOUNDED_K * stride + cp, stride, count};
-    model.count = merge_chains<Physical>(model, src, model, float(population) * inverse,
-                                         float(n) * inverse, p.merge, p.capture.packet.status_ptr);
-    population += n;
-  }
-  if (!population) {
+  const uint32_t population = deep_bounded_ptr<const uint32_t>(p.collector.populations)[cp];
+  const uint32_t count = deep_bounded_ptr<const uint32_t>(p.collector.counts)[cp];
+  uint32_t result = 0;
+  if (!population || count > DEEP_BOUNDED_K) {
     deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_POPULATION);
   }
-  deep_bounded_ptr<uint32_t>(p.model.counts)[pixel] = model.count;
-}
-
-/* One owner per complex pixel. Reuse the existing shared candidates for
- * ordinary compaction and one bounded pressure pass, without trial rescans. */
-template<bool Physical>
-__device__ __forceinline__ uint32_t merge_warp_chains(const Chain &a,
-                                                      const Chain &b,
-                                                      const Chain &output,
-                                                      const float wa,
-                                                      const float wb,
-                                                      const DeepBoundedMergePolicy merge,
-                                                      const uint64_t status,
-                                                      DeepBoundedRecord<Physical> *candidate,
-                                                      const uint32_t lane)
-{
-  uint32_t result = 0;
-  if (lane == 0) {
-    if (!a.count || !b.count) {
-      result = !a.count ? scale_chain<Physical>(b, output, wb, status) :
-                          scale_chain<Physical>(a, output, wa, status);
-    }
-    else {
-      const uint32_t count = generate_candidates(
-          a, b, wa, wb, candidate, candidate_capacity, status);
-      if (count != UINT32_MAX) {
-        result = reduce_numeric(candidate,
-                                count,
-                                output.planes,
-                                output.first,
-                                output.stride,
-                                DEEP_BOUNDED_K,
-                                merge,
-                                true,
-                                status);
-      }
-    }
+  else {
+    /* The collector is already normalized. Publish into the reusable phase
+     * arena without a second population fold or pressure-compaction pass. */
+    const Chain src{p.collector.planes, cp, stride, count};
+    const Chain dst{p.model.planes, pixel, p.model.pixels, 0};
+    result = scale_chain<Physical>(src, dst, 1.0f, p.capture.packet.status_ptr);
   }
-  /* The candidate workspace and output above have a single writer/reader,
-   * lane 0 of this warp. No cross-lane memory handoff needs a barrier here.
-   * Broadcast the count; the caller retains its own synchronization. */
-  result = __shfl_sync(0xffffffffu, result, 0);
-  return result;
-}
-
-template<bool Physical>
-__device__ __forceinline__ void accumulate_warp_task(
-    const DeepBoundedDispatch &p, const uint32_t work, const uint32_t first_sample,
-    DeepBoundedRecord<Physical> *staged, const uint32_t lane)
-{
-  const auto &packet = p.capture.packet;
-  const bool parallel_buckets = (p.first & DeepBoundedAccumulateFlags::PARALLEL_BUCKETS) != 0;
-  const uint32_t rank = parallel_buckets ? work % p.root_pitch : work;
-  const uint32_t owned_bucket = parallel_buckets ? work / p.root_pitch : UINT32_MAX;
-  const uint32_t pixel = p.root_pitch == packet.plane_pitch ? rank :
-      deep_bounded_ptr<const uint32_t>(p.capture.active_map)[
-          2 + uint64_t(packet.plane_pitch) + rank];
-  const uint64_t cp = logical_pixel(p, pixel);
-  const uint64_t stride = p.collector.capacity_pixels;
-  uint32_t next_sample = first_sample;
-  while (next_sample < packet.num_samples) {
-    const uint32_t s = next_sample;
-    const uint32_t root = rank * packet.num_samples + s;
-    uint32_t header = 0;
-    if (lane == 0) header = deep_bounded_ptr<const uint32_t>(p.capture.headers)[root];
-    header = __shfl_sync(0xffffffffu, header, 0);
-    next_sample = (p.first & DeepBoundedAccumulateFlags::INDEXED) ? ((header >> sample_next_shift) & sample_next_mask) - 1u : s + 1u;
-    if (!(header & DEEP_BOUNDED_VALID)) continue;
-    const uint32_t count = header & DEEP_BOUNDED_COUNT_MASK;
-    const uint32_t bucket = (header >> DEEP_BOUNDED_BUCKET_SHIFT) & 15u;
-    if (parallel_buckets && bucket != owned_bucket) continue;
-    const uint64_t h = uint64_t(bucket) * stride + cp;
-    uint32_t population = 0, old_count = 0;
-    if (lane == 0) {
-      population = deep_bounded_ptr<const uint32_t>(p.collector.populations)[h];
-      old_count = deep_bounded_ptr<const uint32_t>(p.collector.counts)[h];
-    }
-    population = __shfl_sync(0xffffffffu, population, 0);
-    old_count = __shfl_sync(0xffffffffu, old_count, 0);
-    if (count > DEEP_BOUNDED_K || old_count > DEEP_BOUNDED_K || population == UINT32_MAX) {
-      if (lane == 0) deep_bounded_error(packet.status_ptr, DEEP_BOUNDED_POPULATION);
-      return;
-    }
-    if constexpr (Physical) {
-      /* The scalar producer already checked the first continuation sample. */
-      if (s != first_sample) {
-        uint32_t valid = lane == 0 ? pending_source_valid<true>(p, root, pixel, s, count) : 0u;
-        valid = __shfl_sync(0xffffffffu, valid, 0);
-        if (!valid) return;
-      }
-    }
-    float wa = 0, wb = 0;
-    if (lane == 0) {
-      const float inverse = 1.0f / float(population + 1);
-      wa = float(population) * inverse;
-      wb = inverse;
-    }
-    wa = __shfl_sync(0xffffffffu, wa, 0);
-    wb = __shfl_sync(0xffffffffu, wb, 0);
-    const Chain dst{p.collector.planes, uint64_t(bucket) * DEEP_BOUNDED_K * stride + cp,
-                     stride, old_count};
-    const Chain input{p.capture.raw, root, packet.root_capacity, count, true};
-    const uint32_t result = merge_warp_chains<Physical>(dst, input, dst, wa, wb, p.merge,
-                                               packet.status_ptr, staged, lane);
-    if (lane == 0) {
-      deep_bounded_ptr<uint32_t>(p.collector.counts)[h] = result;
-      deep_bounded_ptr<uint32_t>(p.collector.populations)[h] = population + 1;
-    }
-    __syncwarp(0xffffffffu);
-  }
-}
-
-template<bool Physical> __device__ void accumulate_warp(const DeepBoundedDispatch &p)
-{
-  const uint32_t lane = threadIdx.x & 31u;
-  const uint32_t warp = threadIdx.x >> 5;
-  const uint32_t first = blockIdx.x * (blockDim.x >> 5) + warp;
-  const uint32_t step = gridDim.x * (blockDim.x >> 5);
-  const uint32_t tasks = *deep_bounded_ptr<const uint32_t>(p.scan_output);
-  if (tasks > p.size) {
-    if (lane == 0) deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_RANGE);
-    return;
-  }
-  __shared__ DeepBoundedRecord<Physical> staged[Physical ? 4 : 8][candidate_capacity];
-  for (uint32_t task = first; task < tasks; task += step) {
-    const uint32_t *item = deep_bounded_ptr<const uint32_t>(p.scan_input) + uint64_t(task) * 2;
-    const uint32_t work = item[0], sample = item[1];
-    if (work >= p.size || sample >= p.capture.packet.num_samples) {
-      if (lane == 0) deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_RANGE);
-      return;
-    }
-    accumulate_warp_task<Physical>(p, work, sample, staged[warp], lane);
-  }
-}
-
-template<bool Physical>
-__device__ __forceinline__ void finalize_warp_pixel(
-    const DeepBoundedDispatch &p, const uint32_t pixel,
-    DeepBoundedRecord<Physical> *staged, const uint32_t lane)
-{
-  const uint64_t cp = logical_pixel(p, pixel);
-  const uint64_t stride = p.collector.capacity_pixels;
-  Chain model{p.model.planes, pixel, p.model.pixels, 0};
-  uint32_t population = 0;
-  for (uint32_t b = 0; b < DEEP_BOUNDED_BUCKETS; ++b) {
-    const uint64_t h = uint64_t(b) * stride + cp;
-    uint32_t n = 0, count = 0;
-    if (lane == 0) {
-      n = deep_bounded_ptr<const uint32_t>(p.collector.populations)[h];
-      count = deep_bounded_ptr<const uint32_t>(p.collector.counts)[h];
-    }
-    n = __shfl_sync(0xffffffffu, n, 0);
-    count = __shfl_sync(0xffffffffu, count, 0);
-    if (!n) continue;
-    if (count > DEEP_BOUNDED_K || n > UINT32_MAX - population) {
-      if (lane == 0) deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_POPULATION);
-      return;
-    }
-    float wa = 0, wb = 0;
-    if (lane == 0) {
-      const float inverse = 1.0f / float(population + n);
-      wa = float(population) * inverse;
-      wb = float(n) * inverse;
-    }
-    wa = __shfl_sync(0xffffffffu, wa, 0);
-    wb = __shfl_sync(0xffffffffu, wb, 0);
-    const Chain input{p.collector.planes, uint64_t(b) * DEEP_BOUNDED_K * stride + cp,
-                       stride, count};
-    model.count = merge_warp_chains<Physical>(model, input, model, wa, wb, p.merge,
-                                     p.capture.packet.status_ptr, staged, lane);
-    population += n;
-  }
-  if (lane == 0) {
-    if (!population) deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_POPULATION);
-    deep_bounded_ptr<uint32_t>(p.model.counts)[pixel] = model.count;
-  }
-}
-
-template<bool Physical> __device__ void finalize_warp(const DeepBoundedDispatch &p)
-{
-  const uint32_t lane = threadIdx.x & 31u;
-  const uint32_t warp = threadIdx.x >> 5;
-  const uint32_t first = blockIdx.x * (blockDim.x >> 5) + warp;
-  const uint32_t step = gridDim.x * (blockDim.x >> 5);
-  const uint32_t tasks = *deep_bounded_ptr<const uint32_t>(p.scan_output);
-  if (tasks > p.model.pixels) {
-    if (lane == 0) deep_bounded_error(p.capture.packet.status_ptr, DEEP_BOUNDED_RANGE);
-    return;
-  }
-  __shared__ DeepBoundedRecord<Physical> staged[Physical ? 4 : 8][candidate_capacity];
-  for (uint32_t task = first; task < tasks; task += step) {
-    const uint32_t pixel = deep_bounded_ptr<const uint32_t>(p.scan_input)[task];
-    finalize_warp_pixel<Physical>(p, pixel, staged[warp], lane);
-  }
+  deep_bounded_ptr<uint32_t>(p.model.counts)[pixel] = result;
 }
 
 template<bool Physical> __device__ void coarsen(const DeepBoundedDispatch &p)
@@ -621,18 +338,17 @@ template<bool Physical, bool Simple> __device__ void encode(const DeepBoundedDis
 
 template<bool Physical, bool Pack> __device__ void migrate(const DeepBoundedDispatch &p)
 {
-  const uint64_t records = uint64_t(p.size) * DEEP_BOUNDED_K * DEEP_BOUNDED_BUCKETS;
+  const uint64_t records = uint64_t(p.size) * DEEP_BOUNDED_K;
   const uint64_t i = thread_index();
   if (i >= records) {
     return;
   }
   const uint64_t pixel = i % p.size;
   const uint64_t record_slot = i / p.size;
-  const uint64_t bucket = record_slot / DEEP_BOUNDED_K;
   const uint64_t slot = record_slot % DEEP_BOUNDED_K;
   const uint64_t n = p.collector.capacity_pixels;
-  const uint64_t original_h = bucket * n + p.first + pixel;
-  const uint64_t staged_h = bucket * p.size + pixel;
+  const uint64_t original_h = p.first + pixel;
+  const uint64_t staged_h = pixel;
   const uint64_t original_i = record_slot * n + p.first + pixel;
   DeepBoundedPlanes staged;
   staged.z = p.migration;
@@ -642,7 +358,7 @@ template<bool Physical, bool Pack> __device__ void migrate(const DeepBoundedDisp
   staged.shader = staged.object + records * 4;
   staged.normal = staged.shader + records * 4;
   uint32_t *counts = deep_bounded_ptr<uint32_t>(staged.normal + records * 4);
-  uint32_t *population = counts + uint64_t(p.size) * DEEP_BOUNDED_BUCKETS;
+  uint32_t *population = counts + p.size;
   uint32_t *original_counts = deep_bounded_ptr<uint32_t>(p.collector.counts);
   uint32_t *original_population = deep_bounded_ptr<uint32_t>(p.collector.populations);
   const uint32_t count = Pack ? original_counts[original_h] : counts[staged_h];
@@ -699,23 +415,6 @@ DEEP_BOUNDED_ENTRIES(simple, false, true)
 DEEP_BOUNDED_ENTRIES(physical, true, false)
 
 #undef DEEP_BOUNDED_ENTRIES
-
-extern "C" __global__ void kernel_deep_bounded_alpha_finalize_warp(const DeepBoundedDispatch p)
-{ finalize_warp<false>(p); }
-extern "C" __global__ void kernel_deep_bounded_simple_finalize_warp(const DeepBoundedDispatch p)
-{ finalize_warp<false>(p); }
-
-extern "C" __global__ void kernel_deep_bounded_alpha_accumulate_warp(const DeepBoundedDispatch p)
-{ accumulate_warp<false>(p); }
-extern "C" __global__ void kernel_deep_bounded_simple_accumulate_warp(const DeepBoundedDispatch p)
-{ accumulate_warp<false>(p); }
-
-extern "C" __global__ __launch_bounds__(128) void kernel_deep_bounded_physical_finalize_warp(
-    const DeepBoundedDispatch p)
-{ finalize_warp<true>(p); }
-extern "C" __global__ __launch_bounds__(128) void kernel_deep_bounded_physical_accumulate_warp(
-    const DeepBoundedDispatch p)
-{ accumulate_warp<true>(p); }
 
 /* Same integer shader buckets as the native serial prefix. This entry keeps
  * one launch and the original sorted-path pass; only the scan is parallel. */

@@ -4,6 +4,7 @@
 
 #include "integrator/deep_bounded_work.h"
 #include "integrator/deep_bounded_publication.h"
+#include "integrator/deep_bounded_plan.h"
 #include "device/device.h"
 #include "device/memory.h"
 #include "device/queue.h"
@@ -12,6 +13,7 @@
 #include <array>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 
 CCL_NAMESPACE_BEGIN
 
@@ -129,19 +131,10 @@ struct DeepBoundedWorkStorage {
         consumer(consumer),
         budget(consumer.device_memory_budget()),
         policy(DeepBoundedPolicy(device.deep_bounded_policy())),
+        encoding_plan(deep_bounded_encoding_plan(consumer.bounded_consumers(), policy)),
         resources(device, budget),
         transport(consumer.memory_budget())
   {
-    /* Retain a serial reference for paired validation without a second build. */
-    const char *serial = getenv("CYCLES_TEST_DEEP_SERIAL_BUCKETS");
-    parallel_buckets = !(serial && std::strcmp(serial, "1") == 0);
-    const char *warp = getenv("CYCLES_TEST_DEEP_WARP_FINALIZE");
-    warp_finalize = warp ? std::strcmp(warp, "0") != 0 :
-                           policy != DeepBoundedPolicy::PHYSICAL;
-    const char *warp_aa = getenv("CYCLES_TEST_DEEP_WARP_ACCUMULATE");
-    warp_accumulate = warp_aa && std::strcmp(warp_aa, "1") == 0;
-    const char *index = getenv("CYCLES_TEST_DEEP_BUCKET_INDEX");
-    bucket_index = !index || std::strcmp(index, "0") != 0 ? 1 : 0;
     const char *identity = getenv("CYCLES_TEST_DEEP_COMPACT_IDENTITY");
     compact_identity_requested = !identity || std::strcmp(identity, "0") != 0;
     const char *pack = getenv("CYCLES_TEST_DEEP_PACK_ACTIVE_PIXELS");
@@ -150,6 +143,7 @@ struct DeepBoundedWorkStorage {
     exact_admission = !exact || std::strcmp(exact, "0") != 0;
     const char *overwrite = getenv("CYCLES_TEST_DEEP_OVERWRITE_RECEIVE");
     overwrite_receive = !overwrite || std::strcmp(overwrite, "0") != 0;
+
   }
 
   ~DeepBoundedWorkStorage()
@@ -162,12 +156,10 @@ struct DeepBoundedWorkStorage {
   DeepFrameCaptureConsumer &consumer;
   DeepMemoryBudget budget;
   const DeepBoundedPolicy policy;
+  const DeepBoundedEncodingPlan encoding_plan;
   DeepBoundedDeviceStorage resources;
   DeepBoundedTransportStorage transport;
-  bool warp_finalize = false, warp_accumulate = false, warp_scratch_ready = false;
-  uint32_t bucket_index = 0;
   bool compact_identity_requested = false, compact_identity = false;
-  bool parallel_buckets = true;
   bool pack_active_pixels = false;
   bool exact_admission = false;
   bool overwrite_receive = true;
