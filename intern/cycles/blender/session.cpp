@@ -175,6 +175,14 @@ void render_result_resize_for_overscan(blender::RenderResult *render_result,
     return;
   }
 
+  /* ViewLayers share this result. Only a changed raster invalidates its pass
+   * buffers; clearing an unchanged raster would discard completed layers. */
+  if (render_result->rectx == buffer_params.width &&
+      render_result->recty == buffer_params.height)
+  {
+    return;
+  }
+
   render_result->rectx = buffer_params.width;
   render_result->recty = buffer_params.height;
   render_result->passes_allocated = false;

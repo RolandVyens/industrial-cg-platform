@@ -19,6 +19,7 @@ from modules.exr_overscan_utils import (
     render_case,
     render_item_override_case,
     render_primary_png_case,
+    render_view_layer_preservation_case,
 )
 
 
@@ -94,6 +95,16 @@ class ExrOverscanTests(unittest.TestCase):
     def test_item_format_override_to_exr_activates_overscan(self):
         summary = render_item_override_case("item_override_exr", self.outdir)
         self.assertFalse(summary["mismatches"], summary)
+
+    def test_overscan_preserves_completed_view_layers(self):
+        for overscan in (False, True):
+            with self.subTest(overscan=overscan):
+                summary = render_view_layer_preservation_case(
+                    "view_layer_preservation_" + ("on" if overscan else "off"),
+                    self.outdir,
+                    overscan=overscan,
+                )
+                self.assertTrue(summary["passed"], summary)
 
     def test_asymmetric_vertical_overscan_crops_non_exr_from_correct_side(self):
         pads = (0, 0, 4, 20)

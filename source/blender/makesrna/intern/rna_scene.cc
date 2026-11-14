@@ -6586,7 +6586,8 @@ static void rna_def_scene_image_format_data(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop,
       "Deep Merge Tolerance",
-      "Merge similar samples within this depth distance. Smaller values keep more samples.");
+      "Merge compatible surface or volume samples within this depth distance independently of "
+      "alpha difference. Zero disables depth-based compression");
   RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
 
   prop = RNA_def_property(srna, "deep_alpha_merge_tolerance", PROP_FLOAT, PROP_NONE);
@@ -6596,7 +6597,9 @@ static void rna_def_scene_image_format_data(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop,
       "Alpha Merge Tolerance",
-      "Merge similar samples within this alpha difference. Smaller values keep more samples.");
+      "Merge compatible surface or volume samples within this local alpha difference and the "
+      "projected depth neighborhood, independently of depth tolerance. Zero disables alpha-based "
+      "compression");
   RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
 
 #  ifdef WITH_IMAGE_OPENJPEG

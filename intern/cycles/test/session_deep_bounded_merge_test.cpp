@@ -79,7 +79,7 @@ TEST(DeepBoundedMerge, AlphaToleranceComparesLocalDifference)
 {
   auto a = volume(8.89f, 0.03125f), b = volume(8.891f, 0.03125f);
   a.object = b.object = 7;
-  const DeepBoundedMergePolicy policy{0.01f, 0.01f, 0, 0, 0};
+  const DeepBoundedMergePolicy policy{0.01f, 0, 0, 0, 0.001f};
   EXPECT_TRUE(deep_bounded_ordinary(a, b, policy, 1.0f, true));
   b.alpha = 0.2f;
   EXPECT_FALSE(deep_bounded_ordinary(a, b, policy, 1.0f, true));
@@ -93,11 +93,79 @@ TEST(DeepBoundedMerge, AlphaComparisonMatchesPublicationIncludingTail)
     const float t = i % 2 ? uniform(random) : 1.0e-12f * uniform(random);
     auto a = volume(10, t * uniform(random)), b = volume(10.001f, t * uniform(random));
     const float tolerance = 0.01f;
-    const DeepBoundedMergePolicy policy{tolerance, 0.1f, 0, 0, 0};
+    const DeepBoundedMergePolicy policy{tolerance, 0, 0, 0, 0.001f};
     const float local_a = deep_bounded_unit(a.alpha / fmaxf(t, 0x1p-23f));
     const float local_b = deep_bounded_unit(b.alpha / fmaxf(t - a.alpha, 0x1p-23f));
     EXPECT_EQ(deep_bounded_ordinary(a, b, policy, t, true), fabsf(local_a - local_b) < tolerance);
   }
+}
+
+template<bool Physical> void check_independent_tolerances()
+{
+  for (const bool surface : {false, true}) {
+    for (const bool interval : {false, true}) {
+      if (surface && interval) {
+        continue;
+      }
+      SCOPED_TRACE(::testing::Message() << "physical=" << Physical << " surface=" << surface
+                                       << " interval=" << interval);
+      DeepBoundedRecord<Physical> a{}, b{};
+      static_cast<DeepBoundedRecord<false> &>(a) = volume(1, 0.1f);
+      static_cast<DeepBoundedRecord<false> &>(b) = volume(1.001f, 0.4f);
+      if (surface) {
+        a.object = b.object = 7; /* Ordinary compression, not opaque identity grouping. */
+        a.normal = b.normal = deep_bounded_pack_normal(0, 0, 1);
+      }
+      if (interval) {
+        a.z_back = 1.0005f;
+        b.z_back = 1.002f;
+      }
+      EXPECT_TRUE(deep_bounded_ordinary(a, b, {0, 0.01f, 0, 0, 0.001f}, 1, true));
+      EXPECT_TRUE(deep_bounded_ordinary(a, b, {0.01f, 0.01f, 0, 0, 0.001f}, 1, true));
+      EXPECT_FALSE(deep_bounded_ordinary(a, b, {0.01f, 0, 0, 0, 0.001f}, 1, true));
+      EXPECT_FALSE(deep_bounded_ordinary(a, b, {}, 1, true));
+
+      b.z = 1.02f;
+      b.z_back = interval ? 1.021f : b.z;
+      b.alpha = 0.09f; /* Same published local alpha: 0.09 / (1 - 0.1) == 0.1. */
+      EXPECT_TRUE(deep_bounded_ordinary(a, b, {0.01f, 0, 0, 0, 0.001f}, 1, true));
+      EXPECT_TRUE(deep_bounded_ordinary(a, b, {0.01f, 0.01f, 0, 0, 0.001f}, 1, true));
+      EXPECT_FALSE(deep_bounded_ordinary(a, b, {0, 0.01f, 0, 0, 0.001f}, 1, true));
+      b.z = 3;
+      b.z_back = interval ? 3.01f : b.z;
+      EXPECT_FALSE(deep_bounded_ordinary(a, b, {0.01f, 0.01f, 0, 0, 0.001f}, 1, true));
+    }
+  }
+}
+
+TEST(DeepBoundedMerge, IndependentTolerancesSimpleSurfaceAndVolume)
+{
+  check_independent_tolerances<false>();
+}
+
+TEST(DeepBoundedMerge, IndependentTolerancesPhysicalSurfaceAndVolume)
+{
+  check_independent_tolerances<true>();
+}
+
+TEST(DeepBoundedMerge, DepthOnlyVolumeReductionPreservesMassAndMoment)
+{
+  DeepBoundedRecord<false> input[] = {volume(10, 0.1f), volume(10.001f, 0.4f)};
+  MergeOutput<false> output;
+  const auto n = deep_bounded_reduce_mature(
+      input, 2, output.planes(), 0, 1, 32, {0, 0.01f, 0, 0, 0.001f});
+  ASSERT_EQ(n, 1u);
+  EXPECT_NEAR(output.mass(n), 0.5, 1e-6);
+  EXPECT_NEAR(output.moment(n), 0.1 * 10 + 0.4 * double(input[1].z), 1e-6);
+}
+
+TEST(DeepBoundedMerge, IndependentTolerancesKeepPhysicalColourGate)
+{
+  DeepBoundedRecord<true> a{}, b{};
+  static_cast<DeepBoundedRecord<false> &>(a) = volume(1, 0.1f);
+  static_cast<DeepBoundedRecord<false> &>(b) = volume(1.001f, 0.4f);
+  a.rgb[0] = 1;
+  EXPECT_FALSE(deep_bounded_ordinary(a, b, {0, 0.01f, 0, 0, 0.001f}, 1, true));
 }
 
 TEST(DeepBoundedMerge, SurfaceIdentityAndNormalRemainRequired)
@@ -371,7 +439,7 @@ TEST(DeepBoundedMerge, UnqualifiedSurfaceLayersKeepAlphaCompressionGate)
                                      {10.001f, 10.001f, 0.64f, 5, 2,
                                       deep_bounded_pack_normal(0, 0, 1)}};
   MergeOutput<false> output;
-  const DeepBoundedMergePolicy policy{0.01f, 0.01f, 0, 0, 0};
+  const DeepBoundedMergePolicy policy{0.01f, 0, 0, 0, 0.001f};
   const auto n = deep_bounded_reduce_mature(input, 2, output.planes(), 0, 1, 32, policy);
   EXPECT_EQ(n, 2u);
   EXPECT_NEAR(output.mass(n), 0.84, 1e-6);
@@ -420,7 +488,7 @@ TEST(DeepBoundedMerge, RawSurfaceEligibilityDoesNotEnableMatureGrouping)
                 deep_bounded_pack_normal(0, 0, 1)};
   }
   MergeOutput<false> output;
-  const DeepBoundedMergePolicy policy{0.01f, 0.01f, 0, 0, 0};
+  const DeepBoundedMergePolicy policy{0.01f, 0, 0, 0, 0.001f};
   const auto n = deep_bounded_reduce(
       input.data(), input.size(), output.planes(), 0, 1, 32, policy, false, 0);
   EXPECT_GT(n, 1u);

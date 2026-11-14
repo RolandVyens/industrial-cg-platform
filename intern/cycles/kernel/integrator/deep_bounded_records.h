@@ -352,7 +352,7 @@ __device__ __forceinline__ bool deep_bounded_ordinary(const DeepBoundedRecord<Ph
                                                       const float transmission,
                                                       const bool mature_colour)
 {
-  const bool ordinary_enabled = policy.alpha_tolerance > 0.0f && policy.depth_tolerance > 0.0f;
+  const bool ordinary_enabled = policy.alpha_tolerance > 0.0f || policy.depth_tolerance > 0.0f;
   if (!mature_colour && !ordinary_enabled) {
     return false;
   }
@@ -375,23 +375,31 @@ __device__ __forceinline__ bool deep_bounded_ordinary(const DeepBoundedRecord<Ph
     return false;
   }
   const float dz = fmaxf(0.0f, candidate.z - group.z_back);
-  if (dz > policy.depth_tolerance) {
-    const float scale = group.z * policy.projection_scale;
-    if (!(scale > 0.0f) || fmaxf(1.0f, 1.0f / scale) * dz > 32.0f) {
+  const bool same_point = group_point && candidate_point && group.z == candidate.z;
+  const bool depth_match = policy.depth_tolerance > 0.0f && dz <= policy.depth_tolerance;
+  if (!depth_match) {
+    if (!(policy.alpha_tolerance > 0.0f)) {
       return false;
     }
-  }
-  const bool same_point = group_point && candidate_point && group.z == candidate.z;
-  if (!same_point) {
-    /* Internal alpha is absolute coverage q, not the local alpha displayed by
-     * a Deep reader. Compare local alphas without two divisions per boundary.
-     * Use the same denominator floor and clamp as publication. */
-    const float before = fmaxf(transmission, 0x1p-23f);
-    const float after = fmaxf(transmission - group.alpha, 0x1p-23f);
-    const float a = fminf(group.alpha, before);
-    const float b = fminf(candidate.alpha, after);
-    if (!(fabsf(a * after - b * before) < policy.alpha_tolerance * before * after)) {
+    /* Alpha is an independent compression channel, bounded by the existing
+     * projection neighbourhood so equal opacity cannot join arbitrarily far layers. */
+    const float scale = group.z * policy.projection_scale;
+    if (dz > 0.0f &&
+        (!(scale > 0.0f) || fmaxf(1.0f, 1.0f / scale) * dz > 32.0f))
+    {
       return false;
+    }
+    if (!same_point) {
+      /* Internal alpha is absolute coverage q, not the local alpha displayed by
+       * a Deep reader. Compare local alphas without two divisions per boundary.
+       * Use the same denominator floor and clamp as publication. */
+      const float before = fmaxf(transmission, 0x1p-23f);
+      const float after = fmaxf(transmission - group.alpha, 0x1p-23f);
+      const float a = fminf(group.alpha, before);
+      const float b = fminf(candidate.alpha, after);
+      if (!(fabsf(a * after - b * before) < policy.alpha_tolerance * before * after)) {
+        return false;
+      }
     }
   }
   if (object != DEEP_BOUNDED_NONSURFACE &&

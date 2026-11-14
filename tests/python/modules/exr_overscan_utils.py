@@ -199,20 +199,20 @@ def _configure_scene(
     scene.world = world
 
     bpy.ops.mesh.primitive_plane_add(location=(0.0, 0.0, -0.8), size=14.0)
-    _set_object_color(bpy.context.active_object, (0.16, 0.18, 0.2, 1.0))
+    _set_object_color(bpy.context.view_layer.objects.active, (0.16, 0.18, 0.2, 1.0))
 
     bpy.ops.mesh.primitive_cube_add(location=(0.0, 0.0, 0.1), scale=(0.9, 0.9, 0.9))
-    _set_object_color(bpy.context.active_object, (0.24, 0.48, 0.92, 1.0))
+    _set_object_color(bpy.context.view_layer.objects.active, (0.24, 0.48, 0.92, 1.0))
 
     bpy.ops.mesh.primitive_uv_sphere_add(location=(2.95, 0.15, 0.3), scale=(0.95, 0.95, 0.95))
-    _set_object_color(bpy.context.active_object, (0.92, 0.28, 0.16, 1.0))
+    _set_object_color(bpy.context.view_layer.objects.active, (0.92, 0.28, 0.16, 1.0))
 
     bpy.ops.object.light_add(type="SUN", location=(2.0, -4.0, 6.0))
-    sun = bpy.context.active_object
+    sun = bpy.context.view_layer.objects.active
     sun.data.energy = 3.0
 
     bpy.ops.object.camera_add(location=(0.0, -6.2, 1.15))
-    camera = bpy.context.active_object
+    camera = bpy.context.view_layer.objects.active
     camera.data.lens = 40.0
     _look_at(camera, Vector((0.7, 0.0, 0.1)))
     scene.camera = camera
@@ -321,6 +321,82 @@ def _save_direct_render_outputs(
         scene.render.image_settings.media_type = original_media_type
         scene.render.image_settings.file_format = original_format
     return outputs
+
+
+def render_view_layer_preservation_case(
+    case_name: str, output_root: Path, *, overscan: bool
+) -> dict[str, object]:
+    """Check sequential ViewLayer results, including the non-tiled GUI render path."""
+    case_root = output_root / case_name
+    case_root.mkdir(parents=True, exist_ok=True)
+    scene = _configure_scene(False, overscan, 10.0, 1, 320, 180)
+    scene.render.use_single_layer = False
+    scene.render.image_settings.media_type = "MULTI_LAYER_IMAGE"
+    scene.render.image_settings.file_format = "OPEN_EXR_MULTILAYER"
+    scene.render.compositor_device = "CPU"
+    scene.cycles.use_overscan = overscan
+    layers = [scene.view_layers[0]]
+    layers[0].name = "First"
+    layers.extend(scene.view_layers.new(name) for name in ("Middle", "Last"))
+    tree = bpy.data.node_groups.new("OverscanLayerPreservation", "CompositorNodeTree")
+    scene.compositing_node_group = tree
+    for layer in layers:
+        layer.use_pass_position = True
+        layer.use_pass_normal = True
+        layer.use_pass_z = True
+        source = tree.nodes.new("CompositorNodeRLayers")
+        source.layer = layer.name
+        target = tree.nodes.new("CompositorNodeOutputFile")
+        target.directory = str(case_root)
+        target.file_name = layer.name + "_"
+        target.format.media_type = "MULTI_LAYER_IMAGE"
+        target.format.file_format = "OPEN_EXR_MULTILAYER"
+        target.format.color_depth = "32"
+        for name in ("Image", "Position", "Normal", "Depth"):
+            item = target.file_output_items.new("RGBA", name)
+            tree.links.new(source.outputs[name], target.inputs[item.name])
+
+    bpy.ops.render.render(write_still=False)
+    expected_window = expected_exr_window(320, 180, (32, 32, 32, 32), overscan)
+    rows = []
+    for layer in layers:
+        path = _find_output(case_root, layer.name + "_")
+        image = oiio.ImageInput.open(str(path))
+        if image is None:
+            raise RuntimeError(f"Cannot read {path}")
+        parts = {}
+        try:
+            for index in range(16):
+                if index and not image.seek_subimage(index, 0):
+                    break
+                spec = image.spec()
+                name = spec.get_string_attribute("oiio:subimagename")
+                pixels = np.asarray(image.read_image(index, 0, 0, spec.nchannels, oiio.FLOAT))
+                rgb = pixels[..., :3]
+                parts[name] = {
+                    "nonzero_rgb": int(np.count_nonzero(rgb)),
+                    "hit_depth_pixels": int(np.count_nonzero(rgb[..., 0] < 1.0e9)),
+                    "finite": bool(np.all(np.isfinite(pixels))),
+                    "window": {key: getattr(spec, key) for key in WINDOW_FIELDS},
+                }
+        finally:
+            image.close()
+        valid = (
+            all(name in parts for name in ("Image", "Position", "Normal", "Depth"))
+            and all(part["finite"] for part in parts.values())
+            and all(part["window"] == expected_window for part in parts.values())
+            and parts["Position"]["nonzero_rgb"] > 0
+            and parts["Normal"]["nonzero_rgb"] > 0
+            and parts["Depth"]["hit_depth_pixels"] > 0
+        )
+        rows.append({"layer": layer.name, "path": str(path), "parts": parts, "valid": valid})
+    return {
+        "passed": all(row["valid"] for row in rows),
+        "background": bpy.app.background,
+        "overscan": overscan,
+        "output_root": str(case_root),
+        "layers": rows,
+    }
 
 
 def render_case(
