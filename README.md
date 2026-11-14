@@ -39,11 +39,13 @@ The current public documentation is maintained on the CGWeave Industrial 3D site
 
 | Feature | What it adds |
 | --- | --- |
-| [Deep EXR Output](https://cgweave.com/en/industrial-cg-platform/features/deep-exr) | Native deep compositing output for Cycles, writing per-sample depth data for lossless deep merges in Nuke and other compositing tools. |
+| [Deep EXR Output](https://cgweave.com/en/industrial-cg-platform/features/deep-exr) | Native Deep EXR output for Cycles on CPU and OptiX, with Simple and Physical modes for deep compositing in Nuke and other tools. |
 | [EXR Overscan](https://cgweave.com/en/industrial-cg-platform/features/exr-overscan) | Native EXR overscan support in Cycles, rendering extra pixels outside the camera frame for lens distortion, camera shake, and image transformations. |
 | [Lightgroup Lobe Passes](https://cgweave.com/en/industrial-cg-platform/features/lightgroup-lobe-passes) | Per-lightgroup diffuse, glossy, transmission, and volume passes with direct and indirect separation for fine-grained relighting control. |
 | [Shadow Color](https://cgweave.com/en/industrial-cg-platform/features/shadow-color) | Artistic per-light and per-world shadow color control, tinting shadows without affecting the rest of the lighting. |
 | [ViewLayer Manager](https://cgweave.com/en/industrial-cg-platform/features/viewlayer-manager) | Qt-based ViewLayer management with presets, pass grouping, and batch ViewLayer operations from a dedicated manager window. |
+
+Deep settings are under **Render Properties → Performance → Deep → Simple Mode**. Simple is enabled by default and distributes the final Beauty color across Deep samples to reduce capture and storage work. Disable it for Physical mode, which records native color contributions at their corresponding depths. World Volume is currently unsupported.
 
 ## Documentation
 
