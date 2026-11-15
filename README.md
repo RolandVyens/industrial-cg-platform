@@ -5,6 +5,12 @@ See release/text/readme.html for packaged end-user notes.
 
 # Industrial CG Platform
 
+<p align="center">
+  <a href="https://cgweave.com/en/feature-tracking">
+    <img src="doc/readme/development-tracking-en.svg" alt="Development Tracking — progress, releases, and roadmap" width="384">
+  </a>
+</p>
+
 [Website](https://cgweave.com/en/industrial-cg-platform/) |
 [简体中文](README.zh-CN.md) |
 [中文官网](https://cgweave.com/zh/industrial-cg-platform/) |
@@ -32,6 +38,8 @@ See release/text/readme.html for packaged end-user notes.
   <a href="https://cgweave.com/en/industrial-cg-platform/releases/">Release Notes</a>
 </p>
 
+**Current stable release: Blender 5.2.4 LTS Industrial CG Platform.** [Download for Windows](https://github.com/RolandVyens/industrial-cg-platform/releases/latest)
+
 ## Platform Highlights
 
 Industrial CG Platform is the Blender VFX rendering branch for shot-based production work.
@@ -39,13 +47,11 @@ The current public documentation is maintained on the CGWeave Industrial 3D site
 
 | Feature | What it adds |
 | --- | --- |
-| [Deep EXR Output](https://cgweave.com/en/industrial-cg-platform/features/deep-exr) | Native Deep EXR output for Cycles on CPU and OptiX, with Simple and Physical modes for deep compositing in Nuke and other tools. |
+| [Deep EXR Output](https://cgweave.com/en/industrial-cg-platform/features/deep-exr) | Native Deep EXR output for Cycles on CPU and OptiX, for deep compositing in Nuke and other tools. |
 | [EXR Overscan](https://cgweave.com/en/industrial-cg-platform/features/exr-overscan) | Native EXR overscan support in Cycles, rendering extra pixels outside the camera frame for lens distortion, camera shake, and image transformations. |
 | [Lightgroup Lobe Passes](https://cgweave.com/en/industrial-cg-platform/features/lightgroup-lobe-passes) | Per-lightgroup diffuse, glossy, transmission, and volume passes with direct and indirect separation for fine-grained relighting control. |
 | [Shadow Color](https://cgweave.com/en/industrial-cg-platform/features/shadow-color) | Artistic per-light and per-world shadow color control, tinting shadows without affecting the rest of the lighting. |
 | [ViewLayer Manager](https://cgweave.com/en/industrial-cg-platform/features/viewlayer-manager) | Qt-based ViewLayer management with presets, pass grouping, and batch ViewLayer operations from a dedicated manager window. |
-
-Deep settings are under **Render Properties → Performance → Deep → Simple Mode**. Simple is enabled by default and distributes the final Beauty color across Deep samples to reduce capture and storage work. Disable it for Physical mode, which records native color contributions at their corresponding depths. World Volume is currently unsupported.
 
 ## Documentation
 
@@ -53,6 +59,7 @@ Deep settings are under **Render Properties → Performance → Deep → Simple 
 - [Features Reference](https://cgweave.com/en/industrial-cg-platform/features/deep-exr)
 - [API Reference](https://cgweave.com/en/industrial-cg-platform/api/)
 - [Release Notes](https://cgweave.com/en/industrial-cg-platform/releases/)
+- [Development Tracking](https://cgweave.com/en/feature-tracking)
 - [Industrial 3D Ecosystem](https://cgweave.com/en/)
 
 ## Repository Notes

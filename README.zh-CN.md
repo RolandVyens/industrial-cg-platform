@@ -5,6 +5,12 @@ See release/text/readme.html for packaged end-user notes.
 
 # Industrial CG Platform
 
+<p align="center">
+  <a href="https://cgweave.com/zh/feature-tracking">
+    <img src="doc/readme/development-tracking-zh.svg" alt="开发追踪 — 开发进度、发布里程碑与路线图" width="384">
+  </a>
+</p>
+
 [English README](README.md) |
 [中文官网](https://cgweave.com/zh/industrial-cg-platform/) |
 [English](https://cgweave.com/en/industrial-cg-platform/) |
@@ -32,6 +38,8 @@ See release/text/readme.html for packaged end-user notes.
   <a href="https://cgweave.com/zh/industrial-cg-platform/releases/">版本发布记录</a>
 </p>
 
+**当前稳定版：Blender 5.2.4 LTS Industrial CG Platform。** [下载 Windows 版本](https://github.com/RolandVyens/industrial-cg-platform/releases/latest)
+
 ## 平台重点
 
 Industrial CG Platform 是面向镜头生产的 Blender VFX 渲染分支。
@@ -39,13 +47,11 @@ Industrial CG Platform 是面向镜头生产的 Blender VFX 渲染分支。
 
 | 功能 | 能力 |
 | --- | --- |
-| [Deep EXR 深度输出](https://cgweave.com/zh/industrial-cg-platform/features/deep-exr) | Cycles 原生 Deep EXR 输出，支持 CPU／OptiX 和 Simple／Physical 两种模式，用于 Nuke 等工具中的深度合成。 |
+| [Deep EXR 深度输出](https://cgweave.com/zh/industrial-cg-platform/features/deep-exr) | Cycles 原生 Deep EXR 输出，支持 CPU／OptiX，用于 Nuke 等工具中的深度合成。 |
 | [EXR Overscan 溢画幅](https://cgweave.com/zh/industrial-cg-platform/features/exr-overscan) | Cycles 原生 EXR 溢画幅支持，在相机框外计算额外像素边缘，为镜头防抖、去畸变和图像变形提供缓冲。 |
 | [灯光组分量通道](https://cgweave.com/zh/industrial-cg-platform/features/lightgroup-lobe-passes) | 逐灯光组的漫反射、光泽、透射、体积分量通道，支持直接光和间接光分离，实现精细重打光控制。 |
 | [阴影颜色](https://cgweave.com/zh/industrial-cg-platform/features/shadow-color) | 美术级逐灯光和逐世界阴影颜色控制，为阴影着色而不影响其余照明。 |
 | [ViewLayer 管理器](https://cgweave.com/zh/industrial-cg-platform/features/viewlayer-manager) | 基于 Qt 的 ViewLayer 管理工具，提供预设系统、通道分组和批量 ViewLayer 操作。 |
-
-Deep 设置位于 **渲染属性 → Performance → Deep → Simple Mode**。Simple 默认开启，将最终 Beauty 颜色分配到 Deep 样本，减少颜色捕获和存储开销；取消勾选切换到 Physical，在对应深度记录原生颜色贡献。暂不支持世界体积（World Volume）。
 
 ## 文档入口
 
@@ -53,6 +59,7 @@ Deep 设置位于 **渲染属性 → Performance → Deep → Simple Mode**。Si
 - [功能介绍](https://cgweave.com/zh/industrial-cg-platform/features/deep-exr)
 - [API 参考手册](https://cgweave.com/zh/industrial-cg-platform/api/)
 - [版本发布记录](https://cgweave.com/zh/industrial-cg-platform/releases/)
+- [开发追踪](https://cgweave.com/zh/feature-tracking)
 - [Industrial 3D 开源生态](https://cgweave.com/zh/)
 
 ## 仓库说明

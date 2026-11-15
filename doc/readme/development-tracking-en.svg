@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="76" viewBox="0 0 384 76" role="img" aria-labelledby="title desc">
+  <title id="title">Development Tracking</title>
+  <desc id="desc">Progress · Releases · Roadmap</desc>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c4dff"/><stop offset="1" stop-color="#405de6"/></linearGradient></defs>
+  <rect width="384" height="76" rx="12" fill="url(#bg)"/>
+  <rect x="1" y="1" width="382" height="74" rx="11" fill="none" stroke="#ffffff" stroke-opacity=".18"/>
+  <g transform="translate(25 23)" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 1v28h29" opacity=".7"/><path d="m6 20 8-9 7 4 9-12"/><path d="M23 3h7v7"/>
+  </g>
+  <text x="75" y="33" fill="#ffffff" font-family="Segoe UI,Arial,Microsoft YaHei,sans-serif" font-size="21" font-weight="700">Development Tracking</text>
+  <text x="75" y="54" fill="#ffffff" fill-opacity=".86" font-family="Segoe UI,Arial,Microsoft YaHei,sans-serif" font-size="12">Progress · Releases · Roadmap</text>
+  <path d="m346 30 8 8-8 8" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
