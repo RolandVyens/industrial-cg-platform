@@ -11,11 +11,17 @@ See release/text/readme.html for packaged end-user notes.
   </a>
 </p>
 
-[Website](https://cgweave.com/en/industrial-cg-platform/) |
-[简体中文](README.zh-CN.md) |
-[中文官网](https://cgweave.com/zh/industrial-cg-platform/) |
-[Français](https://cgweave.com/fr/industrial-cg-platform/) |
-[Releases](https://github.com/RolandVyens/industrial-cg-platform/releases)
+<p align="center">
+  <a href="https://cgweave.com/en/industrial-cg-platform/">Website</a>
+  ·
+  <a href="README.zh-CN.md">简体中文</a>
+  ·
+  <a href="https://cgweave.com/zh/industrial-cg-platform/">中文官网</a>
+  ·
+  <a href="https://cgweave.com/fr/industrial-cg-platform/">Français</a>
+  ·
+  <a href="https://github.com/RolandVyens/industrial-cg-platform/releases">Releases</a>
+</p>
 
 <p align="center">
   <a href="https://cgweave.com/en/industrial-cg-platform/">
@@ -38,20 +44,58 @@ See release/text/readme.html for packaged end-user notes.
   <a href="https://cgweave.com/en/industrial-cg-platform/releases/">Release Notes</a>
 </p>
 
-**Current stable release: Blender 5.2.4 LTS Industrial CG Platform.** [Download for Windows](https://github.com/RolandVyens/industrial-cg-platform/releases/latest)
-
 ## Platform Highlights
 
 Industrial CG Platform is the Blender VFX rendering branch for shot-based production work.
 The current public documentation is maintained on the CGWeave Industrial 3D site.
 
-| Feature | What it adds |
-| --- | --- |
-| [Deep EXR Output](https://cgweave.com/en/industrial-cg-platform/features/deep-exr) | Native Deep EXR output for Cycles on CPU and OptiX, for deep compositing in Nuke and other tools. |
-| [EXR Overscan](https://cgweave.com/en/industrial-cg-platform/features/exr-overscan) | Native EXR overscan support in Cycles, rendering extra pixels outside the camera frame for lens distortion, camera shake, and image transformations. |
-| [Lightgroup Lobe Passes](https://cgweave.com/en/industrial-cg-platform/features/lightgroup-lobe-passes) | Per-lightgroup diffuse, glossy, transmission, and volume passes with direct and indirect separation for fine-grained relighting control. |
-| [Shadow Color](https://cgweave.com/en/industrial-cg-platform/features/shadow-color) | Artistic per-light and per-world shadow color control, tinting shadows without affecting the rest of the lighting. |
-| [ViewLayer Manager](https://cgweave.com/en/industrial-cg-platform/features/viewlayer-manager) | Qt-based ViewLayer management with presets, pass grouping, and batch ViewLayer operations from a dedicated manager window. |
+<table>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/en/industrial-cg-platform/features/deep-exr"><img src="doc/readme/features/deep-exr.webp" alt="Deep EXR Output" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/en/industrial-cg-platform/features/deep-exr">Deep EXR Output</a></h3>
+      <p>Native Deep EXR output for Cycles on CPU and OptiX, for deep compositing in Nuke and other tools.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/en/industrial-cg-platform/features/exr-overscan"><img src="doc/readme/features/overscan.webp" alt="EXR Overscan" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/en/industrial-cg-platform/features/exr-overscan">EXR Overscan</a></h3>
+      <p>Native EXR overscan support in Cycles, rendering extra pixels outside the camera frame for lens distortion, camera shake, and image transformations.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/en/industrial-cg-platform/features/lightgroup-lobe-passes"><img src="doc/readme/features/lightgroups.webp" alt="Lightgroup Lobe Passes" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/en/industrial-cg-platform/features/lightgroup-lobe-passes">Lightgroup Lobe Passes</a></h3>
+      <p>Per-lightgroup diffuse, glossy, transmission, and volume passes with direct and indirect separation for fine-grained relighting control.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/en/industrial-cg-platform/features/shadow-color"><img src="doc/readme/features/shadow-color.webp" alt="Shadow Color" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/en/industrial-cg-platform/features/shadow-color">Shadow Color</a></h3>
+      <p>Artistic per-light and per-world shadow color control, tinting shadows without affecting the rest of the lighting.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/en/industrial-cg-platform/features/viewlayer-manager"><img src="doc/readme/features/viewlayer.webp" alt="ViewLayer Manager" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/en/industrial-cg-platform/features/viewlayer-manager">ViewLayer Manager</a></h3>
+      <p>Qt-based ViewLayer management with presets, pass grouping, and batch ViewLayer operations from a dedicated manager window.</p>
+    </td>
+  </tr>
+</table>
 
 ## Documentation
 

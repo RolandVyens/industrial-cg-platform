@@ -1,0 +1,2 @@
+# Keep small README illustrations directly available to repository viewers.
+*.webp -filter -diff -merge -text

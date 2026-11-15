@@ -11,11 +11,17 @@ See release/text/readme.html for packaged end-user notes.
   </a>
 </p>
 
-[English README](README.md) |
-[中文官网](https://cgweave.com/zh/industrial-cg-platform/) |
-[English](https://cgweave.com/en/industrial-cg-platform/) |
-[Français](https://cgweave.com/fr/industrial-cg-platform/) |
-[版本发布](https://github.com/RolandVyens/industrial-cg-platform/releases)
+<p align="center">
+  <a href="README.md">English README</a>
+  ·
+  <a href="https://cgweave.com/zh/industrial-cg-platform/">中文官网</a>
+  ·
+  <a href="https://cgweave.com/en/industrial-cg-platform/">English</a>
+  ·
+  <a href="https://cgweave.com/fr/industrial-cg-platform/">Français</a>
+  ·
+  <a href="https://github.com/RolandVyens/industrial-cg-platform/releases">版本发布</a>
+</p>
 
 <p align="center">
   <a href="https://cgweave.com/zh/industrial-cg-platform/">
@@ -38,20 +44,58 @@ See release/text/readme.html for packaged end-user notes.
   <a href="https://cgweave.com/zh/industrial-cg-platform/releases/">版本发布记录</a>
 </p>
 
-**当前稳定版：Blender 5.2.4 LTS Industrial CG Platform。** [下载 Windows 版本](https://github.com/RolandVyens/industrial-cg-platform/releases/latest)
-
 ## 平台重点
 
 Industrial CG Platform 是面向镜头生产的 Blender VFX 渲染分支。
 当前公开文档维护在 CGWeave Industrial 3D 网站。
 
-| 功能 | 能力 |
-| --- | --- |
-| [Deep EXR 深度输出](https://cgweave.com/zh/industrial-cg-platform/features/deep-exr) | Cycles 原生 Deep EXR 输出，支持 CPU／OptiX，用于 Nuke 等工具中的深度合成。 |
-| [EXR Overscan 溢画幅](https://cgweave.com/zh/industrial-cg-platform/features/exr-overscan) | Cycles 原生 EXR 溢画幅支持，在相机框外计算额外像素边缘，为镜头防抖、去畸变和图像变形提供缓冲。 |
-| [灯光组分量通道](https://cgweave.com/zh/industrial-cg-platform/features/lightgroup-lobe-passes) | 逐灯光组的漫反射、光泽、透射、体积分量通道，支持直接光和间接光分离，实现精细重打光控制。 |
-| [阴影颜色](https://cgweave.com/zh/industrial-cg-platform/features/shadow-color) | 美术级逐灯光和逐世界阴影颜色控制，为阴影着色而不影响其余照明。 |
-| [ViewLayer 管理器](https://cgweave.com/zh/industrial-cg-platform/features/viewlayer-manager) | 基于 Qt 的 ViewLayer 管理工具，提供预设系统、通道分组和批量 ViewLayer 操作。 |
+<table>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/zh/industrial-cg-platform/features/deep-exr"><img src="doc/readme/features/deep-exr.webp" alt="Deep EXR 深度输出" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/zh/industrial-cg-platform/features/deep-exr">Deep EXR 深度输出</a></h3>
+      <p>Cycles 原生 Deep EXR 输出，支持 CPU／OptiX，用于 Nuke 等工具中的深度合成。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/zh/industrial-cg-platform/features/exr-overscan"><img src="doc/readme/features/overscan.webp" alt="EXR Overscan 溢画幅" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/zh/industrial-cg-platform/features/exr-overscan">EXR Overscan 溢画幅</a></h3>
+      <p>Cycles 原生 EXR 溢画幅支持，在相机框外计算额外像素边缘，为镜头防抖、去畸变和图像变形提供缓冲。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/zh/industrial-cg-platform/features/lightgroup-lobe-passes"><img src="doc/readme/features/lightgroups.webp" alt="灯光组分量通道" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/zh/industrial-cg-platform/features/lightgroup-lobe-passes">灯光组分量通道</a></h3>
+      <p>逐灯光组的漫反射、光泽、透射、体积分量通道，支持直接光和间接光分离，实现精细重打光控制。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/zh/industrial-cg-platform/features/shadow-color"><img src="doc/readme/features/shadow-color.webp" alt="阴影颜色" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/zh/industrial-cg-platform/features/shadow-color">阴影颜色</a></h3>
+      <p>美术级逐灯光和逐世界阴影颜色控制，为阴影着色而不影响其余照明。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://cgweave.com/zh/industrial-cg-platform/features/viewlayer-manager"><img src="doc/readme/features/viewlayer.webp" alt="ViewLayer 管理器" width="160"></a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://cgweave.com/zh/industrial-cg-platform/features/viewlayer-manager">ViewLayer 管理器</a></h3>
+      <p>基于 Qt 的 ViewLayer 管理工具，提供预设系统、通道分组和批量 ViewLayer 操作。</p>
+    </td>
+  </tr>
+</table>
 
 ## 文档入口
 
