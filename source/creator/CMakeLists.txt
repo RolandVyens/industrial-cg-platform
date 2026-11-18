@@ -1901,7 +1901,10 @@ endif()
 install(
   DIRECTORY ${CMAKE_SOURCE_DIR}/release/extensions
   DESTINATION ${TARGETDIR_VER}
+  PATTERN "blender_vfx_qt_runtime" EXCLUDE
 )
+
+include(${CMAKE_SOURCE_DIR}/build_files/cmake/industrial_qt_runtime.cmake)
 
 # Install more files specified elsewhere.
 delayed_do_install(${TARGETDIR_VER})
