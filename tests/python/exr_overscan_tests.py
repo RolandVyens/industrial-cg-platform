@@ -106,6 +106,12 @@ class ExrOverscanTests(unittest.TestCase):
                 )
                 self.assertTrue(summary["passed"], summary)
 
+    def test_tiled_overscan_restores_pass_windows_after_writeback(self):
+        summary = render_view_layer_preservation_case(
+            "view_layer_preservation_tiled", self.outdir, overscan=True, tiled=True
+        )
+        self.assertTrue(summary["passed"], summary)
+
     def test_asymmetric_vertical_overscan_crops_non_exr_from_correct_side(self):
         pads = (0, 0, 4, 20)
         reference = render_primary_png_case(

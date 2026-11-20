@@ -33,6 +33,16 @@ struct View3D;
 
 CCL_NAMESPACE_BEGIN
 
+struct RenderDisplayWindow {
+  bool has_display_window = false;
+  int display_width = 0;
+  int display_height = 0;
+  int display_offset_x = 0;
+  int display_offset_y = 0;
+  int data_offset_x = 0;
+  int data_offset_y = 0;
+};
+
 class BlenderOutputDriver;
 class BlenderDisplayDriver;
 class BlenderSync;
@@ -182,6 +192,7 @@ class BlenderSession {
   BlenderDisplayDriver *display_driver_ = nullptr;
 
   vector<string> full_buffer_files_;
+  RenderDisplayWindow render_result_display_window_;
   struct DeepDeferredView {
     size_t file_index;
     std::shared_ptr<class DeepFrameProduction> production;

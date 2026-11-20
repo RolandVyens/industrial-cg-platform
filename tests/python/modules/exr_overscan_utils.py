@@ -324,9 +324,9 @@ def _save_direct_render_outputs(
 
 
 def render_view_layer_preservation_case(
-    case_name: str, output_root: Path, *, overscan: bool
+    case_name: str, output_root: Path, *, overscan: bool, tiled: bool = False
 ) -> dict[str, object]:
-    """Check sequential ViewLayer results, including the non-tiled GUI render path."""
+    """Check sequential ViewLayer results with immediate or deferred pass writeback."""
     case_root = output_root / case_name
     case_root.mkdir(parents=True, exist_ok=True)
     scene = _configure_scene(False, overscan, 10.0, 1, 320, 180)
@@ -335,6 +335,9 @@ def render_view_layer_preservation_case(
     scene.render.image_settings.file_format = "OPEN_EXR_MULTILAYER"
     scene.render.compositor_device = "CPU"
     scene.cycles.use_overscan = overscan
+    scene.cycles.use_auto_tile = tiled
+    if tiled:
+        scene.cycles.tile_size = 128
     layers = [scene.view_layers[0]]
     layers[0].name = "First"
     layers.extend(scene.view_layers.new(name) for name in ("Middle", "Last"))

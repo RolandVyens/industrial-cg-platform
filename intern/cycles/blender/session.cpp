@@ -111,16 +111,6 @@ bool buffer_params_has_overscan(const BufferParams &buffer_params)
          (buffer_params.full_y + buffer_params.height) > buffer_params.full_height;
 }
 
-struct RenderDisplayWindow {
-  bool has_display_window = false;
-  int display_width = 0;
-  int display_height = 0;
-  int display_offset_x = 0;
-  int display_offset_y = 0;
-  int data_offset_x = 0;
-  int data_offset_y = 0;
-};
-
 RenderDisplayWindow render_display_window_from_buffer_params(const BufferParams &buffer_params)
 {
   RenderDisplayWindow display_window;
@@ -228,23 +218,17 @@ void render_result_resize_for_overscan(blender::RenderResult *render_result,
 }
 
 void render_result_apply_display_window(blender::RenderResult *render_result,
-                                        const BufferParams &buffer_params)
+                                        const RenderDisplayWindow &display_window)
 {
-  if (!render_result || !buffer_params_has_overscan(buffer_params)) {
+  if (!render_result || !display_window.has_display_window) {
     return;
   }
-
-  /* Render passes allocate image buffers lazily. Ensure they exist before attaching the OpenEXR
-   * display/data window metadata that compositor File Output nodes preserve. */
-  blender::RE_render_result_passes_allocated_ensure(render_result);
 
   auto apply_to_image_buffer = [&](blender::ImBuf *image_buffer) {
     if (!image_buffer) {
       return;
     }
 
-    const RenderDisplayWindow display_window = render_display_window_from_buffer_params(
-        buffer_params);
     image_buffer->flags |= blender::ImBufFlags::HasDisplayWindow;
     image_buffer->display_size[0] = display_window.display_width;
     image_buffer->display_size[1] = display_window.display_height;
@@ -268,8 +252,6 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
        render_layer = render_layer->next)
   {
     if (render_layer->deep_data) {
-      const RenderDisplayWindow display_window = render_display_window_from_buffer_params(
-          buffer_params);
       render_layer->deep_data->has_display_window = display_window.has_display_window;
       render_layer->deep_data->display_size[0] = display_window.display_width;
       render_layer->deep_data->display_size[1] = display_window.display_height;
@@ -289,8 +271,6 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
   }
 
   if (render_result->deep_data) {
-    const RenderDisplayWindow display_window = render_display_window_from_buffer_params(
-        buffer_params);
     render_result->deep_data->has_display_window = display_window.has_display_window;
     render_result->deep_data->display_size[0] = display_window.display_width;
     render_result->deep_data->display_size[1] = display_window.display_height;
@@ -1120,7 +1100,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
   const bool apply_render_result_display_window = use_overscan &&
                                                   !(is_deep_exr_format && !compositor_needs_deep);
   if (apply_render_result_display_window) {
-    render_result_apply_display_window(RE_engine_get_result(&b_engine), buffer_params);
+    render_result_display_window_ = render_display_window_from_buffer_params(buffer_params);
   }
 
   /* add metadata */
@@ -1169,6 +1149,13 @@ void BlenderSession::render_frame_finish()
       }
     }
   }
+  /* Tiled passes are written back after all layers finish. Attaching the window here lets the
+   * render engine allocate pass pixels on demand, instead of allocating the entire result while
+   * the next layer still needs memory to render. */
+  render_result_apply_display_window(RE_engine_get_result(&b_engine),
+                                     render_result_display_window_);
+  render_result_display_window_ = {};
+
   for (const auto &pending : deep_deferred_direct_) {
     if (session->progress.get_error() || session->progress.get_cancel()) {
       pending.views->cancel();
