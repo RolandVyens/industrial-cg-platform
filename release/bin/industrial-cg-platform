@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Blender Authors
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# The first Linux Qt integration uses X11 for both Blender and Qt. An unset
+# WAYLAND_DISPLAY may still permit libwayland to use its default socket.
+# An unavailable absolute socket path makes the X11 fallback explicit.
+# Limit this selection to the launched process; leave the desktop session alone.
+unset WAYLAND_SOCKET
+export WAYLAND_DISPLAY="/dev/null/industrial-cg-platform-wayland-disabled"
+export QT_QPA_PLATFORM=xcb
+
+icp_bin_dir=$(dirname "$(readlink -f "$0")")
+if [ -x "$icp_bin_dir/blender-launcher" ]; then
+  exec "$icp_bin_dir/blender-launcher" "$@"
+fi
+exec "$icp_bin_dir/blender" "$@"

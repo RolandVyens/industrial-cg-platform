@@ -247,6 +247,8 @@ def _required_bqt_modules() -> tuple[str, ...]:
         modules.append("bqt.blender_applications.win32_blender_application")
     elif sys.platform == "darwin":
         modules.append("bqt.blender_applications.darwin_blender_application")
+    elif sys.platform == "linux":
+        modules.append("bqt.blender_applications.linux_blender_application")
     return tuple(modules)
 
 

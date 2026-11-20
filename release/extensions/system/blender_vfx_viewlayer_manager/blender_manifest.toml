@@ -8,7 +8,7 @@ maintainer = "Blender VFX Fork"
 type = "add-on"
 tags = ["Render"]
 blender_version_min = "4.2.0"
-platforms = ["windows-x64"]
+platforms = ["windows-x64", "linux-x64"]
 license = [
   "SPDX:GPL-2.0-or-later",
 ]
