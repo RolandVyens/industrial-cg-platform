@@ -86,6 +86,8 @@
 #include "RE_deep_output.hh"
 #include "RE_pipeline.h"
 
+#include "RNA_access.hh"
+
 #include "SEQ_relations.hh"
 #include "SEQ_render.hh"
 
@@ -1164,6 +1166,39 @@ static Scene *get_scene_referenced_by_node(const bNode *node)
   return nullptr;
 }
 
+static bool scene_exr_overscan_enabled(Scene &scene, const RenderData &render)
+{
+  if (!STREQ(render.engine, "CYCLES") || (render.mode & R_BORDER) != 0) {
+    return false;
+  }
+  PointerRNA scene_ptr = RNA_id_pointer_create(&scene.id);
+  PointerRNA cycles = RNA_pointer_get(&scene_ptr, "cycles");
+  return RNA_struct_find_property(&cycles, "use_overscan") &&
+         RNA_boolean_get(&cycles, "use_overscan");
+}
+
+static bool compositor_has_cross_scene_overscan(Scene &scene)
+{
+  const bNodeTree *tree = scene.compositing_node_group;
+  if (!tree || (scene.r.scemode & R_DOCOMP) == 0) {
+    return false;
+  }
+  const bool main_overscan = scene_exr_overscan_enabled(scene, scene.r);
+  for (const bNode *node : tree->all_nodes()) {
+    Scene *other_scene = get_scene_referenced_by_node(node);
+    if (other_scene && other_scene != &scene &&
+        render_scene_has_layers_to_render(other_scene, nullptr) &&
+        (main_overscan || scene_exr_overscan_enabled(*other_scene, other_scene->r)))
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+static constexpr const char *cross_scene_overscan_error =
+    "EXR Overscan only supports single-scene rendering";
+
 /* Returns true if the given scene needs a render, either because it doesn't use the compositor
  * pipeline and thus needs a simple render, or that its compositor node tree requires the scene to
  * be rendered. */
@@ -1252,6 +1287,12 @@ static void do_render_compositor_scenes(Render *re)
  * The result will be output into a compositing render layer in the render result. */
 static void do_render_compositor(Render *re)
 {
+  if ((re->r.scemode & R_SINGLE_LAYER) == 0 && compositor_has_cross_scene_overscan(*re->scene)) {
+    BKE_report(re->reports, RPT_ERROR, cross_scene_overscan_error);
+    G.is_break = true;
+    return;
+  }
+
   bNodeTree *ntree = re->pipeline_scene_eval->compositing_node_group;
   bool update_newframe = false;
 
@@ -1902,6 +1943,16 @@ bool RE_scene_has_exr_file_output(Scene *scene)
   return node_tree_has_exr_output(scene->compositing_node_group);
 }
 
+bool RE_scene_requests_exr_overscan(Scene &scene, const RenderData &render)
+{
+  return scene_exr_overscan_enabled(scene, render) &&
+         (ELEM(render.im_format.imtype,
+               R_IMF_IMTYPE_OPENEXR,
+               R_IMF_IMTYPE_MULTILAYER,
+               R_IMF_IMTYPE_DEEP_EXR) ||
+          RE_scene_has_exr_file_output(&scene));
+}
+
 /* Identify if the compositor can run on the GPU. Currently, this only checks if the compositor is
  * set to GPU and the render size exceeds what can be allocated as a texture in it. */
 static bool is_compositing_possible_on_gpu(Scene *scene, ReportList *reports)
@@ -1976,6 +2027,13 @@ bool RE_is_rendering_allowed(const Main &bmain,
   }
   else if (scemode & R_DOCOMP && scene->compositing_node_group) {
     /* Compositor */
+    if (!single_layer && (scemode & R_SINGLE_LAYER) == 0 &&
+        compositor_has_cross_scene_overscan(*scene))
+    {
+      BKE_report(reports, RPT_ERROR, cross_scene_overscan_error);
+      return false;
+    }
+
     if (!scene_has_compositor_output(scene)) {
       BKE_report(reports, RPT_ERROR, "No Group Output or File Output nodes in scene");
       return false;

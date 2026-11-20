@@ -112,6 +112,32 @@ class ExrOverscanTests(unittest.TestCase):
         )
         self.assertTrue(summary["passed"], summary)
 
+    def test_cross_scene_overscan_is_rejected_before_render(self):
+        bpy.ops.wm.read_factory_settings(use_empty=False)
+        scene = bpy.context.scene
+        scene.render.engine = "CYCLES"
+        scene.cycles.overscan_size = 15.0
+
+        other = bpy.data.scenes.new("OtherScene")
+        other.collection.objects.link(scene.camera)
+        other.camera = scene.camera
+
+        tree = bpy.data.node_groups.new("CrossSceneOverscan", "CompositorNodeTree")
+        scene.compositing_node_group = tree
+        source = tree.nodes.new("CompositorNodeRLayers")
+        source.scene = other
+        target = tree.nodes.new("CompositorNodeOutputFile")
+        target.directory = str(self.outdir / "cross_scene_overscan")
+        target.file_name = "rejected"
+        target.format.media_type = "IMAGE"
+        target.format.file_format = "OPEN_EXR"
+        target.file_output_items.new("RGBA", "Image")
+        tree.links.new(source.outputs["Image"], target.inputs["Image"])
+
+        with self.assertRaisesRegex(RuntimeError, "Overscan only supports single-scene rendering"):
+            bpy.ops.render.render()
+        self.assertFalse(Path(target.directory).exists())
+
     def test_asymmetric_vertical_overscan_crops_non_exr_from_correct_side(self):
         pads = (0, 0, 4, 20)
         reference = render_primary_png_case(

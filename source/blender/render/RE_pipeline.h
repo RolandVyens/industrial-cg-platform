@@ -30,6 +30,7 @@ struct MovieWriter;
 struct Main;
 struct Object;
 struct RenderData;
+struct PointerRNA;
 struct RenderDeepData;
 struct RenderResult;
 struct ReportList;
@@ -506,6 +507,9 @@ RenderOverscanPadding RE_overscan_padding_resolve(bool use_pixel_mode,
                                                   int pixel_top,
                                                   int reference_width,
                                                   int reference_height);
+RenderOverscanPadding RE_overscan_padding_resolve(PointerRNA &cycles,
+                                                  int reference_width,
+                                                  int reference_height);
 
 void RE_GetCameraModelMatrix(const struct Render *re,
                              const struct Object *camera,
@@ -549,6 +553,7 @@ void RE_scene_foreach_deep_exr_file_output(
 /** Minimum authored alpha tolerance among reachable valid Deep outputs; no default floor. */
 bool RE_scene_deep_exr_file_output_min_alpha_tolerance(struct Scene *scene, float *minimum);
 bool RE_scene_has_exr_file_output(struct Scene *scene);
+bool RE_scene_requests_exr_overscan(Scene &scene, const RenderData &render);
 
 bool RE_allow_render_generic_object(struct Object *ob);
 

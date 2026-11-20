@@ -66,41 +66,6 @@ CCL_NAMESPACE_BEGIN
 
 namespace {
 
-bool image_format_is_exr_overscan_target(const blender::ImageFormatData &image_format)
-{
-  return ELEM(image_format.imtype,
-              blender::R_IMF_IMTYPE_OPENEXR,
-              blender::R_IMF_IMTYPE_MULTILAYER,
-              blender::R_IMF_IMTYPE_DEEP_EXR);
-}
-
-
-bool offline_render_needs_overscan(blender::Scene *b_scene,
-                                   const blender::RenderData *b_render,
-                                   const bool has_deep_file_output)
-{
-  const bool has_scene = b_scene != nullptr;
-  const bool has_render = b_render != nullptr;
-  if (!has_scene || !has_render) {
-    return false;
-  }
-
-  blender::PointerRNA scene_rna_ptr = RNA_id_pointer_create(&b_scene->id);
-  blender::PointerRNA cscene = RNA_pointer_get(&scene_rna_ptr, "cycles");
-  if (!RNA_boolean_get(&cscene, "use_overscan")) {
-    return false;
-  }
-
-  if ((b_render->mode & blender::R_BORDER) != 0) {
-    return false;
-  }
-
-  const bool is_direct_exr = has_render &&
-                             image_format_is_exr_overscan_target(b_render->im_format);
-  const bool has_exr_file_output = has_scene && blender::RE_scene_has_exr_file_output(b_scene);
-  return is_direct_exr || has_exr_file_output || has_deep_file_output;
-}
-
 bool buffer_params_has_overscan(const BufferParams &buffer_params)
 {
   return buffer_params.window_x != 0 || buffer_params.window_y != 0 ||
@@ -156,65 +121,6 @@ bool render_output_filepath_for_still(const blender::Main *b_main,
                                             false,
                                             nullptr);
   return errors.is_empty();
-}
-
-void render_result_resize_for_overscan(blender::RenderResult *render_result,
-                                       const BufferParams &buffer_params)
-{
-  if (!render_result || !buffer_params_has_overscan(buffer_params)) {
-    return;
-  }
-
-  /* ViewLayers share this result. Only a changed raster invalidates its pass
-   * buffers; clearing an unchanged raster would discard completed layers. */
-  if (render_result->rectx == buffer_params.width &&
-      render_result->recty == buffer_params.height)
-  {
-    return;
-  }
-
-  render_result->rectx = buffer_params.width;
-  render_result->recty = buffer_params.height;
-  render_result->passes_allocated = false;
-
-  if (render_result->ibuf) {
-    blender::IMB_freeImBuf(render_result->ibuf);
-    render_result->ibuf = nullptr;
-  }
-
-  for (blender::RenderView *render_view =
-           static_cast<blender::RenderView *>(render_result->views.first);
-       render_view;
-       render_view = render_view->next)
-  {
-    if (render_view->ibuf) {
-      blender::IMB_freeImBuf(render_view->ibuf);
-      render_view->ibuf = nullptr;
-    }
-  }
-
-  for (blender::RenderLayer *render_layer =
-           static_cast<blender::RenderLayer *>(render_result->layers.first);
-       render_layer;
-       render_layer = render_layer->next)
-  {
-    render_layer->rectx = buffer_params.width;
-    render_layer->recty = buffer_params.height;
-
-    for (blender::RenderPass *render_pass =
-             static_cast<blender::RenderPass *>(render_layer->passes.first);
-         render_pass;
-         render_pass = render_pass->next)
-    {
-      render_pass->rectx = buffer_params.width;
-      render_pass->recty = buffer_params.height;
-
-      if (render_pass->ibuf) {
-        blender::IMB_freeImBuf(render_pass->ibuf);
-        render_pass->ibuf = nullptr;
-      }
-    }
-  }
 }
 
 void render_result_apply_display_window(blender::RenderResult *render_result,
@@ -629,20 +535,28 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
   blender::Scene *evaluated_scene = DEG_get_evaluated_scene(b_depsgraph);
   const BlenderDeepOutputRequirements deep_output = BlenderSync::get_deep_output_requirements(
       *input_scene, *evaluated_scene, false, b_view_layer.name, &b_engine);
-  const bool requested_overscan = offline_render_needs_overscan(
-      b_scene, b_render, deep_output.compositor);
-  bool use_overscan = requested_overscan;
-  if (use_overscan && is_multi_view) {
+  const bool unsupported_multiview_overscan =
+      is_multi_view && RE_scene_requests_exr_overscan(*b_scene, *b_render);
+  if (unsupported_multiview_overscan) {
     RE_engine_report(&b_engine,
                      blender::RPT_WARNING,
                      "EXR overscan is not supported with multi-view rendering");
-    use_overscan = false;
   }
 
+  /* Blender created the shared result at the final raster size before registering passes. */
+  const blender::RenderResult *render_result = RE_engine_get_result(&b_engine);
+  const bool use_overscan = render_result->rectx > width || render_result->recty > height;
   BufferParams buffer_params = BlenderSync::get_buffer_params(
       nullptr, nullptr, b_scene, scene->camera, width, height, use_overscan);
-  render_result_resize_for_overscan(RE_engine_get_result(&b_engine), buffer_params);
   session->reset(session_params, buffer_params);
+  if (use_overscan && (buffer_params.width != render_result->rectx ||
+                       buffer_params.height != render_result->recty))
+  {
+    session->progress.set_error("EXR Overscan raster changed after render setup");
+    check_and_report_session_error();
+    RE_engine_end_result(&b_engine, b_rr, true, false, false);
+    return;
+  }
 
   const int deep_frame_number = evaluated_scene->r.cfra;
   const float deep_subframe = evaluated_scene->r.subframe;
@@ -696,7 +610,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
 
   if (need_deep_output) {
     try {
-      if (is_multi_view && requested_overscan)
+      if (unsupported_multiview_overscan)
         session->progress.set_error("Deep multi-view output requires native overscan support");
       int active_layers = 0;
       for (const auto &layer : input_scene->view_layers)

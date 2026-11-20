@@ -17,6 +17,7 @@
 #include "BLI_string.h"
 #include "BLI_utildefines.h"
 
+#include "DNA_camera_types.h"
 #include "DNA_layer_types.h"
 #include "DNA_object_types.h"
 
@@ -41,6 +42,8 @@
 #include "RE_bake.h"
 #include "RE_engine.h"
 #include "RE_pipeline.h"
+
+#include "RNA_access.hh"
 
 #include "DRW_engine.hh"
 
@@ -981,7 +984,29 @@ static void engine_render_add_result_pass_cb(void *user_data,
 
 static RenderResult *engine_render_create_result(Render *re)
 {
-  RenderResult *rr = render_result_new(re, &re->disprect, RR_ALL_LAYERS, RR_ALL_VIEWS);
+  rcti result_rect = re->disprect;
+  Scene &render_scene = re->pipeline_scene_eval ? *re->pipeline_scene_eval : *re->scene;
+  if ((re->r.scemode & R_BUTS_PREVIEW) == 0 &&
+      BKE_scene_multiview_num_views_get(&re->r) <= 1 &&
+      RE_scene_requests_exr_overscan(render_scene, re->r))
+  {
+    const Object *camera = RE_GetCamera(re);
+    if (camera && re->pipeline_depsgraph) {
+      camera = DEG_get_evaluated(re->pipeline_depsgraph, camera);
+    }
+    if (camera && camera->type == OB_CAMERA &&
+        ELEM(id_cast<const Camera *>(camera->data)->type, CAM_PERSP, CAM_ORTHO))
+    {
+      PointerRNA scene = RNA_id_pointer_create(&render_scene.id);
+      PointerRNA cycles = RNA_pointer_get(&scene, "cycles");
+      const RenderOverscanPadding padding = RE_overscan_padding_resolve(cycles, re->winx, re->winy);
+      /* Keep the delivery rectangle. Tile destinations use the larger, zero-based raster. */
+      result_rect.xmax += padding.left + padding.right;
+      result_rect.ymax += padding.bottom + padding.top;
+    }
+  }
+
+  RenderResult *rr = render_result_new(re, &result_rect, RR_ALL_LAYERS, RR_ALL_VIEWS);
   if (rr == nullptr) {
     return nullptr;
   }

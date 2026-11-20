@@ -20,6 +20,8 @@
 
 #include "BKE_camera.h"
 
+#include "RNA_access.hh"
+
 /* this module */
 #include "RE_pipeline.h"
 #include "render_types.h"
@@ -97,6 +99,27 @@ RenderOverscanPadding RE_overscan_padding_resolve(const bool use_pixel_mode,
   padding.bottom = uniform_padding;
   padding.top = uniform_padding;
   return padding;
+}
+
+RenderOverscanPadding RE_overscan_padding_resolve(PointerRNA &cycles,
+                                                  const int reference_width,
+                                                  const int reference_height)
+{
+  PropertyRNA *mode = RNA_struct_find_property(&cycles, "overscan_mode");
+  const char *identifier = nullptr;
+  const bool use_pixel_mode = mode &&
+                              RNA_property_enum_identifier(
+                                  nullptr, &cycles, mode, RNA_property_enum_get(&cycles, mode),
+                                  &identifier) &&
+                              identifier && STREQ(identifier, "PIXELS");
+  return RE_overscan_padding_resolve(use_pixel_mode,
+                                     RNA_float_get(&cycles, "overscan_size"),
+                                     RNA_int_get(&cycles, "overscan_left"),
+                                     RNA_int_get(&cycles, "overscan_right"),
+                                     RNA_int_get(&cycles, "overscan_bottom"),
+                                     RNA_int_get(&cycles, "overscan_top"),
+                                     reference_width,
+                                     reference_height);
 }
 
 void RE_GetCameraModelMatrix(const Render *re, const Object *camera, float r_modelmat[4][4])

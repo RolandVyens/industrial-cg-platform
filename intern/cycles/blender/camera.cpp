@@ -42,24 +42,6 @@ static bool blender_camera_type_supports_overscan(const CameraType camera_type)
   return ELEM(camera_type, CAMERA_PERSPECTIVE, CAMERA_ORTHOGRAPHIC);
 }
 
-static bool blender_overscan_mode_is_pixels(blender::PointerRNA *cscene)
-{
-  blender::PropertyRNA *mode_prop = RNA_struct_find_property(cscene, "overscan_mode");
-  if (!mode_prop) {
-    return false;
-  }
-
-  const int mode_value = RNA_property_enum_get(cscene, mode_prop);
-  const char *mode_identifier = nullptr;
-  if (!RNA_property_enum_identifier(nullptr, cscene, mode_prop, mode_value, &mode_identifier) ||
-      mode_identifier == nullptr)
-  {
-    return false;
-  }
-
-  return STREQ(mode_identifier, "PIXELS");
-}
-
 static bool blender_border_is_valid(const BoundBox2D &border)
 {
   return border.right > border.left && border.top > border.bottom;
@@ -150,14 +132,7 @@ static CyclesOverscanSettings blender_overscan_settings_get(blender::PointerRNA 
   }
 
   const blender::RenderOverscanPadding padding = blender::RE_overscan_padding_resolve(
-      blender_overscan_mode_is_pixels(cscene),
-      RNA_float_get(cscene, "overscan_size"),
-      RNA_int_get(cscene, "overscan_left"),
-      RNA_int_get(cscene, "overscan_right"),
-      RNA_int_get(cscene, "overscan_bottom"),
-      RNA_int_get(cscene, "overscan_top"),
-      reference_width,
-      reference_height);
+      *cscene, reference_width, reference_height);
 
   if (!padding.any()) {
     return overscan_settings;
