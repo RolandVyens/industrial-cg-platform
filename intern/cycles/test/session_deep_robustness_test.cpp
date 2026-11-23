@@ -5,11 +5,13 @@
  * do not qualify GPU DMA, multiple physical devices or native renderer paths. */
 #include "device/deep_queue_memory.h"
 #include "device/device.h"
+#include "device/queue.h"
 #include "integrator/deep_bounded_publication.h"
 #include "integrator/deep_bounded_plan.h"
 #include "integrator/deep_bounded_layout.h"
 #include "session/buffers.h"
 #include "testing/testing.h"
+#include "util/half.h"
 #include "util/profiling.h"
 #include "util/stats.h"
 #include <array>
@@ -344,6 +346,104 @@ TEST(DeepRobustness, late_queue_extends_frame_credit_and_rolls_back_when_other_f
   }
 }
 
+TEST(DeepRobustness, packed_empty_samples_preserve_original_simple_index_and_depth)
+{
+  DeepFrameProduction production(robust_frame(), {0, 0, 1, 1}, 4 << 20, ids,
+                                 false, {}, DeepProductionRoute::Bounded);
+  const auto config = consumer();
+  ASSERT_TRUE(production.configure_consumers({&config, 1}));
+  ASSERT_TRUE(production.enable_cpu_processing());
+  const auto &budget = production.memory_budget();
+  DeepBoundedHostTile tile(budget);
+  tile.window = {0, 0, 1, 1};
+  auto payload = std::allocate_shared<DeepBoundedHostPayload>(
+      DeepBudgetAllocator<DeepBoundedHostPayload>(budget), budget);
+  payload->count = 3;
+  payload->simple_rgb = true;
+  payload->offsets.resize(2);
+  payload->offsets[0] = 0;
+  payload->offsets[1] = 3;
+  const float planes[] = {1, 4, 7, 2, 5, 8, -0.0f, 0.0f, 1.0e-40f, -2, 0, 0};
+  payload->planes.resize(sizeof(planes));
+  std::memcpy(payload->planes.data(), planes, sizeof(planes));
+  tile.consumers.push_back(payload);
+  tile.beauty.assign({0.25f, -0.5f, 0.75f});
+  ASSERT_TRUE(production.publish_bounded_tile(std::move(tile)));
+  ASSERT_TRUE(production.finish_inputs());
+  DeepConsumerToken token;
+  ASSERT_TRUE(production.consumer_token(config.source_key, config.config, config.compression, token));
+  DeepEncodedPixelLease pixel;
+  ASSERT_TRUE(production.encoded_pixel(token, 0, pixel));
+  ASSERT_TRUE(pixel.prepare_packed_color());
+  EXPECT_EQ(pixel.nonzero_mask(true), 0b110u);
+  EXPECT_EQ(pixel.nonzero_mask(false), 0b100u);
+  unsigned char data[6][8] = {};
+  unsigned char *channels[6] = {data[0], data[1], data[2], data[3], data[4], data[5]};
+  pixel.pack_channels_masked(channels, true, pixel.nonzero_mask(true));
+  float depth[2];
+  std::memcpy(depth, data[4], sizeof(depth));
+  EXPECT_FLOAT_EQ(depth[0], 4.0f);
+  EXPECT_FLOAT_EQ(depth[1], 7.0f);
+  float green[2];
+  std::memcpy(green, data[2], sizeof(green));
+  EXPECT_FLOAT_EQ(green[0], -0.5f);
+  EXPECT_FLOAT_EQ(green[1], 0.0f);
+}
+
+TEST(DeepRobustness, packed_physical_half_handles_all_32_sample_bits)
+{
+  constexpr uint32_t count = 32;
+  for (const bool all_nonzero : {false, true}) {
+    DeepFrameProduction production(robust_frame(), {0, 0, 1, 1}, 4 << 20, ids,
+                                   false, {}, DeepProductionRoute::Bounded);
+    auto config = consumer();
+    config.config.precision = DeepCanonicalPrecision::Half;
+    ASSERT_TRUE(production.configure_consumers({&config, 1}));
+    ASSERT_TRUE(production.enable_cpu_processing());
+    const auto &budget = production.memory_budget();
+    DeepBoundedHostTile tile(budget);
+    tile.window = {0, 0, 1, 1};
+    auto payload = std::allocate_shared<DeepBoundedHostPayload>(
+        DeepBudgetAllocator<DeepBoundedHostPayload>(budget), budget);
+    payload->count = count;
+    payload->half = true;
+    payload->physical_rgb = true;
+    payload->offsets.resize(2);
+    payload->offsets[0] = 0;
+    payload->offsets[1] = count;
+    std::array<float, 2 * count> depths;
+    std::array<uint16_t, 4 * count> rgba = {};
+    for (uint32_t i = 0; i < count; ++i) {
+      depths[i] = float(i + 1);
+      depths[count + i] = float(i + 2);
+      rgba[4 * i] = float_to_half(all_nonzero || i == count - 1 ? -0.5f : -1.0e-10f);
+    }
+    payload->planes.resize(sizeof(depths) + sizeof(rgba));
+    std::memcpy(payload->planes.data(), depths.data(), sizeof(depths));
+    std::memcpy(payload->planes.data() + sizeof(depths), rgba.data(), sizeof(rgba));
+    tile.consumers.push_back(payload);
+    ASSERT_TRUE(production.publish_bounded_tile(std::move(tile)));
+    ASSERT_TRUE(production.finish_inputs());
+    DeepConsumerToken token;
+    ASSERT_TRUE(production.consumer_token(config.source_key, config.config, config.compression, token));
+    DeepEncodedPixelLease pixel;
+    ASSERT_TRUE(production.encoded_pixel(token, 0, pixel));
+    ASSERT_TRUE(pixel.prepare_packed_color());
+    const uint32_t mask = pixel.nonzero_mask(true);
+    EXPECT_EQ(mask, all_nonzero ? UINT32_MAX : (1u << 31));
+    EXPECT_EQ(pixel.nonzero_mask(false), 0u);
+    unsigned char data[6][4 * count] = {};
+    unsigned char *channels[6] = {data[0], data[1], data[2], data[3], data[4], data[5]};
+    pixel.pack_channels_masked(channels, true, mask);
+    const size_t last = all_nonzero ? count - 1 : 0;
+    float z, z_back;
+    std::memcpy(&z, data[4] + last * sizeof(z), sizeof(z));
+    std::memcpy(&z_back, data[5] + last * sizeof(z_back), sizeof(z_back));
+    EXPECT_FLOAT_EQ(z, 32.0f);
+    EXPECT_FLOAT_EQ(z_back, 33.0f);
+  }
+}
+
 TEST(DeepRobustness, deferred_standalone_lease_keeps_final_beauty_after_production)
 {
   Stats stats;
@@ -393,4 +493,53 @@ TEST(DeepRobustness, deferred_standalone_lease_keeps_final_beauty_after_producti
 }
 
 }  // namespace
+
+namespace {
+class DeepAdmissionQueue : public DeviceQueue {
+ public:
+  explicit DeepAdmissionQueue(Device *owner) : DeviceQueue(owner) {}
+  mutable int memory_queries = 0;
+  void init_execution() override {}
+  void load_image_info() override {}
+  bool enqueue(DeviceKernel, int, const DeviceKernelArguments &) override { return false; }
+  bool synchronize() override { return true; }
+  void zero_to_device(device_memory &) override {}
+  void copy_to_device(device_memory &) override {}
+  void copy_from_device(device_memory &) override {}
+  void *copy_from_device_synchronized(device_memory &, vector<uint8_t> &) override
+  {
+    return nullptr;
+  }
+ protected:
+  ConcurrentStatesParams concurrent_states_params() const override
+  {
+    ConcurrentStatesParams params;
+    params.baseline = 262144;
+    params.min = 65536;
+    params.max = 262144;
+    params.reserve_percent = 0;
+    return params;
+  }
+  void get_memory_info(size_t &total, size_t &free) const override
+  {
+    ++memory_queries;
+    total = free = 4 * 1024 * 1024;
+  }
+};
+}  // namespace
+
+TEST(DeepRobustness, DeepConcurrentStatesBeforeSceneUpload)
+{
+  Stats stats;
+  Profiler profiler;
+  auto device = Device::create(DeviceInfo(), stats, profiler, true);
+  DeepAdmissionQueue queue(device.get());
+  /* Tile admission runs before the first scene upload has a state layout. */
+  EXPECT_EQ(queue.num_concurrent_states(0), 262144);
+  EXPECT_EQ(queue.memory_queries, 0);
+  /* The later real layout must still honor the native memory-based limit. */
+  EXPECT_EQ(queue.num_concurrent_states(1024), 65536);
+  EXPECT_EQ(queue.memory_queries, 1);
+}
+
 CCL_NAMESPACE_END

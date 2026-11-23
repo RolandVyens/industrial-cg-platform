@@ -113,6 +113,35 @@ __device__ __forceinline__ float deep_bounded_unit(const float x)
   return fminf(fmaxf(x, 0.0f), 1.0f);
 }
 
+__device__ __forceinline__ bool deep_bounded_terminal(const uint32_t object,
+                                                        const uint32_t shader,
+                                                        const float z,
+                                                        const float back)
+{
+  return (object & ~DEEP_BOUNDED_ELIGIBLE) == DEEP_BOUNDED_NONSURFACE &&
+         shader == 1 && z == DEEP_BOUNDED_WORLD_TERMINAL && back == z;
+}
+
+__device__ __forceinline__ uint64_t deep_bounded_terminal_index(
+    const DeepBoundedPlanes &raw, const uint64_t root, const uint64_t stride, const uint32_t count)
+{
+  for (uint32_t i = count; i > 0; --i) {
+    const uint64_t index = root + uint64_t(i - 1) * stride;
+    const float z = deep_bounded_ptr<const float>(raw.z)[index];
+    if (z < DEEP_BOUNDED_WORLD_TERMINAL) {
+      break;
+    }
+    if (deep_bounded_terminal(deep_bounded_load_object(raw, index),
+                              deep_bounded_load_shader(raw, index),
+                              z,
+                              deep_bounded_ptr<const float>(raw.z_back)[index]))
+    {
+      return index;
+    }
+  }
+  return UINT64_MAX;
+}
+
 /* Physical whole contributions use the current raw chain, whose source flags
  * retain their native meaning. Keep the general nearest/first exact match;
  * a unique eligible record with an exact endpoint needs no distance search. */
@@ -207,6 +236,12 @@ deep_bounded_rgb_source_index_ordered(const DeepBoundedPlanes &raw,
                                       const float anchor,
                                       const bool ordered)
 {
+  if (kind == DeepBoundedSourceKind::POINT && anchor == DEEP_BOUNDED_WORLD_TERMINAL) {
+    const uint64_t terminal = deep_bounded_terminal_index(raw, root, stride, count);
+    if (terminal != UINT64_MAX) {
+      return terminal;
+    }
+  }
   if (!ordered || count < 8 || !isfinite(anchor) || kind == DeepBoundedSourceKind::UNBOUND ||
       kind == DeepBoundedSourceKind::EXCLUDED)
   {
@@ -598,13 +633,96 @@ deep_bounded_partition(const DeepBoundedRecord<Physical> *input,
   return written;
 }
 
+/* The sorted reducers consume absolute coverage. Pull the terminal out before
+ * applying any finite grouping, including the forced capacity paths. */
+template<bool Physical>
+__device__ __forceinline__ bool deep_bounded_take_terminal(
+    DeepBoundedRecord<Physical> *input, uint32_t &count, DeepBoundedRecord<Physical> &terminal)
+{
+  uint32_t first = count;
+  while (first && input[first - 1].z >= DEEP_BOUNDED_WORLD_TERMINAL) {
+    --first;
+  }
+  uint32_t out = first;
+  bool found = false;
+  for (uint32_t i = first; i < count; ++i) {
+    const auto &r = input[i];
+    if (deep_bounded_terminal(r.object, r.shader, r.z, r.z_back)) {
+      if (!found) {
+        terminal = r;
+        found = true;
+      }
+      else {
+        terminal.alpha += r.alpha;
+        terminal.object |= r.object & DEEP_BOUNDED_ELIGIBLE;
+        if constexpr (Physical) {
+          for (int c = 0; c < 3; ++c) {
+            terminal.rgb[c] += r.rgb[c];
+          }
+        }
+      }
+    }
+    else if (out++ != i) {
+      input[out - 1] = r;
+    }
+  }
+  count = out;
+  return found;
+}
+
+template<bool Physical>
+__device__ __forceinline__ uint32_t deep_bounded_publish_terminal(
+    const DeepBoundedPlanes &output,
+    const uint64_t first,
+    const uint64_t stride,
+    const uint32_t count,
+    DeepBoundedRecord<Physical> terminal)
+{
+  float finite_prefix = 0.0f;
+  uint32_t insert = 0;
+  const auto *depths = deep_bounded_ptr<const float>(output.z);
+  for (; insert < count; ++insert) {
+    const uint64_t index = first + uint64_t(insert) * stride;
+    if (depths[index] > terminal.z) {
+      break;
+    }
+    const float alpha = Physical ? deep_bounded_ptr<const DeepBoundedRGBA>(output.rgba)[index].a :
+                                   deep_bounded_ptr<const float>(output.rgba)[index];
+    finite_prefix = deep_bounded_unit(fmaf(1.0f - finite_prefix, alpha, finite_prefix));
+  }
+  const float q = terminal.alpha;
+  terminal.alpha = deep_bounded_local_alpha(q, finite_prefix);
+  if (insert == count) {
+    deep_bounded_store(output, first + uint64_t(count) * stride, terminal);
+    return count + 1;
+  }
+
+  /* Very large scenes can have real depths past the format's fixed terminal.
+   * Preserve sorted depth and absolute coverage when inserting in that case. */
+  auto next = deep_bounded_load<Physical>(output, first + uint64_t(insert) * stride);
+  deep_bounded_store(output, first + uint64_t(insert) * stride, terminal);
+  float prefix = deep_bounded_unit(finite_prefix + q);
+  for (uint32_t i = insert + 1; i <= count; ++i) {
+    auto r = next;
+    if (i < count) {
+      next = deep_bounded_load<Physical>(output, first + uint64_t(i) * stride);
+    }
+    const float finite_q = (1.0f - finite_prefix) * r.alpha;
+    r.alpha = deep_bounded_local_alpha(finite_q, prefix);
+    deep_bounded_store(output, first + uint64_t(i) * stride, r);
+    finite_prefix = deep_bounded_unit(finite_prefix + finite_q);
+    prefix = deep_bounded_unit(prefix + finite_q);
+  }
+  return count + 1;
+}
+
 /* Mature numeric chains have no pending RGB anchor. Compact ordinary groups
  * in the existing candidate array, then bound pressure work by one forward
  * coverage-quantile pass. Equal masses do not trigger a whole-chain collapse.
  * Raw capture retains its anchor-preserving pressure path below. */
 template<bool Physical, bool FuseTotal = false>
 __device__ __forceinline__ uint32_t
-deep_bounded_reduce_mature(DeepBoundedRecord<Physical> *input,
+deep_bounded_reduce_mature_finite(DeepBoundedRecord<Physical> *input,
                            const uint32_t count,
                            const DeepBoundedPlanes &output,
                            const uint64_t first,
@@ -667,6 +785,25 @@ deep_bounded_reduce_mature(DeepBoundedRecord<Physical> *input,
     }
   }
   return written;
+}
+
+template<bool Physical, bool FuseTotal = false>
+__device__ __forceinline__ uint32_t deep_bounded_reduce_mature(
+    DeepBoundedRecord<Physical> *input, uint32_t count, const DeepBoundedPlanes &output,
+    const uint64_t first, const uint64_t stride, const uint32_t capacity,
+    const DeepBoundedMergePolicy &policy)
+{
+  if (!count || !capacity) {
+    return 0;
+  }
+  DeepBoundedRecord<Physical> terminal = {};
+  if (!deep_bounded_take_terminal(input, count, terminal)) {
+    return deep_bounded_reduce_mature_finite<Physical, FuseTotal>(
+        input, count, output, first, stride, capacity, policy);
+  }
+  const uint32_t finite = deep_bounded_reduce_mature_finite<Physical, FuseTotal>(
+      input, count, output, first, stride, capacity - 1, policy);
+  return deep_bounded_publish_terminal(output, first, stride, finite, terminal);
 }
 
 /* Candidate alpha holds absolute mass q. Once a group is published, its slot

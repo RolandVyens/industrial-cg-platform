@@ -13,7 +13,8 @@
 #include "DNA_material_types.h"
 
 #include "BLI_span.hh"
-#include "BLI_string.h"
+#include "BLI_string.hh"
+#include "BLI_utildefines.hh"
 #include "BLI_vector.hh"
 
 #include "BKE_cryptomatte.hh"
@@ -55,9 +56,13 @@ static std::ostream &operator<<(std::ostream &stream, const GPUInput *input)
     case GPU_SOURCE_UNIFORM_ATTR:
       return stream << "UNI_ATTR(unf_attrs[resource_id].attr" << input->uniform_attr->id << ")";
     case GPU_SOURCE_LAYER_ATTR:
-      return stream << "attr_load_layer(" << input->layer_attr->hash_code << ")";
+      return stream << "attr_load_layer(kg, " << input->layer_attr->hash_code << ")";
     case GPU_SOURCE_STRUCT:
-      return stream << "strct" << input->id;
+      return stream << (input->is_zone_io ? "zone" : "strct") << input->id;
+    case GPU_SOURCE_SHADING_DATA:
+      return stream << "sd";
+    case GPU_SOURCE_KERNEL_GLOBALS:
+      return stream << "kg";
     case GPU_SOURCE_TEX:
       return stream << input->texture->sampler_name;
     case GPU_SOURCE_TEX_TILED_MAPPING:
@@ -76,7 +81,7 @@ static std::ostream &operator<<(std::ostream &stream, const GPUOutput *output)
 /* Print data constructor (i.e: vec2(1.0f, 1.0f)). */
 static std::ostream &operator<<(std::ostream &stream, const Span<float> &span)
 {
-  stream << GPUType(span.size()) << "(";
+  stream << gpu_float_type_from_element_count(span.size()) << "(";
   /* Use uint representation to allow exact same bit pattern even if NaN. This is
    * because we can pass UINTs as floats for constants. */
   const Span<uint32_t> uint_span = span.cast<uint32_t>();
@@ -92,12 +97,46 @@ static std::ostream &operator<<(std::ostream &stream, const Span<float> &span)
   return stream;
 }
 
+/* Print data constructor (i.e: int2(1, 1)). */
+static std::ostream &operator<<(std::ostream &stream, const Span<int> &span)
+{
+  stream << gpu_int_type_from_element_count(span.size()) << "(";
+  for (const int &element : span) {
+    stream << element;
+    if (&element != &span.last()) {
+      stream << ", ";
+    }
+  }
+  stream << ")";
+  return stream;
+}
+
 /* Trick type to change overload and keep a somewhat nice syntax. */
 struct GPUConstant : public GPUInput {};
 
 static std::ostream &operator<<(std::ostream &stream, const GPUConstant *input)
 {
-  stream << Span<float>(input->vec, input->type);
+  switch (input->type) {
+    case GPU_FLOAT:
+    case GPU_VEC2:
+    case GPU_VEC3:
+    case GPU_VEC4:
+    case GPU_MAT3:
+    case GPU_MAT4:
+      return stream << gpu_constant_to_float_span(input->constant_data, input->type);
+    case GPU_INT:
+    case GPU_INT2:
+    case GPU_INT3:
+    case GPU_INT4:
+      return stream << gpu_constant_to_int_span(input->constant_data, input->type);
+    case GPU_BOOL:
+      return stream << "bool(" << (gpu_constant_to_bool(input->constant_data) ? "true" : "false")
+                    << ")";
+    default:
+      break;
+  }
+
+  BLI_assert_unreachable();
   return stream;
 }
 
@@ -135,6 +174,7 @@ GPUCodegen::GPUCodegen(GPUMaterial *mat_, GPUNodeGraph *graph_, const char *debu
 GPUCodegen::~GPUCodegen()
 {
   MEM_SAFE_DELETE(cryptomatte_input_);
+  MEM_SAFE_DELETE(thickness_input_);
   MEM_delete(create_info);
   ubo_inputs_.free_no_destruct();
 };
@@ -219,6 +259,9 @@ void GPUCodegen::generate_resources()
   GPUCodegenCreateInfo &info = *create_info;
 
   std::stringstream ss;
+  /* Improve error logging. */
+  ss << "#line 1 \"" __FILE__ "\"\n";
+  ss << "#line " STRINGIFY(__LINE__) "\n";
 
   /* Textures. */
   int slot = 0;
@@ -253,11 +296,21 @@ void GPUCodegen::generate_resources()
     ss << "struct NodeTree {\n";
     for (LinkData &link : ubo_inputs_) {
       GPUInput *input = static_cast<GPUInput *>(link.data);
-      if (input->source == GPU_SOURCE_CRYPTOMATTE) {
+      if (input->source == GPU_SOURCE_THICKNESS_MODE) {
+        ss << "bool32_t thickness_mode;\n";
+      }
+      else if (input->source == GPU_SOURCE_CRYPTOMATTE) {
         ss << input->type << " crypto_hash;\n";
       }
       else {
-        ss << input->type << " u" << input->id << (input->is_duplicate ? "b" : "") << ";\n";
+        /* MSL does not pad bool to 4 bytes; use bool32_t so UBO layout matches correctly. */
+        if (input->type == GPU_BOOL) {
+          ss << "bool32_t";
+        }
+        else {
+          ss << input->type;
+        }
+        ss << " u" << input->id << (input->is_duplicate ? "b" : "") << ";\n";
       }
     }
     ss << "};\n";
@@ -278,10 +331,6 @@ void GPUCodegen::generate_resources()
     /* TODO(fclem): Use the macro for length. Currently not working for EEVEE. */
     /* DRW_RESOURCE_CHUNK_LEN = 512 */
     info.uniform_buf(2, "UniformAttrs", GPU_ATTRIBUTE_UBO_BLOCK_NAME "[512]", Frequency::BATCH);
-  }
-
-  if (!graph.layer_attrs.is_empty()) {
-    info.additional_info("draw_layer_attributes");
   }
 
   info.typedef_source_generated = ss.str();
@@ -313,7 +362,7 @@ void GPUCodegen::node_serialize(Set<StringRefNull> &used_libraries,
 
     if (from != to) {
       /* Special case that needs luminance coefficients as argument. */
-      if (from == GPU_VEC4 && to == GPU_FLOAT) {
+      if (from == GPU_VEC4 && ELEM(to, GPU_FLOAT, GPU_INT, GPU_BOOL)) {
         float coefficients[3];
         IMB_colormanagement_get_luminance_coefficients(coefficients);
         eval_ss << ", " << Span<float>(coefficients, 3);
@@ -335,6 +384,10 @@ void GPUCodegen::node_serialize(Set<StringRefNull> &used_libraries,
     switch (input.source) {
       case GPU_SOURCE_FUNCTION_CALL:
         eval_ss << type() << " " << &input << "; " << input.function_call << &input << ");\n";
+        break;
+      case GPU_SOURCE_SHADING_DATA:
+      case GPU_SOURCE_KERNEL_GLOBALS:
+        /* Defined as inputs to the node-tree eval function. */
         break;
       case GPU_SOURCE_STRUCT:
         eval_ss << input.type << " " << &input << " = CLOSURE_DEFAULT;\n";
@@ -365,7 +418,15 @@ void GPUCodegen::node_serialize(Set<StringRefNull> &used_libraries,
     if (output.is_zone_io) {
       break;
     }
-    eval_ss << output.type << " " << &output << ";\n";
+    switch (output.type) {
+      case GPU_SHADING_DATA:
+      case GPU_KERNEL_GLOBALS:
+        /* Defined as inputs to the node-tree eval function. */
+        break;
+      default:
+        eval_ss << output.type << " " << &output << ";\n";
+        break;
+    }
   }
 
   /* Function call. */
@@ -385,7 +446,7 @@ void GPUCodegen::node_serialize(Set<StringRefNull> &used_libraries,
         eval_ss << &input;
         break;
     }
-    GPUOutput *output = static_cast<GPUOutput *>(node->outputs.first);
+    GPUOutput *output = node->outputs.first();
     if ((input.next && !input.next->is_zone_io) || (output && !output->is_zone_io)) {
       eval_ss << ", ";
     }
@@ -395,7 +456,17 @@ void GPUCodegen::node_serialize(Set<StringRefNull> &used_libraries,
     if (output.is_zone_io) {
       break;
     }
-    eval_ss << &output;
+    switch (output.type) {
+      case GPU_KERNEL_GLOBALS:
+        eval_ss << "kg";
+        break;
+      case GPU_SHADING_DATA:
+        eval_ss << "sd";
+        break;
+      default:
+        eval_ss << &output;
+        break;
+    }
     if (output.next && !output.next->is_zone_io) {
       eval_ss << ", ";
     }
@@ -469,25 +540,41 @@ GPUGraphOutput GPUCodegen::graph_serialize(GPUNodeTag tree_tag)
   return {str, set_to_vector_stable(used_libraries)};
 }
 
-void GPUCodegen::generate_cryptomatte()
+void GPUCodegen::generate_material_props()
 {
-  cryptomatte_input_ = MEM_new_zeroed<GPUInput>(__func__);
-  cryptomatte_input_->type = GPU_FLOAT;
-  cryptomatte_input_->source = GPU_SOURCE_CRYPTOMATTE;
+  {
+    cryptomatte_input_ = MEM_new<GPUInput>(__func__);
+    cryptomatte_input_->type = GPU_FLOAT;
+    cryptomatte_input_->source = GPU_SOURCE_CRYPTOMATTE;
 
-  float material_hash = 0.0f;
-  Material *material = GPU_material_get_material(&mat);
-  if (material) {
-    bke::cryptomatte::CryptomatteHash hash(material->id.name + 2,
-                                           BLI_strnlen(material->id.name + 2, MAX_NAME - 2));
-    material_hash = hash.float_encoded();
+    float material_hash = 0.0f;
+    Material *material = GPU_material_get_material(&mat);
+    if (material) {
+      bke::cryptomatte::CryptomatteHash hash(material->id.name + 2,
+                                             BLI_strnlen(material->id.name + 2, MAX_NAME - 2));
+      material_hash = hash.float_encoded();
+    }
+    cryptomatte_input_->constant_data = material_hash;
+
+    BLI_addtail(&ubo_inputs_, BLI_genericNodeN(cryptomatte_input_));
   }
-  cryptomatte_input_->vec[0] = material_hash;
+  {
+    thickness_input_ = MEM_new<GPUInput>(__func__);
+    thickness_input_->type = GPU_BOOL;
+    thickness_input_->source = GPU_SOURCE_THICKNESS_MODE;
 
-  BLI_addtail(&ubo_inputs_, BLI_genericNodeN(cryptomatte_input_));
+    int thickness_mode = MA_THICKNESS_SPHERE;
+    Material *material = GPU_material_get_material(&mat);
+    if (material) {
+      thickness_mode = material->thickness_mode;
+    }
+    thickness_input_->constant_data = bool(thickness_mode);
+
+    BLI_addtail(&ubo_inputs_, BLI_genericNodeN(thickness_input_));
+  }
 }
 
-void GPUCodegen::generate_uniform_buffer()
+void GPUCodegen::extract_uniform_list()
 {
   /* Extract uniform inputs. */
   for (GPUNode &node : graph.nodes) {
@@ -499,9 +586,21 @@ void GPUCodegen::generate_uniform_buffer()
       }
     }
   }
+}
+
+void GPUCodegen::generate_uniform_buffer()
+{
   if (!ubo_inputs_.is_empty()) {
     /* This sorts the inputs based on size. */
     GPU_material_uniform_buffer_create(&mat, &ubo_inputs_);
+  }
+}
+
+void GPUCodegen::sort_uniform_inputs()
+{
+  if (!ubo_inputs_.is_empty()) {
+    /* This sorts the inputs based on size. */
+    GPU_uniformbuf_inputs_sort(&ubo_inputs_);
   }
 }
 
@@ -535,13 +634,13 @@ void GPUCodegen::set_unique_ids()
   /* Assign the same id to inputs and outputs of start and end zones. */
   for (GPUNode *end : zone_ends.values()) {
 
-    GPUInput *end_input = find_zone_io(static_cast<GPUInput *>(end->inputs.first));
-    GPUOutput *end_output = find_zone_io(static_cast<GPUOutput *>(end->outputs.first));
+    GPUInput *end_input = find_zone_io(end->inputs.first());
+    GPUOutput *end_output = find_zone_io(end->outputs.first());
 
     GPUNode *start = zone_starts.lookup(end->zone_index);
 
-    GPUInput *start_input = find_zone_io(static_cast<GPUInput *>(start->inputs.first));
-    GPUOutput *start_output = find_zone_io(static_cast<GPUOutput *>(start->outputs.first));
+    GPUInput *start_input = find_zone_io(start->inputs.first());
+    GPUOutput *start_output = find_zone_io(start->outputs.first());
 
     for (; start_input; start_input = start_input->next,
                         start_output = start_output->next,
@@ -579,7 +678,8 @@ void GPUCodegen::generate_graphs()
       /* Tag only the nodes needed for the current function */
       gpu_nodes_tag(&graph, func_link.outlink, GPU_NODE_TAG_FUNCTION);
       GPUGraphOutput graph = graph_serialize(GPU_NODE_TAG_FUNCTION, func_link.outlink);
-      eval_ss << "float " << func_link.name << "() {\n" << graph.serialized << "}\n\n";
+      eval_ss << "float " << func_link.name << "(KernelGlobals kg, ShadingData sd) {\n"
+              << graph.serialized << "}\n\n";
       output.material_functions.append({eval_ss.str(), graph.dependencies});
     }
     /* Leave the function tags as they were before serialization */

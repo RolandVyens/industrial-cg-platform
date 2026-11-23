@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "BLI_compiler_attrs.h"
+#include "BLI_compiler_attrs.hh"
 
 #include "DNA_windowmanager_enums.h"
 
@@ -125,11 +125,6 @@ void wm_cursor_position_to_ghost_screen_coords(wmWindow *win, int *x, int *y);
 
 void wm_cursor_position_from_ghost_client_coords(wmWindow *win, int *x, int *y);
 void wm_cursor_position_to_ghost_client_coords(wmWindow *win, int *x, int *y);
-
-#ifdef WITH_INPUT_IME
-void wm_window_IME_begin(wmWindow *win, int x, int y, int w, int h, bool complete);
-void wm_window_IME_end(wmWindow *win);
-#endif
 
 /**
  * Effectively remove timers from the list and delete them. Calling this should only be done by

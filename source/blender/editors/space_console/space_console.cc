@@ -6,6 +6,7 @@
  * \ingroup spconsole
  */
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -13,9 +14,9 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_listbase.h"
-#include "BLI_string.h"
-#include "BLI_string_utf8.h"
+#include "BLI_listbase.hh"
+#include "BLI_string.hh"
+#include "BLI_string_utf8.hh"
 
 #include "BKE_context.hh"
 #include "BKE_screen.hh"
@@ -48,7 +49,9 @@ static SpaceLink *console_create(const ScrArea * /*area*/, const Scene * /*scene
   sconsole = MEM_new<SpaceConsole>("initconsole");
   sconsole->spacetype = SPACE_CONSOLE;
 
-  sconsole->lheight = 14;
+  sconsole->line_height = 14;
+
+  sconsole->runtime = MEM_new<SpaceConsole_Runtime>(__func__);
 
   /* header */
   region = BKE_area_region_new();
@@ -82,13 +85,15 @@ static void console_free(SpaceLink *sl)
 {
   SpaceConsole *sc = reinterpret_cast<SpaceConsole *>(sl);
 
-  while (sc->scrollback.first) {
-    console_scrollback_free(sc, static_cast<ConsoleLine *>(sc->scrollback.first));
+  while (sc->scrollback.first_) {
+    console_scrollback_free(sc, sc->scrollback.first());
   }
 
-  while (sc->history.first) {
-    console_history_free(sc, static_cast<ConsoleLine *>(sc->history.first));
+  while (sc->history.first_) {
+    console_history_free(sc, sc->history.first());
   }
+
+  MEM_delete(sc->runtime);
 }
 
 /* spacetype; init callback */
@@ -103,6 +108,9 @@ static SpaceLink *console_duplicate(SpaceLink *sl)
   /* TODO: duplicate?, then we also need to duplicate the py namespace. */
   sconsolen->scrollback.clear_no_delete();
   sconsolen->history.clear_no_delete();
+
+  /* Add its own runtime data. */
+  sconsolen->runtime = MEM_new<SpaceConsole_Runtime>(__func__);
 
   return reinterpret_cast<SpaceLink *>(sconsolen);
 }
@@ -212,6 +220,47 @@ static void console_dropboxes()
 
 /* ************* end drop *********** */
 
+#ifdef WITH_INPUT_IME
+static std::optional<ARegionIMECursorState> console_main_region_cursor_ime(
+    wmWindow * /*win*/, const ScrArea *area, const ARegion *region, ARegionIMECursor *r_cursor)
+{
+  /* The position is pending during View2D navigation (pan, zoom, scroll). */
+  if (region->v2d.flag & V2D_IS_NAVIGATING) {
+    return ARegionIMECursorState::PositionPending;
+  }
+  SpaceConsole *sc = area->spacedata.first_as<SpaceConsole>();
+  /* Font metrics are cached during draw; zero means the region hasn't been drawn yet. */
+  const int line_height = sc->runtime->line_height_px;
+  if (line_height == 0) {
+    return ARegionIMECursorState::PositionPending;
+  }
+  const ConsoleLine *cl = sc->history.last();
+  if (cl == nullptr) {
+    return std::nullopt;
+  }
+  const std::optional<blender::int2> xy_region = console_cursor_region_xy_get(
+      sc, region, cl->cursor);
+  if (!xy_region) {
+    return std::nullopt;
+  }
+  /* Convert to pixel space, X is pinned by #V2D_LOCKOFS_X. */
+  const int2 xy = {xy_region->x, xy_region->y - int(region->v2d.cur.ymin)};
+
+  /* Extend up by the line height.
+   * The caller clamps to the region since the cursor may be scrolled out of view. */
+  r_cursor->rect = {
+      .xmin = xy.x,
+      .xmax = xy.x,
+      .ymin = xy.y,
+      .ymax = xy.y + line_height,
+  };
+  /* The console draws text smaller than the line height, see #textview_font_begin. */
+  r_cursor->font_size = int(0.8f * float(line_height));
+  return ARegionIMECursorState::PositionSet;
+}
+
+#endif
+
 static void console_main_region_draw(const bContext *C, ARegion *region)
 {
   /* draw entirely, view changes should be handled here */
@@ -298,7 +347,7 @@ static void console_main_region_listener(const wmRegionListenerParams *params)
     case NC_SPACE: {
       if (wmn->data == ND_SPACE_CONSOLE) {
         if (wmn->action == NA_EDITED) {
-          if ((wmn->reference && area) && (wmn->reference == area->spacedata.first)) {
+          if ((wmn->reference && area) && (wmn->reference == area->spacedata.first_)) {
             /* we've modified the geometry (font size), re-calculate rect */
             console_textview_update_rect(static_cast<SpaceConsole *>(wmn->reference), region);
             ED_region_tag_redraw(region);
@@ -317,6 +366,8 @@ static void console_main_region_listener(const wmRegionListenerParams *params)
 static void console_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
 {
   SpaceConsole *sconsole = reinterpret_cast<SpaceConsole *>(sl);
+
+  sconsole->runtime = MEM_new<SpaceConsole_Runtime>(__func__);
 
   BLO_read_struct_list(reader, ConsoleLine, &sconsole->scrollback);
   BLO_read_struct_list(reader, ConsoleLine, &sconsole->history);
@@ -345,7 +396,9 @@ static void console_space_blend_write(BlendWriter *writer, SpaceLink *sl)
     writer->write_struct(&cl);
     writer->write_char_array(size_t(cl.len) + 1, cl.line);
   }
-  writer->write_struct_cast<SpaceConsole>(sl);
+  writer->write_struct_cast<SpaceConsole>(sl, [](BlendStructWriter<SpaceConsole> &struct_writer) {
+    struct_writer.shallow_data.runtime = nullptr;
+  });
 }
 
 void ED_spacetype_console()
@@ -377,6 +430,9 @@ void ED_spacetype_console()
   art->cursor = console_cursor;
   art->event_cursor = true;
   art->listener = console_main_region_listener;
+#ifdef WITH_INPUT_IME
+  art->cursor_ime = console_main_region_cursor_ime;
+#endif
 
   BLI_addhead(&st->regiontypes, art);
 

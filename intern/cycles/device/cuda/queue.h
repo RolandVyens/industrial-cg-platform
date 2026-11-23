@@ -26,8 +26,8 @@ class CUDADeviceQueue : public DeviceQueue {
   CUDADeviceQueue(CUDADevice *device, size_t extra_auxiliary_capacity = 0);
   ~CUDADeviceQueue() override;
 
-  int num_concurrent_states(const size_t state_size) const override;
-  int num_concurrent_busy_states(const size_t state_size) const override;
+  int num_sort_partitions(int max_num_paths, uint max_scene_shaders) const override;
+  bool supports_local_atomic_sort() const override;
 
   void init_execution() override;
   void run_with_deep_context(ContextCallback callback, void *data) override;
@@ -167,6 +167,9 @@ class CUDADeviceQueue : public DeviceQueue {
   DeepQueueAuxiliaryBudget deep_auxiliary_budget_;
   void *allocate_deep_auxiliary(size_t bytes);
   void free_deep_auxiliary(void *pointer, size_t bytes);
+
+  ConcurrentStatesParams concurrent_states_params() const override;
+  void get_memory_info(size_t &total, size_t &free) const override;
 
   void assert_success(CUresult result, const char *operation);
 };

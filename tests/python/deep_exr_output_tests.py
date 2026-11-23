@@ -150,6 +150,72 @@ class DeepExrOutputTests(unittest.TestCase):
             "An unmapped Deep File Output must not write fallback view-layer data",
         )
 
+    def _add_copied_effect(self):
+        # Copies preserve node identifiers. Effect context must distinguish their Deep consumers.
+        first_tree = self.scene.compositor_effects[0].node_group
+        effect = self.scene.compositor_effects.new("Second Deep Effect")
+        effect.node_group = first_tree.copy()
+        effect.enable_for_render = True
+        output = next(
+            node for node in effect.node_group.nodes if node.bl_idname == "CompositorNodeOutputFile"
+        )
+        return effect, output
+
+    def test_scene_effects_keep_copied_node_output_formats_independent(self):
+        second_effect, second_output = self._add_copied_effect()
+        for output, name, depth in (
+            (self.file_output, "first_effect", "32"),
+            (second_output, "second_effect", "16"),
+        ):
+            output.directory = str(self.output_root / name)
+            output.format.color_depth = depth
+
+        bpy.ops.render.render()
+
+        for name, expected_type in (("first_effect", oiio.FLOAT), ("second_effect", oiio.HALF)):
+            with self.subTest(effect=name):
+                paths = list((self.output_root / name).rglob("*.exr"))
+                self.assertEqual(len(paths), 1)
+                image_input = oiio.ImageInput.open(str(paths[0]))
+                self.assertIsNotNone(image_input)
+                try:
+                    spec = image_input.spec()
+                    self.assertTrue(spec.deep)
+                    channel_type = (
+                        spec.channelformats[spec.channelindex("R")]
+                        if spec.channelformats else spec.format
+                    )
+                    self.assertEqual(channel_type, expected_type)
+                    deep_data = image_input.read_native_deep_image()
+                    self.assertTrue(any(deep_data.samples(i) for i in range(spec.width * spec.height)))
+                finally:
+                    image_input.close()
+
+    def test_disabled_scene_effect_does_not_request_unmapped_deep_output(self):
+        effect, output = self._add_copied_effect()
+        effect.enable_for_render = False
+        output.directory = str(self.output_root / "disabled_effect")
+        for socket in output.inputs:
+            for link in tuple(socket.links):
+                effect.node_group.links.remove(link)
+
+        self._render_deep("enabled_effect", 0.0)
+        self.assertEqual(list((self.output_root / "disabled_effect").rglob("*.exr")), [])
+
+    def test_scene_effect_without_color_output_stops_later_deep_demand(self):
+        effect, output = self._add_copied_effect()
+        output.directory = str(self.output_root / "unreachable_effect")
+        for socket in output.inputs:
+            for link in tuple(socket.links):
+                effect.node_group.links.remove(link)
+        first_tree = self.scene.compositor_effects[0].node_group
+        for item in tuple(first_tree.interface.items_tree):
+            if item.item_type == "SOCKET" and item.in_out == "OUTPUT":
+                first_tree.interface.remove(item)
+
+        self._render_deep("first_effect_only", 0.0)
+        self.assertEqual(list((self.output_root / "unreachable_effect").rglob("*.exr")), [])
+
     def test_deep_exr_codec_defaults_to_zips(self):
         scene_format = self.scene.render.image_settings
         scene_format.file_format = "PNG"
@@ -163,6 +229,31 @@ class DeepExrOutputTests(unittest.TestCase):
         file_output.format.exr_codec = "NONE"
         file_output.format.file_format = "DEEP_EXR"
         self.assertEqual(file_output.format.exr_codec, "ZIPS")
+
+    def test_deep_save_as_preflight_keeps_same_frame_available(self):
+        self.file_output.mute = True
+        scene_format = self.scene.render.image_settings
+        scene_format.file_format = "DEEP_EXR"
+        scene_format.color_mode = "RGBA"
+        scene_format.color_depth = "32"
+        self.assertEqual(bpy.ops.render.render(), {"FINISHED"})
+        image = bpy.data.images["Render Result"]
+
+        rejected = self.output_root / "rejected.exr"
+        scene_format.color_depth = "16"
+        with self.assertRaisesRegex(RuntimeError, "Frozen Deep consumer parameters changed"):
+            image.save_render(str(rejected), scene=self.scene)
+        self.assertFalse(rejected.exists())
+
+        scene_format.color_depth = "32"
+        retried = self.output_root / "retried.exr"
+        image.save_render(str(retried), scene=self.scene)
+        image_input = oiio.ImageInput.open(str(retried))
+        self.assertIsNotNone(image_input)
+        try:
+            self.assertTrue(image_input.spec().deep)
+        finally:
+            image_input.close()
 
     def test_existing_project_deep_node_ignores_disabled_legacy_toggle(self):
         self.scene.cycles["use_deep_output"] = False

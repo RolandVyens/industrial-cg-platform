@@ -54,12 +54,14 @@ class DeepDispatchWall {
 };
 }  // namespace
 
-static size_t estimate_single_state_size(const uint kernel_features, const bool use_shadow_color)
+static size_t estimate_single_state_size(const uint64_t kernel_features,
+                                         const int volume_stack_size,
+                                         const bool use_shadow_color)
 {
   size_t state_size = 0;
 
-#define KERNEL_STRUCT_BEGIN(name) \
-  for (int array_index = 0;; array_index++) {
+#define KERNEL_STRUCT_VOLUME_STACK_SIZE (volume_stack_size)
+#define KERNEL_STRUCT_BEGIN(name) for (int array_index = 0;; array_index++) {
 
 #ifdef __INTEGRATOR_GPU_PACKED_STATE__
 #  define KERNEL_STRUCT_MEMBER(parent_struct, type, name, feature) \
@@ -67,7 +69,7 @@ static size_t estimate_single_state_size(const uint kernel_features, const bool 
                    (std::strcmp(#name, "deep_frame_camera_index") != 0 && \
                     std::strcmp(#name, "deep_frame_root_handle") != 0 && \
                     std::strncmp(#name, "deep_bounded_", 13) != 0)) ? \
-                      sizeof(type) : \
+                      sizeof(gpu_state_storage<type>::gpu_type) : \
                       0;
 #  define KERNEL_STRUCT_MEMBER_PACKED(parent_struct, type, name, feature)
 #  define KERNEL_STRUCT_BEGIN_PACKED(parent_struct, feature) \
@@ -79,17 +81,17 @@ static size_t estimate_single_state_size(const uint kernel_features, const bool 
                    (std::strcmp(#name, "deep_frame_camera_index") != 0 && \
                     std::strcmp(#name, "deep_frame_root_handle") != 0 && \
                     std::strncmp(#name, "deep_bounded_", 13) != 0)) ? \
-                      sizeof(type) : \
+                      sizeof(gpu_state_storage<type>::gpu_type) : \
                       0;
 #  define KERNEL_STRUCT_MEMBER_PACKED KERNEL_STRUCT_MEMBER
 #  define KERNEL_STRUCT_BEGIN_PACKED(parent_struct, feature) KERNEL_STRUCT_BEGIN(parent_struct)
 #endif
 
 #define KERNEL_STRUCT_ARRAY_MEMBER(parent_struct, type, name, feature) \
-  state_size += (KernelFeatureRequest(feature).test(kernel_features)) ? sizeof(type) : 0;
+  state_size += (KernelFeatureRequest(feature).test(kernel_features)) ? sizeof(gpu_state_storage<type>::gpu_type) : 0;
 #define KERNEL_STRUCT_MEMBER_RUNTIME_SHADOW_COLOR(parent_struct, type, name, feature) \
   state_size += shadow_state_unshadowed_throughput_is_needed(kernel_features, use_shadow_color) ? \
-                    sizeof(type) : \
+                    sizeof(gpu_state_storage<type>::gpu_type) : \
                     0;
 #define KERNEL_STRUCT_END(name) \
   (void)array_index; \
@@ -100,17 +102,12 @@ static size_t estimate_single_state_size(const uint kernel_features, const bool 
     break; \
   } \
   }
-/* TODO(sergey): Look into better estimation for fields which depend on scene features. Maybe
- * maximum state calculation should happen as `alloc_work_memory()`, so that we can react to an
- * updated scene state here.
- * For until then use common value. Currently this size is only used for logging, but is weak to
- * rely on this. */
-#define KERNEL_STRUCT_VOLUME_STACK_SIZE 4
 
 #include "kernel/integrator/state_template.h"
 
 #include "kernel/integrator/shadow_state_template.h"
 
+#undef KERNEL_STRUCT_VOLUME_STACK_SIZE
 #undef KERNEL_STRUCT_BEGIN
 #undef KERNEL_STRUCT_BEGIN_PACKED
 #undef KERNEL_STRUCT_MEMBER
@@ -119,7 +116,6 @@ static size_t estimate_single_state_size(const uint kernel_features, const bool 
 #undef KERNEL_STRUCT_MEMBER_RUNTIME_SHADOW_COLOR
 #undef KERNEL_STRUCT_END
 #undef KERNEL_STRUCT_END_ARRAY
-#undef KERNEL_STRUCT_VOLUME_STACK_SIZE
 
   return state_size;
 }
@@ -131,7 +127,7 @@ PathTraceWorkGPU::PathTraceWorkGPU(Device *device,
     : PathTraceWork(device, film, device_scene, cancel_requested_flag),
       queue_(device->gpu_queue_create()),
       integrator_state_soa_kernel_features_(0),
-      integrator_queue_counter_(device, "integrator_queue_counter", MEM_READ_WRITE),
+      integrator_queue_counter_(device, "integrator_queue_counter", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
       deep_native_cameras_(device, "deep_native_cameras", MEM_DEVICE_ONLY),
       deep_compact_primitives_(device, "deep_compact_primitives", MEM_DEVICE_ONLY),
       deep_compact_rays_(device, "deep_compact_rays"),
@@ -154,18 +150,21 @@ PathTraceWorkGPU::PathTraceWorkGPU(Device *device,
       deep_surface_receipts_(device, "deep_surface_receipts", MEM_DEVICE_ONLY),
       deep_volume_radiance_receipts_(device, "deep_volume_radiance_receipts", MEM_DEVICE_ONLY),
       deep_volume_emission_spans_(device, "deep_volume_emission_spans", MEM_DEVICE_ONLY),
-      integrator_shader_sort_counter_(device, "integrator_shader_sort_counter", MEM_READ_WRITE),
+      integrator_shader_sort_counter_(device, "integrator_shader_sort_counter", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
       integrator_shader_raytrace_sort_counter_(
-          device, "integrator_shader_raytrace_sort_counter", MEM_READ_WRITE),
+          device, "integrator_shader_raytrace_sort_counter", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
       integrator_shader_sort_prefix_sum_(
-          device, "integrator_shader_sort_prefix_sum", MEM_READ_WRITE),
-      integrator_shader_sort_partition_key_offsets_(
-          device, "integrator_shader_sort_partition_key_offsets", MEM_READ_WRITE),
-      integrator_next_main_path_index_(device, "integrator_next_main_path_index", MEM_READ_WRITE),
+          device, "integrator_shader_sort_prefix_sum", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
+      integrator_shader_sort_partition_key_offsets_(device,
+                                                    "integrator_shader_sort_partition_key_offsets",
+                                                    MEM_READ_WRITE,
+                                                    MEM_FLAG_NO_HOST_FALLBACK),
+      integrator_next_main_path_index_(
+          device, "integrator_next_main_path_index", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
       integrator_next_shadow_path_index_(
-          device, "integrator_next_shadow_path_index", MEM_READ_WRITE),
-      queued_paths_(device, "queued_paths", MEM_READ_WRITE),
-      num_queued_paths_(device, "num_queued_paths", MEM_READ_WRITE),
+          device, "integrator_next_shadow_path_index", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
+      queued_paths_(device, "queued_paths", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
+      num_queued_paths_(device, "num_queued_paths", MEM_READ_WRITE, MEM_FLAG_NO_HOST_FALLBACK),
       work_tiles_(device, "work_tiles", MEM_READ_WRITE),
       display_rgba_half_(device, "display buffer half", MEM_READ_WRITE),
       max_num_paths_(0),
@@ -1505,13 +1504,13 @@ void PathTraceWorkGPU::alloc_integrator_soa()
   /* Check if we already allocated memory for the required features.
    * Note that both disabling and enabling features may require memory
    * allocations, so we check for equality. */
-  const int requested_volume_stack_size = device_scene_->data.volume_stack_size;
-  const uint kernel_features = device_scene_->data.kernel_features;
+  const int volume_stack_size = device_scene_->data.volume_stack_size;
+  const uint64_t kernel_features = device_scene_->data.kernel_features;
   const bool use_shadow_color = device_scene_->data.integrator.light_flags &
                                 KERNEL_INTEGRATOR_SHADOW_COLOR;
   if (integrator_state_soa_kernel_features_ == kernel_features &&
       integrator_state_soa_use_shadow_color_ == use_shadow_color &&
-      integrator_state_soa_volume_stack_size_ >= requested_volume_stack_size)
+      integrator_state_soa_volume_stack_size_ == volume_stack_size)
   {
     return;
   }
@@ -1519,22 +1518,23 @@ void PathTraceWorkGPU::alloc_integrator_soa()
   deep_bounded_uploaded_state_.reset();
   integrator_state_soa_kernel_features_ = kernel_features;
   integrator_state_soa_use_shadow_color_ = use_shadow_color;
-  integrator_state_soa_volume_stack_size_ = max(integrator_state_soa_volume_stack_size_,
-                                                requested_volume_stack_size);
+  integrator_state_soa_volume_stack_size_ = volume_stack_size;
+
+  /* Free existing state, before state size estimation which takes into account free memory. */
+  integrator_state_soa_.clear();
 
   /* Determine the number of path states. Deferring this for as long as possible allows the
    * back-end to make better decisions about memory availability. */
-  if (max_num_paths_ == 0) {
-    const size_t single_state_size = estimate_single_state_size(kernel_features, use_shadow_color);
+  const size_t single_state_size = estimate_single_state_size(
+      kernel_features, integrator_state_soa_volume_stack_size_, use_shadow_color);
 
-    max_num_paths_ = queue_->num_concurrent_states(single_state_size);
-    min_num_active_main_paths_ = queue_->num_concurrent_busy_states(single_state_size);
+  max_num_paths_ = queue_->num_concurrent_states(single_state_size);
 
-    /* Limit number of active paths to the half of the overall state. This is due to the logic in
-     * the path compaction which relies on the fact that regeneration does not happen sooner than
-     * half of the states are available again. */
-    min_num_active_main_paths_ = min(min_num_active_main_paths_, max_num_paths_ / 2);
-  }
+  /* A 1:4 busy:total ratio was found to give good performance, independent of the
+   * total state count. This is the number of states which keeps the device occupied
+   * with work without losing performance. The renderer will add more work (when
+   * available) when the number of active paths falls below this value. */
+  min_num_active_main_paths_ = max_num_paths_ / 4;
 
   /* Allocate a device only memory buffer before for each struct member, and then
    * write the pointers into a struct that resides in constant memory.
@@ -1543,15 +1543,16 @@ void PathTraceWorkGPU::alloc_integrator_soa()
 #define KERNEL_STRUCT_BEGIN(name) \
   for (int array_index = 0;; array_index++) {
 #define KERNEL_STRUCT_MEMBER_IMPL(parent_struct, type, name, condition) \
+  integrator_state_gpu_.parent_struct.name = nullptr; \
   if ((condition) && \
       (std::strcmp(#name, "deep_frame_camera_index") != 0 && \
        std::strcmp(#name, "deep_frame_root_handle") != 0 && \
-                    std::strncmp(#name, "deep_bounded_", 13) != 0) && \
-      (integrator_state_gpu_.parent_struct.name == nullptr)) \
+                    std::strncmp(#name, "deep_bounded_", 13) != 0)) \
   { \
     string name_str = string_printf("%sintegrator_state_" #parent_struct "_" #name, \
                                     shadow ? "shadow_" : ""); \
-    auto array = make_unique<device_only_memory<type>>(device_, name_str.c_str()); \
+    auto array = make_unique<device_only_memory<gpu_state_storage<type>::gpu_type>>( \
+        device_, name_str.c_str()); \
     array->alloc_to_device(max_num_paths_); \
     memcpy(&integrator_state_gpu_.parent_struct.name, \
            &array->device_pointer, \
@@ -1584,12 +1585,12 @@ void PathTraceWorkGPU::alloc_integrator_soa()
 #endif
 
 #define KERNEL_STRUCT_ARRAY_MEMBER(parent_struct, type, name, feature) \
-  if ((KernelFeatureRequest(feature).test(kernel_features)) && \
-      (integrator_state_gpu_.parent_struct[array_index].name == nullptr)) \
-  { \
+  integrator_state_gpu_.parent_struct[array_index].name = nullptr; \
+  if (KernelFeatureRequest(feature).test(kernel_features)) { \
     string name_str = string_printf( \
         "%sintegrator_state_" #name "_%d", shadow ? "shadow_" : "", array_index); \
-    auto array = make_unique<device_only_memory<type>>(device_, name_str.c_str()); \
+    auto array = make_unique<device_only_memory<gpu_state_storage<type>::gpu_type>>( \
+        device_, name_str.c_str()); \
     array->alloc_to_device(max_num_paths_); \
     memcpy(&integrator_state_gpu_.parent_struct[array_index].name, \
            &array->device_pointer, \
@@ -1609,6 +1610,7 @@ void PathTraceWorkGPU::alloc_integrator_soa()
 
   bool shadow = false;
 #include "kernel/integrator/state_template.h"
+
   shadow = true;
 #include "kernel/integrator/shadow_state_template.h"
 
@@ -1651,7 +1653,7 @@ void PathTraceWorkGPU::alloc_integrator_queue()
     num_queued_paths_.zero_to_device();
   }
 
-  if (queued_paths_.size() == 0) {
+  if (queued_paths_.size() != max_num_paths_) {
     queued_paths_.alloc(max_num_paths_);
     /* TODO: this could be skip if we had a function to just allocate on device. */
     queued_paths_.zero_to_device();
@@ -1675,6 +1677,10 @@ void PathTraceWorkGPU::alloc_integrator_sorting()
     }
     integrator_state_gpu_.sort_partition_key_offsets =
         (int *)integrator_shader_sort_partition_key_offsets_.device_pointer;
+
+    integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] = nullptr;
+    integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE] =
+        nullptr;
   }
   else {
     /* Allocate arrays for shader sorting. */
@@ -1682,21 +1688,21 @@ void PathTraceWorkGPU::alloc_integrator_sorting()
     if (integrator_shader_sort_counter_.size() < sort_buckets) {
       integrator_shader_sort_counter_.alloc(sort_buckets);
       integrator_shader_sort_counter_.zero_to_device();
-      integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] =
-          (int *)integrator_shader_sort_counter_.device_pointer;
 
       integrator_shader_sort_prefix_sum_.alloc(sort_buckets);
       integrator_shader_sort_prefix_sum_.zero_to_device();
     }
 
-    if (device_scene_->data.kernel_features & KERNEL_FEATURE_NODE_RAYTRACE) {
-      if (integrator_shader_raytrace_sort_counter_.size() < sort_buckets) {
-        integrator_shader_raytrace_sort_counter_.alloc(sort_buckets);
-        integrator_shader_raytrace_sort_counter_.zero_to_device();
-        integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE] =
-            (int *)integrator_shader_raytrace_sort_counter_.device_pointer;
-      }
+    const bool use_raytrace = device_scene_->data.kernel_features & KERNEL_FEATURE_NODE_RAYTRACE;
+    if (use_raytrace && integrator_shader_raytrace_sort_counter_.size() < sort_buckets) {
+      integrator_shader_raytrace_sort_counter_.alloc(sort_buckets);
+      integrator_shader_raytrace_sort_counter_.zero_to_device();
     }
+
+    integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE] =
+        (int *)integrator_shader_sort_counter_.device_pointer;
+    integrator_state_gpu_.sort_key_counter[DEVICE_KERNEL_INTEGRATOR_SHADE_SURFACE_RAYTRACE] =
+        (use_raytrace) ? (int *)integrator_shader_raytrace_sort_counter_.device_pointer : nullptr;
   }
 }
 
@@ -2257,9 +2263,13 @@ void PathTraceWorkGPU::set_deep_bounded_admission_limit(const uint32_t samples, 
 
 int2 PathTraceWorkGPU::deep_bounded_camera_limits() const
 {
-  const int states = max_num_paths_ ? max_num_paths_ : queue_->num_concurrent_states(0);
+  const size_t state_size = estimate_single_state_size(
+      device_scene_->data.kernel_features,
+      device_scene_->data.volume_stack_size,
+      device_scene_->data.integrator.light_flags & KERNEL_INTEGRATOR_SHADOW_COLOR);
+  const int states = max_num_paths_ ? max_num_paths_ : queue_->num_concurrent_states(state_size);
   const int busy = min_num_active_main_paths_ ? min_num_active_main_paths_ :
-                                               queue_->num_concurrent_busy_states(0);
+                                               states / 4;
   return make_int2(states, std::min(states / 2, busy));
 }
 
@@ -3017,6 +3027,10 @@ void PathTraceWorkGPU::enqueue_reset(const bool clear_path_slots)
   if (integrator_queue_counter_.host_pointer) {
     memset(integrator_queue_counter_.data(), 0, integrator_queue_counter_.memory_size());
   }
+
+  /* No active paths, reset to zero to avoid unnecessary work and exceeding
+   * new max number of paths if it changed. */
+  max_active_main_path_index_ = 0;
 }
 
 bool PathTraceWorkGPU::enqueue_path_iteration()
@@ -3930,6 +3944,10 @@ void PathTraceWorkGPU::cryptomatte_postproces()
 
 void PathTraceWorkGPU::denoise_volume_guiding_buffers()
 {
+  if (effective_buffer_params_.width == 0 || effective_buffer_params_.height == 0) {
+    return;
+  }
+
   const DeviceKernelArguments args(&buffers_->buffer.device_pointer,
                                    &effective_buffer_params_.full_x,
                                    &effective_buffer_params_.full_y,

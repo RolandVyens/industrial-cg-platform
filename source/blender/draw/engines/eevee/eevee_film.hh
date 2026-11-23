@@ -63,8 +63,10 @@ class Film {
   struct DepthState {
     /** Set to 0 if reverse Z is supported, 1 otherwise. */
     float clear_value = 1.0f;
-    /** Set to DRW_STATE_DEPTH_GREATER_EQUAL if reverse Z is supported, DRW_STATE_DEPTH_LESS_EQUAL
-     * otherwise. */
+    /**
+     * Set to DRW_STATE_DEPTH_GREATER_EQUAL if reverse Z is supported, DRW_STATE_DEPTH_LESS_EQUAL
+     * otherwise.
+     */
     DRWState test_state = DRW_STATE_DEPTH_LESS_EQUAL;
   } depth;
 
@@ -95,6 +97,8 @@ class Film {
   SwapChain<Texture, 2> combined_tx_;
   /** Weight buffers. Double buffered to allow updating it during accumulation. */
   SwapChain<Texture, 2> weight_tx_;
+  /** Denoising depth accumulation texture. Separated because using a different format. */
+  Texture denoising_depth_tx_;
 
   PassSimple accumulate_ps_ = {"Film.Accumulate"};
   PassSimple copy_ps_ = {"Film.Copy"};
@@ -111,6 +115,8 @@ class Film {
   PassCategory enabled_categories_ = PassCategory(0);
   bool use_reprojection_ = false;
   bool is_valid_render_extent_ = true;
+  /** Cached value for `render_extent_get`, to avoid computing on every call. */
+  int2 render_extent_shading_view_ = int2(-1);
 
  public:
   Film(Instance &inst, FilmData &data) : inst_(inst), data_(data) {};
@@ -143,8 +149,19 @@ class Film {
 
   void write_viewport_compositor_passes();
 
-  /** Returns shading views internal resolution. Includes overscan pixels. */
+  /**
+   * Returns the extent rendered by one shading view, including overscan: a square cubemap face
+   * for panoramic cameras and the rectangular render extent for all other cameras.
+   */
   int2 render_extent_get() const
+  {
+    return render_extent_shading_view_;
+  }
+  /**
+   * Returns the film's resolution.
+   * Includes overscan pixels.
+   */
+  int2 render_extent_original_get() const
   {
     return data_.render_extent;
   }
@@ -202,11 +219,14 @@ class Film {
     switch (pass_type) {
       case EEVEE_RENDER_PASS_DEPTH:
       case EEVEE_RENDER_PASS_MIST:
+      case EEVEE_RENDER_PASS_DENOISING_ROUGHNESS:
         return PASS_STORAGE_VALUE;
       case EEVEE_RENDER_PASS_CRYPTOMATTE_OBJECT:
       case EEVEE_RENDER_PASS_CRYPTOMATTE_ASSET:
       case EEVEE_RENDER_PASS_CRYPTOMATTE_MATERIAL:
         return PASS_STORAGE_CRYPTOMATTE;
+      case EEVEE_RENDER_PASS_DENOISING_DEPTH:
+        return PASS_STORAGE_DENOISING_DEPTH;
       default:
         return PASS_STORAGE_COLOR;
     }
@@ -263,6 +283,16 @@ class Film {
         return data_.cryptomatte_asset_id;
       case EEVEE_RENDER_PASS_CRYPTOMATTE_MATERIAL:
         return data_.cryptomatte_material_id;
+      case EEVEE_RENDER_PASS_DENOISING_DEPTH:
+        return data_.denoising_depth_id;
+      case EEVEE_RENDER_PASS_DENOISING_NORMAL:
+        return data_.denoising_normal_id;
+      case EEVEE_RENDER_PASS_DENOISING_ROUGHNESS:
+        return data_.denoising_roughness_id;
+      case EEVEE_RENDER_PASS_DENOISING_DIFFUSE_ALBEDO:
+        return data_.denoising_diffuse_albedo_id;
+      case EEVEE_RENDER_PASS_DENOISING_SPECULAR_ALBEDO:
+        return data_.denoising_specular_albedo_id;
       default:
         return -1;
     }
@@ -342,6 +372,21 @@ class Film {
         break;
       case EEVEE_RENDER_PASS_CRYPTOMATTE_MATERIAL:
         build_cryptomatte_passes(RE_PASSNAME_CRYPTOMATTE_MATERIAL);
+        break;
+      case EEVEE_RENDER_PASS_DENOISING_DEPTH:
+        result.append(RE_PASSNAME_DENOISING_DEPTH);
+        break;
+      case EEVEE_RENDER_PASS_DENOISING_NORMAL:
+        result.append(RE_PASSNAME_DENOISING_NORMAL);
+        break;
+      case EEVEE_RENDER_PASS_DENOISING_ROUGHNESS:
+        result.append(RE_PASSNAME_DENOISING_ROUGHNESS);
+        break;
+      case EEVEE_RENDER_PASS_DENOISING_DIFFUSE_ALBEDO:
+        result.append(RE_PASSNAME_DENOISING_DIFFUSE_ALBEDO);
+        break;
+      case EEVEE_RENDER_PASS_DENOISING_SPECULAR_ALBEDO:
+        result.append(RE_PASSNAME_DENOISING_SPECULAR_ALBEDO);
         break;
       default:
         BLI_assert(0);

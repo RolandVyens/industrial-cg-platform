@@ -27,8 +27,8 @@
 #include <Imath/half.h>
 #include <OpenEXR/openexr.h>
 
-#include "BLI_fileops.h"
-#include "BLI_task.h"
+#include "BLI_fileops.hh"
+#include "BLI_task_c.hh"
 #include "BLI_task.hh"
 #include "DNA_scene_types.h"
 

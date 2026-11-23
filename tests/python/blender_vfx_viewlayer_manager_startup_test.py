@@ -196,7 +196,7 @@ class ExtensionSelectorTests(unittest.TestCase):
 
 class NativeSelectorContractTests(unittest.TestCase):
     def test_view_layer_selector_contract_is_source_complete(self):
-        rna_types = (ROOT / "source/blender/makesrna/RNA_types.hh").read_text(encoding="utf-8")
+        rna_types = (ROOT / "source/blender/makesrna/intern/rna_internal_types.hh").read_text(encoding="utf-8")
         rna_scene = (
             ROOT / "source/blender/makesrna/intern/rna_scene.cc"
         ).read_text(encoding="utf-8")
@@ -204,12 +204,12 @@ class NativeSelectorContractTests(unittest.TestCase):
             ROOT / "source/blender/editors/interface/interface_utils.cc"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("PROP_COLLECTION_SEARCH_KEEP_ORDER", rna_types)
+        self.assertIn("PROP_INTERN_COLLECTION_SEARCH_KEEP_ORDER", rna_types)
         self.assertIn(
-            "RNA_def_property_flag(prop, PROP_COLLECTION_SEARCH_KEEP_ORDER);",
+            "RNA_def_property_collection_search_keep_order(prop);",
             rna_scene,
         )
-        self.assertIn("search_flag & PROP_COLLECTION_SEARCH_KEEP_ORDER", interface_utils)
+        self.assertIn("RNA_property_collection_search_keep_order(data->search_prop)", interface_utils)
 
 
 if __name__ == "__main__":

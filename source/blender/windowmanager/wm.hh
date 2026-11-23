@@ -10,7 +10,7 @@
 
 #include <optional>
 
-#include "BLI_compiler_attrs.h"
+#include "BLI_compiler_attrs.hh"
 
 #include "BLI_math_vector_types.hh"
 
@@ -26,18 +26,6 @@ struct wmTimer;
 struct wmWindow;
 struct wmWindowManager;
 struct Main;
-
-struct wmPaintCursor {
-  wmPaintCursor *next, *prev;
-
-  void *customdata;
-
-  bool (*poll)(bContext *C);
-  void (*draw)(bContext *C, const int2 &xy, const float2 &tilt, void *customdata);
-
-  short space_type;
-  short region_type;
-};
 
 /**
  * Cause a delayed #WM_exit()
@@ -55,6 +43,12 @@ extern void wm_close_and_free(bContext *C, wmWindowManager *);
  */
 extern void wm_add_default(Main *bmain, bContext *C);
 extern void wm_clear_default_size(bContext *C);
+
+/**
+ * On startup, open the last project, before reading the startup file.
+ * \return true if a project was opened.
+ */
+bool wm_init_last_project_on_startup(Main *bmain);
 
 /* Register to window-manager for redo or macro. */
 

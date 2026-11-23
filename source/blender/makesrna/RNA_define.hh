@@ -84,8 +84,8 @@ void RNA_def_struct_sdna_from(StructRNA *srna, const char *structname, const cha
  */
 void RNA_def_struct_name_property(StructRNA *srna, PropertyRNA *prop, bool allow_replace = false);
 void RNA_def_struct_nested(BlenderRNA *brna, StructRNA *srna, const char *structname);
-void RNA_def_struct_flag(StructRNA *srna, int flag);
-void RNA_def_struct_clear_flag(StructRNA *srna, int flag);
+void RNA_def_struct_flag(StructRNA *srna, StructFlag flag);
+void RNA_def_struct_clear_flag(StructRNA *srna, StructFlag flag);
 void RNA_def_struct_property_tags(StructRNA *srna, const EnumPropertyItem *prop_tag_defines);
 void RNA_def_struct_refine_func(StructRNA *srna, const char *refine);
 void RNA_def_struct_idprops_func(StructRNA *srna, const char *idproperties);
@@ -457,6 +457,8 @@ void RNA_def_property_collection_sdna(PropertyRNA *prop,
                                       const char *lengthpropname);
 
 void RNA_def_property_flag(PropertyRNA *prop, PropertyFlag flag);
+/** Keep initial collection-search results in source order. Only valid for collections. */
+void RNA_def_property_collection_search_keep_order(PropertyRNA *prop);
 void RNA_def_property_clear_flag(PropertyRNA *prop, PropertyFlag flag);
 void RNA_def_property_override_flag(PropertyRNA *prop, PropertyOverrideFlag flag);
 void RNA_def_property_override_clear_flag(PropertyRNA *prop, PropertyOverrideFlag flag);
@@ -510,6 +512,14 @@ void RNA_def_property_ui_text(PropertyRNA *prop, const char *name, const char *d
 void RNA_def_property_ui_name_func(PropertyRNA *prop, const char *name_func);
 void RNA_def_property_ui_description_func(PropertyRNA *prop, const char *description_func);
 
+/**
+ * Mark a property as deprecated.
+ *
+ * See #DeprecatedRNA for details.
+ *
+ * \note The version values represent major, minor versions (sub-version isn't supported).
+ * Compatible with #Main::versionfile (e.g. `502` for `v5.2`).
+ */
 void RNA_def_property_deprecated(PropertyRNA *prop,
                                  const char *note,
                                  short version,
@@ -677,7 +687,7 @@ FunctionRNA *RNA_def_function_runtime(StructRNA *srna, const char *identifier, C
  */
 void RNA_def_function_return(FunctionRNA *func, PropertyRNA *ret);
 void RNA_def_function_output(FunctionRNA *func, PropertyRNA *ret);
-void RNA_def_function_flag(FunctionRNA *func, int flag);
+void RNA_def_function_flag(FunctionRNA *func, FunctionFlag flag);
 void RNA_def_function_ui_description(FunctionRNA *func, const char *description);
 
 void RNA_def_parameter_flags(PropertyRNA *prop,

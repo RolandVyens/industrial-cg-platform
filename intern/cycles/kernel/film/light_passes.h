@@ -190,7 +190,9 @@ ccl_device_inline void deep_compact_capture_surface(KernelGlobals kg,
   p.camera = index;
   p.ordinal = ray.next_ordinal;
   p.kind = h > 0 ? DEEP_COMPACT_HOLDOUT : DEEP_COMPACT_SURFACE;
-  p.group = sd->flag;
+  p.group = uint32_t(sd->shader_flag) |
+            ((sd->runtime_flag & SR_BACKFACING) ? DEEP_COMPACT_SURFACE_BACKFACING : 0u) |
+            ((sd->runtime_flag & SR_RAY_PORTAL) ? DEEP_COMPACT_SURFACE_RAY_PORTAL : 0u);
   p.object = uint(sd->object); p.prim = uint(sd->prim); p.shader = uint(sd->shader);
   p.normal = deep_pack_geometric_normal(sd->Ng);
   deep_witness_point(kg, index, p.front, sd->ray_length, t, h);
@@ -1192,7 +1194,17 @@ ccl_device_inline void film_write_combined_pass(KernelGlobals kg,
 
   if (kernel_data.film.light_pass_flag & PASSMASK(COMBINED)) {
 #if __DEEP_BOUNDED_POLICY__ == 3
-    deep_bounded_write_rgb(kg, bounded_source, contribution);
+    if (bounded_source.terminal_fraction > 0.0f) {
+      const float fraction = bounded_source.terminal_fraction;
+      deep_bounded_write_rgb(kg, bounded_source, contribution * (1.0f - fraction));
+      const DeepBoundedFilmSource terminal = {
+          deep_bounded_source(deep_bounded_slot(bounded_source.source), DeepBoundedSourceKind::POINT),
+          DEEP_BOUNDED_WORLD_TERMINAL};
+      deep_bounded_write_rgb(kg, terminal, contribution * fraction);
+    }
+    else {
+      deep_bounded_write_rgb(kg, bounded_source, contribution);
+    }
 #endif
     film_write_pass_spectrum(buffer + kernel_data.film.pass_combined, contribution);
   }
@@ -1900,7 +1912,7 @@ ccl_device_inline void film_write_volume_emission(
     const uint32_t deep_native_expression_head = DEEP_NATIVE_INVALID_INDEX,
     const bool deep_discard_emission = false
 #if __DEEP_BOUNDED_POLICY__ == 3
-    , const bool bounded_permit = false
+    , const bool bounded_permit = false, const float bounded_terminal_fraction = 0.0f
 #endif
     )
 {
@@ -1996,6 +2008,10 @@ ccl_device_inline void film_write_volume_emission(
   const int sample = INTEGRATOR_STATE(state, path, sample);
   const uint32_t pixel_index = INTEGRATOR_STATE(state, path, render_pixel_index);
 
+#if __DEEP_BOUNDED_POLICY__ == 3
+  auto bounded_source = deep_bounded_film_source(kg, state, bounded_permit);
+  bounded_source.terminal_fraction = bounded_permit ? bounded_terminal_fraction : 0.0f;
+#endif
   /* Write deep sample if depth is valid (>= 0). */
   film_write_combined_pass(kg,
                            path_visibility,
@@ -2007,7 +2023,7 @@ ccl_device_inline void film_write_volume_emission(
                            pixel_index
 #if __DEEP_BOUNDED_POLICY__ == 3
                            ,
-                           deep_bounded_film_source(kg, state, bounded_permit)
+                           bounded_source
 #endif
   );
   film_write_emission_or_background_pass(

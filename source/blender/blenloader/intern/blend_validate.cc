@@ -13,10 +13,10 @@
 
 #include "CLG_log.h"
 
-#include "BLI_listbase.h"
-#include "BLI_utildefines.h"
+#include "BLI_listbase.hh"
+#include "BLI_utildefines.hh"
 
-#include "BLI_linklist.h"
+#include "BLI_linklist.hh"
 
 #include "DNA_collection_types.h"
 #include "DNA_key_types.h"
@@ -53,9 +53,7 @@ bool BLO_main_validate_libraries(Main *bmain, ReportList *reports)
   MainListsArray lbarray = BKE_main_lists_get(*bmain);
   int i = lbarray.size();
   while (i--) {
-    for (ID *id = static_cast<ID *>(lbarray[i]->first); id != nullptr;
-         id = static_cast<ID *>(id->next))
-    {
+    for (ID *id = lbarray[i]->first(); id != nullptr; id = static_cast<ID *>(id->next)) {
       if (ID_IS_LINKED(id)) {
         is_valid = false;
         BKE_reportf(reports,
@@ -94,12 +92,12 @@ bool BLO_main_validate_libraries(Main *bmain, ReportList *reports)
     lbarray = BKE_main_lists_get(*curmain);
     i = lbarray.size();
     while (i--) {
-      ID *id = static_cast<ID *>(lbarray[i]->first);
+      ID *id = lbarray[i]->first();
       if (id == nullptr) {
         continue;
       }
 
-      if (GS(id->name) == ID_LI) {
+      if (id->id_type() == ID_LI) {
         is_valid = false;
         BKE_reportf(reports,
                     RPT_ERROR,
@@ -110,7 +108,7 @@ bool BLO_main_validate_libraries(Main *bmain, ReportList *reports)
       }
 
       int totnames = 0;
-      LinkNode *names = BLO_blendhandle_get_datablock_names(bh, GS(id->name), false, &totnames);
+      LinkNode *names = BLO_blendhandle_get_datablock_names(bh, id->id_type(), false, &totnames);
       for (; id != nullptr; id = static_cast<ID *>(id->next)) {
         if (!ID_IS_LINKED(id)) {
           is_valid = false;
@@ -170,7 +168,7 @@ bool BLO_main_validate_shapekeys(Main *bmain, ReportList *reports)
 
   FOREACH_MAIN_LISTBASE_BEGIN (bmain, lb) {
     FOREACH_MAIN_LISTBASE_ID_BEGIN (lb, id) {
-      if (!BKE_key_idtype_support(GS(id->name))) {
+      if (!BKE_key_idtype_support(id->id_type())) {
         break;
       }
       if (!ID_IS_LINKED(id)) {
@@ -206,6 +204,7 @@ bool BLO_main_validate_shapekeys(Main *bmain, ReportList *reports)
                 "ShapeKey %s has an invalid 'from' pointer (%p), it will be deleted",
                 shapekey.id.name,
                 shapekey.from);
+    is_valid = false;
 
     BKE_id_delete(bmain,
                   &shapekey,
@@ -235,7 +234,7 @@ void BLO_main_validate_embedded_liboverrides(Main *bmain, ReportList * /*reports
       }
     }
 
-    if (GS(id_iter->name) == ID_SCE) {
+    if (id_iter->id_type() == ID_SCE) {
       Scene *scene = reinterpret_cast<Scene *>(id_iter);
       if (scene->master_collection &&
           (scene->master_collection->id.flag & ID_FLAG_EMBEDDED_DATA_LIB_OVERRIDE))
@@ -267,7 +266,7 @@ void BLO_main_validate_embedded_flag(Main *bmain, ReportList * /*reports*/)
       }
     }
 
-    if (GS(id_iter->name) == ID_SCE) {
+    if (id_iter->id_type() == ID_SCE) {
       Scene *scene = reinterpret_cast<Scene *>(id_iter);
       if (scene->master_collection &&
           (scene->master_collection->id.flag & ID_FLAG_EMBEDDED_DATA) == 0)

@@ -26,7 +26,6 @@ set(SRC_KERNEL_DEVICE_CPU_HEADERS
   deep_kernel_impl.h
   bvh.h
   compat.h
-  image.h
   globals.h
   kernel.h
   kernel_arch.h

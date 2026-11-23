@@ -19,7 +19,7 @@ bool BKE_autoexec_match(const char *path, bool canonicalize, bool strip_filename
 
 /**
  * Version of #BKE_autoexec_match which may be called
- * when auto-execution isn't enabled, used by the Python API.
+ * when auto-execution isn't enabled.
  */
 bool BKE_autoexec_match_unchecked(const char *path, bool canonicalize, bool strip_filename);
 

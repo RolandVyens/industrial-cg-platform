@@ -548,8 +548,9 @@ void ForwardPipeline::transparent_add(const Object *ob,
    * since this function is not called from PipelineModule::material_add. */
   inst_.pipelines.has_raycast |= GPU_material_flag_get(gpumat, GPU_MATFLAG_RAYCAST);
 
-  const bool bind_previous_layer = GPU_material_flag_get(gpumat, GPU_MATFLAG_SHADER_TO_RGBA) &&
-                                   GPU_material_flag_get(gpumat, GPU_MATFLAG_TRANSPARENT);
+  /* Must match the `use_forward_lighting && use_transparency` condition on previous_layer_hiz /
+   * previous_layer_radiance. */
+  const bool bind_previous_layer = GPU_material_flag_get(gpumat, GPU_MATFLAG_TRANSPARENT);
 
   /* Transparent needs to use one sub pass per object to support reordering.
    * NOTE: Pre-pass needs to be created first in order to be sorted first. */
@@ -806,10 +807,15 @@ bool DeferredLayer::do_merge_direct_indirect_eval(const Instance &inst)
   return !inst.raytracing.use_raytracing();
 }
 
+bool DeferredLayer::do_modify_radiance(const Instance &inst)
+{
+  return inst.sampling.use_clamp_direct() || inst.sampling.use_clamp_indirect() ||
+         inst.sampling.use_direct_scale() || inst.sampling.use_indirect_scale();
+}
+
 bool DeferredLayer::do_split_direct_indirect_radiance(const Instance &inst)
 {
-  return do_merge_direct_indirect_eval(inst) &&
-         (inst.sampling.use_clamp_direct() || inst.sampling.use_clamp_indirect());
+  return do_merge_direct_indirect_eval(inst) && do_modify_radiance(inst);
 }
 
 void DeferredLayer::end_sync(bool is_first_pass,
@@ -825,15 +831,11 @@ void DeferredLayer::end_sync(bool is_first_pass,
   const bool has_reflect_closure = (closure_bits_ & (CLOSURE_REFLECTION | CLOSURE_DIFFUSE));
   const bool has_transparent_shader_to_rgba = (closure_bits_ & CLOSURE_TRANSPARENCY) &&
                                               (closure_bits_ & CLOSURE_SHADER_TO_RGBA);
-  const bool use_direct_scale = inst_.sampling.use_direct_scale();
-  const bool use_indirect_scale = inst_.sampling.use_indirect_scale();
   use_raytracing_ = (has_transmit_closure || has_reflect_closure) &&
                     inst_.raytracing.use_raytracing();
-  use_clamp_direct_ = inst_.sampling.use_clamp_direct();
-  use_clamp_indirect_ = inst_.sampling.use_clamp_indirect();
-  /* Is the radiance split for the combined pass. */
-  use_split_radiance_ = use_raytracing_ || use_clamp_direct_ || use_clamp_indirect_ ||
-                        use_indirect_scale || use_direct_scale;
+  /* Is the radiance split for the combined pass. Must match what the light evaluation writes:
+   * either ray-tracing writes the indirect radiance, or the light-probe evaluation does. */
+  use_split_radiance_ = use_raytracing_ || do_split_direct_indirect_radiance(inst_);
 
   /* The first pass will never have any surfaces behind it. Nothing is refracted except the
    * environment. So in this case, disable tracing and fallback to probe. */
@@ -856,7 +858,8 @@ void DeferredLayer::end_sync(bool is_first_pass,
 
     /* Add the stencil classification step at the end of the GBuffer pass. */
     {
-      gpu::Shader *sh = inst_.shaders.static_shader_get(DEFERRED_TILE_CLASSIFY);
+      gpu::Shader *sh = inst_.shaders.static_shader_get(
+          GPU_stencil_export_support() ? DEFERRED_TILE_CLASSIFY : DEFERRED_TILE_CLASSIFY_FALLBACK);
       PassMain::Sub &sub = gbuffer_ps_.sub("StencilClassify");
       sub.subpass_transition(GPU_ATTACHMENT_WRITE, /* Needed for depth test. */
                              {GPU_ATTACHMENT_IGNORE,
@@ -865,7 +868,7 @@ void DeferredLayer::end_sync(bool is_first_pass,
                               GPU_ATTACHMENT_IGNORE,
                               GPU_ATTACHMENT_IGNORE});
       sub.shader_set(sh);
-      if (GPU_stencil_clasify_buffer_workaround()) {
+      if (GPU_stencil_classify_buffer_workaround()) {
         /* Binding any buffer to satisfy the binding. The buffer is not actually used. */
         sub.bind_ssbo("dummy_workaround_buf", &inst_.film.aovs_info);
       }
@@ -950,9 +953,7 @@ void DeferredLayer::end_sync(bool is_first_pass,
               eShaderType(DEFERRED_LIGHT_SINGLE + i));
           set_specialization_constants(sub, sh, false);
           sub.shader_set(sh);
-          sub.bind_image("direct_radiance_1_img", &direct_radiance_txs_[0]);
-          sub.bind_image("direct_radiance_2_img", &direct_radiance_txs_[1]);
-          sub.bind_image("direct_radiance_3_img", &direct_radiance_txs_[2]);
+          sub.bind_image("direct_radiance_imgs", &direct_radiance_txs_);
           sub.bind_image("indirect_radiance_1_img", &indirect_result_.closures[0]);
           sub.bind_image("indirect_radiance_2_img", &indirect_result_.closures[1]);
           sub.bind_image("indirect_radiance_3_img", &indirect_result_.closures[2]);
@@ -996,17 +997,31 @@ void DeferredLayer::end_sync(bool is_first_pass,
                                    (rbuf_data.specular_color_id != -1));
       pass.specialize_constant(sh, "use_split_radiance", use_split_radiance_);
       pass.specialize_constant(
-          sh, "use_radiance_feedback", use_feedback_output_ && use_clamp_direct_);
+          sh, "use_radiance_feedback", use_feedback_output_ && do_modify_radiance(inst_));
       pass.specialize_constant(sh, "render_pass_normal_enabled", rbuf_data.normal_id != -1);
       pass.specialize_constant(sh, "render_pass_position_enabled", rbuf_data.position_id != -1);
+      pass.specialize_constant(
+          sh, "render_passes_denoising_depth_enabled", rbuf_data.denoising_depth_id != -1);
+      pass.specialize_constant(
+          sh, "render_passes_denoising_normal_enabled", rbuf_data.denoising_normal_id != -1);
+      pass.specialize_constant(
+          sh, "render_passes_denoising_roughness_enabled", rbuf_data.denoising_roughness_id != -1);
+      pass.specialize_constant(sh,
+                               "render_passes_denoising_diffuse_albedo_enabled",
+                               rbuf_data.denoising_diffuse_albedo_id != -1);
+      pass.specialize_constant(sh,
+                               "render_passes_denoising_specular_albedo_enabled",
+                               rbuf_data.denoising_specular_albedo_id != -1);
+      pass.specialize_constant(sh,
+                               "use_albedo_roughness_weighting",
+                               (inst_.view_layer->eevee.denoising_pass_flags &
+                                EEVEE_DENOISING_PASS_USE_ALBEDO_ROUGHNESS_WEIGHTING) != 0);
       pass.shader_set(sh);
       /* Use stencil test to reject pixels not written by this layer. */
       pass.state_set(DRW_STATE_WRITE_COLOR | DRW_STATE_BLEND_ADD_FULL | DRW_STATE_STENCIL_NEQUAL);
       /* Render where stencil is not 0. */
       pass.state_stencil(0x0u, 0x0u, uint8_t(StencilBits::HEADER_BITS));
-      pass.bind_texture("direct_radiance_1_tx", &direct_radiance_txs_[0]);
-      pass.bind_texture("direct_radiance_2_tx", &direct_radiance_txs_[1]);
-      pass.bind_texture("direct_radiance_3_tx", &direct_radiance_txs_[2]);
+      pass.bind_texture("direct_radiance_txs", &direct_radiance_txs_);
       pass.bind_texture("indirect_radiance_1_tx", &indirect_result_.closures[0]);
       pass.bind_texture("indirect_radiance_2_tx", &indirect_result_.closures[1]);
       pass.bind_texture("indirect_radiance_3_tx", &indirect_result_.closures[2]);
@@ -1101,11 +1116,10 @@ gpu::Texture *DeferredLayer::render(View &render_view,
   inst_.gbuffer.bind(gbuffer_fb);
   inst_.manager->submit(gbuffer_ps_, render_view);
 
-  for (int i = 0; i < ARRAY_SIZE(direct_radiance_txs_); i++) {
-    direct_radiance_txs_[i].acquire_2d((closure_count_ > i) ? extent : int2(1),
-                                       gpu::TextureFormat::DEFERRED_RADIANCE_FORMAT,
-                                       usage_rw);
-  }
+  /* Only three layers of closures are ever written,. */
+  direct_radiance_txs_.acquire_2d_array(
+      extent, min_ii(closure_count_, 3), gpu::TextureFormat::DEFERRED_RADIANCE_FORMAT, usage_rw);
+  direct_radiance_txs_.ensure_layer_views();
 
   if (use_raytracing_) {
     indirect_result_ = inst_.raytracing.render(
@@ -1122,11 +1136,13 @@ gpu::Texture *DeferredLayer::render(View &render_view,
   inst_.manager->submit(eval_light_ps_, render_view);
 
   inst_.subsurface.render(
-      direct_radiance_txs_[0], indirect_result_.closures[0], closure_bits_, render_view);
+      direct_radiance_txs_, indirect_result_.closures[0], closure_bits_, render_view);
 
   radiance_feedback_tx_ = rt_buffer.feedback_ensure(!use_feedback_output_, extent);
 
-  if (use_feedback_output_ && use_clamp_direct_) {
+  const bool modify_radiance = do_modify_radiance(inst_);
+
+  if (use_feedback_output_ && modify_radiance) {
     /* We need to do a copy before the combine pass (otherwise we have a dependency issue) to save
      * the emission and the previous layer's radiance. */
     GPU_texture_copy(radiance_feedback_tx_, rb.combined_tx);
@@ -1135,16 +1151,13 @@ gpu::Texture *DeferredLayer::render(View &render_view,
   GPU_framebuffer_bind(combined_fb);
   inst_.manager->submit(combine_ps_, render_view);
 
-  if (use_feedback_output_ && !use_clamp_direct_) {
+  if (use_feedback_output_ && !modify_radiance) {
     /* We skip writing the radiance during the combine pass. Do a simple fast copy. */
     GPU_texture_copy(radiance_feedback_tx_, rb.combined_tx);
   }
 
   indirect_result_.release();
-
-  for (int i = 0; i < ARRAY_SIZE(direct_radiance_txs_); i++) {
-    direct_radiance_txs_[i].release();
-  }
+  direct_radiance_txs_.release();
 
   inst_.pipelines.deferred.debug_draw(render_view, combined_fb);
 
@@ -1717,9 +1730,15 @@ void CapturePipeline::sync()
   surface_ps_.bind_resources(inst_.uniform_data);
 }
 
-PassMain::Sub *CapturePipeline::surface_material_add(blender::Material *blender_mat,
+PassMain::Sub *CapturePipeline::surface_material_add(Object *ob,
+                                                     blender::Material *blender_mat,
                                                      GPUMaterial *gpumat)
 {
+  if (pointcloud_is_gsplat(ob)) {
+    /* GSplat objects are not currently supported by volume probe captures, so we do not sync. */
+    return nullptr;
+  }
+
   PassMain::Sub &sub_pass = surface_ps_.sub(GPU_material_get_name(gpumat));
   GPUPass *gpupass = GPU_material_get_pass(gpumat);
   sub_pass.shader_set(GPU_pass_shader_get(gpupass));

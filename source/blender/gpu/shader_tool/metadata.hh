@@ -74,11 +74,18 @@ enum Type : uint64_t {
   float4 = hash("float4"),
   float3x3 = hash("float3x3"),
   float4x4 = hash("float4x4"),
+  int1 = hash("int"),
+  int2 = hash("int2"),
+  int3 = hash("int3"),
+  int4 = hash("int4"),
+  bool1 = hash("bool"),
   sampler1DArray = hash("sampler1DArray"),
   sampler2DArray = hash("sampler2DArray"),
   sampler2D = hash("sampler2D"),
   sampler3D = hash("sampler3D"),
   Closure = hash("Closure"),
+  KernelGlobals = hash("KernelGlobals"),
+  ShadingData = hash("ShadingData"),
 };
 
 struct ArgumentFormat {
@@ -111,8 +118,6 @@ struct ParsedResource {
 
   std::string res_type;
   /** For images, storage, uniforms and samplers. */
-  std::string res_frequency = "PASS";
-  /** For images, storage, uniforms and samplers. */
   std::string res_slot;
   /** For images & storage. */
   std::string res_qualifier;
@@ -122,6 +127,8 @@ struct ParsedResource {
   std::string res_format;
   /** Optional condition to enable this resource. */
   std::string res_condition;
+  /** For images, storage, uniforms and samplers. */
+  std::string res_frequency = "PASS";
 
   std::string serialize() const;
 };
@@ -196,6 +203,9 @@ struct ParsedVertInput {
   std::string var_name;
 
   std::string slot;
+
+  /** Optional condition to enable this resource. */
+  std::string res_condition;
 
   std::string serialize() const;
 };
@@ -276,6 +286,7 @@ struct Source {
   std::vector<VertexInputs> vertex_inputs;
   std::vector<Symbol> symbol_table;
   std::vector<TemplateDefinition> template_definitions;
+  std::vector<std::string> visited_files;
 
   /* Serialize Metadata for this source file. */
   std::string serialize(const std::string &function_name) const;

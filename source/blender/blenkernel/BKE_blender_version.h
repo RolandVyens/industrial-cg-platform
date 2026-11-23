@@ -20,21 +20,22 @@ namespace blender {
  */
 
 /** Blender major and minor version. */
-#define BLENDER_VERSION 502
+#define BLENDER_VERSION 503
 /** Blender patch version for bug-fix releases. */
-#define BLENDER_VERSION_PATCH 4
+#define BLENDER_VERSION_PATCH 0
 /** Blender release cycle stage: alpha/beta/rc/release. */
 #define BLENDER_VERSION_CYCLE release
 /** Blender release type suffix. LTS or blank. */
-#define BLENDER_VERSION_SUFFIX LTS
-/** User-facing release date suffix appended to branded release builds. */
+#define BLENDER_VERSION_SUFFIX
+
+/** User-facing release date suffix; intentionally empty. */
 #define BLENDER_VERSION_DATE_SUFFIX ""
-/** Branch brand suffix appended to Goo-style user-facing version strings. */
+/** Product suffix for human-facing displays. */
 #define BLENDER_VERSION_BRAND_SUFFIX "Industrial CG Platform"
 
 /* Blender file format version. */
 #define BLENDER_FILE_VERSION BLENDER_VERSION
-#define BLENDER_FILE_SUBVERSION 45
+#define BLENDER_FILE_SUBVERSION 31
 
 /* Minimum Blender version that supports reading file written with the current
  * version. Older Blender versions will test this and cancel loading the file, showing a warning to
@@ -57,8 +58,8 @@ const char *BKE_blender_product_version_string();
 
 /** Format a product display version with a caller-provided brand translation. */
 void BKE_blender_product_version_string_from_brand(char *str_buff,
-                                                   size_t str_buff_maxncpy,
-                                                   const char *brand);
+                                                 size_t str_buff_maxncpy,
+                                                 const char *brand);
 
 /** Returns true when version cycle is alpha, otherwise (beta, rc) returns false. */
 bool BKE_blender_version_is_alpha();

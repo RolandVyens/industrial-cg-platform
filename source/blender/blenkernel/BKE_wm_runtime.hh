@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "BKE_report.hh"
 
 #include "DNA_windowmanager_types.h"
@@ -130,6 +132,22 @@ struct WindowManagerRuntime {
   ~WindowManagerRuntime();
 };
 
+/**
+ * The kind of UI element that began the window's IME session, see #WindowRuntime::ime_owner.
+ *
+ * Popups store the type of session with the element that began them.
+ * Avoids buttons/regions acting on an IME popup it doesn't own.
+ */
+enum class wmIMEOwnerType : int8_t {
+  /**
+   * A region's `cursor_ime` callback (via #WM_window_IME_region_refresh),
+   * always the screen's active region.
+   */
+  Region,
+  /** A text button being edited (which may be in a popup floating over an unrelated region). */
+  Button,
+};
+
 struct WindowRuntime {
   /** All events #wmEvent (ghost level events were handled). */
   ListBaseT<wmEvent> event_queue = {nullptr, nullptr};
@@ -139,7 +157,36 @@ struct WindowRuntime {
    * Only used when `WITH_INPUT_IME` is defined.
    */
   wmIMEData *ime_data = nullptr;
+  /**
+   * The UI element this session was begun with.
+   * Set by #WM_window_IME_begin, cleared by #WM_window_IME_end.
+   */
+  std::optional<wmIMEOwnerType> ime_owner;
+  /**
+   * True while the user is composing text via an IME
+   * (set by #WM_IME_COMPOSITE_START, cleared by #WM_IME_COMPOSITE_END or #WM_window_IME_end).
+   *
+   * Operators
+   * =========
+   *
+   * When true, text input operators that support IME are skipped (returning canceled).
+   * This is needed because keys that edit the composition (backspace, enter, arrow-keys... etc)
+   * are consumed by the IME but *also* pass-through as regular key events,
+   * which the key-map handles as usual: a backspace that removes a pre-edit
+   * character would also delete committed text.
+   * Theoretically these events could be filtered out before being handled,
+   * however only the IME knows which keys it consumes and this isn't exposed by any API,
+   * so operators must skip them while composing.
+   * Canceling instead of passing the event through prevents other key-map items from matching it.
+   *
+   * See:
+   * - #WM_operator_IME_edit_maybe
+   * - #WM_operator_IME_insert_maybe
+   */
   bool ime_data_is_composing = false;
+
+  /* Optionally store the size and position using this key in the user's recents file. */
+  std::string recents_storage_key = {};
 
   /** Don't want to include ghost.h stuff. */
   void *ghostwin = nullptr;

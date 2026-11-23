@@ -180,6 +180,7 @@ class Scene : public NodeOwner {
   Shader *default_light;
   Shader *default_background;
   Shader *default_empty;
+  Shader *default_gsplat;
 
   /* device */
   Device *device;
@@ -267,7 +268,7 @@ class Scene : public NodeOwner {
   void free_memory(bool final);
 
   bool kernels_loaded;
-  uint loaded_kernel_features;
+  uint64_t loaded_kernel_features;
   uint loaded_deep_bounded_policy = 0;
 
   void update_kernel_features();

@@ -26,6 +26,14 @@ enum DeepCompactRayFlag : uint32_t {
   DEEP_COMPACT_EXTINCTION_DONE = 256u,
 };
 
+/* Surface continuation needs these two runtime bits alongside native static shader flags.
+ * Keep the 64-byte record: native static flags begin at bit 12; low bits are free.
+ * Volume records continue to use group as their material grouping identifier. */
+enum DeepCompactSurfaceFlag : uint32_t {
+  DEEP_COMPACT_SURFACE_BACKFACING = 1u,
+  DEEP_COMPACT_SURFACE_RAY_PORTAL = 2u,
+};
+
 /* Scalar-only production layout. Native colour is never reserved in this record.
  * q is a fitting proxy; independently inherited log endpoints own the tail. */
 struct DeepCompactPrimitive {

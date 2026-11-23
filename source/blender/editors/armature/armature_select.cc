@@ -11,10 +11,10 @@
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
-#include "BLI_listbase.h"
-#include "BLI_math_matrix.h"
-#include "BLI_math_vector.h"
-#include "BLI_rect.h"
+#include "BLI_listbase.hh"
+#include "BLI_math_matrix_c.hh"
+#include "BLI_math_vector_c.hh"
+#include "BLI_rect.hh"
 #include "BLI_string_utils.hh"
 
 #include "BKE_action.hh"
@@ -60,12 +60,12 @@ namespace blender {
 
 bool ED_armature_selectresult_is_bone(const GPUSelectResult &hit_result)
 {
-  /* A selectable bone should have a "sub_object_id" been encodedin the select id. */
+  /* A selectable bone should have a "sub_object_id" been encoded in the select id. */
   if ((hit_result.id & 0xFFFF0000) == 0) {
     return false;
   }
-  /* A selectable bone should be dawn with either BONESEL_ROOT, BONESEL_TIP or BONESEL_BONE encded
-   * in the select id. */
+  /* A selectable bone should be dawn with either:
+   * #BONESEL_ROOT, #BONESEL_TIP or #BONESEL_BONE encoded in the select id. */
   if ((hit_result.id & BONESEL_ANY) == 0) {
     return false;
   }

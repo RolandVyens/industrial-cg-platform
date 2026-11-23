@@ -133,10 +133,12 @@ ccl_device_forceinline void integrator_path_cache_miss_sorted(IntegratorState st
   /* Queued kernel and counter is unmodified, so it will be re-executed. */
   kernel_integrator_state.queue_counter->cache_miss = true;
 
-#  if !defined(__KERNEL_LOCAL_ATOMIC_SORT__)
+  if (!kernel_integrator_state.sort_key_counter[current_kernel]) {
+    return;
+  }
+
   const int key_ = INTEGRATOR_STATE_WRITE(state, path, shader_sort_key);
   atomic_fetch_and_add_uint32(&kernel_integrator_state.sort_key_counter[current_kernel][key_], 1);
-#  endif
 }
 
 ccl_device_forceinline IntegratorShadowState integrator_shadow_path_init(
@@ -222,11 +224,9 @@ ccl_device_forceinline void integrator_path_init_sorted(KernelGlobals kg,
   INTEGRATOR_STATE_WRITE(state, path, queued_kernel) = next_kernel;
   INTEGRATOR_STATE_WRITE(state, path, shader_sort_key) = key_;
 
-#  if defined(__KERNEL_LOCAL_ATOMIC_SORT__)
   if (!kernel_integrator_state.sort_key_counter[next_kernel]) {
     return;
   }
-#  endif
 
   atomic_fetch_and_add_uint32(&kernel_integrator_state.sort_key_counter[next_kernel][key_], 1);
 }
@@ -244,11 +244,9 @@ ccl_device_forceinline void integrator_path_next_sorted(KernelGlobals kg,
   INTEGRATOR_STATE_WRITE(state, path, queued_kernel) = next_kernel;
   INTEGRATOR_STATE_WRITE(state, path, shader_sort_key) = key_;
 
-#  if defined(__KERNEL_LOCAL_ATOMIC_SORT__)
   if (!kernel_integrator_state.sort_key_counter[next_kernel]) {
     return;
   }
-#  endif
 
   atomic_fetch_and_add_uint32(&kernel_integrator_state.sort_key_counter[next_kernel][key_], 1);
 }

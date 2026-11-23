@@ -195,6 +195,52 @@ TEST(DeepBoundedMerge, MatureVolumePreservesMassAndFirstMoment)
   EXPECT_NEAR(output.moment(n), 4.4, 1e-6);
 }
 
+TEST(DeepBoundedMerge, WorldTerminalSurvivesCapacityAndZeroTolerance)
+{
+  std::array<DeepBoundedRecord<true>, 35> input{};
+  for (unsigned i = 0; i < 33; ++i) {
+    auto &r = input[i];
+    r.z = r.z_back = float(i + 1);
+    r.alpha = 0.025f;
+    r.object = i;
+  }
+  for (unsigned i = 33; i < input.size(); ++i) {
+    auto &r = input[i];
+    r.z = r.z_back = DEEP_BOUNDED_WORLD_TERMINAL;
+    r.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
+    r.shader = 1;
+    r.rgb[0] = float(i - 32);
+  }
+  MergeOutput<true> output;
+  const auto count = deep_bounded_reduce_mature(input.data(), input.size(), output.planes(),
+                                                 0, 1, DEEP_BOUNDED_K, {});
+  ASSERT_GT(count, 1u);
+  ASSERT_LE(count, DEEP_BOUNDED_K);
+  EXPECT_NEAR(output.mass(count), 33 * 0.025, 1e-6);
+  EXPECT_LT(output.z[count - 2], DEEP_BOUNDED_WORLD_TERMINAL);
+  EXPECT_EQ(output.z[count - 1], DEEP_BOUNDED_WORLD_TERMINAL);
+  EXPECT_EQ(output.z_back[count - 1], DEEP_BOUNDED_WORLD_TERMINAL);
+  EXPECT_EQ(output.shader[count - 1], 1u);
+  EXPECT_FLOAT_EQ(output.rgba[count - 1].r, 3.0f);
+  EXPECT_FLOAT_EQ(output.rgba[count - 1].a, 0.0f);
+}
+
+TEST(DeepBoundedMerge, TerminalUsesFullIdentityWhenAnotherPointSharesItsDepth)
+{
+  MergeOutput<true> output;
+  auto planes = output.planes();
+  DeepBoundedRecord<true> record = {};
+  record.z = record.z_back = DEEP_BOUNDED_WORLD_TERMINAL;
+  record.object = 3 | DEEP_BOUNDED_ELIGIBLE;
+  record.shader = 1;
+  deep_bounded_store(planes, 0, record);
+  record.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
+  deep_bounded_store(planes, 1, record);
+  EXPECT_EQ(deep_bounded_rgb_source_index_ordered(
+                planes, 0, 1, 2, DeepBoundedSourceKind::POINT, record.z, true),
+            1u);
+}
+
 TEST(DeepBoundedMerge, RawVolumeKeepsPendingAnchorFront)
 {
   DeepBoundedRecord<false> input[] = {volume(10, 0.2f), volume(12, 0.2f)};

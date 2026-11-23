@@ -19,7 +19,7 @@
 #include "DNA_scene_types.h"
 
 #include "BLI_path_utils.hh"
-#include "BLI_tempfile.h"
+#include "BLI_tempfile.hh"
 #include "BLI_vector.hh"
 
 #include "IMB_deep_sample.hh"

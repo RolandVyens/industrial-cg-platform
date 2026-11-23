@@ -80,8 +80,8 @@
 #endif
 
 #ifndef KERNEL_STUB
-#  include "kernel/device/cpu/image.h"
 #  include "kernel/globals.h"
+#  include "kernel/util/image.h"
 #  include "kernel/integrator/state.h"
 
 /* Arithmetic is shared verbatim; its implementation types are private to

@@ -57,6 +57,9 @@ struct Light : public LightData, NonCopyable {
   ShadowDirectional *directional = nullptr;
   ShadowPunctual *punctual = nullptr;
 
+  /** Used by shadow sync. */
+  uint2 shadow_set_membership = uint2(0);
+
   Light()
   {
     /* Avoid valgrind warning. */
@@ -72,6 +75,7 @@ struct Light : public LightData, NonCopyable {
     this->used = other.used;
     this->directional = other.directional;
     this->punctual = other.punctual;
+    this->shadow_set_membership = other.shadow_set_membership;
     other.directional = nullptr;
     other.punctual = nullptr;
   }
@@ -87,7 +91,8 @@ struct Light : public LightData, NonCopyable {
             float4x4 object_to_world,
             char visibility_flag,
             const blender::Light *la,
-            const LightLinking *light_linking,
+            uint64_t light_set_membership,
+            uint64_t shadow_set_membership,
             float threshold);
 
   void shadow_ensure(ShadowModule &shadows);
@@ -133,7 +138,7 @@ class LightModule {
   /**
    * In order to treat the world sun lights the same way as regular lights,
    * an #ObjectKey needs to be associated to each of them.
-   * */
+   */
   ObjectKey world_sunlight_key_[WORLD_SUN_MAX] = {ObjectKey(WORLD_SUN_DIFFUSE),
                                                   ObjectKey(WORLD_SUN_GLOSSY)};
   /** Flat array sent to GPU, populated from light_map_. Source buffer for light culling. */

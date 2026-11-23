@@ -123,7 +123,9 @@ class ExrOverscanTests(unittest.TestCase):
         other.camera = scene.camera
 
         tree = bpy.data.node_groups.new("CrossSceneOverscan", "CompositorNodeTree")
-        scene.compositing_node_group = tree
+        effect = scene.compositor_effects.new("Cross-scene Overscan")
+        effect.node_group = tree
+        effect.enable_for_render = True
         source = tree.nodes.new("CompositorNodeRLayers")
         source.scene = other
         target = tree.nodes.new("CompositorNodeOutputFile")

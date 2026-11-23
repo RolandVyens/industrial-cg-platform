@@ -18,10 +18,10 @@
 
 #include "ED_screen.hh"
 
-#include "BLI_listbase.h"
-#include "BLI_string.h"
-#include "BLI_string_utf8.h"
-#include "BLI_utildefines.h"
+#include "BLI_listbase.hh"
+#include "BLI_string.hh"
+#include "BLI_string_utf8.hh"
+#include "BLI_utildefines.hh"
 
 #include "BLT_translation.hh"
 
@@ -50,7 +50,9 @@
 
 namespace blender::ui {
 
-/*************************** RNA Utilities ******************************/
+/* -------------------------------------------------------------------- */
+/** \name RNA Utilities
+ * \{ */
 
 Button *uiDefAutoButR(Block *block,
                       PointerRNA *ptr,
@@ -394,7 +396,11 @@ void button_func_identity_compare_set(Button *but, ButtonIdentityCompareFunc cmp
   but->identity_cmp_func = cmp_fn;
 }
 
-/* *** RNA collection search menu *** */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name RNA Collection Search Menu
+ * \{ */
 
 struct CollItemSearch {
   void *data;
@@ -427,7 +433,7 @@ static bool add_collection_search_item(CollItemSearch &cis,
                          cis.name,
                          cis.data,
                          cis.iconid,
-                         cis.has_sep_char ? int(BUT_HAS_SEP_CHAR) : 0,
+                         cis.has_sep_char ? int64_t(BUT_HAS_SEP_CHAR) : 0,
                          name_prefix_offset);
 }
 
@@ -436,9 +442,8 @@ void rna_collection_search_update_fn(
 {
   RNACollectionSearch *data = static_cast<RNACollectionSearch *>(arg);
   const int target_flag = RNA_property_flag(data->target_prop);
-  const int search_flag = data->search_prop ? RNA_property_flag(data->search_prop) : 0;
   const bool keep_initial_collection_order =
-      is_first && ((search_flag & PROP_COLLECTION_SEARCH_KEEP_ORDER) != 0);
+      is_first && data->search_prop && RNA_property_collection_search_keep_order(data->search_prop);
   const bool is_ptr_target = (RNA_property_type(data->target_prop) == PROP_POINTER);
   /* For non-pointer properties, UI code acts entirely based on the item's name. So the name has to
    * match the RNA name exactly. So only for pointer properties, the name can be modified to add
@@ -474,6 +479,15 @@ void rna_collection_search_update_fn(
 
       char *name;
       if (is_id) {
+        const ID *id = static_cast<ID *>(itemptr.data);
+
+        /* Hide dot prefixed data-blocks, but only if filter does not force them visible. */
+        if (U.flag & USER_HIDE_DOT_DATABLOCK) {
+          if ((id->name[2] == '.') && (str[0] != '.')) {
+            continue;
+          }
+        }
+
         iconid = id_icon_get(C, static_cast<ID *>(itemptr.data), false);
         if (!ELEM(iconid, 0, ICON_BLANK1)) {
           has_id_icon = true;
@@ -483,7 +497,6 @@ void rna_collection_search_update_fn(
           name = RNA_struct_name_get_alloc(&itemptr, name_buf, sizeof(name_buf), nullptr);
         }
         else {
-          const ID *id = static_cast<ID *>(itemptr.data);
           BKE_id_full_name_ui_prefix_get(name_buf, id, true, UI_SEP_CHAR, &name_prefix_offset);
           BLI_STATIC_ASSERT(sizeof(name_buf) >= MAX_ID_FULL_NAME_UI,
                             "Name string buffer should be big enough to hold full UI ID name");
@@ -616,6 +629,12 @@ void rna_collection_search_update_fn(
   }
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name ID & Report Type Icons/Colors
+ * \{ */
+
 int icon_from_id(const ID *id)
 {
   if (id == nullptr) {
@@ -642,13 +661,13 @@ int icon_from_id(const ID *id)
 int icon_from_report_type(int type)
 {
   if (type & RPT_ERROR_ALL) {
-    return ICON_CANCEL;
+    return ICON_STATUS_ERROR_FILLED;
   }
   if (type & RPT_WARNING_ALL) {
-    return ICON_ERROR;
+    return ICON_STATUS_WARNING_FILLED;
   }
   if (type & RPT_INFO_ALL) {
-    return ICON_INFO;
+    return ICON_STATUS_INFO_FILLED;
   }
   if (type & RPT_DEBUG_ALL) {
     return ICON_SYSTEM;
@@ -659,7 +678,7 @@ int icon_from_report_type(int type)
   if (type & RPT_OPERATOR) {
     return ICON_CHECKMARK;
   }
-  return ICON_INFO;
+  return ICON_STATUS_INFO_FILLED;
 }
 
 int icon_colorid_from_report_type(int type)
@@ -708,7 +727,11 @@ int UI_text_colorid_from_report_type(int type)
   return TH_INFO_WARNING_TEXT;
 }
 
-/********************************** Misc **************************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Miscellaneous Utilities
+ * \{ */
 
 int calc_float_precision(int prec, double value)
 {
@@ -762,7 +785,7 @@ int calc_float_precision(int prec, double value)
 
 std::optional<std::string> button_online_manual_id(const Button *but)
 {
-  if (but->rnapoin.data && but->rnaprop) {
+  if (but->rnapoin && but->rnaprop) {
     return fmt::format(
         "{}.{}", RNA_struct_identifier(but->rnapoin.type), RNA_property_identifier(but->rnaprop));
   }
@@ -777,14 +800,17 @@ std::optional<std::string> button_online_manual_id(const Button *but)
 
 std::optional<std::string> button_online_manual_id_from_active(const bContext *C)
 {
-  if (Button *but = context_active_but_get(C)) {
+  if (Button *but = context_active_but_get_respect_popup(C)) {
     return button_online_manual_id(but);
   }
   return std::nullopt;
 }
 
-/* -------------------------------------------------------------------- */
+/** \} */
 
+/* -------------------------------------------------------------------- */
+/** \name Button Ensure In View
+ * \{ */
 static rctf but_rect_to_view(const Button *but, const ARegion *region, const View2D *v2d)
 {
   rctf region_rect;
@@ -864,6 +890,8 @@ void but_ensure_in_view(const bContext *C, ARegion *region, const Button *but)
     ED_region_tag_redraw_no_rebuild(region);
   }
 }
+
+/** \} */
 
 /* -------------------------------------------------------------------- */
 /** \name Button Store
@@ -990,12 +1018,12 @@ void butstore_update(Block *block)
 {
   /* move this list to the new block */
   if (block->oldblock) {
-    if (block->oldblock->butstore.first) {
+    if (block->oldblock->butstore.first_) {
       BLI_movelisttolist(&block->butstore, &block->oldblock->butstore);
     }
   }
 
-  if (LIKELY(block->butstore.first == nullptr)) {
+  if (block->butstore.first_ == nullptr) [[likely]] {
     return;
   }
 

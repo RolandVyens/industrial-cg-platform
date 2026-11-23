@@ -53,7 +53,6 @@ ExternalProject_Add(external_python_site_packages
       meson==${MESON_VERSION}
       attrs==${ATTRS_VERSION}
       cattrs==${CATTRS_VERSION}
-      fastjsonschema==${FASTJSONSCHEMA_VERSION}
       typing-extensions==${TYPING_EXTENSIONS_VERSION}
       tomli-w==${TOMLI_W_VERSION}
       --no-binary :all:

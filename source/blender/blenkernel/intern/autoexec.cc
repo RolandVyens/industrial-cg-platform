@@ -14,9 +14,9 @@
 
 #include "DNA_userdef_types.h"
 
-#include "BLI_fnmatch.h"
+#include "BLI_fnmatch.hh"
 #include "BLI_path_utils.hh"
-#include "BLI_string.h"
+#include "BLI_string.hh"
 
 #include "BKE_autoexec.hh" /* own include */
 #include "BKE_global.hh"
@@ -60,6 +60,9 @@ bool BKE_autoexec_match_unchecked(const char *path,
                                   const bool canonicalize,
                                   const bool strip_filename)
 {
+  /* The caller must never pass in an empty path. */
+  BLI_assert(path[0] != '\0');
+
   bPathCompare *path_cmp;
 
   char dirpath_buf[FILE_MAX];
@@ -72,9 +75,7 @@ bool BKE_autoexec_match_unchecked(const char *path,
   const int fnmatch_flags = 0;
 #endif
 
-  for (path_cmp = static_cast<bPathCompare *>(U.autoexec_paths.first); path_cmp;
-       path_cmp = path_cmp->next)
-  {
+  for (path_cmp = U.autoexec_paths.first(); path_cmp; path_cmp = path_cmp->next) {
     if (path_cmp->path[0] == '\0') {
       /* pass */
     }

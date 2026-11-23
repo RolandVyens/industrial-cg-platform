@@ -186,15 +186,41 @@ static __device__ __noinline__ uint32_t deep_bounded_make_raw_room(const DeepBou
     record.alpha = q;
     prefix = deep_bounded_unit(prefix + q);
   }
-  return deep_bounded_reduce(candidates, DEEP_BOUNDED_K, b.raw, root, b.packet.root_capacity,
-                            DEEP_BOUNDED_K - 1, b.merge, false, b.packet.status_ptr);
+  uint32_t count = DEEP_BOUNDED_K;
+  DeepCaptureRecord terminal = {};
+  const bool has_terminal = deep_bounded_take_terminal(candidates, count, terminal);
+  const uint32_t finite = deep_bounded_reduce(candidates,
+                                               count,
+                                               b.raw,
+                                               root,
+                                               b.packet.root_capacity,
+                                               DEEP_BOUNDED_K - 1 - uint32_t(has_terminal),
+                                               b.merge,
+                                               false,
+                                               b.packet.status_ptr);
+  return has_terminal && (finite || !count) ?
+             deep_bounded_publish_terminal(b.raw, root, b.packet.root_capacity, finite, terminal) :
+             finite;
+}
+
+ccl_device_forceinline void deep_bounded_set_source(ConstIntegratorState state,
+                                                     const uint32_t root,
+                                                     const DeepBoundedSourceKind kind,
+                                                     const float anchor)
+{
+#  if __DEEP_BOUNDED_POLICY__ == 3
+  INTEGRATOR_STATE_WRITE(deep_bounded_write_state(state), path, deep_bounded_anchor_z) = anchor;
+#  else
+  (void)anchor;
+#  endif
+  INTEGRATOR_STATE_WRITE(deep_bounded_write_state(state), path, deep_bounded_slot_kind) =
+      deep_bounded_source(root, kind);
 }
 
 ccl_device_forceinline bool deep_bounded_append(KernelGlobals kg,
                                                 ConstIntegratorState state,
                                                 const DeepBoundedSourceKind kind,
-                                                DeepCaptureRecord record,
-                                                const float anchor)
+                                                ccl_private DeepCaptureRecord &record)
 {
   const auto &binding = deep_bounded_binding(kg);
   if (!(record.z > 0.0f && record.z_back >= record.z && isfinite(record.z_back) &&
@@ -215,6 +241,28 @@ ccl_device_forceinline bool deep_bounded_append(KernelGlobals kg,
     return false;
   }
   uint32_t count = header & DEEP_BOUNDED_COUNT_MASK;
+  if (kind == DeepBoundedSourceKind::VOLUME && record.z_back > record.z && count != 0) {
+    const uint64_t previous = root + uint64_t(count - 1) * stride;
+    const float previous_end = deep_bounded_ptr<const float>(binding.raw.z_back)[previous];
+    /* Camera volume spans are successive even when the continuation ray starts
+     * slightly inside the preceding surface or volume boundary after rounding. */
+    if (previous_end > record.z && previous_end != DEEP_BOUNDED_WORLD_TERMINAL &&
+        (previous_end <= record.z_back || previous_end == nextafterf(record.z_back, FLT_MAX)))
+    {
+      record.z = previous_end;
+      record.z_back = fmaxf(record.z_back, previous_end);
+    }
+  }
+  if (deep_bounded_terminal(record.object, record.shader, record.z, record.z_back)) {
+    const uint64_t existing = deep_bounded_terminal_index(binding.raw, root, stride, count);
+    if (existing != UINT64_MAX) {
+      auto terminal = deep_bounded_load<deep_bounded_physical>(binding.raw, existing);
+      terminal.alpha = fmaf(1.0f - terminal.alpha, record.alpha, terminal.alpha);
+      deep_bounded_store(binding.raw, existing, terminal);
+      deep_bounded_set_source(state, root, kind, record.z_back);
+      return true;
+    }
+  }
   if (count == DEEP_BOUNDED_K) {
     count = deep_bounded_make_raw_room(binding, root);
     if (!count) {
@@ -245,9 +293,6 @@ ccl_device_forceinline bool deep_bounded_append(KernelGlobals kg,
       pending[c] = 0.0f;
     }
   }
-  INTEGRATOR_STATE_WRITE(deep_bounded_write_state(state), path, deep_bounded_anchor_z) = anchor;
-#  else
-  (void)anchor;
 #  endif
   deep_bounded_store(binding.raw, root + uint64_t(slot) * stride, record);
 #  if __DEEP_BOUNDED_POLICY__ == 3
@@ -256,9 +301,7 @@ ccl_device_forceinline bool deep_bounded_append(KernelGlobals kg,
 #  else
   header = (header & ~DEEP_BOUNDED_COUNT_MASK) | (count + 1);
 #  endif
-  INTEGRATOR_STATE_WRITE(deep_bounded_write_state(state),
-                         path,
-                         deep_bounded_slot_kind) = deep_bounded_source(root, kind);
+  deep_bounded_set_source(state, root, kind, record.z_back);
   return true;
 }
 
@@ -281,6 +324,24 @@ ccl_device_forceinline float deep_bounded_surface_alpha(KernelGlobals kg,
   return a;
 }
 
+ccl_device_forceinline float deep_bounded_ray_depth(KernelGlobals kg,
+                                                      const float3 origin,
+                                                      const float3 direction,
+                                                      const float t)
+{
+  /* Volume and surface capture are compiled with different contraction flags.
+   * Evaluate the same ray endpoint with explicit rounding in both kernels. */
+  const float3 point = make_float3(fmaf(direction.x, t, origin.x),
+                                   fmaf(direction.y, t, origin.y),
+                                   fmaf(direction.z, t, origin.z));
+  if (kernel_data.cam.type == CAMERA_PERSPECTIVE || kernel_data.cam.type == CAMERA_ORTHOGRAPHIC) {
+    const float4 z = kernel_data.cam.worldtocamera.z;
+    return fmaf(z.x, point.x, fmaf(z.y, point.y, fmaf(z.z, point.z, z.w)));
+  }
+  const float3 offset = point - camera_position(kg);
+  return sqrtf(fmaf(offset.x, offset.x, fmaf(offset.y, offset.y, offset.z * offset.z)));
+}
+
 ccl_device_forceinline void deep_bounded_surface(KernelGlobals kg,
                                                  ConstIntegratorState state,
                                                  const ccl_private ShaderData *sd,
@@ -298,6 +359,11 @@ ccl_device_forceinline void deep_bounded_surface(KernelGlobals kg,
                                  fminf(deep_bounded_unit(h_rgb.y), 1.0f - ty) +
                                  fminf(deep_bounded_unit(h_rgb.z), 1.0f - tz)) * (1.0f / 3.0f));
   const float a = deep_bounded_surface_alpha(kg, state, t, h);
+#  if __DEEP_BOUNDED_POLICY__ == 1
+  if (a == 0.0f) {
+    return;
+  }
+#  endif
   /* Full holdout terminates this source. Do not retain a false Surface source
    * if scalar transparency/holdout subtraction leaves a rounding residual. */
   if (!source_eligible) {
@@ -314,12 +380,12 @@ ccl_device_forceinline void deep_bounded_surface(KernelGlobals kg,
   integrator_state_read_isect(state, &isect);
   Ray ray;
   integrator_state_read_ray(state, &ray);
-  record.z = record.z_back = camera_z_depth(kg, ray.P + ray.D * isect.t);
+  record.z = record.z_back = deep_bounded_ray_depth(kg, ray.P, ray.D, isect.t);
   record.alpha = a;
   record.object = uint32_t(sd->object) | DEEP_BOUNDED_ELIGIBLE;
   record.shader = uint32_t(sd->shader);
   record.normal = deep_bounded_pack_normal(sd->Ng.x, sd->Ng.y, sd->Ng.z);
-  deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record, record.z);
+  deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record);
 }
 
 ccl_device_forceinline void deep_bounded_emissive_point(KernelGlobals kg,
@@ -335,8 +401,35 @@ ccl_device_forceinline void deep_bounded_emissive_point(KernelGlobals kg,
     record.object = object | DEEP_BOUNDED_ELIGIBLE;
     record.shader = shader;
     record.normal = normal;
-    deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record, depth);
+    deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record);
   }
+}
+
+ccl_device_forceinline bool deep_bounded_world(KernelGlobals kg, ConstIntegratorState state)
+{
+#  ifdef __VOLUME__
+  return kernel_data.background.volume_shader != SHADER_NONE &&
+         INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, object) ==
+             kernel_data.background.object_index &&
+         INTEGRATOR_STATE_ARRAY(state, volume_stack, 0, shader) ==
+             kernel_data.background.volume_shader;
+#  else
+  (void)kg;
+  (void)state;
+  return false;
+#  endif
+}
+
+ccl_device_forceinline bool deep_bounded_world_terminal(KernelGlobals kg,
+                                                         ConstIntegratorState state,
+                                                         const float alpha)
+{
+  DeepCaptureRecord record = {};
+  record.z = record.z_back = DEEP_BOUNDED_WORLD_TERMINAL;
+  record.alpha = alpha;
+  record.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
+  record.shader = 1;
+  return deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record);
 }
 
 ccl_device_forceinline void deep_bounded_background(KernelGlobals kg,
@@ -344,6 +437,13 @@ ccl_device_forceinline void deep_bounded_background(KernelGlobals kg,
                                                     const bool colour_only = false)
 {
   if (!deep_bounded_camera_chain(kg, state)) {
+    return;
+  }
+  if (deep_bounded_world(kg, state)) {
+    const float alpha = colour_only ? 0.0f : deep_bounded_surface_alpha(kg, state, 0.0f, 0.0f);
+    if (__DEEP_BOUNDED_POLICY__ >= 2 || alpha != 0.0f) {
+      deep_bounded_world_terminal(kg, state, alpha);
+    }
     return;
   }
   Ray ray;
@@ -354,11 +454,11 @@ ccl_device_forceinline void deep_bounded_background(KernelGlobals kg,
     return;
   }
   DeepCaptureRecord record = {};
-  record.z = record.z_back = camera_z_depth(kg, ray.P + ray.D * t);
+  record.z = record.z_back = deep_bounded_ray_depth(kg, ray.P, ray.D, t);
   record.alpha = colour_only ? 0.0f : deep_bounded_surface_alpha(kg, state, 0.0f, 0.0f);
   record.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
   record.shader = 1;
-  deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record, record.z);
+  deep_bounded_append(kg, state, DeepBoundedSourceKind::POINT, record);
 }
 
 enum DeepBoundedVolumeReason : uint32_t {
@@ -366,7 +466,67 @@ enum DeepBoundedVolumeReason : uint32_t {
   BOUNDED_VOLUME_TRACKING,
   BOUNDED_VOLUME_INTERVAL,
   BOUNDED_VOLUME_ZERO_EVENT,
+  /* event_t holds the neutral extinction coefficient for this reason. */
+  BOUNDED_VOLUME_HOMOGENEOUS_OPEN,
 };
+
+ccl_device_forceinline bool deep_bounded_commit_open_volume(
+    KernelGlobals kg,
+    ConstIntegratorState state,
+    const ccl_private Ray *ray,
+    const float sigma,
+    const float alpha,
+    const bool has_radiance,
+    ccl_private float &terminal_fraction)
+{
+  if (sigma > 0.0f && isfinite(sigma)) {
+    const float z = deep_bounded_ray_depth(kg, ray->P, ray->D, ray->tmin);
+    const float safe_back = nextafterf(DEEP_BOUNDED_WORLD_TERMINAL, 0.0f);
+    if (z > 0.0f && z < safe_back) {
+      float dz = 1.0f; /* Unit direction gives a conservative bound for radial cameras. */
+      if (kernel_data.cam.type == CAMERA_PERSPECTIVE || kernel_data.cam.type == CAMERA_ORTHOGRAPHIC) {
+        const Transform worldtocamera = kernel_data.cam.worldtocamera;
+        dz = transform_direction(&worldtocamera, ray->D).z;
+      }
+      if (dz > 0.0f) {
+        constexpr float optical_depth = 6.238324625f; /* ln(512). */
+        const float length = fminf(optical_depth / sigma, (safe_back - z) / dz);
+        const float back = deep_bounded_ray_depth(kg, ray->P, ray->D, ray->tmin + length);
+        if (length > 0.0f && isfinite(length) && back >= z && back < DEEP_BOUNDED_WORLD_TERMINAL) {
+          /* Normalize against the same finite sentinel used by native transmittance. */
+          const float full = -expm1f(-sigma * (ray->tmax - ray->tmin));
+          const float part = -expm1f(-sigma * length);
+          const float fraction = full > 0.0f ? deep_bounded_unit(part / full) : 0.0f;
+          DeepCaptureRecord record = {};
+          record.z = z;
+          record.z_back = back;
+          record.alpha = alpha * fraction;
+          record.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
+          const float rest_alpha = record.alpha < 1.0f ?
+                                       deep_bounded_unit((alpha - record.alpha) /
+                                                         (1.0f - record.alpha)) :
+                                       0.0f;
+          if (record.alpha > 0.0f || (has_radiance && fraction > 0.0f)) {
+            if (!deep_bounded_append(kg, state, DeepBoundedSourceKind::VOLUME, record)) {
+              return false;
+            }
+            if (rest_alpha > 0.0f || (has_radiance && fraction < 1.0f)) {
+              if (!deep_bounded_world_terminal(kg, state, rest_alpha)) {
+                return false;
+              }
+              const uint32_t root = deep_bounded_slot(
+                  INTEGRATOR_STATE(state, path, deep_bounded_slot_kind));
+              deep_bounded_set_source(state, root, DeepBoundedSourceKind::VOLUME, record.z_back);
+              terminal_fraction = 1.0f - fraction;
+            }
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return (alpha > 0.0f || has_radiance) && deep_bounded_world_terminal(kg, state, alpha);
+}
 
 ccl_device_forceinline bool deep_bounded_commit_volume(KernelGlobals kg,
                                                        ConstIntegratorState state,
@@ -376,14 +536,18 @@ ccl_device_forceinline bool deep_bounded_commit_volume(KernelGlobals kg,
                                                        const Spectrum throughput,
                                                        const bool scattered,
                                                        const float scatter_t,
-                                                       const bool has_radiance)
+                                                       const bool has_radiance,
+                                                       ccl_private float &terminal_fraction)
 {
   if (!deep_bounded_camera_chain(kg, state)) {
     /* Indirect whole contributions keep their earlier real surface/volume source. */
     return true;
   }
-  if (sd->object == OBJECT_NONE ||
-      (bridge.reason != BOUNDED_VOLUME_INTERVAL && bridge.reason != BOUNDED_VOLUME_ZERO_EVENT))
+  const bool world = deep_bounded_world(kg, state);
+  const bool analytic = bridge.reason == BOUNDED_VOLUME_HOMOGENEOUS_OPEN;
+  if ((!world && sd->object == OBJECT_NONE) ||
+      (!analytic && bridge.reason != BOUNDED_VOLUME_INTERVAL &&
+       bridge.reason != BOUNDED_VOLUME_ZERO_EVENT))
   {
     return false;
   }
@@ -393,7 +557,7 @@ ccl_device_forceinline bool deep_bounded_commit_volume(KernelGlobals kg,
                           INTEGRATOR_STATE(state, path, continuation_probability) == 0.0f;
   const float incoming = average(INTEGRATOR_STATE(state, path, throughput));
   const float outgoing = average(throughput);
-  const float event_t = scattered ? scatter_t : bridge.event_t;
+  const float event_t = scattered ? scatter_t : analytic ? FLT_MAX : bridge.event_t;
   if (!isfinite(event_t) || (!scattered && (!isfinite(incoming) || !isfinite(outgoing)))) {
     deep_bounded_error(binding.packet.status_ptr, DEEP_BOUNDED_NUMERIC);
     return false;
@@ -410,21 +574,30 @@ ccl_device_forceinline bool deep_bounded_commit_volume(KernelGlobals kg,
      * extinction even when this draw contributes no opacity. */
     return false;
   }
+  if (world && (event_t == FLT_MAX ||
+                (!scattered && ray->tmax == FLT_MAX &&
+                 bridge.reason == BOUNDED_VOLUME_INTERVAL)))
+  {
+    const float alpha = deep_bounded_surface_alpha(kg, state, t, 0.0f);
+    return deep_bounded_commit_open_volume(
+        kg, state, ray, analytic ? bridge.event_t : 0.0f, alpha, has_radiance, terminal_fraction);
+  }
   const float end = fminf(ray->tmax, fmaxf(ray->tmin, event_t));
   const bool coverage_event = scattered || terminated || bridge.reason == BOUNDED_VOLUME_ZERO_EVENT;
   const float begin = coverage_event ? end : ray->tmin;
   DeepCaptureRecord record = {};
-  record.z = camera_z_depth(kg, ray->P + ray->D * begin);
-  record.z_back = camera_z_depth(kg, ray->P + ray->D * end);
+  record.z = deep_bounded_ray_depth(kg, ray->P, ray->D, begin);
+  record.z_back = deep_bounded_ray_depth(kg, ray->P, ray->D, end);
   record.alpha = deep_bounded_surface_alpha(kg, state, deep_bounded_unit(t), 0.0f);
   record.object = DEEP_BOUNDED_NONSURFACE | DEEP_BOUNDED_ELIGIBLE;
-  return deep_bounded_append(kg, state, DeepBoundedSourceKind::VOLUME, record, record.z_back);
+  return deep_bounded_append(kg, state, DeepBoundedSourceKind::VOLUME, record);
 }
 
 #  if __DEEP_BOUNDED_POLICY__ == 3
 struct DeepBoundedFilmSource {
   uint32_t source = deep_bounded_source(0, DeepBoundedSourceKind::EXCLUDED);
   float anchor = 0.0f;
+  float terminal_fraction = 0.0f;
 };
 
 ccl_device_forceinline DeepBoundedFilmSource deep_bounded_film_source(KernelGlobals kg,

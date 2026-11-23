@@ -10,8 +10,8 @@
 #include "BKE_undo_system.hh"
 #include "BKE_wm_runtime.hh"
 
-#include "BLI_ghash.h"
-#include "BLI_listbase.h"
+#include "BLI_ghash.hh"
+#include "BLI_listbase.hh"
 
 #include "WM_api.hh"
 
@@ -62,7 +62,8 @@ WindowManagerRuntime::~WindowManagerRuntime()
 WindowRuntime::~WindowRuntime()
 {
 #ifdef WITH_INPUT_IME
-  BLI_assert(this->ime_data == nullptr);
+  /* May be null. */
+  MEM_delete(this->ime_data);
 #endif
   /** The event_queue should be freed when the window is freed. */
   BLI_assert(this->event_queue.is_empty());

@@ -37,6 +37,7 @@ set(SRC
   intern/imageprocess.cc
   intern/metadata.cc
   intern/module.cc
+  intern/partial_update.cc
   intern/readimage.cc
   intern/rectop.cc
   intern/rotate.cc
@@ -60,6 +61,7 @@ set(SRC
   IMB_interp.hh
   IMB_metadata.hh
   IMB_openexr.hh
+  IMB_partial_update.hh
   IMB_thumbs.hh
   intern/IMB_colormanagement_intern.hh
   intern/IMB_filetype.hh
@@ -136,6 +138,8 @@ if(WITH_GTESTS)
   set(TEST_SRC
     tests/IMB_deep_sample_merge_test.cc
     tests/IMB_openexr_deep_test.cc
+    tests/IMB_colormanagement_test.cc
+    tests/IMB_partial_update_test.cc
     tests/IMB_scaling_test.cc
     tests/IMB_transform_test.cc
   )

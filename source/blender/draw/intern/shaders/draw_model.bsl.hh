@@ -2,6 +2,10 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+/** \file
+ * \ingroup draw
+ */
+
 #pragma once
 
 #include "gpu_shader_compat.hh"
@@ -86,6 +90,22 @@ struct Infos {
   ObjectInfos get(uint resource_id) const
   {
     return drw_infos[resource_id];
+  }
+};
+
+struct Attributes {
+  [[storage(DRW_OBJ_ATTR_SLOT, read)]] const ObjectAttribute (&drw_attrs)[];
+
+  float4 get(ObjectInfos infos, const uint attr_hash) const
+  {
+    uint index = infos.object_attrs_offset;
+    for (uint i = 0; i < infos.object_attrs_len; i++, index++) {
+      ObjectAttribute attr = drw_attrs[index];
+      if (attr.hash_code == attr_hash) {
+        return float4(attr.data_x, attr.data_y, attr.data_z, attr.data_w);
+      }
+    }
+    return float4(0.0f);
   }
 };
 

@@ -71,9 +71,9 @@ ccl_device_inline ShaderEvalResult integrate_light_forward(
   guiding_record_surface_emission(kg, state, eval, mis_weight);
   const ccl_global KernelLight *klight = &kernel_data_fetch(lights, isect.prim);
   uint32_t deep_root_handle = 0;
-#if __DEEP_BOUNDED_POLICY__ > 0
+#if __DEEP_BOUNDED_POLICY__ >= 2
   if (deep_bounded_camera_chain(kg, state) && klight->object_id < DEEP_BOUNDED_NONSURFACE) {
-    const float depth = camera_z_depth(kg, ray_P + ray_D * isect.t);
+    const float depth = deep_bounded_ray_depth(kg, ray_P, ray_D, isect.t);
     const uint32_t normal = deep_bounded_pack_normal(-ray_D.x, -ray_D.y, -ray_D.z);
     deep_bounded_emissive_point(kg, state, depth, klight->object_id, klight->shader_id, normal);
   }
@@ -147,10 +147,40 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
   integrator_state_read_shadow_ray_self(state, &ray);
 
   Intersection isect = {};
-  isect.object = ray.self.light_object;
-  isect.prim = ray.self.light_prim;
-  isect.type = kernel_data_fetch(objects, isect.object).primitive_type;
-  isect.t = ray.tmax;
+
+#ifdef __SHADOW_LINKING__
+  const bool is_shadow_linking = INTEGRATOR_STATE(state, shadow_path, flag) &
+                                 PATH_RAY_SHADOW_FOR_LIGHT_LINKING;
+
+  if (is_shadow_linking) {
+    /* Shadow linking stores the intersection in the shadow state,
+     * so it can be used directly. This can be any type of primitive. */
+    integrator_state_read_shadow_light_isect(state, &isect);
+  }
+  else
+#endif
+  {
+    /* NEE sampling from shade_surface only does lights and triangles. Here we
+     * have to recover the triangle UV from the ray, since the shadow state
+     * isect is used by shadow ray intersection and we want to save memory. */
+    isect.object = ray.self.light_object;
+    isect.prim = ray.self.light_prim;
+    isect.type = kernel_data_fetch(objects, isect.object).primitive_type;
+    isect.t = ray.tmax;
+
+    if (isect.type & PRIMITIVE_TRIANGLE) {
+      /* Triangles. */
+      const float2 uv = triangle_light_uv(kg, isect.object, isect.prim, ray.time, ray.P, ray.D);
+      isect.u = uv.x;
+      isect.v = uv.y;
+    }
+    else {
+      /* No NEE sampling for curves, points, etc. */
+      kernel_assert(isect.type == PRIMITIVE_LAMP);
+      isect.u = 0.0f;
+      isect.v = 0.0f;
+    }
+  }
 
   kernel_assert(isect.object != OBJECT_NONE);
   kernel_assert(isect.prim != PRIM_NONE);
@@ -203,12 +233,6 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
     }
   }
   else {
-    /* Triangles.
-     * Compute UV on demand so we don't have to store it in integrator state. */
-    const float2 uv = triangle_light_uv(kg, isect.object, isect.prim, ray.time, ray.P, ray.D);
-    isect.u = uv.x;
-    isect.v = uv.y;
-
     shader_setup_from_ray(kg, emission_sd, &ray, &isect);
   }
 
@@ -221,7 +245,7 @@ ccl_device ShaderEvalResult integrate_light_nee(KernelGlobals kg, IntegratorShad
   surface_shader_eval<KERNEL_FEATURE_NODE_MASK_SURFACE_LIGHT>(
       kg, state, emission_sd, nullptr, PATH_RAY_VISIBILITY_NONE, PATH_RAY_EMISSION);
 
-  if (emission_sd->flag & SD_CACHE_MISS) {
+  if (emission_sd->runtime_flag & SR_CACHE_MISS) {
     return SHADER_EVAL_CACHE_MISS;
   }
 

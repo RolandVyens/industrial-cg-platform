@@ -8,7 +8,7 @@
 
 CCL_NAMESPACE_BEGIN
 
-ccl_device_inline bool shadow_state_unshadowed_throughput_is_needed(const uint kernel_features,
+ccl_device_inline bool shadow_state_unshadowed_throughput_is_needed(const uint64_t kernel_features,
                                                                     const bool use_shadow_color)
 {
   return (kernel_features & KERNEL_FEATURE_AO_ADDITIVE) || use_shadow_color;

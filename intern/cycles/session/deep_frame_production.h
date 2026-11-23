@@ -74,6 +74,10 @@ class DeepEncodedPixelView {
   void packed_bits(size_t index, bool include_color, uint32_t (&channels)[6]) const;
   /* Already quantized bounded input to six disjoint target row planes. */
   void pack_channels(unsigned char *const (&channels)[6], bool include_color) const;
+  uint32_t nonzero_mask(bool include_color) const;
+  void pack_channels_masked(unsigned char *const (&channels)[6],
+                            bool include_color,
+                            uint32_t mask) const;
   explicit operator bool() const
   {
     return tile_ != nullptr;

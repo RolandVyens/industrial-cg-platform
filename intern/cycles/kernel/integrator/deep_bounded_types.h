@@ -10,6 +10,7 @@
 #endif
 
 constexpr uint32_t DEEP_BOUNDED_K = 32;
+constexpr float DEEP_BOUNDED_WORLD_TERMINAL = 1e10f;
 constexpr uint32_t DEEP_BOUNDED_SLOT_MASK = 0x3fffffffu;
 constexpr uint32_t DEEP_BOUNDED_ELIGIBLE = 0x80000000u;
 constexpr uint32_t DEEP_BOUNDED_NONSURFACE = 0x7fffffffu;

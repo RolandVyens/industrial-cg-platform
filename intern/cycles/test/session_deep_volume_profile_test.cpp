@@ -1459,7 +1459,7 @@ class DeepConstantRecordingDevice : public Device {
   size_t uploads = 0;
   size_t allocations = 0;
   KernelData uploaded = {};
-  BVHLayoutMask get_bvh_layout_mask(uint) const override { return BVH_LAYOUT_NONE; }
+  BVHLayoutMask get_bvh_layout_mask(uint64_t) const override { return BVH_LAYOUT_NONE; }
   void const_copy_to(const char *name, void *host, size_t size) override
   {
     EXPECT_STREQ(name, "data");

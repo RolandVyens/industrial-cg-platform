@@ -202,6 +202,62 @@ void DeepEncodedPixelView::pack_channels(unsigned char *const (&channels)[6],
   }
 }
 
+uint32_t DeepEncodedPixelView::nonzero_mask(const bool include_color) const
+{
+  if (!count_) {
+    return 0;
+  }
+  const auto &payload = *bounded_;
+  const size_t bytes = payload.half ? 2 : 4;
+  const size_t components = payload.physical_rgb ? 4 : 1;
+  const uint32_t magnitude = payload.half ? 0x7fffu : 0x7fffffffu;
+  const unsigned char *input = payload.planes.data() + payload.count * 8 +
+                               offset_ * bytes * components;
+  const auto nonzero = [&](const unsigned char *channel) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, channel, bytes);
+    return (bits & magnitude) != 0;
+  };
+  uint32_t mask = 0;
+  for (size_t i = 0; i < count_; ++i, input += bytes * components) {
+    bool keep = nonzero(input + bytes * (components - 1));
+    if (!keep && include_color) {
+      if (payload.physical_rgb) {
+        keep = nonzero(input) || nonzero(input + bytes) || nonzero(input + 2 * bytes);
+      }
+      else if (payload.simple_rgb && int(i) == color_index_) {
+        uint32_t bits[6] = {};
+        packed_bits(i, true, bits);
+        keep = ((bits[1] | bits[2] | bits[3]) & magnitude) != 0;
+      }
+    }
+    if (keep) {
+      mask |= uint32_t(1) << i;
+    }
+  }
+  return mask;
+}
+
+void DeepEncodedPixelView::pack_channels_masked(unsigned char *const (&channels)[6],
+                                                const bool include_color,
+                                                uint32_t mask) const
+{
+  const size_t bytes = bounded_->half ? 2 : 4;
+  size_t output = 0;
+  for (; mask; mask &= mask - 1, ++output) {
+    uint32_t bits[6] = {};
+    packed_bits(std::countr_zero(mask), include_color, bits);
+    for (int c = 0; c < 6; ++c) {
+      if (channels[c]) {
+        const size_t width = c < 4 ? bytes : 4;
+        for (size_t b = 0; b < width; ++b) {
+          channels[c][output * width + b] = static_cast<unsigned char>(bits[c] >> (8 * b));
+        }
+      }
+    }
+  }
+}
+
 DeepStatus DeepFrameProduction::encoded_pixel(const DeepConsumerToken &token,
                                               const size_t index,
                                               DeepEncodedPixelLease &lease) const

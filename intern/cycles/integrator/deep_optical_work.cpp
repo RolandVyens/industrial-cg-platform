@@ -23,15 +23,15 @@
 CCL_NAMESPACE_BEGIN
 
 namespace {
-size_t optical_soa_stride(const uint kernel_features, const int stack_size)
+size_t optical_soa_stride(const uint64_t kernel_features, const int stack_size)
 {
   size_t bytes = 0;
 #define KERNEL_STRUCT_BEGIN(name)
 #define KERNEL_STRUCT_END(name)
 #define KERNEL_STRUCT_MEMBER(parent, type, name, feature) \
-  if (KernelFeatureRequest(feature).test(kernel_features)) bytes += sizeof(type);
+  if (KernelFeatureRequest(feature).test(kernel_features)) bytes += sizeof(gpu_state_storage<type>::gpu_type);
 #define KERNEL_STRUCT_ARRAY_MEMBER(parent, type, name, feature) \
-  if (KernelFeatureRequest(feature).test(kernel_features)) bytes += sizeof(type) * size_t(stack_size);
+  if (KernelFeatureRequest(feature).test(kernel_features)) bytes += sizeof(gpu_state_storage<type>::gpu_type) * size_t(stack_size);
 #define KERNEL_STRUCT_END_ARRAY(name, cpu_size, gpu_size)
 #define KERNEL_STRUCT_MEMBER_RUNTIME_SHADOW_COLOR KERNEL_STRUCT_MEMBER
 #ifdef __INTEGRATOR_GPU_PACKED_STATE__
@@ -177,7 +177,7 @@ bool DeepOpticalWork::allocate(DeviceScene *scene,
                                const bool full_coverage,
                                const bool compact)
 {
-  const uint kernel_features = scene->data.kernel_features;
+  const uint64_t kernel_features = scene->data.kernel_features;
   event_capacity_ = size_t(event_capacity);
   /* First ownership prototype keeps the feature-selected main layout. No shadow, sorting,
    * catcher split, Beauty arena or native admission allocation is shared. */
@@ -185,7 +185,7 @@ bool DeepOpticalWork::allocate(DeviceScene *scene,
   for (int array_index = 0;; array_index++) {
 #define KERNEL_STRUCT_MEMBER_IMPL(parent_struct, type, name, condition) \
   if ((condition) && (state_.parent_struct.name == nullptr)) { \
-    auto array = allocate_soa<type>(capacity); \
+    auto array = allocate_soa<gpu_state_storage<type>::gpu_type>(capacity); \
     memcpy(&state_.parent_struct.name, &array->device_pointer, sizeof(array->device_pointer)); \
     if (soa_count_ == soa_.size()) { \
       return fail("independent SoA controller bound exceeded"); \
@@ -221,7 +221,7 @@ bool DeepOpticalWork::allocate(DeviceScene *scene,
   if ((KernelFeatureRequest(feature).test(kernel_features)) && \
       (state_.parent_struct[array_index].name == nullptr)) \
   { \
-    auto array = allocate_soa<type>(capacity); \
+    auto array = allocate_soa<gpu_state_storage<type>::gpu_type>(capacity); \
     memcpy(&state_.parent_struct[array_index].name, \
            &array->device_pointer, \
            sizeof(array->device_pointer)); \

@@ -20,6 +20,7 @@ set(SRC
   deep_gpu_frame_witness.cpp
   deep_optical_work.cpp
   denoiser.cpp
+  denoiser_dlss.cpp
   denoiser_gpu.cpp
   denoiser_oidn.cpp
   denoiser_oidn_base.cpp
@@ -59,6 +60,7 @@ set(SRC_HEADERS
   deep_optical_work.h
   deep_state_binding.h
   denoiser.h
+  denoiser_dlss.h
   denoiser_gpu.h
   denoiser_oidn.h
   denoiser_oidn_base.h
@@ -92,6 +94,12 @@ set(LIB
   PRIVATE bf::dependencies::optional::openimagedenoise
   PRIVATE bf::dependencies::optional::openpgl
 )
+
+if(WITH_DLSS)
+  list(APPEND INC_SYS
+    ${DLSS_INCLUDE_DIR}
+  )
+endif()
 
 include_directories(${INC})
 include_directories(SYSTEM ${INC_SYS})

@@ -40,17 +40,19 @@
  * if any of these reference becomes invalid.
  */
 
-#include "BLI_assert.h"
+#include "BLI_assert.hh"
 #include "BLI_listbase_wrapper.hh"
 #include "BLI_vector.hh"
 
 #include "BKE_image.hh"
+#include "BKE_image_gpu.hh"
 
 #include "GPU_batch.hh"
 #include "GPU_debug.hh"
 #include "GPU_index_buffer.hh"
 #include "GPU_material.hh"
 #include "GPU_pass.hh"
+#include "GPU_ray_tracing.hh"
 
 #include "DRW_gpu_wrapper.hh"
 
@@ -384,6 +386,8 @@ class PassBase {
   void bind_ssbo(const char *name, gpu::IndexBuf **buffer);
   void bind_ssbo(int slot, gpu::IndexBuf *buffer);
   void bind_ssbo(int slot, gpu::IndexBuf **buffer);
+  void bind_tlas(const char *name, gpu::TopLevelAS *tlas);
+  void bind_tlas(int slot, gpu::TopLevelAS *tlas);
   void bind_ubo(const char *name, gpu::UniformBuf *buffer);
   void bind_ubo(const char *name, gpu::UniformBuf **buffer);
   void bind_ubo(int slot, gpu::UniformBuf *buffer);
@@ -1152,13 +1156,9 @@ inline void PassBase<T>::material_set(Manager &manager,
       const bool use_tile_mapping = tex->tiled_mapping_name[0];
       ImageUser *iuser = tex->iuser_available ? &tex->iuser : nullptr;
 
-      ImageGPUTextures gputex;
-      if (deferred_texture_loading) {
-        gputex = BKE_image_get_gpu_material_texture_try(tex->ima, iuser, use_tile_mapping);
-      }
-      else {
-        gputex = BKE_image_get_gpu_material_texture(tex->ima, iuser, use_tile_mapping);
-      }
+      /* Try to get image textures, will return null if not loaded yet. */
+      ImageGPUTextures gputex = BKE_image_acquire_gpu_material_texture(
+          tex->ima, iuser, use_tile_mapping, deferred_texture_loading);
 
       GPUSamplerState sampler_state = tex->sampler_state;
       /* If any anisotropic filtering is requested, reset it to the scene setting. */
@@ -1166,25 +1166,26 @@ inline void PassBase<T>::material_set(Manager &manager,
         sampler_state.disable_filtering_flag(GPU_SAMPLER_FILTERING_ANISOTROPIC_MASK);
         sampler_state.enable_filtering_flag(anisotropic_filtering);
       }
-      if (tex->ima->runtime->gpuflag & IMA_GPU_MIPMAP_UPDATE_DISABLED) {
-        sampler_state.disable_filtering_flag(GPU_SAMPLER_FILTERING_MIPMAP);
-      }
 
-      if (*gputex.texture == nullptr) {
-        /* Texture not yet loaded. Register a reference inside the draw pass.
-         * The texture will be acquired once it is created. */
-        bind_texture(tex->sampler_name, gputex.texture, sampler_state);
-        if (gputex.tile_mapping) {
-          bind_texture(tex->tiled_mapping_name, gputex.tile_mapping, sampler_state);
+      if (gputex.texture == nullptr && deferred_texture_loading) {
+        /* Texture not yet loaded, add to deferred list and bind by reference.
+         * The pointer will be filled in later by #Manager::load_deferred_textures. */
+        Manager::DeferredTexture &deferred = manager.add_texture_deferred(
+            tex->ima, iuser, use_tile_mapping);
+        bind_texture(tex->sampler_name, &deferred.texture, sampler_state);
+        if (gputex.need_tile_mapping) {
+          bind_texture(tex->tiled_mapping_name, &deferred.tile_mapping, sampler_state);
         }
       }
       else {
-        /* Texture is loaded. Acquire. */
-        manager.acquire_texture(*gputex.texture);
-        bind_texture(tex->sampler_name, *gputex.texture, sampler_state);
+        /* Texture is loaded, bind by value. */
+        if (gputex.texture) {
+          bind_texture(tex->sampler_name, gputex.texture, sampler_state);
+          manager.hold_texture(gputex.texture);
+        }
         if (gputex.tile_mapping) {
-          manager.acquire_texture(*gputex.tile_mapping);
-          bind_texture(tex->tiled_mapping_name, *gputex.tile_mapping, sampler_state);
+          bind_texture(tex->tiled_mapping_name, gputex.tile_mapping, sampler_state);
+          manager.hold_texture(gputex.tile_mapping);
         }
       }
     }
@@ -1261,6 +1262,12 @@ template<class T> inline void PassBase<T>::bind_ssbo(const char *name, gpu::Inde
 {
   BLI_assert(buffer != nullptr);
   this->bind_ssbo(GPU_shader_get_ssbo_binding(shader_, name), buffer);
+}
+
+template<class T> inline void PassBase<T>::bind_tlas(const char *name, gpu::TopLevelAS *tlas)
+{
+  BLI_assert(tlas != nullptr);
+  this->bind_tlas(GPU_shader_get_tlas_binding(shader_, name), tlas);
 }
 
 template<class T> inline void PassBase<T>::bind_ubo(const char *name, gpu::UniformBuf *buffer)
@@ -1355,6 +1362,12 @@ template<class T> inline void PassBase<T>::bind_ssbo(int slot, gpu::IndexBuf **b
   BLI_assert(buffer != nullptr);
   create_command(Type::ResourceBind).resource_bind = {
       slot, buffer, ResourceBind::Type::IndexAsStorageBuf};
+}
+
+template<class T> inline void PassBase<T>::bind_tlas(int slot, gpu::TopLevelAS *tlas)
+{
+  BLI_assert(tlas != nullptr);
+  create_command(Type::ResourceBind).resource_bind = {slot, tlas};
 }
 
 template<class T> inline void PassBase<T>::bind_ubo(int slot, gpu::UniformBuf *buffer)

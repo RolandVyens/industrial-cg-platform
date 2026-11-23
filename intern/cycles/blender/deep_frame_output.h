@@ -49,6 +49,12 @@ class BlenderDeepFrameOutput : public blender::RenderDeepOutputSource {
   void cancel();
 
  private:
+  friend class BlenderDeepFrameViews;
+  bool write_checked_consumer(const char *path,
+                              int compression,
+                              const DeepCanonicalEncodeConfig &config,
+                              const DeepConsumerToken &token,
+                              std::string &error);
   bool write_consumer(uint64_t source_key,
                       const char *filepath,
                       int compression,

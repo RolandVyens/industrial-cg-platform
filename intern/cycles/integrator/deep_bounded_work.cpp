@@ -93,7 +93,7 @@ bool deep_bounded_admit_host(DeepFrameCaptureConsumer &consumer,
       /* One reusable view/owner workspace per output sink, including the
        * pessimistic case of a separate tile run for every pixel. */
       !deep_bounded_mul(frame.window_width,
-                        sizeof(DeepEncodedPixelView) +
+                        sizeof(DeepEncodedPixelView) + sizeof(uint32_t) +
                             sizeof(std::shared_ptr<const DeepEncodedTileStorage>), row_views) ||
       !deep_bounded_mul(row_views, configs.size(), row_views) ||
       !deep_bounded_mul(pixels, demand.simple_mode && demand.needs_rgb ? 12 : 0, beauty) ||

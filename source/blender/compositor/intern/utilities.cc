@@ -4,7 +4,7 @@
 
 #include <optional>
 
-#include "BLI_assert.h"
+#include "BLI_assert.hh"
 #include "BLI_math_vector.hh"
 #include "BLI_math_vector_types.hh"
 
@@ -90,6 +90,10 @@ ResultType socket_data_type_to_result_type(const eNodeSocketDatatype data_type,
       return ResultType::Text;
     case SOCK_MASK:
       return ResultType::Mask;
+    case SOCK_BUNDLE:
+      return ResultType::Bundle;
+    case SOCK_CLOSURE:
+      return ResultType::Closure;
     default:
       BLI_assert_unreachable();
       return ResultType::Float;
@@ -145,22 +149,6 @@ bool is_output_linked_to_input_conditioned(const bNodeSocket &output,
     }
   }
   return false;
-}
-
-int number_of_inputs_linked_to_output_conditioned(const bNodeSocket &output,
-                                                  FunctionRef<bool(const bNodeSocket &)> condition)
-{
-  if (!output.is_logically_linked()) {
-    return 0;
-  }
-
-  int count = 0;
-  for (const bNodeSocket *input : output.logically_linked_sockets()) {
-    if (condition(*input)) {
-      count++;
-    }
-  }
-  return count;
 }
 
 bool is_pixel_node(const bNode &node)

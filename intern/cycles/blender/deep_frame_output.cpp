@@ -1,6 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 Blender Authors
  * SPDX-License-Identifier: Apache-2.0 */
 #include "blender/deep_frame_output.h"
+#include "kernel/integrator/deep_bounded_types.h"
 
 #include "IMB_openexr.hh"
 #include "BLI_path_utils.hh"
@@ -33,7 +34,8 @@ class CanonicalFileSink : public DeepOutputSink {
         compression_(compression),
         config_(config),
         token_(token),
-        packed_row_lease_(production.memory_budget())
+        packed_row_lease_(production.memory_budget()),
+        packed_masks_(DeepBudgetAllocator<uint32_t>(production.memory_budget()))
   {
     const char *borrow = getenv("CYCLES_TEST_DEEP_ROW_BORROW");
     borrow_row_ = !borrow || std::strcmp(borrow, "0") != 0;
@@ -235,7 +237,7 @@ class CanonicalFileSink : public DeepOutputSink {
     if (!file_finished_)
       return DeepStatus::fail(DeepErrorCode::OutputFailure,
                               "Canonical file has not passed checked close: " + path_);
-    if (encoded_samples_ != proof_.output_samples)
+    if (encoded_samples_ != proof_.output_samples || pruned_samples_ > encoded_samples_)
       return DeepStatus::fail(DeepErrorCode::InvalidCount,
                               "Encoded consumer sample count changed during output: " + path_);
     std::fprintf(
@@ -247,19 +249,24 @@ class CanonicalFileSink : public DeepOutputSink {
         static_cast<unsigned long long>(budget_.quota()));
     std::fprintf(stderr,
                  "DEEP_FRAME_CHECKED_OUTPUT path=%s alpha_only=%d knots=%llu samples=%llu "
-                 "bytes_used=%llu\n",
+                 "bytes_used=%llu encoded_samples=%llu pruned_empty_samples=%llu\n",
                  path_.c_str(),
                  int(config_.alpha_only),
                  static_cast<unsigned long long>(encoded_knots_),
+                 static_cast<unsigned long long>(encoded_samples_ - pruned_samples_),
+                 static_cast<unsigned long long>(budget_.used()),
                  static_cast<unsigned long long>(encoded_samples_),
-                 static_cast<unsigned long long>(budget_.used()));
+                 static_cast<unsigned long long>(pruned_samples_));
     if (deep_frame_pipeline_requested(getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_VERIFY_PAYLOAD"))) {
       if (proof_.bounded_payload_checked)
         std::fprintf(stderr,
                      "DEEP_BOUNDED_FRAME_ENCODING path=%s alpha_only=%d samples=%llu "
-                     "validation=bounded_schema7_payload quantized_checked=1\n",
+                     "validation=bounded_schema7_payload quantized_checked=1 "
+                     "written_samples=%llu pruned_empty_samples=%llu\n",
                      path_.c_str(), int(config_.alpha_only),
-                     static_cast<unsigned long long>(encoded_samples_));
+                     static_cast<unsigned long long>(encoded_samples_),
+                     static_cast<unsigned long long>(encoded_samples_ - pruned_samples_),
+                     static_cast<unsigned long long>(pruned_samples_));
       else if (proof_.gpu_grid_checked)
         std::fprintf(stderr,
                      "DEEP_GPU_FRAME_ENCODING path=%s alpha_only=%d alpha_budget=%.9g "
@@ -340,7 +347,9 @@ class CanonicalFileSink : public DeepOutputSink {
         dst[b] = static_cast<unsigned char>(value >> (8 * b));
       }
     };
-    size_t total = 0;
+    size_t total = 0, encoded = 0;
+    const bool include_color = !config_.alpha_only;
+    packed_masks_.resize(leases.size());
     for (size_t column = 0; column < leases.size(); ++column) {
       auto &lease = leases[column];
       if (!config_.alpha_only) {
@@ -348,24 +357,37 @@ class CanonicalFileSink : public DeepOutputSink {
           return status;
         }
       }
-      if (lease.size() > size_t(INT32_MAX) - total) {
+      if (lease.size() > DEEP_BOUNDED_K) {
+        return DeepStatus::fail(DeepErrorCode::InvalidCount, "Bounded Deep pixel exceeds K32");
+      }
+      const uint32_t mask = lease.nonzero_mask(include_color);
+      packed_masks_[column] = mask;
+      const size_t count = std::popcount(mask);
+      if (count > size_t(INT32_MAX) - total) {
         return DeepStatus::fail(DeepErrorCode::InvalidCount, "Bounded Deep row exceeds EXR counts");
       }
-      total += lease.size();
+      encoded += lease.size();
+      total += count;
       write_bits(counts.data() + column * 4, uint32_t(total), 4);
     }
     if (total > SIZE_MAX / sample_bytes) {
       return DeepStatus::fail(DeepErrorCode::InvalidCount, "Bounded Deep row byte count overflow");
     }
     data.resize(total * sample_bytes);
-    encoded_samples_ += total;
+    encoded_samples_ += encoded;
+    pruned_samples_ += encoded - total;
     size_t record = 0;
     const char *bulk_option = getenv("CYCLES_TEST_DEEP_BULK_ROW_PACK");
     const bool bulk = !bulk_option || deep_frame_pipeline_requested(bulk_option);
     const size_t z_base = total * (config_.alpha_only ? 1 : 4) * channel_bytes;
-    for (const auto &lease : leases) {
+    for (size_t column = 0; column < leases.size(); ++column) {
+      const auto &lease = leases[column];
+      uint32_t mask = packed_masks_[column];
+      const uint64_t count = std::popcount(mask);
       if (bulk && !verify) {
-        if (!lease.size()) continue;
+        if (!count) {
+          continue;
+        }
         unsigned char *channels[6] = {};
         channels[0] = data.data() + record * channel_bytes;
         if (!config_.alpha_only) {
@@ -375,17 +397,21 @@ class CanonicalFileSink : public DeepOutputSink {
         }
         channels[4] = data.data() + z_base + record * 4;
         channels[5] = data.data() + z_base + (total + record) * 4;
-        lease.pack_channels(channels, !config_.alpha_only);
-        record += lease.size();
+        if (count == lease.size()) {
+          lease.pack_channels(channels, include_color);
+        }
+        else {
+          lease.pack_channels_masked(channels, include_color, mask);
+        }
+        record += count;
         continue;
       }
       if (verify) {
-        const uint64_t count = lease.size();
         hash_.append(reinterpret_cast<const uint8_t *>(&count), sizeof(count));
       }
-      for (size_t i = 0; i < lease.size(); ++i, ++record) {
+      for (; mask; mask &= mask - 1, ++record) {
         uint32_t bits[6] = {};
-        lease.packed_bits(i, !config_.alpha_only, bits);
+        lease.packed_bits(std::countr_zero(mask), include_color, bits);
         write_bits(data.data() + record * channel_bytes, bits[0], channel_bytes);
         if (!config_.alpha_only) {
           for (int c = 1; c <= 3; ++c) {
@@ -405,6 +431,9 @@ class CanonicalFileSink : public DeepOutputSink {
                        (config_.alpha_only ? 3 : 6) * sizeof(float));
         }
       }
+    }
+    if (record != total) {
+      return DeepStatus::fail(DeepErrorCode::InvalidCount, "Bounded Deep row count changed in packing");
     }
     return {};
   }
@@ -429,12 +458,13 @@ class CanonicalFileSink : public DeepOutputSink {
   DeepConsumerToken token_;
   DeepCanonicalEncodeReport proof_;
   size_t charged_ = 0;
-  uint64_t encoded_knots_ = 0, encoded_samples_ = 0;
+  uint64_t encoded_knots_ = 0, encoded_samples_ = 0, pruned_samples_ = 0;
   uint64_t merge_candidates_ = 0, merged_intervals_ = 0;
   double maximum_error_[4] = {}, maximum_budget_ratio_[4] = {};
   std::vector<std::vector<blender::DeepSample>> *row_ = nullptr;
   std::pmr::vector<unsigned char> *packed_counts_ = nullptr, *packed_pixels_ = nullptr;
   DeepEncodedRowLease packed_row_lease_;
+  std::vector<uint32_t, DeepBudgetAllocator<uint32_t>> packed_masks_;
   bool borrow_row_ = true;
   MD5Hash hash_;
   bool file_finished_ = false;
@@ -493,15 +523,30 @@ bool BlenderDeepFrameOutput::write_consumer(uint64_t source_key,
       alpha,
       half ? DeepCanonicalPrecision::Half : DeepCanonicalPrecision::Float,
       alpha_only);
+  DeepConsumerToken token;
+  const DeepStatus status = production_->consumer_token(source_key, config, compression, token);
+  if (!status) {
+    production_->pipeline().check_producer_status(status);
+    error = status.message;
+    return false;
+  }
+  return write_checked_consumer(path, compression, config, token, error);
+}
+
+bool BlenderDeepFrameOutput::write_checked_consumer(const char *path,
+                                                    const int compression,
+                                                    const DeepCanonicalEncodeConfig &config,
+                                                    const DeepConsumerToken &token,
+                                                    std::string &error)
+{
   if (deep_frame_pipeline_requested(getenv("CYCLES_EXPERIMENTAL_DEEP_FRAME_VERIFY_PAYLOAD")))
     std::fprintf(stderr,
                  "DEEP_FRAME_RGB_BUDGET abs=%.17g rel=%.17g\n",
                  config.rgb_absolute_tolerance,
                  config.rgb_relative_tolerance);
   auto &pipeline = production_->pipeline();
-  DeepConsumerToken token;
-  DeepStatus status = production_->consumer_token(source_key, config, compression, token);
-  if (status && pipeline.consumer_closed(token.id))
+  DeepStatus status;
+  if (pipeline.consumer_closed(token.id))
     status = pipeline.replay_consumer(token.id);
   if (!status) {
     pipeline.check_producer_status(status);
@@ -646,13 +691,22 @@ bool BlenderDeepFrameViews::save_direct(const char *path,
 {
   const std::lock_guard lock(mutex_);
   const auto output = views_.find(view_name ? view_name : "");
-  if (!output)
-    return fail("Missing exact native Deep view source", error);
+  if (!output) {
+    error = "Missing exact native Deep view source";
+    return false;
+  }
   const auto config = deep_production_encode_config(
       depth, alpha, half ? DeepCanonicalPrecision::Half : DeepCanonicalPrecision::Float, false);
+  DeepConsumerToken token;
+  const DeepStatus status = output->production_->consumer_token(
+      DEEP_DIRECT_CONSUMER_KEY, config, compression, token);
+  if (!status) {
+    error = status.message;
+    return false;
+  }
   if (!claim(*output, DEEP_DIRECT_CONSUMER_KEY, path, compression, config, error))
     return false;
-  if (!output->write_direct(path, compression, half, depth, alpha, error))
+  if (!output->write_checked_consumer(path, compression, config, token, error))
     return fail(error, error);
   return true;
 }

@@ -12,10 +12,10 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_listbase.h"
+#include "BLI_listbase.hh"
 #include "BLI_path_utils.hh"
-#include "BLI_string.h"
-#include "BLI_utildefines.h"
+#include "BLI_string.hh"
+#include "BLI_utildefines.hh"
 
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
@@ -397,17 +397,26 @@ static void sound_mixdown_startjob(void *customdata, wmJobWorkerStatus *worker_s
   mixdown_job_data->error_message = error_message;
 }
 
-static void sound_mixdown_endjob(void *customdata)
+static void sound_mixdown_endjob_ex(SoundMixdownJobData *mixdown_job_data, ReportList *reports)
 {
-  SoundMixdownJobData *mixdown_job_data = static_cast<SoundMixdownJobData *>(customdata);
-
   if (mixdown_job_data->interface_locked) {
     WM_locked_interface_set(mixdown_job_data->wm, false);
   }
 
   if (!mixdown_job_data->succeeded) {
-    WM_global_report(RPT_ERROR, mixdown_job_data->error_message.c_str());
+    if (reports) {
+      BKE_report(reports, RPT_ERROR, mixdown_job_data->error_message.c_str());
+    }
+    else {
+      WM_global_report(RPT_ERROR, mixdown_job_data->error_message.c_str());
+    }
   }
+}
+
+static void sound_mixdown_endjob(void *customdata)
+{
+  SoundMixdownJobData *mixdown_job_data = static_cast<SoundMixdownJobData *>(customdata);
+  sound_mixdown_endjob_ex(mixdown_job_data, nullptr);
 }
 #endif
 
@@ -482,9 +491,14 @@ static wmOperatorStatus sound_mixdown_exec(bContext *C, wmOperator *op)
     wmJobWorkerStatus worker_status = {};
 
     sound_mixdown_startjob(mixdown_job_data, &worker_status);
-    sound_mixdown_endjob(mixdown_job_data);
+    sound_mixdown_endjob_ex(mixdown_job_data, op->reports);
+    const bool succeeded = mixdown_job_data->succeeded;
 
     MEM_delete(mixdown_job_data);
+
+    if (!succeeded) {
+      return OPERATOR_CANCELLED;
+    }
   }
 
 #else  /* WITH_AUDASPACE */

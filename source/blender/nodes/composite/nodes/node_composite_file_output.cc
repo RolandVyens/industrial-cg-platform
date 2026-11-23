@@ -7,13 +7,13 @@
 
 #include <cmath>
 
-#include "BLI_assert.h"
+#include "BLI_assert.hh"
 #include "BLI_cpp_type.hh"
 #include "BLI_generic_pointer.hh"
 #include "BLI_index_range.hh"
-#include "BLI_listbase.h"
+#include "BLI_listbase.hh"
 #include "BLI_path_utils.hh"
-#include "BLI_string.h"
+#include "BLI_string.hh"
 
 #include "BLT_translation.hh"
 
@@ -67,7 +67,6 @@ namespace path_templates = blender::bke::path_templates;
 NODE_STORAGE_FUNCS(NodeCompositorFileOutput)
 
 namespace {
-constexpr float default_deep_merge_tolerance = 0.01f;
 }  // namespace
 
 static void node_declare(NodeDeclarationBuilder &b)
@@ -113,9 +112,8 @@ static void node_declare(NodeDeclarationBuilder &b)
       .custom_draw(socket_items::ui::draw_extend_socket_fn<FileOutputItemsAccessor>());
 }
 
-static void node_init(const bContext *C, PointerRNA *node_pointer)
+static void node_init(bNodeTree *node_tree, bNode *node)
 {
-  bNode *node = node_pointer->data_as<bNode>();
   NodeCompositorFileOutput *data = MEM_new<NodeCompositorFileOutput>(__func__);
   node->storage = data;
   data->save_as_render = true;
@@ -123,15 +121,17 @@ static void node_init(const bContext *C, PointerRNA *node_pointer)
   data->file_name = BLI_strdup("{blend_name}");
 
   BKE_image_format_init(&data->format);
-  BKE_image_format_media_type_set(
-      &data->format, node_pointer->owner_id, MEDIA_TYPE_MULTI_LAYER_IMAGE);
+  BKE_image_format_media_type_set(&data->format, &node_tree->id, MEDIA_TYPE_MULTI_LAYER_IMAGE);
   BKE_image_format_update_color_space_for_type(&data->format);
+}
 
+static void node_init_api(const bContext *C, PointerRNA *node_ptr)
+{
+  bNode *node = node_ptr->data_as<bNode>();
+  NodeCompositorFileOutput &data = node_storage(*node);
   Scene *scene = CTX_data_scene(C);
-  if (scene) {
-    const RenderData *render_data = &scene->r;
-    STRNCPY(data->directory, render_data->pic);
-  }
+  const RenderData *render_data = &scene->r;
+  STRNCPY(data.directory, render_data->pic);
 }
 
 static void node_free_storage(bNode *node)
@@ -177,6 +177,7 @@ static Vector<bke::path_templates::Error> compute_image_path(const StringRefNull
                                                              const char *view,
                                                              const int frame_number,
                                                              const ImageFormatData &format,
+                                                             const Main &bmain,
                                                              const Scene &scene,
                                                              const bNode &node,
                                                              const bool is_animation_render,
@@ -188,7 +189,9 @@ static Vector<bke::path_templates::Error> compute_image_path(const StringRefNull
   BLI_path_append(base_path, FILE_MAX, full_file_name.c_str());
 
   bke::path_templates::VariableMap template_variables;
-  BKE_add_template_variables_general(template_variables, &node.owner_tree().id);
+  BKE_blender_project_read_callback(&bmain, [&](const bke::BlenderProject *project) {
+    BKE_add_template_variables_general(template_variables, &node.owner_tree().id, project);
+  });
   BKE_add_template_variables_for_render_path(template_variables, scene);
   BKE_add_template_variables_for_node(template_variables, node);
 
@@ -253,6 +256,7 @@ static void output_path_layout(ui::Layout &layout,
                                const StringRefNull file_name_suffix,
                                const char *view,
                                const ImageFormatData &format,
+                               const Main &bmain,
                                const Scene &scene,
                                const bNode &node)
 {
@@ -264,6 +268,7 @@ static void output_path_layout(ui::Layout &layout,
                                                                             view,
                                                                             scene.r.cfra,
                                                                             format,
+                                                                            bmain,
                                                                             scene,
                                                                             node,
                                                                             false,
@@ -274,7 +279,8 @@ static void output_path_layout(ui::Layout &layout,
   }
   else {
     for (const bke::path_templates::Error &error : path_errors) {
-      layout.label(BKE_path_template_error_to_string(error, image_path).c_str(), ICON_ERROR);
+      layout.label(BKE_path_template_error_to_string(error, image_path).c_str(),
+                   ICON_STATUS_ERROR);
     }
   }
 }
@@ -288,6 +294,7 @@ static void output_paths_layout(ui::Layout &layout,
   const NodeCompositorFileOutput &storage = node_storage(node);
   const StringRefNull directory = storage.directory;
   const std::string file_name = storage.file_name ? storage.file_name : "";
+  const Main &main = *CTX_data_main(context);
   const Scene &scene = *CTX_data_scene(context);
 
   if (bool(scene.r.scemode & R_MULTIVIEW) && format.views_format == R_IMF_VIEWS_INDIVIDUAL) {
@@ -297,11 +304,12 @@ static void output_paths_layout(ui::Layout &layout,
       }
 
       output_path_layout(
-          layout, directory, file_name, file_name_suffix, view.name, format, scene, node);
+          layout, directory, file_name, file_name_suffix, view.name, format, main, scene, node);
     }
   }
   else {
-    output_path_layout(layout, directory, file_name, file_name_suffix, "", format, scene, node);
+    output_path_layout(
+        layout, directory, file_name, file_name_suffix, "", format, main, scene, node);
   }
 }
 
@@ -407,7 +415,7 @@ static void node_extra_info(NodeExtraInfoParams &parameters)
     NodeExtraInfoRow row;
     row.text = RPT_("Node Unsupported");
     row.tooltip = TIP_("The File Output node is only supported for scene compositing");
-    row.icon = ICON_ERROR;
+    row.icon = ICON_STATUS_ERROR;
     parameters.rows.append(std::move(row));
   }
 }
@@ -478,7 +486,7 @@ class FileOutputOperation : public NodeOperation {
   {
     const NodeCompositorFileOutput &storage = node_storage(this->node());
     const auto report_deep_error = [&](const std::string &message) {
-      this->context().set_info_message(message);
+      this->add_warning(NodeWarningType::Error, message);
       if (compositor::RenderContext *render_context = this->context().render_context()) {
         render_context->set_output_error(message);
       }
@@ -530,7 +538,7 @@ class FileOutputOperation : public NodeOperation {
                                               storage.format.deep_merge_tolerance,
                                               storage.format.deep_alpha_merge_tolerance,
                                               error,
-                                              uint64_t(this->get_instance_key().value) + 1,
+                                              bke::compositor::deep_output_source_key(this->get_compute_context(), this->node()),
                                               view))
       {
         report_deep_error(std::string("Deep canonical output failed: ") + image_path + ": " +
@@ -539,46 +547,22 @@ class FileOutputOperation : public NodeOperation {
       return;
     }
     const std::vector<std::vector<DeepSample>> &deep_samples = deep_data->pixels;
-    bool write_success = false;
-    float depth_merge_tolerance = storage.format.deep_merge_tolerance;
-    const float alpha_merge_tolerance = storage.format.deep_alpha_merge_tolerance;
-    if (depth_merge_tolerance <= 0.0f && alpha_merge_tolerance > 0.0f) {
-      depth_merge_tolerance = default_deep_merge_tolerance;
-    }
-    if (depth_merge_tolerance > 0.0f) {
-      write_success = IMB_exr_save_deep(deep_samples,
-                                        width,
-                                        height,
-                                        image_path,
-                                        storage.format.exr_codec,
-                                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
-                                        alpha_only,
-                                        deep_data->has_display_window,
-                                        deep_data->display_size[0],
-                                        deep_data->display_size[1],
-                                        deep_data->display_offset[0],
-                                        deep_data->display_offset[1],
-                                        deep_data->data_offset[0],
-                                        deep_data->data_offset[1],
-                                        depth_merge_tolerance,
-                                        alpha_merge_tolerance);
-    }
-    else {
-      write_success = IMB_exr_save_deep(deep_samples,
-                                        width,
-                                        height,
-                                        image_path,
-                                        storage.format.exr_codec,
-                                        (storage.format.depth == R_IMF_CHAN_DEPTH_16),
-                                        alpha_only,
-                                        deep_data->has_display_window,
-                                        deep_data->display_size[0],
-                                        deep_data->display_size[1],
-                                        deep_data->display_offset[0],
-                                        deep_data->display_offset[1],
-                                        deep_data->data_offset[0],
-                                        deep_data->data_offset[1]);
-    }
+    const bool write_success = IMB_exr_save_deep(deep_samples,
+                                                 width,
+                                                 height,
+                                                 image_path,
+                                                 storage.format.exr_codec,
+                                                 storage.format.depth == R_IMF_CHAN_DEPTH_16,
+                                                 alpha_only,
+                                                 deep_data->has_display_window,
+                                                 deep_data->display_size[0],
+                                                 deep_data->display_size[1],
+                                                 deep_data->display_offset[0],
+                                                 deep_data->display_offset[1],
+                                                 deep_data->data_offset[0],
+                                                 deep_data->data_offset[1],
+                                                 storage.format.deep_merge_tolerance,
+                                                 storage.format.deep_alpha_merge_tolerance);
     if (!write_success) {
       const std::string message = std::string("Failed to write complete Deep EXR: ") + image_path;
       report_deep_error(message);
@@ -750,7 +734,7 @@ class FileOutputOperation : public NodeOperation {
     if (result.is_single_value()) {
       /* For single values, we fill a buffer that covers the domain of the operation with the value
        * of the result. */
-      data.allocate_texture(this->compute_domain(), true, ResultStorageType::CPU);
+      data.allocate_texture(this->compute_domain(), true, ResultStorageType::CPUImage);
       const GPointer single_value = result.single_value();
       const int64_t pixel_count = int64_t(data.domain().data_size.x) * data.domain().data_size.y;
       single_value.type()->fill_assign_n(
@@ -804,6 +788,8 @@ class FileOutputOperation : public NodeOperation {
       case ResultType::Scene:
       case ResultType::Text:
       case ResultType::Mask:
+      case ResultType::Bundle:
+      case ResultType::Closure:
         /* Not supported. */
         BLI_assert_unreachable();
         break;
@@ -854,6 +840,8 @@ class FileOutputOperation : public NodeOperation {
       case ResultType::Scene:
       case ResultType::Text:
       case ResultType::Mask:
+      case ResultType::Bundle:
+      case ResultType::Closure:
         /* Not supported. */
         BLI_assert_unreachable();
         break;
@@ -909,6 +897,7 @@ class FileOutputOperation : public NodeOperation {
         view,
         this->context().get_frame_number(),
         format,
+        this->context().get_main(),
         this->context().get_scene(),
         this->node(),
         this->is_animation_render(),
@@ -994,7 +983,8 @@ static void node_register()
   ntype.draw_buttons_ex = node_draw_buttons_extended;
   ntype.insert_link = node_insert_link;
   ntype.register_operators = node_register_operators;
-  ntype.initfunc_api = node_init;
+  ntype.initfunc = node_init;
+  ntype.initfunc_api = node_init_api;
   bke::node_type_storage(ntype, "NodeCompositorFileOutput", node_free_storage, node_copy_storage);
   ntype.blend_write_storage_content = node_blend_write;
   ntype.blend_data_read_storage_content = node_blend_read;

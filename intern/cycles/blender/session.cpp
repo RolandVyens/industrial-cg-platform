@@ -9,10 +9,11 @@
 
 #include "BKE_image_format.hh"
 #include "BKE_main.hh"
+#include "BKE_blender_project.hh"
 #include "BKE_path_templates.hh"
 #include "BKE_report.hh"
 #include "BKE_scene.hh"
-#include "BLI_listbase.h"
+#include "BLI_listbase.hh"
 #include "DNA_layer_types.h"
 #include "DEG_depsgraph_query.hh"
 #include "DNA_screen_types.h"
@@ -107,7 +108,9 @@ bool render_output_filepath_for_still(const blender::Main *b_main,
 
   const char *relbase = blender::BKE_main_blendfile_path(b_main);
   blender::bke::path_templates::VariableMap template_variables;
-  blender::BKE_add_template_variables_general(template_variables, &b_scene->id);
+  blender::BKE_blender_project_read_callback(b_main, [&](const blender::bke::BlenderProject *project) {
+    blender::BKE_add_template_variables_general(template_variables, &b_scene->id, project);
+  });
   blender::BKE_add_template_variables_for_render_path(template_variables, *b_scene);
 
   const blender::Vector<blender::bke::path_templates::Error> errors =
@@ -145,7 +148,7 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
   };
 
   for (blender::RenderView *render_view =
-           static_cast<blender::RenderView *>(render_result->views.first);
+           static_cast<blender::RenderView *>(render_result->views.first());
        render_view;
        render_view = render_view->next)
   {
@@ -153,7 +156,7 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
   }
 
   for (blender::RenderLayer *render_layer =
-           static_cast<blender::RenderLayer *>(render_result->layers.first);
+           static_cast<blender::RenderLayer *>(render_result->layers.first());
        render_layer;
        render_layer = render_layer->next)
   {
@@ -168,7 +171,7 @@ void render_result_apply_display_window(blender::RenderResult *render_result,
     }
 
     for (blender::RenderPass *render_pass =
-             static_cast<blender::RenderPass *>(render_layer->passes.first);
+             static_cast<blender::RenderPass *>(render_layer->passes.first());
          render_pass;
          render_pass = render_pass->next)
     {
@@ -268,7 +271,6 @@ void BlenderSession::create_session()
       b_engine, b_userpref, *b_scene, background, pixelsize);
   const SceneParams scene_params = BlenderSync::get_scene_params(
       b_userpref, *b_data, *b_scene, background, use_developer_ui);
-  const bool session_pause = BlenderSync::get_session_pause(*b_scene, background);
 
   /* reset status/progress */
   last_status = "";
@@ -280,7 +282,7 @@ void BlenderSession::create_session()
   session = make_unique<Session>(session_params, scene_params);
   session->progress.set_update_callback([this] { tag_redraw(); });
   session->progress.set_cancel_callback([this] { test_cancel(); });
-  session->set_pause(session_pause);
+  session->set_pause(view_paused);
 
   /* create scene */
   scene = session->scene.get();
@@ -291,7 +293,7 @@ void BlenderSession::create_session()
       b_engine, *b_data, *b_scene, scene, !background, use_developer_ui, session->progress);
   if (b_v3d) {
     constexpr bool use_viewport_overscan = false;
-    sync->sync_view(b_v3d, b_rv3d, width, height, use_viewport_overscan);
+    sync->sync_view(b_depsgraph, b_v3d, b_rv3d, width, height, use_viewport_overscan);
   }
   else {
     sync->sync_camera(*b_render, width, height, "", false);
@@ -516,7 +518,7 @@ void BlenderSession::render(blender::Depsgraph &b_depsgraph_)
   /* temporary render result to find needed passes and views */
   blender::RenderResult *b_rr = RE_engine_begin_result(
       &b_engine, 0, 0, 1, 1, b_view_layer.name, nullptr);
-  blender::RenderLayer *b_rlay = static_cast<blender::RenderLayer *>(b_rr->layers.first);
+  blender::RenderLayer *b_rlay = b_rr->layers.first();
 
   {
     const thread_scoped_lock lock(draw_state_.mutex);
@@ -1369,7 +1371,6 @@ void BlenderSession::synchronize(blender::Depsgraph &b_depsgraph_)
       b_engine, b_userpref, *b_scene, background, pixelsize);
   const SceneParams scene_params = BlenderSync::get_scene_params(
       b_userpref, *b_data, *b_scene, background, use_developer_ui);
-  const bool session_pause = BlenderSync::get_session_pause(*b_scene, background);
 
   if (session->params.modified(session_params) || scene->params.modified(scene_params)) {
     free_session();
@@ -1381,14 +1382,13 @@ void BlenderSession::synchronize(blender::Depsgraph &b_depsgraph_)
   /* increase samples and render time, but never decrease */
   session->set_samples(session_params.samples);
   session->set_time_limit(session_params.time_limit);
-  session->set_pause(session_pause);
 
   /* copy recalc flags, outside of mutex so we can decide to do the real
    * synchronization at a later time to not block on running updates */
   sync->sync_recalc(b_depsgraph_, b_screen, b_v3d, b_rv3d);
 
   /* don't do synchronization if on pause */
-  if (session_pause) {
+  if (view_paused) {
     tag_update();
     return;
   }
@@ -1413,7 +1413,7 @@ void BlenderSession::synchronize(blender::Depsgraph &b_depsgraph_)
 
   if (b_rv3d) {
     constexpr bool use_viewport_overscan = false;
-    sync->sync_view(b_v3d, b_rv3d, width, height, use_viewport_overscan);
+    sync->sync_view(b_depsgraph, b_v3d, b_rv3d, width, height, use_viewport_overscan);
   }
   else {
     sync->sync_camera(*b_render, width, height, "", false);
@@ -1463,6 +1463,10 @@ void BlenderSession::draw(blender::bScreen &b_screen, blender::SpaceImage &space
     blender::RenderPass *b_display_pass = RE_engine_pass_by_index_get(
         &b_engine, b_rlay_name.c_str(), pass_index);
     if (!b_display_pass) {
+      /* Fall back to displaying the first pass, like image editor drawing does too. */
+      b_display_pass = RE_engine_pass_by_index_get(&b_engine, b_rlay_name.c_str(), 0);
+    }
+    if (!b_display_pass) {
       return;
     }
 
@@ -1496,11 +1500,14 @@ void BlenderSession::draw(blender::bScreen &b_screen, blender::SpaceImage &space
   session->draw();
 }
 
+void BlenderSession::view_pause(const bool pause)
+{
+  view_paused = pause;
+  session->set_pause(pause);
+}
+
 void BlenderSession::view_draw(const int w, const int h)
 {
-  /* pause in redraw in case update is not being called due to final render */
-  session->set_pause(BlenderSync::get_session_pause(*b_scene, background));
-
   /* Update navigating state. */
   const bool dimensions_changed = (width != w || height != h || pixelsize != blender::U.pixelsize);
   const bool is_navigating = region_view3d_navigating_or_transforming(b_rv3d) ||
@@ -1541,7 +1548,7 @@ void BlenderSession::view_draw(const int w, const int h)
       /* update camera from 3d view */
 
       constexpr bool use_viewport_overscan = false;
-      sync->sync_view(b_v3d, b_rv3d, width, height, use_viewport_overscan);
+      sync->sync_view(b_depsgraph, b_v3d, b_rv3d, width, height, use_viewport_overscan);
 
       if (scene->camera->is_modified()) {
         reset = true;
@@ -1562,9 +1569,8 @@ void BlenderSession::view_draw(const int w, const int h)
           width,
           height,
           false);
-      const bool session_pause = BlenderSync::get_session_pause(*b_scene, background);
 
-      if (session_pause == false) {
+      if (view_paused == false) {
         session->reset(session_params, buffer_params);
         start_resize_time = 0.0;
       }
